@@ -37,6 +37,37 @@ fn main() {
     }
 }
 
+#[derive(Copy, Clone, Debug, Semantics)]
+pub enum VertexSemantics {
+    #[sem(name = "position", repr = "[f32; 2]", wrapper = "VertexPosition")]
+    Position,
+    #[sem(name = "color", repr = "[u8; 3]", wrapper = "VertexRGB")]
+    Color,
+}
+
+#[derive(Copy, Clone, Debug, Vertex)]
+#[vertex(sem = "VertexSemantics")]
+pub struct Vertex {
+    #[allow(dead_code)]
+    position: VertexPosition,
+
+    #[allow(dead_code)]
+    #[vertex(normalized = "true")]
+    color: VertexRGB,
+}
+
+const VERTICES: [Vertex; 3] = [
+    Vertex::new(
+        VertexPosition::new([-0.5, -0.5]),
+        VertexRGB::new([255, 0, 0]),
+    ),
+    Vertex::new(
+        VertexPosition::new([0.5, -0.5]),
+        VertexRGB::new([0, 255, 0]),
+    ),
+    Vertex::new(VertexPosition::new([0., 0.5]), VertexRGB::new([0, 0, 255])),
+];
+
 #[derive(UniformInterface)]
 struct ShaderInterface {
     tex: Uniform<TextureBinding<Dim2, NormUnsigned>>,
