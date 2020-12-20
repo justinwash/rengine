@@ -2,10 +2,10 @@ use glfw::{Action, Context as _, Key, WindowEvent};
 use luminance::backend::texture::Texture as TextureBackend;
 use luminance::blending::{Blending, Equation, Factor};
 use luminance::context::GraphicsContext;
-use luminance::pipeline::{PipelineState, TextureBinding};
+use luminance::pipeline::{PipelineState, Pipeline, PipelineError, TextureBinding};
 use luminance::pixel::{NormRGB8UI, NormUnsigned};
 use luminance::render_state::RenderState;
-use luminance::shader::Uniform;
+use luminance::shader::{Program, Uniform};
 use luminance::tess::Mode;
 use luminance::texture::{Dim2, GenMipmaps, Sampler, Texture};
 use luminance::UniformInterface;
@@ -27,7 +27,7 @@ fn main() {
     match surface {
         Ok(surface) => {
             eprintln!("graphics surface created");
-            main_loop(surface);
+            let sprite_renderer = SpriteRenderer::new(surface);
         }
 
         Err(e) => {
@@ -37,80 +37,180 @@ fn main() {
     }
 }
 
-#[derive(UniformInterface)]
-struct ShaderInterface {
-    tex: Uniform<TextureBinding<Dim2, NormUnsigned>>,
+use luminance::shader::{Program, Uniform};
+use luminance::tess::{Mode, Tess};
+use luminance::texture::Dim2;
+use luminance_derive::UniformInterface;
+use luminance_gl::gl33::GL33;
+
+use crate::assets::{sprite::SpriteAsset, AssetManager, Handle};
+use crate::core::colors::RgbaColor;
+use crate::core::transform::Transform;
+use luminance::shading_gate::ShadingGate;
+use serde_derive::{Deserialize, Serialize};
+use std::time::Instant;
+
+const VS: &'static str = include_str!("texture-vs.glsl");
+const FS: &'static str = include_str!("texture-fs.glsl");
+
+/// Let's make it easy for now...
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct Sprite {
+    pub id: String,
 }
 
-const TEX_VS: &str = include_str!("texture-vs.glsl");
-const TEX_FS: &str = include_str!("texture-fs.glsl");
+/// Attach this component to an entity with a sprite to make it BLINK! KIRA KIRA!
+pub struct Blink {
+    pub color: [f32; 4],
+    pub amplitude: f32,
+}
 
-fn main_loop(mut surface: GlfwSurface) {
-    let mut back_buffer = surface.back_buffer().unwrap();
+pub struct Tint {
+    pub color: RgbaColor,
+}
 
-    let img = read_image(Path::new("test_texture.png")).expect("error while reading image on disk");
-    let (width, height) = img.dimensions();
-    let mut tex = load_from_disk(&mut surface, img);
+#[derive(UniformInterface)]
+pub struct ShaderUniform {
+    projection: Uniform<[[f32; 4]; 4]>,
+    view: Uniform<[[f32; 4]; 4]>,
+    model: Uniform<[[f32; 4]; 4]>,
 
-    let mut tex_program = surface
-        .new_shader_program::<(), (), ShaderInterface>()
-        .from_strings(TEX_VS, None, None, TEX_FS)
-        .expect("program creation")
-        .ignore_warnings();
-    let tex_tess = surface
-        .new_tess()
-        .set_vertex_nb(4)
-        .set_mode(Mode::TriangleFan)
-        .build()
-        .unwrap();
-    let render_st = &RenderState::default().set_blending(Blending {
-        equation: Equation::Additive,
-        src: Factor::SrcAlpha,
-        dst: Factor::Zero,
-    });
-    let mut resize = false;
+    tex: Uniform<TextureBinding<Dim2, NormUnsigned>>,
 
-    'app: loop {
-        surface.window.glfw.poll_events();
-        for (_, event) in surface.events_rx.try_iter() {
-            match event {
-                WindowEvent::Close | WindowEvent::Key(Key::Escape, _, Action::Release, _) => {
-                    break 'app
-                }
-                WindowEvent::FramebufferSize(..) => {
-                    resize = true;
-                }
-                _ => (),
-            }
-        }
+    should_blink: Uniform<bool>,
+    blink_color: Uniform<[f32; 4]>,
+    should_tint: Uniform<bool>,
+    tint_color: Uniform<[f32; 4]>,
+    time: Uniform<f32>,
+    amplitude: Uniform<f32>,
+}
 
-        if resize {
-            back_buffer = surface.back_buffer().unwrap();
-            resize = false;
-        }
+pub fn new_shader<B>(surface: GlfwSurface) -> Program<GL33, (), (), ShaderUniform>
+where
+    B: GraphicsContext<Backend = GL33>,
+{
+    surface
+        .new_shader_program::<(), (), ShaderUniform>()
+        .from_strings(VS, None, None, FS)
+        .expect("Program creation")
+        .ignore_warnings()
+}
 
-        let render = surface
-            .new_pipeline_gate()
-            .pipeline(
-                &back_buffer,
-                &PipelineState::default(),
-                |pipeline, mut shd_gate| {
-                    let bound_tex = pipeline.bind_texture(&mut tex)?;
+pub struct SpriteRenderer<S>
+where
+    S: GraphicsContext<Backend = GL33>,
+{
+    render_st: RenderState,
+    tess: Tess<S::Backend, ()>,
 
-                    shd_gate.shade(&mut tex_program, |mut iface, uni, mut rdr_gate| {
-                        iface.set(&uni.tex, bound_tex.binding());
+    /// used to send elapsed time to shader.
+    creation_time: Instant,
 
-                        rdr_gate.render(render_st, |mut tess_gate| tess_gate.render(&tex_tess))
-                    })
+    shader: Program<S::Backend, (), (), ShaderUniform>,
+}
+
+impl<S> SpriteRenderer<S>
+where
+    S: GraphicsContext<Backend = GL33>,
+{
+    pub fn new(surface: &mut S) -> SpriteRenderer<S> {
+        let render_st = RenderState::default()
+            .set_depth_test(None)
+            .set_blending_separate(
+                Blending {
+                    equation: Equation::Additive,
+                    src: Factor::SrcAlpha,
+                    dst: Factor::SrcAlphaComplement,
                 },
-            )
-            .assume();
-
-        if render.is_ok() {
-            surface.window.swap_buffers();
-        } else {
-            break 'app;
+                Blending {
+                    equation: Equation::Additive,
+                    src: Factor::One,
+                    dst: Factor::Zero,
+                },
+            );
+        let tess = surface
+            .new_tess()
+            .set_vertex_nb(4)
+            .set_mode(Mode::TriangleFan)
+            .build()
+            .expect("Tess creation");
+        SpriteRenderer {
+            render_st,
+            tess,
+            creation_time: Instant::now(),
+            shader: new_shader(surface),
         }
+    }
+
+    pub fn main_loop(
+        &mut self,
+        pipeline: &Pipeline<S::Backend>,
+        shd_gate: &mut ShadingGate<S::Backend>,
+        proj_matrix: &glam::Mat4,
+        view: &glam::Mat4,
+        world: &hecs::World,
+        textures: &mut AssetManager<S, SpriteAsset<S>>,
+    ) -> Result<(), PipelineError> {
+        let shader = &mut self.shader;
+        let render_state = &self.render_st;
+        let tess = &self.tess;
+
+        let elapsed = self.creation_time.elapsed().as_secs_f32();
+
+        shd_gate.shade(shader, |mut iface, uni, mut rdr_gate| {
+            iface.set(&uni.projection, proj_matrix.to_cols_array_2d());
+            iface.set(&uni.view, view.to_cols_array_2d());
+
+            for (e, (sprite, transform)) in world.query::<(&Sprite, &Transform)>().iter() {
+                if let Some(tex) = textures.get_mut(&Handle(sprite.id.to_string())) {
+                    let mut res = Ok(());
+                    tex.execute_mut(|asset| {
+                        if let Some(tex) = asset.texture() {
+                            // In case there is a blink animation, set up the correct uniforms.
+                            if let Ok(blink) = world.get::<Blink>(e) {
+                                iface.set(&uni.should_blink, true);
+                                iface.set(&uni.blink_color, blink.color);
+                                iface.set(&uni.time, elapsed);
+                                iface.set(&uni.amplitude, blink.amplitude);
+                            } else {
+                                iface.set(&uni.should_blink, false);
+                            }
+
+                            if let Ok(tint) = world.get::<Tint>(e) {
+                                iface.set(&uni.should_tint, true);
+                                iface.set(&uni.tint_color, tint.color.to_normalized());
+                            } else {
+                                iface.set(&uni.should_tint, false);
+                            }
+
+                            let bound_tex = pipeline.bind_texture(tex);
+
+                            match bound_tex {
+                                Ok(bound_tex) => {
+                                    iface.set(&uni.tex, bound_tex.binding());
+                                    let model = transform.to_model();
+                                    iface.set(&uni.model, model.to_cols_array_2d());
+
+                                    res = rdr_gate.render(render_state, |mut tess_gate| {
+                                        tess_gate.render(tess)
+                                    });
+                                }
+                                Err(e) => {
+                                    res = Err(e);
+                                }
+                            }
+                        }
+                    });
+
+                    res?;
+                } else {
+                    eprintln!("Texture is not loaded {}", sprite.id);
+                    textures.load(sprite.id.to_string());
+                }
+            }
+
+            Ok(())
+        })
     }
 }
 
