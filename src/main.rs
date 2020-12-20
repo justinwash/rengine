@@ -16,6 +16,9 @@ use std::path::Path;
 use std::process::exit;
 //use std::time::Instant;
 
+const WINDOW_WIDTH: i32 = 1280;
+const WINDOW_HEIGHT: i32 = 720;
+
 fn main() {
     // our graphics surface
     let dim = WindowDim::Windowed {
@@ -39,6 +42,18 @@ fn main() {
 
 #[derive(UniformInterface)]
 struct ShaderInterface {
+    #[uniform(unbound)]
+    pos_x: Uniform<u32>,
+    #[uniform(unbound)]
+    pos_y: Uniform<u32>,
+    #[uniform(unbound)]
+    width: Uniform<u32>,
+    #[uniform(unbound)]
+    height: Uniform<u32>,
+    #[uniform(unbound)]
+    screen_width: Uniform<i32>,
+    #[uniform(unbound)]
+    screen_height: Uniform<i32>,
     tex: Uniform<TextureBinding<Dim2, NormUnsigned>>,
 }
 
@@ -98,6 +113,12 @@ fn main_loop(mut surface: GlfwSurface) {
                     let bound_tex = pipeline.bind_texture(&mut tex)?;
 
                     shd_gate.shade(&mut spr_program, |mut iface, uni, mut rdr_gate| {
+                        iface.set(&uni.pos_x, 200);
+                        iface.set(&uni.pos_y, 200);
+                        iface.set(&uni.width, width);
+                        iface.set(&uni.height, height);
+                        iface.set(&uni.screen_width, WINDOW_WIDTH);
+                        iface.set(&uni.screen_height, WINDOW_HEIGHT);
                         iface.set(&uni.tex, bound_tex.binding());
                         rdr_gate.render(render_st, |mut tess_gate| tess_gate.render(&spr_tess))
                     })
