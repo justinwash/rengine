@@ -6,6 +6,8 @@ uniform vec2 tl;
 out vec2 v_uv;
 out vec2[4] quad_pos;
 
+varying vec2 v_texcoord;
+
 void main() {
   vec2[4] QUAD_POS = vec2[](
   bl,
@@ -18,5 +20,6 @@ void main() {
 
   gl_Position = vec4(p, 0., 1.);
   v_uv = p * .5 + .5; // transform the position of the vertex into UV space
+  v_texCoord = 
   quad_pos = QUAD_POS;
 }
