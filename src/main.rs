@@ -52,7 +52,7 @@ const SPR_VS: &str = include_str!("sprite-vs.glsl");
 const SPR_FS: &str = include_str!("sprite-fs.glsl");
 
 fn main_loop(mut surface: GlfwSurface) {
-    let mut back_buffer = surface.back_buffer().unwrap();
+    let back_buffer = surface.back_buffer().unwrap();
 
     let img = read_image(Path::new("test_texture.png")).expect("error while reading image on disk");
     let (width, height) = img.dimensions();
@@ -74,7 +74,6 @@ fn main_loop(mut surface: GlfwSurface) {
         src: Factor::SrcAlpha,
         dst: Factor::Zero,
     });
-    let mut resize = false;
 
     let mut pos_x = 200;
     let mut pos_y = 200;
@@ -93,28 +92,28 @@ fn main_loop(mut surface: GlfwSurface) {
         if Window::get_key(&surface.window, Key::A) == Action::Press
             || Window::get_key(&surface.window, Key::A) == Action::Repeat
         {
-            pos_x -= 10;
+            pos_x -= 1;
         }
 
         if Window::get_key(&surface.window, Key::D) == Action::Press
             || Window::get_key(&surface.window, Key::D) == Action::Repeat
         {
-            pos_x += 10;
+            pos_x += 1;
         }
 
         if Window::get_key(&surface.window, Key::W) == Action::Press
             || Window::get_key(&surface.window, Key::W) == Action::Repeat
         {
-            pos_y -= 10;
+            pos_y -= 1;
         }
 
         if Window::get_key(&surface.window, Key::S) == Action::Press
             || Window::get_key(&surface.window, Key::S) == Action::Repeat
         {
-            pos_y += 10;
+            pos_y += 1
         }
 
-        let transform = get_gl_coords(pos_x, pos_y, 40, 40);
+        let transform = get_gl_coords(pos_x, pos_y, width.try_into().unwrap(), height.try_into().unwrap());
 
         let render = surface
             .new_pipeline_gate()
