@@ -1,4 +1,4 @@
-use glfw::{Action, Context as _, Key, WindowEvent};
+use glfw::{Action, Context as _, Key, Window, WindowEvent};
 use luminance::backend::texture::Texture as TextureBackend;
 use luminance::blending::{Blending, Equation, Factor};
 use luminance::context::GraphicsContext;
@@ -9,7 +9,6 @@ use luminance::shader::Uniform;
 use luminance::tess::Mode;
 use luminance::texture::{Dim2, GenMipmaps, Sampler, Texture};
 use luminance::UniformInterface;
-use luminance_derive::{Semantics, Vertex};
 use luminance_glfw::GlfwSurface;
 use luminance_windowing::{WindowDim, WindowOpt};
 use std::path::Path;
@@ -42,18 +41,10 @@ fn main() {
 
 #[derive(UniformInterface)]
 struct ShaderInterface {
-    #[uniform(unbound)]
-    pos_x: Uniform<u32>,
-    #[uniform(unbound)]
-    pos_y: Uniform<u32>,
-    #[uniform(unbound)]
-    width: Uniform<u32>,
-    #[uniform(unbound)]
-    height: Uniform<u32>,
-    #[uniform(unbound)]
-    screen_width: Uniform<i32>,
-    #[uniform(unbound)]
-    screen_height: Uniform<i32>,
+    bl: Uniform<[f32; 2]>,
+    br: Uniform<[f32; 2]>,
+    tr: Uniform<[f32; 2]>,
+    tl: Uniform<[f32; 2]>,
     tex: Uniform<TextureBinding<Dim2, NormUnsigned>>,
 }
 
@@ -85,6 +76,9 @@ fn main_loop(mut surface: GlfwSurface) {
     });
     let mut resize = false;
 
+    let mut pos_x = 200;
+    let mut pos_y = 200;
+
     'app: loop {
         surface.window.glfw.poll_events();
         for (_, event) in surface.events_rx.try_iter() {
@@ -92,17 +86,35 @@ fn main_loop(mut surface: GlfwSurface) {
                 WindowEvent::Close | WindowEvent::Key(Key::Escape, _, Action::Release, _) => {
                     break 'app
                 }
-                WindowEvent::FramebufferSize(..) => {
-                    resize = true;
-                }
                 _ => (),
             }
         }
 
-        if resize {
-            back_buffer = surface.back_buffer().unwrap();
-            resize = false;
+        if Window::get_key(&surface.window, Key::A) == Action::Press
+            || Window::get_key(&surface.window, Key::A) == Action::Repeat
+        {
+            pos_x -= 10;
         }
+
+        if Window::get_key(&surface.window, Key::D) == Action::Press
+            || Window::get_key(&surface.window, Key::D) == Action::Repeat
+        {
+            pos_x += 10;
+        }
+
+        if Window::get_key(&surface.window, Key::W) == Action::Press
+            || Window::get_key(&surface.window, Key::W) == Action::Repeat
+        {
+            pos_y -= 10;
+        }
+
+        if Window::get_key(&surface.window, Key::S) == Action::Press
+            || Window::get_key(&surface.window, Key::S) == Action::Repeat
+        {
+            pos_y += 10;
+        }
+
+        let transform = get_gl_coords(pos_x, pos_y, 40, 40);
 
         let render = surface
             .new_pipeline_gate()
@@ -113,12 +125,10 @@ fn main_loop(mut surface: GlfwSurface) {
                     let bound_tex = pipeline.bind_texture(&mut tex)?;
 
                     shd_gate.shade(&mut spr_program, |mut iface, uni, mut rdr_gate| {
-                        iface.set(&uni.pos_x, 200);
-                        iface.set(&uni.pos_y, 200);
-                        iface.set(&uni.width, width);
-                        iface.set(&uni.height, height);
-                        iface.set(&uni.screen_width, WINDOW_WIDTH);
-                        iface.set(&uni.screen_height, WINDOW_HEIGHT);
+                        iface.set(&uni.bl, transform[0]);
+                        iface.set(&uni.br, transform[1]);
+                        iface.set(&uni.tr, transform[2]);
+                        iface.set(&uni.tl, transform[3]);
                         iface.set(&uni.tex, bound_tex.binding());
                         rdr_gate.render(render_st, |mut tess_gate| tess_gate.render(&spr_tess))
                     })
@@ -152,4 +162,26 @@ where
     tex.upload_raw(GenMipmaps::No, &texels).unwrap();
 
     tex
+}
+
+use std::convert::TryInto;
+
+fn get_gl_coords(pos_x: i32, pos_y: i32, width: i32, height: i32) -> [[f32; 2]; 4] {
+    let pixel_coords = [
+        [pos_x, pos_y + height],
+        [pos_x + width, pos_y + height],
+        [pos_x + width, pos_y],
+        [pos_x, pos_y],
+    ];
+
+    let half_screen_width = (WINDOW_WIDTH as f32 / 2.) / WINDOW_WIDTH as f32;
+    let half_screen_height = (WINDOW_HEIGHT as f32 / 2.) / WINDOW_HEIGHT as f32;
+
+    let gl_coords = pixel_coords.iter().map(|coord| {
+        let coord_x = ((coord[0] as f32 / WINDOW_WIDTH as f32) - half_screen_width) * 2.;
+        let coord_y = ((coord[1] as f32 / WINDOW_HEIGHT as f32) - half_screen_height) * -2.;
+        [coord_x, coord_y]
+    });
+
+    gl_coords.collect::<Vec<[f32; 2]>>().try_into().unwrap()
 }

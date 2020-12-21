@@ -1,23 +1,16 @@
-uniform float pos_x;
-uniform float pos_y;
-uniform int width;
-uniform int height;
-uniform int screen_width;
-uniform int screen_height;
+uniform vec2 bl;
+uniform vec2 br;
+uniform vec2 tr;
+uniform vec2 tl;
 
 out vec2 v_uv;
 
 void main() {
-  int half_screen_width = (screen_width / 2) / screen_width;
-  int half_screen_height = (screen_height / 2) / screen_height;
-
-  vec2 top_left = vec2((pos_x / screen_width) - half_screen_width, (pos_y / screen_height) - half_screen_height);
-
   vec2[4] QUAD_POS = vec2[](
-  top_left,
-  vec2( 1., -1.),
-  vec2( 1.,  1.),
-  vec2(-1.,  1.)
+  bl,
+  br,
+  tr,
+  tl
 );
 
   vec2 p = QUAD_POS[gl_VertexID];

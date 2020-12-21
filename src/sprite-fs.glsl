@@ -4,5 +4,5 @@ out vec4 frag;
 uniform sampler2D tex;
 
 void main() {
-  frag = texture(tex, v_uv);
+  frag = texture(tex, v_uv * (1280/512));
 }
