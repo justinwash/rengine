@@ -191,24 +191,3 @@ fn get_gl_coords(pos_x: i32, pos_y: i32, width: i32, height: i32) -> [[f32; 2]; 
 
     gl_coords.collect::<Vec<[f32; 2]>>().try_into().unwrap()
 }
-
-fn screen_uv_to_tex_uv(pos_x: i32, pos_y: i32, width: i32, height: i32) -> () {
-    let corners = get_gl_coords(pos_x, pos_y, width, height);
-    let width = corners[2][0] - corners[3][0];
-    let height = corners[3][1] - corners[1][1];
-
-    let test_uv = corners[3];
-
-    let uv_x = test_uv[0];
-    let uv_y = test_uv[1];
-
-    let tex_uv_x = (((uv_x + 1.) * width) / 2.) - 1.;
-    let tex_uv_y = (((uv_y + 1.) * height) / 2.) - 1.;
-
-    let res_uv = [tex_uv_x, tex_uv_y];
-
-    println!(
-        " bl {:?} \n br {:?} \n tr {:?} \n tl {:?} \n width {} \n height {} \n test_uv {:?} \n result {:?}",
-        corners[0], corners[1], corners[2], corners[3], width, height, test_uv, res_uv
-    );
-}
