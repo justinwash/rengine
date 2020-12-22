@@ -486,6 +486,7 @@ dependencies = [
  "image",
  "luminance",
  "luminance-derive",
+ "luminance-gl",
  "luminance-glfw",
  "luminance-windowing",
 ]
