@@ -78,8 +78,6 @@ fn main_loop(mut surface: GlfwSurface) {
     let mut pos_x = 0;
     let mut pos_y = 0;
 
-    screen_uv_to_tex_uv();
-
     'app: loop {
         surface.window.glfw.poll_events();
         for (_, event) in surface.events_rx.try_iter() {
@@ -121,6 +119,8 @@ fn main_loop(mut surface: GlfwSurface) {
             width.try_into().unwrap(),
             height.try_into().unwrap(),
         );
+
+        screen_uv_to_tex_uv(pos_x, pos_y, 512, 512);
 
         let render = surface
             .new_pipeline_gate()
@@ -192,12 +192,12 @@ fn get_gl_coords(pos_x: i32, pos_y: i32, width: i32, height: i32) -> [[f32; 2]; 
     gl_coords.collect::<Vec<[f32; 2]>>().try_into().unwrap()
 }
 
-fn screen_uv_to_tex_uv() -> () {
-    let corners = get_gl_coords(0, 0, 512, 512);
+fn screen_uv_to_tex_uv(pos_x: i32, pos_y: i32, width: i32, height: i32) -> () {
+    let corners = get_gl_coords(pos_x, pos_y, width, height);
     let width = corners[2][0] - corners[3][0];
     let height = corners[3][1] - corners[1][1];
 
-    let test_uv = [-1., 1.];
+    let test_uv = corners[3];
 
     let uv_x = test_uv[0];
     let uv_y = test_uv[1];

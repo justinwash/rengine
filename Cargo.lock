@@ -20,12 +20,6 @@ checksum = "cdb031dd78e28731d87d56cc8ffef4a8f36ca26c38fe2de700543e627f8a464a"
 
 [[package]]
 name = "bitflags"
-version = "0.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32866f4d103c4e438b1db1158aa1b1a80ee078e5d77a59a2f906fd62a577389c"
-
-[[package]]
-name = "bitflags"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf1de2fe8c75bc145a2f577add951f8134889b4795d47466a54a5c846d691693"
@@ -164,32 +158,11 @@ dependencies = [
 
 [[package]]
 name = "gl"
-version = "0.5.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "49ebe979cceece1723641c970e86d0ff13d083635333ac2705fcfe24b2923da8"
-dependencies = [
- "gl_generator 0.4.2",
- "khronos_api 1.0.1",
-]
-
-[[package]]
-name = "gl"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a94edab108827d67608095e269cf862e60d920f144a5026d3dbcfd8b877fb404"
 dependencies = [
- "gl_generator 0.14.0",
-]
-
-[[package]]
-name = "gl_generator"
-version = "0.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "37905b2d6c7ade3f675d4b03cc038709c7868b938c5950f05a4a03f299b21011"
-dependencies = [
- "khronos_api 1.0.1",
- "log 0.3.9",
- "xml-rs 0.2.2",
+ "gl_generator",
 ]
 
 [[package]]
@@ -198,19 +171,9 @@ version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a95dfc23a2b4a9a2f5ab41d194f8bfda3cabec42af4e39f08c339eb2a0c124d"
 dependencies = [
- "khronos_api 3.1.0",
- "log 0.4.11",
- "xml-rs 0.8.3",
-]
-
-[[package]]
-name = "glam"
-version = "0.11.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bef81f244b2a421ddb8ccb382857772379c0996fe5948992db5bee51cef3c28e"
-dependencies = [
- "serde",
- "version_check",
+ "khronos_api",
+ "log",
+ "xml-rs",
 ]
 
 [[package]]
@@ -219,9 +182,9 @@ version = "0.41.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dbb254ad1715644ab078c94372405bf061358b97969635ef7b09cf6f9437843e"
 dependencies = [
- "bitflags 1.2.1",
+ "bitflags",
  "glfw-sys",
- "log 0.4.11",
+ "log",
  "objc",
  "raw-window-handle",
  "semver",
@@ -277,12 +240,6 @@ dependencies = [
 
 [[package]]
 name = "khronos_api"
-version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d5a08e2a31d665af8f1ca437eab6d00a93c9d62a549f73f9ed8fc2e55b5a91a7"
-
-[[package]]
-name = "khronos_api"
 version = "3.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
@@ -301,27 +258,12 @@ checksum = "1482821306169ec4d07f6aca392a4681f66c75c9918aa49641a2595db64053cb"
 
 [[package]]
 name = "log"
-version = "0.3.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e19e8d5c34a3e0e2223db8e060f9e8264aeeb5c5fc64a4ee9965c062211c024b"
-dependencies = [
- "log 0.4.11",
-]
-
-[[package]]
-name = "log"
 version = "0.4.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4fabed175da42fed1fa0746b0ea71f412aa9d35e76e95e59b192c64b9dc2bf8b"
 dependencies = [
  "cfg-if 0.1.10",
 ]
-
-[[package]]
-name = "luminance"
-version = "0.6.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "700a21be6b859fb158c2d34592cce5c646691acd4910e3db570907dcedeae89e"
 
 [[package]]
 name = "luminance"
@@ -345,22 +287,12 @@ dependencies = [
 
 [[package]]
 name = "luminance-gl"
-version = "0.5.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "708213ce7d2beadbbcb0aef6f1e86dcd10f968719d3bb999761a462e5538fe73"
-dependencies = [
- "gl 0.5.2",
- "luminance 0.6.4",
-]
-
-[[package]]
-name = "luminance-gl"
 version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9ec6224c577c680462316d3106170cc33949384aca8abe7e5c0496d2d333e1eb"
 dependencies = [
- "gl 0.14.0",
- "luminance 0.43.2",
+ "gl",
+ "luminance",
 ]
 
 [[package]]
@@ -369,10 +301,10 @@ version = "0.14.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4927a57b785e6746a1ce2eee125f3420255caf013ed04abc187752ec984d8291"
 dependencies = [
- "gl 0.14.0",
+ "gl",
  "glfw",
- "luminance 0.43.2",
- "luminance-gl 0.16.1",
+ "luminance",
+ "luminance-gl",
  "luminance-windowing",
 ]
 
@@ -382,7 +314,7 @@ version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a25a647991bc5c9f35a1aa6d506492457c105f9180e2af84270dc0b8b9929704"
 dependencies = [
- "luminance 0.43.2",
+ "luminance",
 ]
 
 [[package]]
@@ -488,7 +420,7 @@ version = "0.16.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3c3287920cb847dee3de33d301c463fba14dda99db24214ddf93f83d3021f4c6"
 dependencies = [
- "bitflags 1.2.1",
+ "bitflags",
  "crc32fast",
  "deflate",
  "miniz_oxide 0.3.7",
@@ -550,12 +482,10 @@ dependencies = [
 name = "rengine"
 version = "0.1.0"
 dependencies = [
- "glam",
  "glfw",
  "image",
- "luminance 0.43.2",
+ "luminance",
  "luminance-derive",
- "luminance-gl 0.5.6",
  "luminance-glfw",
  "luminance-windowing",
 ]
@@ -588,26 +518,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "388a1df253eca08550bef6c72392cfe7c30914bf41df5269b68cbd6ff8f570a3"
 
 [[package]]
-name = "serde"
-version = "1.0.118"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "06c64263859d87aa2eb554587e2d23183398d617427327cf2b3d0ed8c69e4800"
-dependencies = [
- "serde_derive",
-]
-
-[[package]]
-name = "serde_derive"
-version = "1.0.118"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c84d3526699cd55261af4b941e4e725444df67aa4f9e6a3564f18030d12672df"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
 name = "syn"
 version = "1.0.54"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -636,12 +546,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f7fe0bb3479651439c9112f72b6c505038574c9fbb575ed1bf3b797fa39dd564"
 
 [[package]]
-name = "version_check"
-version = "0.9.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b5a972e5669d67ba988ce3dc826706fb0a8b01471c088cb0b6110b805cc36aed"
-
-[[package]]
 name = "weezl"
 version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -668,15 +572,6 @@ name = "winapi-x86_64-pc-windows-gnu"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
-
-[[package]]
-name = "xml-rs"
-version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d7c34f934fa02d71d33e03f2eceecd0adfe881d9acddbbd908318e12d449ebf"
-dependencies = [
- "bitflags 0.3.3",
-]
 
 [[package]]
 name = "xml-rs"
