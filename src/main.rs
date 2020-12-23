@@ -5,8 +5,9 @@ use luminance_glfw::GlfwSurface;
 use luminance_windowing::{WindowDim, WindowOpt};
 use std::process::exit;
 
-mod sprite;
-use crate::sprite::*;
+mod graphics;
+use crate::graphics::sprite;
+use crate::graphics::sprite::*;
 
 fn main() {
     let dim = WindowDim::Windowed {
