@@ -1,6 +1,6 @@
 use luminance::blending::{Blending, Equation, Factor};
 use luminance::context::GraphicsContext;
-use luminance::pipeline::{Pipeline, PipelineError, PipelineState, TextureBinding};
+use luminance::pipeline::{Pipeline, PipelineError, TextureBinding};
 use luminance::pixel::{NormRGB8UI, NormUnsigned};
 use luminance::render_state::RenderState;
 use luminance::shader::{Program, Uniform};
@@ -8,8 +8,6 @@ use luminance::tess::{Mode, Tess};
 use luminance::texture::{Dim2, GenMipmaps, Sampler, Texture};
 use luminance_derive::UniformInterface;
 use luminance_gl::gl33::GL33;
-
-use luminance::backend::texture::Texture as TextureBackend;
 use luminance_glfw::GlfwSurface;
 use std::collections::HashMap;
 use std::convert::TryInto;
@@ -65,8 +63,8 @@ impl Sprite {
 }
 
 fn get_gl_coords(pos_x: i32, pos_y: i32, width: i32, height: i32) -> [[f32; 2]; 4] {
-    let WINDOW_WIDTH: i32 = 1280;
-    let WINDOW_HEIGHT: i32 = 720;
+    let window_width: i32 = 1280;
+    let window_height: i32 = 720;
 
     let pixel_coords = [
         [pos_x, pos_y + height],
@@ -75,12 +73,12 @@ fn get_gl_coords(pos_x: i32, pos_y: i32, width: i32, height: i32) -> [[f32; 2]; 
         [pos_x, pos_y],
     ];
 
-    let half_screen_width = (WINDOW_WIDTH as f32 / 2.) / WINDOW_WIDTH as f32;
-    let half_screen_height = (WINDOW_HEIGHT as f32 / 2.) / WINDOW_HEIGHT as f32;
+    let half_screen_width = (window_width as f32 / 2.) / window_width as f32;
+    let half_screen_height = (window_height as f32 / 2.) / window_height as f32;
 
     let gl_coords = pixel_coords.iter().map(|coord| {
-        let coord_x = ((coord[0] as f32 / WINDOW_WIDTH as f32) - half_screen_width) * 2.;
-        let coord_y = ((coord[1] as f32 / WINDOW_HEIGHT as f32) - half_screen_height) * -2.;
+        let coord_x = ((coord[0] as f32 / window_width as f32) - half_screen_width) * 2.;
+        let coord_y = ((coord[1] as f32 / window_height as f32) - half_screen_height) * -2.;
         [coord_x, coord_y]
     });
 
@@ -91,14 +89,10 @@ fn read_image(path: &Path) -> Option<image::RgbImage> {
     image::open(path).map(|img| img.flipv().to_rgb8()).ok()
 }
 
-pub fn load_from_disk<B>(
-    surface: &mut B,
+pub fn load_from_disk(
+    surface: &mut GlfwSurface,
     img: image::RgbImage,
-) -> Texture<B::Backend, Dim2, NormRGB8UI>
-where
-    B: GraphicsContext,
-    B::Backend: TextureBackend<Dim2, NormRGB8UI>,
-{
+) -> Texture<GL33, Dim2, NormRGB8UI> {
     let (width, height) = img.dimensions();
     let texels = img.into_raw();
 
@@ -121,7 +115,7 @@ pub fn new_shader(surface: &mut GlfwSurface) -> Program<GL33, (), (), ShaderInte
 pub struct SpriteRenderer {
     render_state: RenderState,
     tessellator: Tess<GL33, ()>,
-    creation_time: Instant,
+    _creation_time: Instant,
     shader_program: Program<GL33, (), (), ShaderInterface>,
     pub textures: HashMap<
         Uuid,
@@ -149,12 +143,13 @@ impl SpriteRenderer {
         SpriteRenderer {
             render_state,
             tessellator,
-            creation_time: Instant::now(),
+            _creation_time: Instant::now(),
             shader_program: new_shader(surface),
             textures: HashMap::new(),
         }
     }
 
+    #[allow(unused)]
     pub fn load_textures(&mut self, surface: &mut GlfwSurface, sprites: Vec<Sprite>) {
         for sprite in sprites {
             self.textures
@@ -181,6 +176,7 @@ impl SpriteRenderer {
                     sprite.size.h,
                 );
 
+                #[allow(unused_assignments)]
                 let mut res = Ok(());
                 let mut tex = textures.get_mut(&sprite.id).unwrap();
                 let bound_tex = pipeline.bind_texture(&mut tex);
