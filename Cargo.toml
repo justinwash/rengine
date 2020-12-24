@@ -3,6 +3,7 @@ name = "rengine"
 version = "0.1.0"
 authors = ["justin wash <justin.wash@pm.me>"]
 edition = "2018"
+default-run = "rengine"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

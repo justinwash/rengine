@@ -1,11 +1,9 @@
 use glfw::{Action, Context as _, Key, WindowEvent};
 use luminance_glfw::GlfwSurface;
 use luminance_windowing::{WindowDim, WindowOpt};
+use rengine::graphics::{renderer::*, sprite::*};
+use rengine::utils::transform::*;
 use std::process::exit;
-
-mod graphics;
-use crate::graphics::sprite::*;
-use crate::graphics::*;
 
 fn main() {
     let dim = WindowDim::Windowed {
