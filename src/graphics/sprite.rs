@@ -14,11 +14,13 @@ use std::convert::TryInto;
 use std::path::Path;
 use uuid::Uuid;
 
+use crate::utils::transform::*;
+
 use luminance::shading_gate::ShadingGate;
 use std::time::Instant;
 
-const VS: &'static str = include_str!("sprite-vs.glsl");
-const FS: &'static str = include_str!("sprite-fs.glsl");
+const VS: &'static str = include_str!("shaders/sprite-vs.glsl");
+const FS: &'static str = include_str!("shaders/sprite-fs.glsl");
 
 #[derive(UniformInterface)]
 pub struct ShaderInterface {
@@ -27,16 +29,6 @@ pub struct ShaderInterface {
     tr: Uniform<[f32; 2]>,
     tl: Uniform<[f32; 2]>,
     tex: Uniform<TextureBinding<Dim2, NormUnsigned>>,
-}
-#[derive(Clone)]
-pub struct Position {
-    pub x: i32,
-    pub y: i32,
-}
-#[derive(Clone)]
-pub struct Size {
-    pub w: i32,
-    pub h: i32,
 }
 
 #[derive(Clone)]
