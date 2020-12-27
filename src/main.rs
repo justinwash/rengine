@@ -68,27 +68,15 @@ fn main_loop(mut surface: GlfwSurface) {
         surface.window.glfw.poll_events();
         for (_, event) in surface.events_rx.try_iter() {
             match event {
-                // WindowEvent::Close | WindowEvent::Key(Key::Escape, _, Action::Release, _) => {
-                //     break 'app
-                // }
+                WindowEvent::Close | WindowEvent::Key(Key::Escape, _, Action::Release, _) => {
+                    break 'app
+                }
                 _ => (),
             }
         }
 
         if controls.is_action_just_pressed("up", &surface.window) {
-            println!("up pressed")
-        }
-        if controls.is_action_just_pressed("down", &surface.window) {
-            println!("down pressed")
-        }
-        if controls.is_action_just_pressed("left", &surface.window) {
-            println!("left pressed")
-        }
-        if controls.is_action_just_pressed("right", &surface.window) {
-            println!("right pressed")
-        }
-        if controls.is_action_just_pressed("cancel", &surface.window) {
-            break 'app;
+            println!("up just pressed")
         }
 
         let render = renderer.render(&mut surface, &mut back_buffer);
