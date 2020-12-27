@@ -78,6 +78,12 @@ fn main_loop(mut surface: GlfwSurface) {
         if controls.is_action_just_pressed("up", &surface.window) {
             println!("up just pressed")
         }
+        if controls.is_action_just_released("up", &surface.window) {
+            println!("up just released")
+        }
+        if controls.is_action_held("up", &surface.window) {
+            println!("up held")
+        }
 
         let render = renderer.render(&mut surface, &mut back_buffer);
 
