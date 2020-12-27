@@ -49,6 +49,8 @@ fn main_loop(mut surface: GlfwSurface) {
         Position { x: 700, y: 400 },
         Size { w: 600, h: 300 },
     );
+
+    let test_sprite_id = sprite.id;
     renderer.sprites.push(sprite);
     // sprites for testing
 
@@ -82,7 +84,13 @@ fn main_loop(mut surface: GlfwSurface) {
             println!("up just released")
         }
         if controls.is_action_held("up", &surface.window) {
-            println!("up held")
+            println!("up held");
+            let mut sprite = renderer
+                .sprites
+                .iter_mut()
+                .find(|x| x.id == test_sprite_id)
+                .unwrap();
+            sprite.position.y -= 1;
         }
 
         let render = renderer.render(&mut surface, &mut back_buffer);
