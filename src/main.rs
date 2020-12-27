@@ -2,9 +2,9 @@ use glfw::{Action, Context as _, Key, WindowEvent};
 use luminance_glfw::GlfwSurface;
 use luminance_windowing::{WindowDim, WindowOpt};
 use rengine::graphics::{renderer::*, sprite::*};
-use rengine::utils::transform::*;
 use rengine::input::input_map::*;
 use rengine::input::keyboard::*;
+use rengine::utils::transform::*;
 use std::process::exit;
 
 fn main() {
@@ -53,7 +53,7 @@ fn main_loop(mut surface: GlfwSurface) {
     // sprites for testing
 
     // input map for testing
-    let controls: InputMap<KeyboardInput> = InputMap::new()
+    let mut controls: InputMap<KeyboardInput> = InputMap::new()
         .add_action("up", KeyboardInput::new(&Key::W))
         .add_action("down", KeyboardInput::new(&Key::S))
         .add_action("left", KeyboardInput::new(&Key::A))
@@ -75,11 +75,21 @@ fn main_loop(mut surface: GlfwSurface) {
             }
         }
 
-        if controls.is_action_just_pressed("up", &surface.window) { println!("up pressed") }
-        if controls.is_action_just_pressed("down", &surface.window) { println!("down pressed") }
-        if controls.is_action_just_pressed("left", &surface.window) { println!("left pressed") }
-        if controls.is_action_just_pressed("right", &surface.window) { println!("right pressed") }
-        if controls.is_action_just_pressed("cancel", &surface.window) { break 'app }
+        if controls.is_action_just_pressed("up", &surface.window) {
+            println!("up pressed")
+        }
+        if controls.is_action_just_pressed("down", &surface.window) {
+            println!("down pressed")
+        }
+        if controls.is_action_just_pressed("left", &surface.window) {
+            println!("left pressed")
+        }
+        if controls.is_action_just_pressed("right", &surface.window) {
+            println!("right pressed")
+        }
+        if controls.is_action_just_pressed("cancel", &surface.window) {
+            break 'app;
+        }
 
         let render = renderer.render(&mut surface, &mut back_buffer);
 

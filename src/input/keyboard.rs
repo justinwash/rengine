@@ -1,37 +1,44 @@
 use crate::input::input::Input;
-use glfw::{Window,  Key};
 use glfw::Action::*;
+use glfw::{Key, Window};
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Debug)]
 pub struct KeyboardInput {
     key: &'static Key,
+    state: String,
 }
 
 impl KeyboardInput {
     pub fn new(key: &'static glfw::Key) -> Self {
         Self {
-            key: &key
+            key: &key,
+            state: "released".to_string(),
         }
     }
 }
 
 impl Input for KeyboardInput {
-    fn is_just_pressed(self, window: &Window) -> bool {
+    fn is_just_pressed(&mut self, window: &Window) -> bool {
         match Window::get_key(window, *self.key) {
-            Press => true,
-            _ => false
+            Press => {
+                println!("Window reports: {:?}, self state is {}", Press, self.state);
+                true
+            }
+            _ => false,
         }
     }
 
     fn is_held(self, window: &Window) -> bool {
-        match Window::get_key(window, *self.key) {            Repeat => true,
-            _ => false
+        match Window::get_key(window, *self.key) {
+            Repeat => true,
+            _ => false,
         }
     }
 
     fn is_just_released(self, window: &Window) -> bool {
-        match Window::get_key(window, *self.key) {            Release => true,
-            _ => false
+        match Window::get_key(window, *self.key) {
+            Release => true,
+            _ => false,
         }
     }
 }
