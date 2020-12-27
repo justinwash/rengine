@@ -21,23 +21,26 @@ impl InputMap<KeyboardInput> {
     }
 
     pub fn is_action_just_pressed(&mut self, action_name: &str, window: &Window) -> bool {
-        self.actions
+        let action = self.actions
             .get_mut(&String::from(action_name))
-            .unwrap()
-            .is_just_pressed(window)
+            .unwrap();
+
+        let res = action.is_just_pressed(window);
+        res
+        
     }
 
-    pub fn is_action_held(&mut self, action_name: &str, window: &Window) -> bool {
-        self.actions
-            .get_mut(&String::from(action_name))
-            .unwrap()
-            .is_held(window)
-    }
+    // pub fn is_action_held(&mut self, action_name: &str, window: &Window) -> bool {
+    //     self.actions
+    //         .get_mut(&String::from(action_name))
+    //         .unwrap()
+    //         .is_held(window)
+    // }
 
-    pub fn is_action_just_released(&mut self, action_name: &str, window: &Window) -> bool {
-        self.actions
-            .get_mut(&String::from(action_name))
-            .unwrap()
-            .is_just_released(window)
-    }
+    // pub fn is_action_just_released(&mut self, action_name: &str, window: &Window) -> bool {
+    //     self.actions
+    //         .get_mut(&String::from(action_name))
+    //         .unwrap()
+    //         .is_just_released(window)
+    // }
 }
