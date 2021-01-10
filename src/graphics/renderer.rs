@@ -7,16 +7,13 @@ use luminance_gl::GL33;
 use luminance_glfw::GlfwSurface;
 
 pub struct Renderer {
-  pub sprites: Vec<Sprite>,
   pub sprite_renderer: SpriteRenderer,
 }
 
 impl Renderer {
   pub fn new(surface: &mut GlfwSurface) -> Renderer {
-    let sprites = Vec::new();
     let sprite_renderer = SpriteRenderer::new(surface);
     Self {
-      sprites,
       sprite_renderer,
     }
   }
@@ -26,13 +23,6 @@ impl Renderer {
     mut surface: &mut GlfwSurface,
     back_buffer: &mut Framebuffer<GL33, Dim2, (), ()>,
   ) -> Render<PipelineError> {
-    for sprite in &self.sprites {
-      let sprite_cl = sprite.clone();
-      self
-        .sprite_renderer
-        .textures
-        .insert(sprite.id, load_from_disk(&mut surface, sprite_cl.image));
-    }
 
     surface
       .new_pipeline_gate()
@@ -42,7 +32,7 @@ impl Renderer {
         |pipeline, mut shading_gate| {
           self
             .sprite_renderer
-            .render(&pipeline, &mut shading_gate, &mut self.sprites)
+            .render(&pipeline, &mut shading_gate)
         },
       )
       .assume()

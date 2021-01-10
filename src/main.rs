@@ -37,21 +37,24 @@ fn main_loop(mut surface: GlfwSurface) {
         Position { x: 0, y: 0 },
         Size { w: 512, h: 512 },
     );
-    renderer.sprites.push(sprite);
-    let sprite = Sprite::new(
+    renderer.sprite_renderer.sprites.insert(sprite.id, sprite.clone());
+    renderer.sprite_renderer.load_texture(&mut surface, sprite);
+        let sprite = Sprite::new(
         "test_texture.png".to_string(),
         Position { x: 200, y: 200 },
         Size { w: 512, h: 1024 },
     );
-    renderer.sprites.push(sprite);
-    let sprite = Sprite::new(
+    renderer.sprite_renderer.sprites.insert(sprite.id, sprite.clone());
+    renderer.sprite_renderer.load_texture(&mut surface, sprite);
+        let sprite = Sprite::new(
         "test_texture.png".to_string(),
         Position { x: 700, y: 400 },
         Size { w: 600, h: 300 },
     );
 
     let test_sprite_id = sprite.id;
-    renderer.sprites.push(sprite);
+    renderer.sprite_renderer.sprites.insert(sprite.id, sprite.clone());
+    renderer.sprite_renderer.load_texture(&mut surface, sprite);
     // sprites for testing
 
     // input map for testing
@@ -86,9 +89,9 @@ fn main_loop(mut surface: GlfwSurface) {
         if controls.is_action_held("up", &surface.window) {
             println!("up held");
             let mut sprite = renderer
+            .sprite_renderer
                 .sprites
-                .iter_mut()
-                .find(|x| x.id == test_sprite_id)
+                .get_mut(&test_sprite_id)
                 .unwrap();
             sprite.position.y -= 1;
         }
