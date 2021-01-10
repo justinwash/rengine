@@ -109,6 +109,7 @@ pub struct SpriteRenderer {
     tessellator: Tess<GL33, ()>,
     _creation_time: Instant,
     shader_program: Program<GL33, (), (), ShaderInterface>,
+    pub sprites: HashMap<Uuid, Sprite>,
     pub textures: HashMap<
         Uuid,
         luminance::texture::Texture<
@@ -137,40 +138,40 @@ impl SpriteRenderer {
             tessellator,
             _creation_time: Instant::now(),
             shader_program: new_shader(surface),
+            sprites: HashMap::new(),
             textures: HashMap::new(),
         }
     }
 
     #[allow(unused)]
-    pub fn load_textures(&mut self, surface: &mut GlfwSurface, sprites: Vec<Sprite>) {
-        for sprite in sprites {
-            self.textures
-                .insert(sprite.id, load_from_disk(surface, sprite.image));
-        }
+    pub fn load_texture(&mut self, surface: &mut GlfwSurface, sprite: Sprite) {
+        self.textures
+            .insert(sprite.id, load_from_disk(surface, sprite.image));
+        
     }
 
     pub fn render(
         &mut self,
         pipeline: &Pipeline<GL33>,
         shading_gate: &mut ShadingGate<GL33>,
-        sprites: &mut Vec<Sprite>,
     ) -> Result<(), PipelineError> {
         let shader_program = &mut self.shader_program;
         let render_state = &self.render_state;
         let tessellator = &self.tessellator;
         let textures = &mut self.textures;
+        let sprites = &mut self.sprites;
         shading_gate.shade(shader_program, |mut iface, uni, mut rdr_gate| {
             for sprite in sprites {
                 let sprite_transform = get_gl_coords(
-                    sprite.position.x,
-                    sprite.position.y,
-                    sprite.size.w,
-                    sprite.size.h,
+                    sprite.1.position.x,
+                    sprite.1.position.y,
+                    sprite.1.size.w,
+                    sprite.1.size.h,
                 );
 
                 #[allow(unused_assignments)]
                 let mut res = Ok(());
-                let mut tex = textures.get_mut(&sprite.id).unwrap();
+                let mut tex = textures.get_mut(&sprite.0).unwrap();
                 let bound_tex = pipeline.bind_texture(&mut tex);
 
                 match bound_tex {
