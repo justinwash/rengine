@@ -20,7 +20,10 @@ impl Renderer {
 
   pub fn render(
     &mut self,
+
+    #[allow(unused_mut)]
     mut surface: &mut GlfwSurface,
+    
     back_buffer: &mut Framebuffer<GL33, Dim2, (), ()>,
   ) -> Render<PipelineError> {
 
