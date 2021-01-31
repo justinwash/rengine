@@ -37,21 +37,6 @@ fn main_loop(mut surface: GlfwSurface) {
         Position { x: 0, y: 0 },
         Size { w: 512, h: 512 },
     );
-    renderer.sprite_renderer.sprites.insert(sprite.id, sprite.clone());
-    renderer.sprite_renderer.load_texture(&mut surface, sprite);
-        let sprite = Sprite::new(
-        "test_texture.png".to_string(),
-        Position { x: 200, y: 200 },
-        Size { w: 512, h: 1024 },
-    );
-    renderer.sprite_renderer.sprites.insert(sprite.id, sprite.clone());
-    renderer.sprite_renderer.load_texture(&mut surface, sprite);
-        let sprite = Sprite::new(
-        "test_texture.png".to_string(),
-        Position { x: 700, y: 400 },
-        Size { w: 600, h: 300 },
-    );
-
     let test_sprite_id = sprite.id;
     renderer.sprite_renderer.sprites.insert(sprite.id, sprite.clone());
     renderer.sprite_renderer.load_texture(&mut surface, sprite);
@@ -80,20 +65,37 @@ fn main_loop(mut surface: GlfwSurface) {
             }
         }
 
-        if controls.is_action_just_pressed("up", &surface.window) {
-            println!("up just pressed")
-        }
-        if controls.is_action_just_released("up", &surface.window) {
-            println!("up just released")
-        }
         if controls.is_action_held("up", &surface.window) {
-            println!("up held");
             let mut sprite = renderer
             .sprite_renderer
                 .sprites
                 .get_mut(&test_sprite_id)
                 .unwrap();
             sprite.position.y -= 1;
+        }
+        if controls.is_action_held("down", &surface.window) {
+            let mut sprite = renderer
+            .sprite_renderer
+                .sprites
+                .get_mut(&test_sprite_id)
+                .unwrap();
+            sprite.position.y += 1;
+        }
+        if controls.is_action_held("left", &surface.window) {
+            let mut sprite = renderer
+            .sprite_renderer
+                .sprites
+                .get_mut(&test_sprite_id)
+                .unwrap();
+            sprite.position.x -= 1;
+        }
+        if controls.is_action_held("right", &surface.window) {
+            let mut sprite = renderer
+            .sprite_renderer
+                .sprites
+                .get_mut(&test_sprite_id)
+                .unwrap();
+            sprite.position.x += 1;
         }
 
         let render = renderer.render(&mut surface, &mut back_buffer);
