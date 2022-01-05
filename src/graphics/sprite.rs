@@ -88,7 +88,9 @@ pub fn load_from_disk(
     let (width, height) = img.dimensions();
     let texels = img.into_raw();
 
-    let mut tex = Texture::new(surface, [width, height], 0, Sampler::default())
+    let ctx = &mut surface.context;
+
+    let mut tex = Texture::new(ctx, [width, height], 0, Sampler::default())
         .expect("luminance texture creation");
 
     tex.upload_raw(GenMipmaps::No, &texels).unwrap();
@@ -98,6 +100,7 @@ pub fn load_from_disk(
 
 pub fn new_shader(surface: &mut GlfwSurface) -> Program<GL33, (), (), ShaderInterface> {
     surface
+        .context
         .new_shader_program::<(), (), ShaderInterface>()
         .from_strings(VS, None, None, FS)
         .expect("program creation")
@@ -128,6 +131,7 @@ impl SpriteRenderer {
             dst: Factor::Zero,
         });
         let tessellator = surface
+            .context
             .new_tess()
             .set_vertex_nb(4)
             .set_mode(Mode::TriangleFan)
@@ -147,7 +151,6 @@ impl SpriteRenderer {
     pub fn load_texture(&mut self, surface: &mut GlfwSurface, sprite: Sprite) {
         self.textures
             .insert(sprite.id, load_from_disk(surface, sprite.image));
-        
     }
 
     pub fn render(
