@@ -1,4 +1,3 @@
-// WGSL vertex shader for a fullscreen quad with position/size uniforms
 struct SpriteUniforms {
     sprite_pos: vec2<f32>,
     sprite_size: vec2<f32>,
@@ -19,7 +18,6 @@ struct VertexOutput {
 @vertex
 fn main(input: VertexInput) -> VertexOutput {
     var out: VertexOutput;
-    // Convert sprite position/size to normalized device coordinates
     let pos = uniforms.sprite_pos + input.position * uniforms.sprite_size;
     let ndc = vec2<f32>(
         (pos.x / uniforms.screen_size.x) * 2.0 - 1.0,

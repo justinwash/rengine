@@ -1,11 +1,16 @@
+use image::GenericImageView;
 use rengine_lib::{run, RengineConfig, RengineGame};
 use winit::keyboard::KeyCode;
 use winit::window::WindowAttributes;
 
+mod actors;
+use actors::character_actor::CharacterActor;
+use rengine_lib::Scene;
+
 struct Game {
     input_config: Option<rengine_lib::input::InputConfig>,
     should_close: bool,
-    sprites: Vec<rengine_lib::sprite::Sprite>,
+    scene: Scene,
 }
 
 impl Game {
@@ -16,15 +21,20 @@ impl Game {
                 println!("Escape pressed! Closing window...");
             },
         ));
+        let image_path = rengine_lib::resource_path("game/resources/image/mario.png");
+        let img = image::open(&image_path).expect("Failed to open sprite image");
+        let (width, height) = img.dimensions();
         let sprite = rengine_lib::sprite::Sprite::new(
-            "./src/resources/image/IMG_6141.jpg",
+            &image_path,
             (100.0, 100.0),
-            (256.0, 256.0),
+            (width as f32, height as f32),
         );
+        let mut scene = Scene::new();
+        scene.add_actor(CharacterActor::new(sprite));
         Self {
             input_config,
             should_close: false,
-            sprites: vec![sprite],
+            scene,
         }
     }
 }
@@ -34,37 +44,27 @@ impl RengineGame for Game {
         self.input_config.take()
     }
     fn sprites(&mut self) -> &mut Vec<rengine_lib::sprite::Sprite> {
-        &mut self.sprites
+        // Collect all sprites from actors for rendering
+        static mut SPRITES: Option<Vec<rengine_lib::sprite::Sprite>> = None;
+        let sprites = unsafe { SPRITES.get_or_insert_with(Vec::new) };
+        sprites.clear();
+        for actor in &mut self.scene.actors {
+            if let Some(character_actor) = actor.as_any().downcast_ref::<CharacterActor>() {
+                sprites.push(character_actor.sprite.clone());
+            }
+        }
+        sprites
     }
     fn update(
         &mut self,
-        _wgpu_ctx: &mut rengine_lib::window::WgpuContext,
+        wgpu_ctx: &mut rengine_lib::window::WgpuContext,
         input: &rengine_lib::input::InputState,
-        _event: &winit::event::Event<()>,
-        _window: &winit::window::Window,
+        event: &winit::event::Event<()>,
+        window: &winit::window::Window,
     ) {
-        let speed = 5.0;
-        let mut dx = 0.0;
-        let mut dy = 0.0;
-        if input.is_held(KeyCode::KeyW) {
-            dy -= speed;
-        }
-        if input.is_held(KeyCode::KeyS) {
-            dy += speed;
-        }
-        if input.is_held(KeyCode::KeyA) {
-            dx -= speed;
-        }
-        if input.is_held(KeyCode::KeyD) {
-            dx += speed;
-        }
+        self.scene.update(wgpu_ctx, input, event, window);
         if input.is_just_pressed(KeyCode::Escape) {
             self.should_close = true;
-        }
-        if dx != 0.0 || dy != 0.0 {
-            let sprite = self.sprites.get_mut(0).unwrap();
-            sprite.position.0 += dx;
-            sprite.position.1 += dy;
         }
     }
     fn on_close(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
