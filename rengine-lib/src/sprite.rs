@@ -97,8 +97,8 @@ impl SpriteRenderer {
             contents: bytemuck::cast_slice(&indices),
             usage: BufferUsages::INDEX,
         });
-        let vs_src = include_str!("sprite.vert.wgsl");
-        let fs_src = include_str!("sprite.frag.wgsl");
+        let vs_src = include_str!("shaders/sprite.vert.wgsl");
+        let fs_src = include_str!("shaders/sprite.frag.wgsl");
         let vs_module = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("Sprite VS"),
             source: ShaderSource::Wgsl(vs_src.into()),

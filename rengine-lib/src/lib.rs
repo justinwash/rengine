@@ -1,5 +1,7 @@
 pub mod input;
+pub mod scene;
 pub mod sprite;
+pub mod util;
 pub mod window;
 
 use std::time::{Duration, Instant};
@@ -185,3 +187,6 @@ mod tests {
         assert_eq!(result, 4);
     }
 }
+
+pub use crate::scene::*;
+pub use util::*;
