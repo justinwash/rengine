@@ -1,11 +1,10 @@
+pub mod graphics;
 pub mod input;
 pub mod scene;
-pub mod sprite;
 pub mod util;
 pub mod window;
 
 use std::time::{Duration, Instant};
-use winit::application::ApplicationHandler;
 use winit::window::{Window, WindowAttributes};
 
 pub struct Rengine;
@@ -34,10 +33,7 @@ pub trait RengineGame {
     fn input_config(&mut self) -> Option<crate::input::InputConfig> {
         None
     }
-    fn sprites(&mut self) -> &mut Vec<crate::sprite::Sprite> {
-        static mut EMPTY: Option<Vec<crate::sprite::Sprite>> = None;
-        unsafe { EMPTY.get_or_insert_with(Vec::new) }
-    }
+    fn sprites(&mut self) -> &mut Vec<crate::sprite::Sprite>;
     fn update(
         &mut self,
         wgpu_ctx: &mut window::WgpuContext,
@@ -50,10 +46,8 @@ pub trait RengineGame {
 
 pub fn run<G: RengineGame + 'static>(config: RengineConfig, game: G) {
     use crate::input::InputState;
-    use crate::sprite::SpriteRenderer;
     use window::WgpuContext;
     use winit::event_loop::{ActiveEventLoop, EventLoop};
-    use winit::window::Window;
 
     struct RengineApp<G: RengineGame + 'static> {
         config: RengineConfig,
@@ -61,7 +55,7 @@ pub fn run<G: RengineGame + 'static>(config: RengineConfig, game: G) {
         window: Option<&'static Window>,
         wgpu_ctx: Option<WgpuContext<'static>>,
         input: Option<InputState>,
-        sprite_renderer: Option<SpriteRenderer>,
+        sprite_renderer: Option<crate::graphics::sprite::SpriteRenderer>,
         last_update: Option<Instant>,
         accumulator: Duration,
     }
@@ -81,7 +75,7 @@ pub fn run<G: RengineGame + 'static>(config: RengineConfig, game: G) {
                 }
             }
             if self.sprite_renderer.is_none() {
-                self.sprite_renderer = Some(SpriteRenderer::new());
+                self.sprite_renderer = Some(crate::graphics::sprite::SpriteRenderer::new());
             }
             self.last_update = Some(Instant::now());
             self.accumulator = Duration::ZERO;
@@ -123,7 +117,7 @@ pub fn run<G: RengineGame + 'static>(config: RengineConfig, game: G) {
                 self.game.on_close(event_loop);
                 event_loop.exit();
             }
-            if let (Some(wgpu_ctx), Some(window)) = (self.wgpu_ctx.as_mut(), self.window) {
+            if let (Some(wgpu_ctx), Some(_window)) = (self.wgpu_ctx.as_mut(), self.window) {
                 if let winit::event::WindowEvent::Resized(new_size) = event {
                     if new_size.width > 0 && new_size.height > 0 {
                         wgpu_ctx.config.width = new_size.width;
@@ -190,3 +184,8 @@ mod tests {
 
 pub use crate::scene::*;
 pub use util::*;
+pub mod game_object;
+pub use game_object::actor::character_actor::CharacterActor;
+pub use game_object::actor::Actor;
+pub use game_object::GameObject;
+pub use graphics::sprite;

@@ -1,16 +1,14 @@
-use image::GenericImageView;
+mod actors;
+use crate::actors::characters::player::Player;
 use rengine_lib::{run, RengineConfig, RengineGame};
 use winit::keyboard::KeyCode;
 use winit::window::WindowAttributes;
 
-mod actors;
-use actors::character_actor::CharacterActor;
-use rengine_lib::Scene;
-
 struct Game {
     input_config: Option<rengine_lib::input::InputConfig>,
     should_close: bool,
-    scene: Scene,
+    scene: rengine_lib::Scene,
+    sprites_cache: Vec<rengine_lib::graphics::sprite::Sprite>,
 }
 
 impl Game {
@@ -21,20 +19,14 @@ impl Game {
                 println!("Escape pressed! Closing window...");
             },
         ));
-        let image_path = rengine_lib::resource_path("game/resources/image/mario.png");
-        let img = image::open(&image_path).expect("Failed to open sprite image");
-        let (width, height) = img.dimensions();
-        let sprite = rengine_lib::sprite::Sprite::new(
-            &image_path,
-            (100.0, 100.0),
-            (width as f32, height as f32),
-        );
-        let mut scene = Scene::new();
-        scene.add_actor(CharacterActor::new(sprite));
+        let mut scene = rengine_lib::Scene::new();
+        let character = Player::load_default();
+        scene.add_actor(character);
         Self {
             input_config,
             should_close: false,
             scene,
+            sprites_cache: Vec::new(),
         }
     }
 }
@@ -43,17 +35,16 @@ impl RengineGame for Game {
     fn input_config(&mut self) -> Option<rengine_lib::input::InputConfig> {
         self.input_config.take()
     }
-    fn sprites(&mut self) -> &mut Vec<rengine_lib::sprite::Sprite> {
-        // Collect all sprites from actors for rendering
-        static mut SPRITES: Option<Vec<rengine_lib::sprite::Sprite>> = None;
-        let sprites = unsafe { SPRITES.get_or_insert_with(Vec::new) };
-        sprites.clear();
+    fn sprites(&mut self) -> &mut Vec<rengine_lib::graphics::sprite::Sprite> {
+        if !self.sprites_cache.is_empty() {
+            self.sprites_cache.clear();
+        }
         for actor in &mut self.scene.actors {
-            if let Some(character_actor) = actor.as_any().downcast_ref::<CharacterActor>() {
-                sprites.push(character_actor.sprite.clone());
+            if let Some(player) = actor.as_any().downcast_ref::<Player>() {
+                self.sprites_cache.push(player.sprite.clone());
             }
         }
-        sprites
+        &mut self.sprites_cache
     }
     fn update(
         &mut self,

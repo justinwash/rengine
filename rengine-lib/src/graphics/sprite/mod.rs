@@ -1,9 +1,7 @@
-use image::GenericImageView;
+// Sprite and SpriteRenderer implementation moved from old sprite.rs
 use wgpu::util::DeviceExt;
-use wgpu::{
-    Device, Extent3d, Queue, SamplerDescriptor, TextureDescriptor, TextureDimension, TextureFormat,
-    TextureUsages, TextureViewDescriptor,
-};
+use wgpu::*;
+use bytemuck::{Pod, Zeroable};
 
 #[derive(Clone)]
 pub struct Sprite {
@@ -24,9 +22,7 @@ impl Sprite {
 
 pub struct SpriteRenderer {
     pub sprites: Vec<Sprite>,
-    // Internal: map image_path to wgpu texture/view/sampler
-    pub textures:
-        std::collections::HashMap<String, (wgpu::Texture, wgpu::TextureView, wgpu::Sampler)>,
+    pub textures: std::collections::HashMap<String, (wgpu::Texture, wgpu::TextureView, wgpu::Sampler)>,
 }
 
 impl SpriteRenderer {
@@ -40,9 +36,6 @@ impl SpriteRenderer {
         self.sprites.push(sprite);
     }
     pub fn render(&mut self, wgpu_ctx: &mut crate::window::WgpuContext) {
-        use bytemuck::{Pod, Zeroable};
-        use image::GenericImageView;
-        use wgpu::*;
         let device = &wgpu_ctx.device;
         let queue = &wgpu_ctx.queue;
         let surface = &wgpu_ctx.surface;
@@ -59,7 +52,6 @@ impl SpriteRenderer {
         let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
             label: Some("SpriteRenderer Encoder"),
         });
-        // Clear the screen
         {
             let _rpass = encoder.begin_render_pass(&RenderPassDescriptor {
                 label: Some("Clear Pass"),
@@ -97,8 +89,8 @@ impl SpriteRenderer {
             contents: bytemuck::cast_slice(&indices),
             usage: BufferUsages::INDEX,
         });
-        let vs_src = include_str!("shaders/sprite.vert.wgsl");
-        let fs_src = include_str!("shaders/sprite.frag.wgsl");
+        let vs_src = include_str!("sprite.vert.wgsl");
+        let fs_src = include_str!("sprite.frag.wgsl");
         let vs_module = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("Sprite VS"),
             source: ShaderSource::Wgsl(vs_src.into()),
@@ -177,7 +169,6 @@ impl SpriteRenderer {
             cache: None,
         });
         for sprite in &self.sprites {
-            // Load texture if not already loaded
             if !self.textures.contains_key(&sprite.image_path) {
                 let img = match image::open(&sprite.image_path) {
                     Ok(img) => img.to_rgba8(),
@@ -259,11 +250,10 @@ impl SpriteRenderer {
                     },
                 ],
             });
-            // Render to the surface view, not the sprite texture view!
             let mut rpass = encoder.begin_render_pass(&RenderPassDescriptor {
                 label: Some("Sprite Render Pass"),
                 color_attachments: &[Some(RenderPassColorAttachment {
-                    view: &view, // <-- use the surface view here
+                    view: &view,
                     resolve_target: None,
                     ops: Operations {
                         load: LoadOp::Load,
