@@ -1,1 +1,1 @@
-pub mod character_actor;
+pub mod characters;

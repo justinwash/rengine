@@ -1,7 +1,7 @@
 use wgpu::{Device, Instance, Queue, Surface};
 use winit::application::ApplicationHandler;
 use winit::event_loop::ActiveEventLoop;
-use winit::window::Window;
+use winit::window::{Window, WindowAttributes};
 
 use crate::{Rengine, RengineConfig};
 
@@ -88,9 +88,6 @@ pub async fn init_wgpu(window: &Window) -> WgpuContext<'_> {
     }
 }
 
-pub fn create_window(
-    event_loop: &ActiveEventLoop,
-    attrs: &winit::window::WindowAttributes,
-) -> winit::window::Window {
+pub fn create_window(event_loop: &ActiveEventLoop, attrs: &WindowAttributes) -> Window {
     event_loop.create_window(attrs.clone()).unwrap()
 }
