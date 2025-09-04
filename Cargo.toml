@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "rengine-lib",
+    "game"
+]
+
+resolver = "2"
