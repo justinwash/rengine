@@ -10,3 +10,4 @@ pollster = "0.4"
 image = "0.25.6"
 anyhow = "1.0.98"
 bytemuck = { version = "1.23.0", features = ["derive"] }
+rapier2d = "0.29.0"

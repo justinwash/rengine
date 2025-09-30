@@ -1,5 +1,6 @@
 pub mod graphics;
 pub mod input;
+pub mod physics;
 pub mod scene;
 pub mod util;
 pub mod window;
@@ -99,7 +100,7 @@ pub fn run<G: RengineGame + 'static>(config: RengineConfig, game: G) {
                         renderer.sprites = self.game.sprites().clone();
                         renderer.render(wgpu_ctx);
                     }
-                    input.end_frame();
+                    input.begin_frame();
                     accumulator -= DT;
                 }
                 self.last_update = Some(now);
