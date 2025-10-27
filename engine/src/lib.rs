@@ -8,3 +8,4 @@ pub use assets::Color;
 pub use input::InputState;
 pub use math::Rect;
 pub use math::TimeState;
+pub use renderer::{Camera2D, DrawParams, Frame, TextureId};
