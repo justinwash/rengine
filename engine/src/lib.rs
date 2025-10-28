@@ -12,5 +12,7 @@ pub use math::Rect;
 pub use math::TimeState;
 pub use renderer::{Camera2D, DrawParams, Frame, TextureId};
 
+pub use assets::pixelart;
+
 pub use glam::{Vec2, Vec3};
 pub use winit::keyboard::KeyCode;
