@@ -13,6 +13,7 @@ pub use math::TimeState;
 pub use renderer::{Camera2D, DrawParams, Frame, TextureId};
 
 pub use assets::pixelart;
+pub use assets::{Animation, SpriteSheet};
 
 pub use glam::{Vec2, Vec3};
 pub use winit::keyboard::KeyCode;
