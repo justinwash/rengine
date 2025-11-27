@@ -13,7 +13,7 @@ pub use math::Rect;
 pub use math::TimeState;
 pub use renderer::{Camera2D, DrawParams, Frame, TextureId};
 
-pub use world::{TileDef, TileMap};
+pub use world::{aabb_overlap, TileDef, TileMap};
 pub use world::tilemap;
 
 pub use assets::pixelart;
