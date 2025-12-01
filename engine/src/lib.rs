@@ -4,6 +4,7 @@ pub mod assets;
 pub mod input;
 pub mod math;
 pub mod world;
+pub mod hud;
 
 pub use app::run;
 pub use app::{Engine, EngineConfig, Game};
@@ -18,6 +19,8 @@ pub use world::tilemap;
 
 pub use assets::pixelart;
 pub use assets::{Animation, SpriteSheet};
+
+pub use hud::HudVertex;
 
 pub use glam::{Vec2, Vec3};
 pub use winit::keyboard::KeyCode;
