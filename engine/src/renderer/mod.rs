@@ -7,6 +7,7 @@ pub use sprite::DrawParams;
 pub use texture::TextureId;
 
 use crate::assets::Color;
+use crate::hud::{self, HudVertex};
 use sprite::Vertex;
 
 use std::sync::Arc;
@@ -23,6 +24,7 @@ pub struct Frame {
     pub camera: Camera2D,
     pub clear_color: Color,
 
+    pub(crate) hud_verts: Vec<HudVertex>,
 }
 
 impl Frame {
@@ -31,6 +33,7 @@ impl Frame {
             sprites: Vec::with_capacity(256),
             camera: Camera2D::new(),
             clear_color: Color::CORNFLOWER_BLUE,
+            hud_verts: Vec::new(),
         }
     }
 
@@ -54,6 +57,48 @@ impl Frame {
     ) {
         self.sprites
             .push(DrawParams::new(texture, position, size).with_color(color));
+    }
+
+
+    pub fn hud_rect(
+        &mut self,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        color: Color,
+        screen_size: (u32, u32),
+    ) {
+        hud::push_rect(&mut self.hud_verts, x, y, w, h, color, screen_size);
+    }
+
+
+    pub fn hud_crosshair(
+        &mut self,
+        size: f32,
+        thickness: f32,
+        color: Color,
+        screen_size: (u32, u32),
+    ) {
+        hud::push_crosshair(&mut self.hud_verts, size, thickness, color, screen_size);
+    }
+
+
+    pub fn hud_number(
+        &mut self,
+        x: f32,
+        y: f32,
+        value: u32,
+        scale: f32,
+        color: Color,
+        screen_size: (u32, u32),
+    ) {
+        hud::push_number(&mut self.hud_verts, x, y, value, scale, color, screen_size);
+    }
+
+
+    pub fn hud_fps(&mut self, fps: f32, screen_size: (u32, u32)) {
+        hud::push_fps(&mut self.hud_verts, fps, screen_size);
     }
 }
 
@@ -80,6 +125,8 @@ pub(crate) struct Renderer {
     sampler: wgpu::Sampler,
     pub(crate) white_texture: TextureId,
 
+    hud_pipeline: wgpu::RenderPipeline,
+    hud_vertex_buffer: wgpu::Buffer,
 }
 
 impl Renderer {
@@ -280,6 +327,10 @@ impl Renderer {
             ..Default::default()
         });
 
+
+        let hud_pipeline = hud::create_hud_pipeline(&device, surface_format);
+        let hud_vertex_buffer = hud::create_hud_vertex_buffer(&device);
+
         let mut renderer = Self {
             surface,
             device,
@@ -294,6 +345,8 @@ impl Renderer {
             textures: Vec::new(),
             sampler,
             white_texture: TextureId(0),
+            hud_pipeline,
+            hud_vertex_buffer,
         };
 
 
@@ -308,7 +361,7 @@ impl Renderer {
         assert_eq!(
             pixels.len(),
             (width * height * 4) as usize,
-            "pixel data length must match width × height × 4"
+            "pixel data length must match width Ã— height Ã— 4"
         );
 
         let size = wgpu::Extent3d {
@@ -511,6 +564,16 @@ impl Renderer {
                 }
             }
         }
+
+
+        hud::render_hud_pass(
+            &mut encoder,
+            &view,
+            &self.hud_pipeline,
+            &self.hud_vertex_buffer,
+            &self.queue,
+            &frame.hud_verts,
+        );
 
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
