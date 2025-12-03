@@ -7,7 +7,8 @@ use winit::keyboard::PhysicalKey;
 use winit::window::WindowBuilder;
 
 use crate::assets::Color;
-use crate::input::InputState;
+use crate::hud;
+use crate::input::{GamepadSystem, InputState};
 use crate::math::TimeState;
 use crate::renderer::{Frame, Renderer, TextureId};
 
@@ -39,6 +40,7 @@ pub struct Engine {
     pub(crate) time: TimeState,
     pub(crate) window_width: u32,
     pub(crate) window_height: u32,
+    pub(crate) gamepads: GamepadSystem,
 }
 
 impl Engine {
@@ -54,6 +56,16 @@ impl Engine {
     }
     pub fn window_size(&self) -> (u32, u32) {
         (self.window_width, self.window_height)
+    }
+
+
+    pub fn gamepad(&self, player: usize) -> &crate::input::GamepadState {
+        self.gamepads.player(player)
+    }
+
+
+    pub fn gamepads_connected(&self) -> usize {
+        self.gamepads.connected_count()
     }
 
 
@@ -120,6 +132,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
         time: TimeState::new(),
         window_width: config.width,
         window_height: config.height,
+        gamepads: GamepadSystem::new(),
     };
 
     let mut game = G::new(&mut engine);
@@ -150,12 +163,15 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
 
                 WindowEvent::RedrawRequested => {
                     engine.time.tick();
+                    engine.gamepads.update();
 
                     game.update(&engine);
 
                     let mut frame = Frame::new();
                     game.render(&engine, &mut frame);
 
+                    let screen_size = engine.window_size();
+                    hud::push_fps(&mut frame.hud_verts, engine.time.fps(), screen_size);
                     engine.renderer.render_frame(&frame);
 
                     engine.input.end_frame();
