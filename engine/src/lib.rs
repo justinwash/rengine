@@ -22,5 +22,8 @@ pub use assets::{Animation, SpriteSheet};
 
 pub use hud::HudVertex;
 
+pub use input::{GamepadState, GamepadSystem};
+pub use gilrs::Button as GamepadButton;
+
 pub use glam::{Vec2, Vec3};
 pub use winit::keyboard::KeyCode;
