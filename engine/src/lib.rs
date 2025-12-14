@@ -1,5 +1,6 @@
 pub mod app;
 pub mod renderer;
+pub mod renderer3d;
 pub mod assets;
 pub mod input;
 pub mod math;
