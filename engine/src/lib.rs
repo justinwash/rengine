@@ -26,5 +26,9 @@ pub use hud::HudVertex;
 pub use input::{GamepadState, GamepadSystem};
 pub use gilrs::Button as GamepadButton;
 
+pub use app::{run3d, Engine3D, Game3D};
+pub use renderer3d::{cube_mesh, floor_quad, wall_quad};
+pub use renderer3d::{Camera3D, DrawCmd3D, Frame3D, MeshId, Vertex3D};
+
 pub use glam::{Vec2, Vec3};
 pub use winit::keyboard::KeyCode;
