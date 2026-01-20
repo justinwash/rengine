@@ -6,6 +6,7 @@ pub mod input;
 pub mod math;
 pub mod world;
 pub mod hud;
+pub mod netcode;
 
 pub use app::run;
 pub use app::{Engine, EngineConfig, Game};
@@ -25,6 +26,8 @@ pub use hud::HudVertex;
 
 pub use input::{GamepadState, GamepadSystem};
 pub use gilrs::Button as GamepadButton;
+
+pub use netcode::{run_rollback, RollbackConfig, RollbackGame, SessionMode};
 
 pub use app::{run3d, Engine3D, Game3D};
 pub use renderer3d::{cube_mesh, floor_quad, wall_quad};
