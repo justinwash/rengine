@@ -1,0 +1,14 @@
+[package]
+name = "rengine-fight"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "rengine-fight"
+path = "src/main.rs"
+
+[dependencies]
+rengine = { path = "../../engine" }
+bytemuck = { version = "1", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+bincode = "1"
