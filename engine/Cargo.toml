@@ -2,6 +2,7 @@
 name = "rengine"
 version = "0.1.0"
 edition = "2021"
+description = "A 2D game engine built on wgpu, ready for future 3D expansion"
 
 [dependencies]
 winit = "0.29"
