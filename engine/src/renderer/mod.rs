@@ -13,11 +13,9 @@ use sprite::Vertex;
 use std::sync::Arc;
 use winit::window::Window;
 
-
 const MAX_SPRITES: usize = 10_000;
 const MAX_VERTICES: usize = MAX_SPRITES * 4;
 const MAX_INDICES: usize = MAX_SPRITES * 6;
-
 
 pub struct Frame {
     pub(crate) sprites: Vec<DrawParams>,
@@ -32,21 +30,18 @@ impl Frame {
         Self {
             sprites: Vec::with_capacity(256),
             camera: Camera2D::new(),
-            clear_color: Color::CORNFLOWER_BLUE,
+            clear_color: Color::BLACK,
             hud_verts: Vec::new(),
         }
     }
-
 
     pub fn draw_sprite(&mut self, params: DrawParams) {
         self.sprites.push(params);
     }
 
-
     pub fn draw(&mut self, texture: TextureId, position: glam::Vec2, size: glam::Vec2) {
         self.sprites.push(DrawParams::new(texture, position, size));
     }
-
 
     pub fn draw_colored(
         &mut self,
@@ -58,7 +53,6 @@ impl Frame {
         self.sprites
             .push(DrawParams::new(texture, position, size).with_color(color));
     }
-
 
     pub fn hud_rect(
         &mut self,
@@ -72,43 +66,28 @@ impl Frame {
         hud::push_rect(&mut self.hud_verts, x, y, w, h, color, screen_size);
     }
 
-
-    pub fn hud_crosshair(
-        &mut self,
-        size: f32,
-        thickness: f32,
-        color: Color,
-        screen_size: (u32, u32),
-    ) {
-        hud::push_crosshair(&mut self.hud_verts, size, thickness, color, screen_size);
+    pub fn hud_shape(&mut self, triangles: &[hud::HudVertex]) {
+        hud::push_shape(&mut self.hud_verts, triangles);
     }
 
-
-    pub fn hud_number(
+    pub fn hud_text(
         &mut self,
         x: f32,
         y: f32,
-        value: u32,
+        text: &str,
         scale: f32,
         color: Color,
         screen_size: (u32, u32),
     ) {
-        hud::push_number(&mut self.hud_verts, x, y, value, scale, color, screen_size);
-    }
-
-
-    pub fn hud_fps(&mut self, fps: f32, screen_size: (u32, u32)) {
-        hud::push_fps(&mut self.hud_verts, fps, screen_size);
+        hud::push_text(&mut self.hud_verts, x, y, text, scale, color, screen_size);
     }
 }
-
 
 struct GpuTexture {
     _texture: wgpu::Texture,
     _view: wgpu::TextureView,
     bind_group: wgpu::BindGroup,
 }
-
 
 pub(crate) struct Renderer {
     surface: wgpu::Surface<'static>,
@@ -130,11 +109,8 @@ pub(crate) struct Renderer {
 }
 
 impl Renderer {
-
-
     pub async fn new(window: Arc<Window>, present_mode: wgpu::PresentMode) -> Self {
         let size = window.inner_size();
-
 
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
@@ -153,18 +129,15 @@ impl Renderer {
             .expect("Failed to find a suitable GPU adapter");
 
         let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: Some("rengine_device"),
-                    required_features: wgpu::Features::empty(),
-                    required_limits: wgpu::Limits::default(),
-                    memory_hints: wgpu::MemoryHints::default(),
-                    ..Default::default()
-                },
-            )
+            .request_device(&wgpu::DeviceDescriptor {
+                label: Some("rengine_device"),
+                required_features: wgpu::Features::empty(),
+                required_limits: wgpu::Limits::default(),
+                memory_hints: wgpu::MemoryHints::default(),
+                ..Default::default()
+            })
             .await
             .expect("Failed to create GPU device");
-
 
         let caps = surface.get_capabilities(&adapter);
         let surface_format = caps
@@ -186,12 +159,10 @@ impl Renderer {
         };
         surface.configure(&device, &surface_config);
 
-
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("sprite_shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("sprite.wgsl").into()),
         });
-
 
         let projection_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("projection_bgl"),
@@ -228,7 +199,6 @@ impl Renderer {
                 },
             ],
         });
-
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("sprite_pipeline_layout"),
@@ -274,14 +244,12 @@ impl Renderer {
             cache: None,
         });
 
-
         let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("vertex_buffer"),
             size: (MAX_VERTICES * std::mem::size_of::<Vertex>()) as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-
 
         let index_data: Vec<u32> = (0..MAX_SPRITES as u32)
             .flat_map(|i| {
@@ -297,7 +265,6 @@ impl Renderer {
             mapped_at_creation: false,
         });
         queue.write_buffer(&index_buffer, 0, bytemuck::cast_slice(&index_data));
-
 
         let projection_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("projection_buffer"),
@@ -315,7 +282,6 @@ impl Renderer {
             }],
         });
 
-
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("sprite_sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -326,7 +292,6 @@ impl Renderer {
             mipmap_filter: wgpu::MipmapFilterMode::Nearest,
             ..Default::default()
         });
-
 
         let hud_pipeline = hud::create_hud_pipeline(&device, surface_format);
         let hud_vertex_buffer = hud::create_hud_vertex_buffer(&device);
@@ -349,13 +314,11 @@ impl Renderer {
             hud_vertex_buffer,
         };
 
-
         let white = renderer.create_texture(1, 1, &[255, 255, 255, 255]);
         renderer.white_texture = white;
 
         renderer
     }
-
 
     pub fn create_texture(&mut self, width: u32, height: u32, pixels: &[u8]) -> TextureId {
         assert_eq!(
@@ -423,7 +386,6 @@ impl Renderer {
         id
     }
 
-
     pub fn resize(&mut self, width: u32, height: u32) {
         if width > 0 && height > 0 {
             self.surface_config.width = width;
@@ -432,9 +394,7 @@ impl Renderer {
         }
     }
 
-
     pub fn render_frame(&mut self, frame: &Frame) {
-
         let output = match self.surface.get_current_texture() {
             Ok(t) => t,
             Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
@@ -450,7 +410,6 @@ impl Renderer {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-
         let projection = frame.camera.projection(
             self.surface_config.width as f32,
             self.surface_config.height as f32,
@@ -460,7 +419,6 @@ impl Renderer {
             0,
             bytemuck::cast_slice(&projection.to_cols_array()),
         );
-
 
         let mut sorted: Vec<&DrawParams> = frame.sprites.iter().collect();
         sorted.sort_by_key(|s| s.texture.0);
@@ -506,7 +464,6 @@ impl Renderer {
                 .write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&vertices));
         }
 
-
         let mut batches: Vec<(usize, u32)> = Vec::new();
         if !sorted.is_empty() {
             let mut cur_tex = sorted[0].texture.0;
@@ -522,7 +479,6 @@ impl Renderer {
             }
             batches.push((cur_tex, count));
         }
-
 
         let mut encoder = self
             .device
@@ -564,7 +520,6 @@ impl Renderer {
                 }
             }
         }
-
 
         hud::render_hud_pass(
             &mut encoder,

@@ -93,6 +93,16 @@ pub fn create_hud_vertex_buffer(device: &wgpu::Device) -> wgpu::Buffer {
     })
 }
 
+pub fn screen_to_ndc(x: f32, y: f32, screen_size: (u32, u32)) -> [f32; 2] {
+    let sw = screen_size.0 as f32;
+    let sh = screen_size.1 as f32;
+    [(x / sw) * 2.0 - 1.0, 1.0 - (y / sh) * 2.0]
+}
+
+pub fn push_shape(verts: &mut Vec<HudVertex>, triangles: &[HudVertex]) {
+    verts.extend_from_slice(triangles);
+}
+
 pub fn push_rect(
     verts: &mut Vec<HudVertex>,
     x: f32,
@@ -102,90 +112,90 @@ pub fn push_rect(
     color: Color,
     screen_size: (u32, u32),
 ) {
-    let sw = screen_size.0 as f32;
-    let sh = screen_size.1 as f32;
-    let ndc_x0 = (x / sw) * 2.0 - 1.0;
-    let ndc_y0 = 1.0 - (y / sh) * 2.0;
-    let ndc_x1 = ((x + w) / sw) * 2.0 - 1.0;
-    let ndc_y1 = 1.0 - ((y + h) / sh) * 2.0;
+    let [x0, y0] = screen_to_ndc(x, y, screen_size);
+    let [x1, y1] = screen_to_ndc(x + w, y + h, screen_size);
 
     let c = color.to_array();
-    let v0 = HudVertex {
-        position: [ndc_x0, ndc_y0],
-        color: c,
-    };
-    let v1 = HudVertex {
-        position: [ndc_x1, ndc_y0],
-        color: c,
-    };
-    let v2 = HudVertex {
-        position: [ndc_x1, ndc_y1],
-        color: c,
-    };
-    let v3 = HudVertex {
-        position: [ndc_x0, ndc_y1],
-        color: c,
-    };
+    let v0 = HudVertex { position: [x0, y0], color: c };
+    let v1 = HudVertex { position: [x1, y0], color: c };
+    let v2 = HudVertex { position: [x1, y1], color: c };
+    let v3 = HudVertex { position: [x0, y1], color: c };
     verts.extend_from_slice(&[v0, v2, v1, v0, v3, v2]);
 }
 
-pub fn push_crosshair(
-    verts: &mut Vec<HudVertex>,
-    size: f32,
-    thickness: f32,
-    color: Color,
-    screen_size: (u32, u32),
-) {
-    let cx = screen_size.0 as f32 / 2.0;
-    let cy = screen_size.1 as f32 / 2.0;
-    let ht = thickness / 2.0;
-    push_rect(
-        verts,
-        cx - size,
-        cy - ht,
-        size * 2.0,
-        thickness,
-        color,
-        screen_size,
-    );
-    push_rect(
-        verts,
-        cx - ht,
-        cy - size,
-        thickness,
-        size * 2.0,
-        color,
-        screen_size,
-    );
+const GLYPH_BITMAPS: [[u8; 5]; 96] = {
+    let mut table = [[0u8; 5]; 96];
+    table[16] = [0b111, 0b101, 0b101, 0b101, 0b111];
+    table[17] = [0b010, 0b110, 0b010, 0b010, 0b111];
+    table[18] = [0b111, 0b001, 0b111, 0b100, 0b111];
+    table[19] = [0b111, 0b001, 0b111, 0b001, 0b111];
+    table[20] = [0b101, 0b101, 0b111, 0b001, 0b001];
+    table[21] = [0b111, 0b100, 0b111, 0b001, 0b111];
+    table[22] = [0b111, 0b100, 0b111, 0b101, 0b111];
+    table[23] = [0b111, 0b001, 0b010, 0b010, 0b010];
+    table[24] = [0b111, 0b101, 0b111, 0b101, 0b111];
+    table[25] = [0b111, 0b101, 0b111, 0b001, 0b111];
+    table[33] = [0b010, 0b101, 0b111, 0b101, 0b101];
+    table[34] = [0b110, 0b101, 0b110, 0b101, 0b110];
+    table[35] = [0b111, 0b100, 0b100, 0b100, 0b111];
+    table[36] = [0b110, 0b101, 0b101, 0b101, 0b110];
+    table[37] = [0b111, 0b100, 0b110, 0b100, 0b111];
+    table[38] = [0b111, 0b100, 0b110, 0b100, 0b100];
+    table[39] = [0b111, 0b100, 0b101, 0b101, 0b111];
+    table[40] = [0b101, 0b101, 0b111, 0b101, 0b101];
+    table[41] = [0b111, 0b010, 0b010, 0b010, 0b111];
+    table[42] = [0b001, 0b001, 0b001, 0b101, 0b010];
+    table[43] = [0b101, 0b110, 0b100, 0b110, 0b101];
+    table[44] = [0b100, 0b100, 0b100, 0b100, 0b111];
+    table[45] = [0b101, 0b111, 0b111, 0b101, 0b101];
+    table[46] = [0b101, 0b111, 0b111, 0b111, 0b101];
+    table[47] = [0b010, 0b101, 0b101, 0b101, 0b010];
+    table[48] = [0b110, 0b101, 0b110, 0b100, 0b100];
+    table[49] = [0b010, 0b101, 0b101, 0b110, 0b011];
+    table[50] = [0b110, 0b101, 0b110, 0b101, 0b101];
+    table[51] = [0b111, 0b100, 0b111, 0b001, 0b111];
+    table[52] = [0b111, 0b010, 0b010, 0b010, 0b010];
+    table[53] = [0b101, 0b101, 0b101, 0b101, 0b111];
+    table[54] = [0b101, 0b101, 0b101, 0b101, 0b010];
+    table[55] = [0b101, 0b101, 0b111, 0b111, 0b101];
+    table[56] = [0b101, 0b101, 0b010, 0b101, 0b101];
+    table[57] = [0b101, 0b101, 0b010, 0b010, 0b010];
+    table[58] = [0b111, 0b001, 0b010, 0b100, 0b111];
+    table[14] = [0b000, 0b000, 0b000, 0b000, 0b010];
+    table[13] = [0b000, 0b000, 0b010, 0b000, 0b010];
+    table[11] = [0b000, 0b000, 0b111, 0b000, 0b000];
+    table[26] = [0b000, 0b000, 0b010, 0b000, 0b010];
+    table[15] = [0b001, 0b010, 0b100, 0b010, 0b001];
+    table[1]  = [0b010, 0b010, 0b010, 0b000, 0b010];
+    table
+};
+
+fn glyph_index(ch: char) -> Option<usize> {
+    let c = ch as u32;
+    if c < 32 || c > 127 { return None; }
+    let idx = (c - 32) as usize;
+    if ch.is_ascii_lowercase() {
+        return Some((ch.to_ascii_uppercase() as u32 - 32) as usize);
+    }
+    Some(idx)
 }
 
-const DIGIT_BITMAPS: [[u8; 5]; 10] = [
-    [0b111, 0b101, 0b101, 0b101, 0b111],
-    [0b010, 0b110, 0b010, 0b010, 0b111],
-    [0b111, 0b001, 0b111, 0b100, 0b111],
-    [0b111, 0b001, 0b111, 0b001, 0b111],
-    [0b101, 0b101, 0b111, 0b001, 0b001],
-    [0b111, 0b100, 0b111, 0b001, 0b111],
-    [0b111, 0b100, 0b111, 0b101, 0b111],
-    [0b111, 0b001, 0b010, 0b010, 0b010],
-    [0b111, 0b101, 0b111, 0b101, 0b111],
-    [0b111, 0b101, 0b111, 0b001, 0b111],
-];
-
-pub fn push_number(
+pub fn push_text(
     verts: &mut Vec<HudVertex>,
     mut x: f32,
     y: f32,
-    value: u32,
+    text: &str,
     scale: f32,
     color: Color,
     screen_size: (u32, u32),
 ) {
-    let text = value.to_string();
     for ch in text.chars() {
-        let digit = (ch as u32 - '0' as u32) as usize;
-        if digit < 10 {
-            let bitmap = &DIGIT_BITMAPS[digit];
+        if ch == ' ' {
+            x += 4.0 * scale;
+            continue;
+        }
+        if let Some(idx) = glyph_index(ch) {
+            let bitmap = &GLYPH_BITMAPS[idx];
             for (row, &bits) in bitmap.iter().enumerate() {
                 for col in 0..3 {
                     if (bits >> (2 - col)) & 1 == 1 {
@@ -206,20 +216,11 @@ pub fn push_number(
     }
 }
 
-pub fn push_fps(verts: &mut Vec<HudVertex>, fps: f32, screen_size: (u32, u32)) {
-    let fps_rounded = fps.round() as u32;
-
-    let digits = if fps_rounded >= 1000 {
-        4
-    } else if fps_rounded >= 100 {
-        3
-    } else if fps_rounded >= 10 {
-        2
-    } else {
-        1
-    };
+pub(crate) fn push_fps(verts: &mut Vec<HudVertex>, fps: f32, screen_size: (u32, u32)) {
+    let text = format!("{}", fps.round() as u32);
     let scale = 3.0;
-    let bg_w = (digits as f32 * 4.0 - 1.0) * scale + 8.0;
+    let char_count = text.len() as f32;
+    let bg_w = (char_count * 4.0 - 1.0) * scale + 8.0;
     let bg_h = 5.0 * scale + 8.0;
     push_rect(
         verts,
@@ -230,12 +231,11 @@ pub fn push_fps(verts: &mut Vec<HudVertex>, fps: f32, screen_size: (u32, u32)) {
         Color::from_rgba8(0, 0, 0, 160),
         screen_size,
     );
-
-    push_number(
+    push_text(
         verts,
         8.0,
         8.0,
-        fps_rounded,
+        &text,
         scale,
         Color::from_rgba8(0, 255, 0, 255),
         screen_size,
