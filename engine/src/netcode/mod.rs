@@ -7,7 +7,7 @@ use winit::keyboard::PhysicalKey;
 use winit::window::WindowBuilder;
 
 use crate::app::{Engine, EngineConfig};
-use crate::hud;
+use crate::canvas;
 use crate::input::{GamepadSystem, InputState};
 use crate::math::TimeState;
 use crate::renderer::{Frame, Renderer};
@@ -208,7 +208,9 @@ pub fn run_rollback<G: RollbackGame>(
                     let mut frame = Frame::new();
                     game.render(&engine, &mut frame);
                     let screen_size = engine.window_size();
-                    hud::push_fps(&mut frame.hud_verts, engine.time.fps(), screen_size);
+                    let mut fps_canvas = canvas::Canvas::new();
+                    canvas::draw_fps(&mut fps_canvas, engine.time.fps(), screen_size, &engine.renderer.font_atlas);
+                    frame.canvases.push(fps_canvas);
                     engine.renderer.render_frame(&frame);
 
                     engine.input.end_frame();

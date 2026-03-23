@@ -7,7 +7,8 @@ use winit::keyboard::PhysicalKey;
 use winit::window::{CursorGrabMode, WindowBuilder};
 
 use crate::assets::Color;
-use crate::hud;
+use crate::canvas;
+use crate::text;
 use crate::input::{GamepadSystem, InputState};
 use crate::math::TimeState;
 use crate::renderer::{Frame, Renderer, TextureId};
@@ -93,6 +94,10 @@ impl Engine {
     pub fn white_texture(&self) -> TextureId {
         self.renderer.white_texture
     }
+
+    pub fn font_atlas(&self) -> &text::FontAtlas {
+        &self.renderer.font_atlas
+    }
 }
 
 
@@ -172,7 +177,9 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
                     game.render(&engine, &mut frame);
 
                     let screen_size = engine.window_size();
-                    hud::push_fps(&mut frame.hud_verts, engine.time.fps(), screen_size);
+                    let mut fps_canvas = canvas::Canvas::new();
+                    canvas::draw_fps(&mut fps_canvas, engine.time.fps(), screen_size, &engine.renderer.font_atlas);
+                    frame.canvases.push(fps_canvas);
                     engine.renderer.render_frame(&frame);
 
                     engine.input.end_frame();
@@ -217,6 +224,10 @@ impl Engine3D {
     }
     pub fn is_mouse_captured(&self) -> bool {
         self.mouse_captured
+    }
+
+    pub fn font_atlas(&self) -> &text::FontAtlas {
+        &self.renderer.font_atlas
     }
 
 
@@ -355,7 +366,9 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
                     game.render(&engine, &mut frame);
 
                     let screen_size = engine.window_size();
-                    hud::push_fps(&mut frame.hud_verts, engine.time.fps(), screen_size);
+                    let mut fps_canvas = canvas::Canvas::new();
+                    canvas::draw_fps(&mut fps_canvas, engine.time.fps(), screen_size, &engine.renderer.font_atlas);
+                    frame.canvases.push(fps_canvas);
                     engine.renderer.render_frame(&frame);
 
                     engine.input.end_frame();

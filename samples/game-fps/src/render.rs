@@ -46,6 +46,7 @@ pub fn draw(game: &FpsGame, engine: &Engine3D, frame: &mut Frame3D) {
     let cy = screen_size.1 as f32 / 2.0;
     let size = 10.0_f32;
     let thickness = 2.0_f32;
-    frame.hud_rect(cx - size, cy - thickness / 2.0, size * 2.0, thickness, Color::WHITE, screen_size);
-    frame.hud_rect(cx - thickness / 2.0, cy - size, thickness, size * 2.0, Color::WHITE, screen_size);
+    let crosshair = frame.canvas(0);
+    crosshair.rect(cx - size, cy - thickness / 2.0, size * 2.0, thickness, Color::WHITE, screen_size);
+    crosshair.rect(cx - thickness / 2.0, cy - size, thickness, size * 2.0, Color::WHITE, screen_size);
 }
