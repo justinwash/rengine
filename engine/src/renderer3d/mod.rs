@@ -5,17 +5,16 @@ pub use camera::Camera3D;
 pub use mesh::{cube_mesh, floor_quad, wall_quad, MeshId, Vertex3D};
 
 use crate::assets::Color;
-use crate::hud::{self, HudVertex};
+use crate::canvas::{self, Canvas};
+use crate::text;
 use glam::Vec3;
 use mesh::Vertex3D as V3;
 
 use std::sync::Arc;
 use winit::window::Window;
 
-
 const MAX_VERTICES: usize = 200_000;
 const MAX_INDICES: usize = 400_000;
-
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -26,13 +25,11 @@ struct Uniforms {
     ambient: [f32; 4],
 }
 
-
 #[derive(Debug, Clone)]
 pub struct DrawCmd3D {
     pub mesh: MeshId,
     pub position: Vec3,
 }
-
 
 pub struct Frame3D {
     pub camera: Camera3D,
@@ -47,7 +44,7 @@ pub struct Frame3D {
     pub(crate) raw_verts: Vec<V3>,
     pub(crate) raw_idxs: Vec<u32>,
 
-    pub(crate) hud_verts: Vec<HudVertex>,
+    pub(crate) canvases: Vec<Canvas>,
 }
 
 impl Frame3D {
@@ -63,15 +60,13 @@ impl Frame3D {
             draws: Vec::with_capacity(256),
             raw_verts: Vec::new(),
             raw_idxs: Vec::new(),
-            hud_verts: Vec::new(),
+            canvases: Vec::new(),
         }
     }
-
 
     pub fn draw_mesh(&mut self, mesh: MeshId, position: Vec3) {
         self.draws.push(DrawCmd3D { mesh, position });
     }
-
 
     pub fn draw_raw(&mut self, vertices: &[V3], indices: &[u32]) {
         let base = self.raw_verts.len() as u32;
@@ -79,44 +74,18 @@ impl Frame3D {
         self.raw_idxs.extend(indices.iter().map(|i| i + base));
     }
 
-
-    pub fn hud_rect(
-        &mut self,
-        x: f32,
-        y: f32,
-        w: f32,
-        h: f32,
-        color: Color,
-        screen_size: (u32, u32),
-    ) {
-        hud::push_rect(&mut self.hud_verts, x, y, w, h, color, screen_size);
-    }
-
-
-    pub fn hud_shape(&mut self, triangles: &[hud::HudVertex]) {
-        hud::push_shape(&mut self.hud_verts, triangles);
-    }
-
-
-    pub fn hud_text(
-        &mut self,
-        x: f32,
-        y: f32,
-        text: &str,
-        scale: f32,
-        color: Color,
-        screen_size: (u32, u32),
-    ) {
-        hud::push_text(&mut self.hud_verts, x, y, text, scale, color, screen_size);
+    pub fn canvas(&mut self, index: usize) -> &mut Canvas {
+        if index >= self.canvases.len() {
+            self.canvases.resize_with(index + 1, Canvas::new);
+        }
+        &mut self.canvases[index]
     }
 }
-
 
 struct GpuMesh {
     vertices: Vec<V3>,
     indices: Vec<u32>,
 }
-
 
 pub(crate) struct Renderer3D {
     surface: wgpu::Surface<'static>,
@@ -131,8 +100,9 @@ pub(crate) struct Renderer3D {
     depth_view: wgpu::TextureView,
     meshes: Vec<GpuMesh>,
 
-    hud_pipeline: wgpu::RenderPipeline,
-    hud_vertex_buffer: wgpu::Buffer,
+    canvas_pipeline: wgpu::RenderPipeline,
+    canvas_vb: wgpu::Buffer,
+    pub(crate) font_atlas: text::FontAtlas,
 }
 
 impl Renderer3D {
@@ -156,15 +126,13 @@ impl Renderer3D {
             .expect("Failed to find a suitable GPU adapter");
 
         let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: Some("rengine3d_device"),
-                    required_features: wgpu::Features::empty(),
-                    required_limits: wgpu::Limits::default(),
-                    memory_hints: wgpu::MemoryHints::default(),
-                    ..Default::default()
-                },
-            )
+            .request_device(&wgpu::DeviceDescriptor {
+                label: Some("rengine3d_device"),
+                required_features: wgpu::Features::empty(),
+                required_limits: wgpu::Limits::default(),
+                memory_hints: wgpu::MemoryHints::default(),
+                ..Default::default()
+            })
             .await
             .expect("Failed to create GPU device");
 
@@ -188,16 +156,13 @@ impl Renderer3D {
         };
         surface.configure(&device, &surface_config);
 
-
         let depth_view =
             Self::create_depth_texture(&device, surface_config.width, surface_config.height);
-
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("mesh3d_shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("mesh3d.wgsl").into()),
         });
-
 
         let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("uniform_buffer_3d"),
@@ -279,7 +244,6 @@ impl Renderer3D {
             cache: None,
         });
 
-
         let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("vertex_buffer_3d"),
             size: (MAX_VERTICES * std::mem::size_of::<V3>()) as u64,
@@ -294,9 +258,10 @@ impl Renderer3D {
             mapped_at_creation: false,
         });
 
-
-        let hud_pipeline = hud::create_hud_pipeline(&device, surface_format);
-        let hud_vertex_buffer = hud::create_hud_vertex_buffer(&device);
+        let font_bgl = text::font_bind_group_layout(&device);
+        let canvas_pipeline = canvas::pipeline(&device, surface_format, &font_bgl);
+        let canvas_vb = canvas::vertex_buffer(&device);
+        let font_atlas = text::font_atlas(&device, &queue, &font_bgl);
 
         Self {
             surface,
@@ -310,8 +275,9 @@ impl Renderer3D {
             uniform_bind_group,
             depth_view,
             meshes: Vec::new(),
-            hud_pipeline,
-            hud_vertex_buffer,
+            canvas_pipeline,
+            canvas_vb,
+            font_atlas,
         }
     }
 
@@ -333,13 +299,11 @@ impl Renderer3D {
         tex.create_view(&wgpu::TextureViewDescriptor::default())
     }
 
-
     pub fn create_mesh(&mut self, vertices: Vec<V3>, indices: Vec<u32>) -> MeshId {
         let id = MeshId(self.meshes.len());
         self.meshes.push(GpuMesh { vertices, indices });
         id
     }
-
 
     pub fn resize(&mut self, width: u32, height: u32) {
         if width > 0 && height > 0 {
@@ -349,7 +313,6 @@ impl Renderer3D {
             self.depth_view = Self::create_depth_texture(&self.device, width, height);
         }
     }
-
 
     pub fn render_frame(&mut self, frame: &Frame3D) {
         let output = match self.surface.get_current_texture() {
@@ -390,10 +353,8 @@ impl Renderer3D {
         self.queue
             .write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[uniforms]));
 
-
         let mut all_verts: Vec<V3> = Vec::new();
         let mut all_idxs: Vec<u32> = Vec::new();
-
 
         for cmd in &frame.draws {
             let mesh = &self.meshes[cmd.mesh.0];
@@ -407,7 +368,6 @@ impl Renderer3D {
             }
             all_idxs.extend(mesh.indices.iter().map(|i| i + base));
         }
-
 
         if !frame.raw_verts.is_empty() {
             let base = all_verts.len() as u32;
@@ -464,14 +424,14 @@ impl Renderer3D {
             }
         }
 
-
-        hud::render_hud_pass(
+        canvas::render_pass(
             &mut encoder,
             &view,
-            &self.hud_pipeline,
-            &self.hud_vertex_buffer,
+            &self.canvas_pipeline,
+            &self.canvas_vb,
             &self.queue,
-            &frame.hud_verts,
+            &frame.canvases,
+            &self.font_atlas,
         );
 
         self.queue.submit(std::iter::once(encoder.finish()));
