@@ -6,23 +6,19 @@ mod state;
 use rengine::*;
 use state::{Platform, Platformer, Player};
 
-
 const GRAVITY: f32 = -980.0;
 const MOVE_SPEED: f32 = 220.0;
 const JUMP_SPEED: f32 = 420.0;
 const PLAYER_W: f32 = 28.0;
 const PLAYER_H: f32 = 44.0;
 
-
 impl Game for Platformer {
     fn new(engine: &mut Engine) -> Self {
-
         let player_tex = engine.create_color_texture(1, 1, Color::from_rgba8(60, 130, 230, 255));
         let eye_tex = engine.create_color_texture(1, 1, Color::WHITE);
         let ground_tex = engine.create_color_texture(1, 1, Color::from_rgba8(72, 140, 54, 255));
         let plat_tex = engine.create_color_texture(1, 1, Color::from_rgba8(139, 90, 43, 255));
         let plat_tex2 = engine.create_color_texture(1, 1, Color::from_rgba8(160, 110, 60, 255));
-
 
         let platforms = vec![
             Platform {
@@ -79,7 +75,7 @@ impl Game for Platformer {
         Self {
             player,
             platforms,
-            bg_color: Color::SKY_BLUE,
+            bg_color: Color::rgb(0.529, 0.808, 0.922),
         }
     }
 
@@ -93,7 +89,6 @@ impl Game for Platformer {
         render::draw(self, engine, frame);
     }
 }
-
 
 fn main() {
     rengine::run::<Platformer>(EngineConfig {

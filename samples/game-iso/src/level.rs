@@ -1,23 +1,23 @@
-use rengine::pixelart;
 use rengine::{Color, Engine};
 
+use crate::art;
 use crate::state::{IsoGame, Tile};
 use crate::MAP_SIZE;
 
 
 pub fn build(engine: &mut Engine) -> IsoGame {
 
-    let (w, h, d) = pixelart::iso_grass_tile();
+    let (w, h, d) = art::iso_grass_tile();
     let grass_tex = engine.create_texture(w, h, &d);
-    let (w, h, d) = pixelart::iso_dirt_tile();
+    let (w, h, d) = art::iso_dirt_tile();
     let dirt_tex = engine.create_texture(w, h, &d);
-    let (w, h, d) = pixelart::iso_water_tile();
+    let (w, h, d) = art::iso_water_tile();
     let water_tex = engine.create_texture(w, h, &d);
-    let (w, h, d) = pixelart::iso_stone_tile();
+    let (w, h, d) = art::iso_stone_tile();
     let stone_tex = engine.create_texture(w, h, &d);
-    let (w, h, d) = pixelart::iso_tree();
+    let (w, h, d) = art::iso_tree();
     let tree_tex = engine.create_texture(w, h, &d);
-    let (w, h, d) = pixelart::iso_character(Color::from_rgba8(50, 100, 200, 255));
+    let (w, h, d) = art::iso_character(Color::from_rgba8(50, 100, 200, 255));
     let player_tex = engine.create_texture(w, h, &d);
 
 

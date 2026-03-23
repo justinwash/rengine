@@ -228,8 +228,8 @@ fn draw_hud(game: &FightGame, frame: &mut Frame, screen: (u32, u32)) {
     frame.hud_rect(p2_bar_x + bar_w - p2_fill, bar_y, p2_fill, bar_h, p2_color, screen);
 
 
-    frame.hud_number(p1_bar_x, bar_y + bar_h + 6.0, 1, 2.5, Color::from_rgba8(80, 120, 255, 255), screen);
-    frame.hud_number(p2_bar_x + bar_w - 10.0, bar_y + bar_h + 6.0, 2, 2.5, Color::from_rgba8(255, 80, 80, 255), screen);
+    frame.hud_text(p1_bar_x, bar_y + bar_h + 6.0, "1", 2.5, Color::from_rgba8(80, 120, 255, 255), screen);
+    frame.hud_text(p2_bar_x + bar_w - 10.0, bar_y + bar_h + 6.0, "2", 2.5, Color::from_rgba8(255, 80, 80, 255), screen);
 
 
     let marker_size = 10.0;
@@ -252,7 +252,7 @@ fn draw_hud(game: &FightGame, frame: &mut Frame, screen: (u32, u32)) {
 
 
     let round_x = SCREEN_W as f32 / 2.0 - 15.0;
-    frame.hud_number(round_x, bar_y, game.sim.round_number, 3.0, Color::WHITE, screen);
+    frame.hud_text(round_x, bar_y, &game.sim.round_number.to_string(), 3.0, Color::WHITE, screen);
 
 
     if game.sim.round_pause > 0.0 {
@@ -260,7 +260,7 @@ fn draw_hud(game: &FightGame, frame: &mut Frame, screen: (u32, u32)) {
         let ko_x = SCREEN_W as f32 / 2.0 - 30.0;
         let ko_y = SCREEN_H as f32 / 2.0 - 30.0;
         frame.hud_rect(ko_x - 10.0, ko_y - 10.0, 80.0, 50.0, Color::from_rgba8(0, 0, 0, 200), screen);
-        frame.hud_number(ko_x, ko_y, winner, 6.0, Color::YELLOW, screen);
+        frame.hud_text(ko_x, ko_y, &winner.to_string(), 6.0, Color::YELLOW, screen);
     }
 }
 
@@ -274,14 +274,14 @@ fn draw_demo_overlay(game: &FightGame, frame: &mut Frame, screen: (u32, u32)) {
     let banner_y = SCREEN_H as f32 - banner_h;
     frame.hud_rect(0.0, banner_y, SCREEN_W as f32, banner_h, Color::from_rgba8(0, 60, 0, 220), screen);
 
-    frame.hud_number(8.0, banner_y + 4.0, game.demo_frame, 2.5, Color::from_rgba8(100, 255, 100, 255), screen);
-    frame.hud_number(200.0, banner_y + 4.0, elapsed_mins, 2.5, Color::WHITE, screen);
-    frame.hud_number(240.0, banner_y + 4.0, elapsed_rem, 2.5, Color::WHITE, screen);
-    frame.hud_number(SCREEN_W as f32 - 40.0, banner_y + 4.0, 7, 2.5, Color::from_rgba8(255, 200, 50, 255), screen);
+    frame.hud_text(8.0, banner_y + 4.0, &game.demo_frame.to_string(), 2.5, Color::from_rgba8(100, 255, 100, 255), screen);
+    frame.hud_text(200.0, banner_y + 4.0, &elapsed_mins.to_string(), 2.5, Color::WHITE, screen);
+    frame.hud_text(240.0, banner_y + 4.0, &elapsed_rem.to_string(), 2.5, Color::WHITE, screen);
+    frame.hud_text(SCREEN_W as f32 - 40.0, banner_y + 4.0, "7", 2.5, Color::from_rgba8(255, 200, 50, 255), screen);
 
     let state_y = banner_y + 20.0;
-    frame.hud_number(8.0, state_y, game.sim.p1.hp.max(0) as u32, 2.0, Color::from_rgba8(80, 120, 255, 255), screen);
-    frame.hud_number(80.0, state_y, game.sim.p2.hp.max(0) as u32, 2.0, Color::from_rgba8(255, 80, 80, 255), screen);
+    frame.hud_text(8.0, state_y, &game.sim.p1.hp.max(0).to_string(), 2.0, Color::from_rgba8(80, 120, 255, 255), screen);
+    frame.hud_text(80.0, state_y, &game.sim.p2.hp.max(0).to_string(), 2.0, Color::from_rgba8(255, 80, 80, 255), screen);
 }
 
 
