@@ -36,7 +36,7 @@ pub use assets::pixelart;
 pub use assets::{Animation, SpriteSheet};
 
 
-pub use hud::HudVertex;
+pub use hud::{push_shape, push_rect, push_text, screen_to_ndc, HudVertex};
 
 
 pub use input::{GamepadState, GamepadSystem};
