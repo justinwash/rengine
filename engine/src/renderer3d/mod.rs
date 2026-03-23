@@ -93,32 +93,21 @@ impl Frame3D {
     }
 
 
-    pub fn hud_crosshair(
-        &mut self,
-        size: f32,
-        thickness: f32,
-        color: Color,
-        screen_size: (u32, u32),
-    ) {
-        hud::push_crosshair(&mut self.hud_verts, size, thickness, color, screen_size);
+    pub fn hud_shape(&mut self, triangles: &[hud::HudVertex]) {
+        hud::push_shape(&mut self.hud_verts, triangles);
     }
 
 
-    pub fn hud_number(
+    pub fn hud_text(
         &mut self,
         x: f32,
         y: f32,
-        value: u32,
+        text: &str,
         scale: f32,
         color: Color,
         screen_size: (u32, u32),
     ) {
-        hud::push_number(&mut self.hud_verts, x, y, value, scale, color, screen_size);
-    }
-
-
-    pub fn hud_fps(&mut self, fps: f32, screen_size: (u32, u32)) {
-        hud::push_fps(&mut self.hud_verts, fps, screen_size);
+        hud::push_text(&mut self.hud_verts, x, y, text, scale, color, screen_size);
     }
 }
 

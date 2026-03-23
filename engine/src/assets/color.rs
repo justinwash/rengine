@@ -25,6 +25,18 @@ impl Color {
         b: 0.0,
         a: 1.0,
     };
+    pub const ORANGE: Color = Color {
+        r: 1.0,
+        g: 0.498,
+        b: 0.0,
+        a: 1.0,
+    };
+    pub const YELLOW: Color = Color {
+        r: 1.0,
+        g: 1.0,
+        b: 0.0,
+        a: 1.0,
+    };
     pub const GREEN: Color = Color {
         r: 0.0,
         g: 1.0,
@@ -37,40 +49,16 @@ impl Color {
         b: 1.0,
         a: 1.0,
     };
-    pub const YELLOW: Color = Color {
-        r: 1.0,
-        g: 1.0,
-        b: 0.0,
-        a: 1.0,
-    };
-    pub const CYAN: Color = Color {
-        r: 0.0,
-        g: 1.0,
-        b: 1.0,
-        a: 1.0,
-    };
-    pub const MAGENTA: Color = Color {
-        r: 1.0,
+    pub const INDIGO: Color = Color {
+        r: 0.294,
         g: 0.0,
-        b: 1.0,
+        b: 0.510,
         a: 1.0,
     };
-    pub const TRANSPARENT: Color = Color {
-        r: 0.0,
+    pub const VIOLET: Color = Color {
+        r: 0.580,
         g: 0.0,
-        b: 0.0,
-        a: 0.0,
-    };
-    pub const CORNFLOWER_BLUE: Color = Color {
-        r: 0.392,
-        g: 0.584,
-        b: 0.929,
-        a: 1.0,
-    };
-    pub const SKY_BLUE: Color = Color {
-        r: 0.529,
-        g: 0.808,
-        b: 0.922,
+        b: 0.827,
         a: 1.0,
     };
 

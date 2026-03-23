@@ -1,31 +1,32 @@
 use rengine::tilemap::{TileDef, TileMap};
-use rengine::{pixelart, Color, Engine, Vec2};
+use rengine::{Color, Engine, Vec2};
 
+use crate::art;
 use crate::state::{Enemy, Gem, Player, TopDown};
 use crate::{ENEMY_SPEED, MAP_H, MAP_W, TILE_SIZE};
 
 
 pub fn build(engine: &mut Engine) -> TopDown {
 
-    let (w, h, d) = pixelart::grass_tile();
+    let (w, h, d) = art::grass_tile();
     let grass_tex = engine.create_texture(w, h, &d);
-    let (w, h, d) = pixelart::dirt_tile();
+    let (w, h, d) = art::dirt_tile();
     let dirt_tex = engine.create_texture(w, h, &d);
-    let (w, h, d) = pixelart::stone_tile();
+    let (w, h, d) = art::stone_tile();
     let stone_tex = engine.create_texture(w, h, &d);
-    let (w, h, d) = pixelart::water_tile();
+    let (w, h, d) = art::water_tile();
     let water_tex = engine.create_texture(w, h, &d);
-    let (w, h, d) = pixelart::character_topdown(
+    let (w, h, d) = art::character_topdown(
         Color::from_rgba8(50, 100, 200, 255),
         Color::from_rgba8(220, 180, 140, 255),
         Color::BLACK,
     );
     let player_tex = engine.create_texture(w, h, &d);
-    let (w, h, d) = pixelart::enemy_topdown();
+    let (w, h, d) = art::enemy_topdown();
     let enemy_tex = engine.create_texture(w, h, &d);
-    let (w, h, d) = pixelart::gem_sprite();
+    let (w, h, d) = art::gem_sprite();
     let gem_tex = engine.create_texture(w, h, &d);
-    let (w, h, d) = pixelart::tree_top();
+    let (w, h, d) = art::tree_top();
     let tree_tex = engine.create_texture(w, h, &d);
 
 
