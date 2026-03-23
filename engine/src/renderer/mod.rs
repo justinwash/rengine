@@ -7,7 +7,8 @@ pub use sprite::DrawParams;
 pub use texture::TextureId;
 
 use crate::assets::Color;
-use crate::hud::{self, HudVertex};
+use crate::canvas::{self, Canvas};
+use crate::text;
 use sprite::Vertex;
 
 use std::sync::Arc;
@@ -22,7 +23,7 @@ pub struct Frame {
     pub camera: Camera2D,
     pub clear_color: Color,
 
-    pub(crate) hud_verts: Vec<HudVertex>,
+    pub(crate) canvases: Vec<Canvas>,
 }
 
 impl Frame {
@@ -31,7 +32,7 @@ impl Frame {
             sprites: Vec::with_capacity(256),
             camera: Camera2D::new(),
             clear_color: Color::BLACK,
-            hud_verts: Vec::new(),
+            canvases: Vec::new(),
         }
     }
 
@@ -54,32 +55,11 @@ impl Frame {
             .push(DrawParams::new(texture, position, size).with_color(color));
     }
 
-    pub fn hud_rect(
-        &mut self,
-        x: f32,
-        y: f32,
-        w: f32,
-        h: f32,
-        color: Color,
-        screen_size: (u32, u32),
-    ) {
-        hud::push_rect(&mut self.hud_verts, x, y, w, h, color, screen_size);
-    }
-
-    pub fn hud_shape(&mut self, triangles: &[hud::HudVertex]) {
-        hud::push_shape(&mut self.hud_verts, triangles);
-    }
-
-    pub fn hud_text(
-        &mut self,
-        x: f32,
-        y: f32,
-        text: &str,
-        scale: f32,
-        color: Color,
-        screen_size: (u32, u32),
-    ) {
-        hud::push_text(&mut self.hud_verts, x, y, text, scale, color, screen_size);
+    pub fn canvas(&mut self, index: usize) -> &mut Canvas {
+        if index >= self.canvases.len() {
+            self.canvases.resize_with(index + 1, Canvas::new);
+        }
+        &mut self.canvases[index]
     }
 }
 
@@ -104,8 +84,9 @@ pub(crate) struct Renderer {
     sampler: wgpu::Sampler,
     pub(crate) white_texture: TextureId,
 
-    hud_pipeline: wgpu::RenderPipeline,
-    hud_vertex_buffer: wgpu::Buffer,
+    canvas_pipeline: wgpu::RenderPipeline,
+    canvas_vb: wgpu::Buffer,
+    pub(crate) font_atlas: text::FontAtlas,
 }
 
 impl Renderer {
@@ -293,8 +274,10 @@ impl Renderer {
             ..Default::default()
         });
 
-        let hud_pipeline = hud::create_hud_pipeline(&device, surface_format);
-        let hud_vertex_buffer = hud::create_hud_vertex_buffer(&device);
+        let font_bgl = text::font_bind_group_layout(&device);
+        let canvas_pipeline = canvas::pipeline(&device, surface_format, &font_bgl);
+        let canvas_vb = canvas::vertex_buffer(&device);
+        let font_atlas = text::font_atlas(&device, &queue, &font_bgl);
 
         let mut renderer = Self {
             surface,
@@ -310,8 +293,9 @@ impl Renderer {
             textures: Vec::new(),
             sampler,
             white_texture: TextureId(0),
-            hud_pipeline,
-            hud_vertex_buffer,
+            canvas_pipeline,
+            canvas_vb,
+            font_atlas,
         };
 
         let white = renderer.create_texture(1, 1, &[255, 255, 255, 255]);
@@ -521,13 +505,14 @@ impl Renderer {
             }
         }
 
-        hud::render_hud_pass(
+        canvas::render_pass(
             &mut encoder,
             &view,
-            &self.hud_pipeline,
-            &self.hud_vertex_buffer,
+            &self.canvas_pipeline,
+            &self.canvas_vb,
             &self.queue,
-            &frame.hud_verts,
+            &frame.canvases,
+            &self.font_atlas,
         );
 
         self.queue.submit(std::iter::once(encoder.finish()));

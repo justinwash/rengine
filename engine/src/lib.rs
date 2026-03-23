@@ -5,7 +5,8 @@ pub mod math;
 pub mod input;
 
 
-pub mod hud;
+pub mod canvas;
+pub mod text;
 pub mod renderer;
 pub mod renderer3d;
 
@@ -36,7 +37,8 @@ pub use assets::pixelart;
 pub use assets::{Animation, SpriteSheet};
 
 
-pub use hud::{push_shape, push_rect, push_text, screen_to_ndc, HudVertex};
+pub use canvas::{screen_to_ndc, Canvas, CanvasVertex};
+pub use text::FontAtlas;
 
 
 pub use input::{GamepadState, GamepadSystem};
