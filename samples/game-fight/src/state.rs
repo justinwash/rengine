@@ -1,4 +1,4 @@
-use rengine::TextureId;
+use rengine::{RollbackSession, TextureId};
 use serde::{Deserialize, Serialize};
 
 use crate::{FIGHTER_FOOT_OFFSET, FIGHTER_W, GROUND_Y, MAX_HP};
@@ -158,10 +158,12 @@ pub struct FighterTextures {
 
 pub struct FightGame {
     pub sim: FightSim,
+    pub session: RollbackSession<FightInput>,
     pub p1_tex: FighterTextures,
     pub p2_tex: FighterTextures,
     pub floor_tex: TextureId,
     pub white_tex: TextureId,
     pub demo_mode: bool,
     pub demo_frame: u32,
+    pub printed_result: bool,
 }

@@ -1,16 +1,27 @@
-use crate::state::{
-    Facing, FightInput, FightSim, FightSnapshot, FighterState, Spark,
-};
+use crate::state::{Facing, FightInput, FightSim, FightSnapshot, FighterState, Spark};
 use crate::{
-    ATTACK_DURATION, BLOCK_REDUCTION, FIGHTER_H, FIGHTER_W, FIXED_DT, GRAVITY, GROUND_Y,
-    HIT_STUN, JUMP_VEL, KICK_DAMAGE, KICK_RANGE, KNOCKBACK_SPEED, MAX_HP, PUNCH_DAMAGE,
-    PUNCH_RANGE, ROUND_WIN_PAUSE, STAGE_LEFT, STAGE_RIGHT, WALK_SPEED,
+    ATTACK_DURATION, BLOCK_REDUCTION, FIGHTER_H, FIGHTER_W, FIXED_DT, GRAVITY, GROUND_Y, HIT_STUN,
+    JUMP_VEL, KICK_DAMAGE, KICK_RANGE, KNOCKBACK_SPEED, MAX_HP, PUNCH_DAMAGE, PUNCH_RANGE,
+    ROUND_WIN_PAUSE, STAGE_LEFT, STAGE_RIGHT, WALK_SPEED,
 };
 
 impl FightSim {
-    pub fn advance(&mut self, inputs: &[FightInput]) {
-        let dt = FIXED_DT;
+    pub fn winner(&self) -> Option<usize> {
+        if self.p1.wins >= 2 {
+            Some(0)
+        } else if self.p2.wins >= 2 {
+            Some(1)
+        } else {
+            None
+        }
+    }
 
+    pub fn advance(&mut self, inputs: &[FightInput]) {
+        if self.winner().is_some() && self.round_pause <= 0.0 {
+            return;
+        }
+
+        let dt = FIXED_DT;
 
         for spark in &mut self.sparks {
             spark.x += spark.vx * dt;
@@ -20,10 +31,9 @@ impl FightSim {
         }
         self.sparks.retain(|s| s.life > 0.0);
 
-
         if self.round_pause > 0.0 {
             self.round_pause -= dt;
-            if self.round_pause <= 0.0 {
+            if self.round_pause <= 0.0 && self.winner().is_none() {
                 self.reset_round();
             }
             return;
@@ -37,7 +47,6 @@ impl FightSim {
 
         self.apply_physics(true, dt);
         self.apply_physics(false, dt);
-
 
         if self.p1.can_act() || self.p1.state == FighterState::Jumping {
             self.p1.facing = if self.p1.x < self.p2.x {
@@ -58,7 +67,6 @@ impl FightSim {
         self.check_attack_hit(false);
 
         self.push_apart();
-
 
         if self.p1.hp <= 0 {
             self.p2.wins += 1;
@@ -83,8 +91,7 @@ impl FightSim {
     }
 
     pub fn load(&mut self, data: &[u8]) {
-        let snapshot: FightSnapshot =
-            bincode::deserialize(data).expect("deserialize fight state");
+        let snapshot: FightSnapshot = bincode::deserialize(data).expect("deserialize fight state");
         self.p1 = snapshot.p1;
         self.p2 = snapshot.p2;
         self.round_pause = snapshot.round_pause;
@@ -94,7 +101,6 @@ impl FightSim {
 
     fn update_fighter_input(&mut self, is_p1: bool, input: FightInput, dt: f32) {
         let fighter = if is_p1 { &mut self.p1 } else { &mut self.p2 };
-
 
         if fighter.state_timer > 0.0 {
             fighter.state_timer -= dt;
@@ -110,7 +116,6 @@ impl FightSim {
                 return;
             }
         }
-
 
         if fighter.is_on_ground() {
             if input.punch() && fighter.can_act() {
@@ -311,5 +316,21 @@ impl FightSim {
         self.p2.state_timer = 0.0;
 
         self.sparks.clear();
+    }
+}
+
+impl rengine::Rollbackable for FightSim {
+    type Input = FightInput;
+
+    fn advance(&mut self, inputs: &[FightInput]) {
+        self.advance(inputs);
+    }
+
+    fn save(&self) -> Vec<u8> {
+        self.save()
+    }
+
+    fn load(&mut self, data: &[u8]) {
+        self.load(data);
     }
 }
