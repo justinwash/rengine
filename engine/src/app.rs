@@ -8,20 +8,19 @@ use winit::window::{CursorGrabMode, WindowBuilder};
 
 use crate::assets::Color;
 use crate::canvas;
-use crate::text;
 use crate::input::{GamepadSystem, InputState};
 use crate::math::TimeState;
 use crate::renderer::{Frame, Renderer, TextureId};
 use crate::renderer3d::{Frame3D, MeshId, Renderer3D, Vertex3D};
-
+use crate::text;
 
 pub struct EngineConfig {
     pub title: String,
     pub width: u32,
     pub height: u32,
 
-
     pub vsync: bool,
+    pub headless: bool,
 }
 
 impl Default for EngineConfig {
@@ -31,10 +30,10 @@ impl Default for EngineConfig {
             width: 800,
             height: 600,
             vsync: false,
+            headless: false,
         }
     }
 }
-
 
 pub struct Engine {
     pub(crate) renderer: Renderer,
@@ -60,21 +59,17 @@ impl Engine {
         (self.window_width, self.window_height)
     }
 
-
     pub fn gamepad(&self, player: usize) -> &crate::input::GamepadState {
         self.gamepads.player(player)
     }
-
 
     pub fn gamepads_connected(&self) -> usize {
         self.gamepads.connected_count()
     }
 
-
     pub fn create_texture(&mut self, width: u32, height: u32, pixels: &[u8]) -> TextureId {
         self.renderer.create_texture(width, height, pixels)
     }
-
 
     pub fn create_color_texture(&mut self, width: u32, height: u32, color: Color) -> TextureId {
         let r = (color.r.clamp(0.0, 1.0) * 255.0) as u8;
@@ -90,7 +85,6 @@ impl Engine {
         self.renderer.create_texture(width, height, &pixels)
     }
 
-
     pub fn white_texture(&self) -> TextureId {
         self.renderer.white_texture
     }
@@ -100,28 +94,29 @@ impl Engine {
     }
 }
 
-
 pub trait Game: 'static + Sized {
-
-
     fn new(engine: &mut Engine) -> Self;
-
 
     fn update(&mut self, engine: &Engine);
 
-
     fn render(&mut self, engine: &Engine, frame: &mut Frame);
-}
 
+    fn should_exit(&self) -> bool {
+        false
+    }
+}
 
 pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
+
+    let headless = config.headless;
 
     let event_loop = EventLoop::new()?;
     let window = Arc::new(
         WindowBuilder::new()
             .with_title(&config.title)
             .with_inner_size(LogicalSize::new(config.width, config.height))
+            .with_visible(!headless)
             .build(&event_loop)?,
     );
 
@@ -142,6 +137,18 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
     };
 
     let mut game = G::new(&mut engine);
+
+    if headless {
+        loop {
+            engine.time.tick();
+            engine.gamepads.update();
+            game.update(&engine);
+            if game.should_exit() {
+                return Ok(());
+            }
+            engine.input.end_frame();
+        }
+    }
 
     event_loop.run(move |event, target| {
         target.set_control_flow(winit::event_loop::ControlFlow::Poll);
@@ -173,12 +180,22 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
 
                     game.update(&engine);
 
+                    if game.should_exit() {
+                        target.exit();
+                        return;
+                    }
+
                     let mut frame = Frame::new();
                     game.render(&engine, &mut frame);
 
                     let screen_size = engine.window_size();
                     let mut fps_canvas = canvas::Canvas::new();
-                    canvas::draw_fps(&mut fps_canvas, engine.time.fps(), screen_size, &engine.renderer.font_atlas);
+                    canvas::draw_fps(
+                        &mut fps_canvas,
+                        engine.time.fps(),
+                        screen_size,
+                        &engine.renderer.font_atlas,
+                    );
                     frame.canvases.push(fps_canvas);
                     engine.renderer.render_frame(&frame);
 
@@ -198,7 +215,6 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
 
     Ok(())
 }
-
 
 pub struct Engine3D {
     pub(crate) renderer: Renderer3D,
@@ -230,19 +246,16 @@ impl Engine3D {
         &self.renderer.font_atlas
     }
 
-
     pub fn create_mesh(&mut self, vertices: Vec<Vertex3D>, indices: Vec<u32>) -> MeshId {
         self.renderer.create_mesh(vertices, indices)
     }
 }
-
 
 pub trait Game3D: 'static + Sized {
     fn new(engine: &mut Engine3D) -> Self;
     fn update(&mut self, engine: &Engine3D);
     fn render(&mut self, engine: &Engine3D, frame: &mut Frame3D);
 }
-
 
 pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
@@ -272,7 +285,6 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
     };
 
     let mut game = G::new(&mut engine);
-
 
     let _ = window
         .set_cursor_grab(CursorGrabMode::Confined)
@@ -324,7 +336,6 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
                         },
                     ..
                 } => {
-
                     if key == winit::keyboard::KeyCode::Escape
                         && state == winit::event::ElementState::Pressed
                     {
@@ -367,7 +378,12 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
 
                     let screen_size = engine.window_size();
                     let mut fps_canvas = canvas::Canvas::new();
-                    canvas::draw_fps(&mut fps_canvas, engine.time.fps(), screen_size, &engine.renderer.font_atlas);
+                    canvas::draw_fps(
+                        &mut fps_canvas,
+                        engine.time.fps(),
+                        screen_size,
+                        &engine.renderer.font_atlas,
+                    );
                     frame.canvases.push(fps_canvas);
                     engine.renderer.render_frame(&frame);
 
