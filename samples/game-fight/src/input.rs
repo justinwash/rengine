@@ -1,20 +1,8 @@
 use rengine::{Engine, KeyCode};
 
-use crate::bot;
-use crate::state::{FightGame, FightInput};
+use crate::state::FightInput;
 
-
-pub fn sample(game: &FightGame, engine: &Engine, player: usize) -> FightInput {
-
-    if game.demo_mode {
-        let (me, opp) = if player == 0 {
-            (&game.sim.p1, &game.sim.p2)
-        } else {
-            (&game.sim.p2, &game.sim.p1)
-        };
-        return bot::bot_input(me, opp, game.demo_frame, player as u32);
-    }
-
+pub fn sample_from_engine(engine: &Engine, player: usize) -> FightInput {
     let kb = engine.input();
     let gp = engine.gamepad(player);
     let mut flags = 0u8;

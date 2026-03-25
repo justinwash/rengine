@@ -1,16 +1,6 @@
-use std::sync::Arc;
+pub mod transport;
 
-use winit::dpi::LogicalSize;
-use winit::event::{Event, KeyEvent, WindowEvent};
-use winit::event_loop::EventLoop;
-use winit::keyboard::PhysicalKey;
-use winit::window::WindowBuilder;
-
-use crate::app::{Engine, EngineConfig};
-use crate::canvas;
-use crate::input::{GamepadSystem, InputState};
-use crate::math::TimeState;
-use crate::renderer::{Frame, Renderer};
+pub use ggrs;
 
 pub trait InputT:
     Copy
@@ -37,7 +27,8 @@ impl<T> InputT for T where
 {
 }
 
-struct GgrsConfig<I: InputT>(std::marker::PhantomData<I>);
+#[derive(Debug)]
+pub struct GgrsConfig<I: InputT>(std::marker::PhantomData<I>);
 
 impl<I: InputT> ggrs::Config for GgrsConfig<I> {
     type Input = I;
@@ -45,22 +36,25 @@ impl<I: InputT> ggrs::Config for GgrsConfig<I> {
     type Address = String;
 }
 
+pub struct OnlineConfig {
+    pub local_port: u16,
+    pub remote_addr: String,
+    pub local_player: usize,
+}
+
 pub enum SessionMode {
     Local,
-
     SyncTest { check_distance: usize },
+    Online(OnlineConfig),
 }
 
 pub struct RollbackConfig {
     pub num_players: usize,
-
     pub input_delay: usize,
-
     pub max_prediction: usize,
-
     pub fps: u32,
-
     pub mode: SessionMode,
+    pub max_frames: Option<u32>,
 }
 
 impl Default for RollbackConfig {
@@ -71,184 +65,229 @@ impl Default for RollbackConfig {
             max_prediction: 8,
             fps: 60,
             mode: SessionMode::Local,
+            max_frames: None,
         }
     }
 }
 
-pub trait RollbackGame: 'static + Sized {
+pub trait Rollbackable {
     type Input: InputT;
-
-    fn new(engine: &mut Engine) -> Self;
-
-    fn sample_local_input(&self, engine: &Engine, player: usize) -> Self::Input;
-
     fn advance(&mut self, inputs: &[Self::Input]);
-
     fn save(&self) -> Vec<u8>;
-
     fn load(&mut self, data: &[u8]);
-
-    fn render(&self, engine: &Engine, frame: &mut Frame);
 }
 
-pub fn run_rollback<G: RollbackGame>(
-    config: EngineConfig,
-    rb: RollbackConfig,
-) -> Result<(), Box<dyn std::error::Error>> {
-    env_logger::init();
+enum SessionVariant<I: InputT> {
+    Local,
+    SyncTest(ggrs::SyncTestSession<GgrsConfig<I>>),
+    P2P(ggrs::P2PSession<GgrsConfig<I>>),
+}
 
-    let event_loop = EventLoop::new()?;
-    let window = Arc::new(
-        WindowBuilder::new()
-            .with_title(&config.title)
-            .with_inner_size(LogicalSize::new(config.width, config.height))
-            .build(&event_loop)?,
-    );
+pub struct RollbackSession<I: InputT> {
+    variant: SessionVariant<I>,
+    local_player: usize,
+    num_players: usize,
+    fixed_dt: f32,
+    accumulator: f32,
+    frame: u32,
+    desync_detected: bool,
+    max_frames: Option<u32>,
+    headless: bool,
+}
 
-    let present_mode = if config.vsync {
-        wgpu::PresentMode::AutoVsync
-    } else {
-        wgpu::PresentMode::AutoNoVsync
-    };
-    let renderer = pollster::block_on(Renderer::new(window.clone(), present_mode));
+impl<I: InputT> RollbackSession<I> {
+    pub fn new(config: RollbackConfig, headless: bool) -> Result<Self, Box<dyn std::error::Error>> {
+        let fixed_dt = 1.0 / config.fps as f32;
+        let num_players = config.num_players;
+        let max_frames = config.max_frames;
+        let mut local_player: usize = 0;
 
-    let mut engine = Engine {
-        renderer,
-        input: InputState::new(),
-        time: TimeState::new(),
-        window_width: config.width,
-        window_height: config.height,
-        gamepads: GamepadSystem::new(),
-    };
+        let variant = match config.mode {
+            SessionMode::Local => SessionVariant::Local,
 
-    let mut game = G::new(&mut engine);
-
-    let fixed_dt = 1.0 / rb.fps as f32;
-    let mut accumulator = 0.0_f32;
-
-    let mut sync_test: Option<ggrs::SyncTestSession<GgrsConfig<G::Input>>> = None;
-
-    if let SessionMode::SyncTest { check_distance } = rb.mode {
-        let mut builder = ggrs::SessionBuilder::<GgrsConfig<G::Input>>::new()
-            .with_num_players(rb.num_players)
-            .with_max_prediction_window(rb.max_prediction)
-            .with_input_delay(rb.input_delay)
-            .with_check_distance(check_distance);
-
-        for p in 0..rb.num_players {
-            builder = builder.add_player(ggrs::PlayerType::Local, p)?;
-        }
-
-        sync_test = Some(builder.start_synctest_session()?);
-    }
-
-    event_loop.run(move |event, target| {
-        target.set_control_flow(winit::event_loop::ControlFlow::Poll);
-
-        match event {
-            Event::WindowEvent { event, .. } => match event {
-                WindowEvent::CloseRequested => target.exit(),
-
-                WindowEvent::Resized(new_size) => {
-                    engine.window_width = new_size.width;
-                    engine.window_height = new_size.height;
-                    engine.renderer.resize(new_size.width, new_size.height);
+            SessionMode::SyncTest { check_distance } => {
+                let mut builder = ggrs::SessionBuilder::<GgrsConfig<I>>::new()
+                    .with_num_players(num_players)
+                    .with_max_prediction_window(config.max_prediction)
+                    .with_input_delay(config.input_delay)
+                    .with_check_distance(check_distance);
+                for p in 0..num_players {
+                    builder = builder.add_player(ggrs::PlayerType::Local, p)?;
                 }
-
-                WindowEvent::KeyboardInput {
-                    event:
-                        KeyEvent {
-                            physical_key: PhysicalKey::Code(key),
-                            state,
-                            ..
-                        },
-                    ..
-                } => {
-                    engine.input.handle_key_event(key, state);
-                }
-
-                WindowEvent::RedrawRequested => {
-                    engine.time.tick();
-                    engine.gamepads.update();
-
-                    accumulator += engine.dt();
-
-                    if accumulator >= fixed_dt {
-                        let inputs: Vec<G::Input> = (0..rb.num_players)
-                            .map(|p| game.sample_local_input(&engine, p))
-                            .collect();
-
-                        match sync_test.as_mut() {
-                            Some(sess) => {
-                                for (p, &inp) in inputs.iter().enumerate() {
-                                    sess.add_local_input(p, inp).expect("ggrs: add_local_input");
-                                }
-                                match sess.advance_frame() {
-                                    Ok(requests) => {
-                                        for req in requests {
-                                            handle_request(&mut game, req);
-                                        }
-                                    }
-                                    Err(e) => {
-                                        log::error!("GGRS SyncTest error: {e:?}");
-                                    }
-                                }
-                            }
-                            None => {
-                                game.advance(&inputs);
-                            }
-                        }
-
-                        accumulator -= fixed_dt;
-                        if accumulator > fixed_dt {
-                            accumulator = 0.0;
-                        }
-                    }
-
-                    let mut frame = Frame::new();
-                    game.render(&engine, &mut frame);
-                    let screen_size = engine.window_size();
-                    let mut fps_canvas = canvas::Canvas::new();
-                    canvas::draw_fps(&mut fps_canvas, engine.time.fps(), screen_size, &engine.renderer.font_atlas);
-                    frame.canvases.push(fps_canvas);
-                    engine.renderer.render_frame(&frame);
-
-                    engine.input.end_frame();
-                }
-
-                _ => {}
-            },
-
-            Event::AboutToWait => {
-                window.request_redraw();
+                SessionVariant::SyncTest(builder.start_synctest_session()?)
             }
 
-            _ => {}
-        }
-    })?;
+            SessionMode::Online(online_cfg) => {
+                let socket = transport::UdpNonBlockingSocket::bind(online_cfg.local_port)?;
+                local_player = online_cfg.local_player;
+                let remote_player = 1 - local_player;
 
-    Ok(())
+                let builder = ggrs::SessionBuilder::<GgrsConfig<I>>::new()
+                    .with_num_players(num_players)
+                    .with_max_prediction_window(config.max_prediction)
+                    .with_input_delay(config.input_delay)
+                    .with_desync_detection_mode(ggrs::DesyncDetection::On { interval: 1 });
+                let builder = builder.add_player(ggrs::PlayerType::Local, local_player)?;
+                let builder = builder.add_player(
+                    ggrs::PlayerType::Remote(online_cfg.remote_addr),
+                    remote_player,
+                )?;
+                SessionVariant::P2P(builder.start_p2p_session(socket)?)
+            }
+        };
+
+        Ok(Self {
+            variant,
+            local_player,
+            num_players,
+            fixed_dt,
+            accumulator: 0.0,
+            frame: 0,
+            desync_detected: false,
+            max_frames,
+            headless,
+        })
+    }
+
+    pub fn frame(&self) -> u32 {
+        self.frame
+    }
+    pub fn local_player(&self) -> usize {
+        self.local_player
+    }
+    pub fn num_players(&self) -> usize {
+        self.num_players
+    }
+    pub fn desync_detected(&self) -> bool {
+        self.desync_detected
+    }
+    pub fn fixed_dt(&self) -> f32 {
+        self.fixed_dt
+    }
+
+    pub fn confirmed_frame(&self) -> Option<i32> {
+        match &self.variant {
+            SessionVariant::P2P(sess) => Some(sess.confirmed_frame()),
+            _ => None,
+        }
+    }
+
+    pub fn max_frames_reached(&self) -> bool {
+        if let Some(mf) = self.max_frames {
+            match &self.variant {
+                SessionVariant::P2P(sess) => sess.confirmed_frame() >= mf as i32,
+                _ => self.frame >= mf,
+            }
+        } else {
+            false
+        }
+    }
+
+    pub fn update(
+        &mut self,
+        dt: f32,
+        inputs: &[I],
+        sim: &mut impl Rollbackable<Input = I>,
+    ) -> bool {
+        if !self.headless {
+            self.accumulator += dt;
+            if self.accumulator < self.fixed_dt {
+                if let SessionVariant::P2P(sess) = &mut self.variant {
+                    sess.poll_remote_clients();
+                }
+                return false;
+            }
+            self.accumulator -= self.fixed_dt;
+            if self.accumulator > self.fixed_dt {
+                self.accumulator = 0.0;
+            }
+        }
+
+        match &mut self.variant {
+            SessionVariant::Local => {
+                sim.advance(inputs);
+            }
+
+            SessionVariant::SyncTest(sess) => {
+                for (p, &inp) in inputs.iter().enumerate() {
+                    sess.add_local_input(p, inp).expect("ggrs: add_local_input");
+                }
+                match sess.advance_frame() {
+                    Ok(requests) => {
+                        for req in requests {
+                            handle_request(sim, req);
+                        }
+                    }
+                    Err(e) => log::error!("GGRS SyncTest error: {e:?}"),
+                }
+            }
+
+            SessionVariant::P2P(sess) => {
+                sess.poll_remote_clients();
+
+                for ev in sess.events() {
+                    match ev {
+                        ggrs::GgrsEvent::Synchronized { .. } => {
+                            log::info!("GGRS: synchronized with remote");
+                        }
+                        ggrs::GgrsEvent::Disconnected { .. } => {
+                            log::warn!("GGRS: remote disconnected");
+                        }
+                        ggrs::GgrsEvent::DesyncDetected { .. } => {
+                            log::error!("GGRS: DESYNC DETECTED");
+                            self.desync_detected = true;
+                        }
+                        _ => {}
+                    }
+                }
+
+                if let Err(e) = sess.add_local_input(self.local_player, inputs[self.local_player]) {
+                    log::warn!("add_local_input: {e:?}");
+                }
+                match sess.advance_frame() {
+                    Ok(requests) => {
+                        for req in requests {
+                            handle_request(sim, req);
+                        }
+                    }
+                    Err(ggrs::GgrsError::PredictionThreshold) => {}
+                    Err(ggrs::GgrsError::NotSynchronized) => {}
+                    Err(e) => log::error!("GGRS P2P error: {e:?}"),
+                }
+            }
+        }
+
+        self.frame += 1;
+
+        if self.headless {
+            if let SessionVariant::P2P(_) = &self.variant {
+                std::thread::sleep(std::time::Duration::from_secs_f32(self.fixed_dt));
+            }
+        }
+
+        true
+    }
 }
 
-fn handle_request<G: RollbackGame>(game: &mut G, request: ggrs::GgrsRequest<GgrsConfig<G::Input>>) {
+fn handle_request<R: Rollbackable>(sim: &mut R, request: ggrs::GgrsRequest<GgrsConfig<R::Input>>) {
     match request {
         ggrs::GgrsRequest::SaveGameState { cell, frame } => {
-            let data = game.save();
+            let data = sim.save();
             let checksum = fletcher64(&data);
             cell.save(frame, Some(data), Some(checksum as u128));
         }
         ggrs::GgrsRequest::LoadGameState { cell, .. } => {
             let data = cell.load().expect("ggrs: loaded state should be Some");
-            game.load(&data);
+            sim.load(&data);
         }
         ggrs::GgrsRequest::AdvanceFrame { inputs } => {
-            let plain: Vec<G::Input> = inputs.iter().map(|(i, _status)| *i).collect();
-            game.advance(&plain);
+            let plain: Vec<R::Input> = inputs.iter().map(|(i, _status)| *i).collect();
+            sim.advance(&plain);
         }
     }
 }
 
-fn fletcher64(data: &[u8]) -> u64 {
+pub fn fletcher64(data: &[u8]) -> u64 {
     let mut s1: u32 = 0;
     let mut s2: u32 = 0;
     for &b in data {

@@ -5,8 +5,11 @@ mod render;
 pub mod sim;
 pub mod state;
 
-use rengine::{Color, Engine, EngineConfig, Frame, RollbackConfig, RollbackGame, SessionMode};
-use state::{FightGame, FightInput, FightSim, FighterTextures};
+use rengine::{
+    Color, Engine, EngineConfig, Frame, Game, OnlineConfig, RollbackConfig, RollbackSession,
+    SessionMode,
+};
+use state::{FightGame, FightSim, FighterTextures};
 
 pub const SCREEN_W: u32 = 800;
 pub const SCREEN_H: u32 = 480;
@@ -40,9 +43,7 @@ pub const ROUND_WIN_PAUSE: f32 = 2.0;
 
 pub const FIXED_DT: f32 = 1.0 / 60.0;
 
-impl RollbackGame for FightGame {
-    type Input = FightInput;
-
+impl Game for FightGame {
     fn new(engine: &mut Engine) -> Self {
         let body1 = Color::from_rgba8(50, 80, 180, 255);
         let skin = Color::from_rgba8(230, 185, 140, 255);
@@ -79,9 +80,44 @@ impl RollbackGame for FightGame {
         let white_tex = engine.white_texture();
 
         let demo_mode = std::env::args().any(|a| a == "--demo");
+        let online = std::env::args().any(|a| a == "--online");
+        let headless = std::env::args().any(|a| a == "--headless");
+        let port: u16 = arg_value("--port")
+            .and_then(|p| p.parse().ok())
+            .unwrap_or(7000);
+        let remote: String = arg_value("--remote").unwrap_or_else(|| "127.0.0.1:7001".to_string());
+        let player: usize = arg_value("--player")
+            .and_then(|p| p.parse().ok())
+            .unwrap_or(0);
+        let max_frames: Option<u32> = arg_value("--frames").and_then(|f| f.parse().ok());
+
+        let mode = if online {
+            SessionMode::Online(OnlineConfig {
+                local_port: port,
+                remote_addr: remote,
+                local_player: player,
+            })
+        } else if demo_mode {
+            SessionMode::SyncTest { check_distance: 7 }
+        } else {
+            SessionMode::Local
+        };
+
+        let session = RollbackSession::new(
+            RollbackConfig {
+                num_players: 2,
+                fps: 60,
+                mode,
+                max_frames,
+                ..Default::default()
+            },
+            headless,
+        )
+        .expect("failed to create rollback session");
 
         FightGame {
             sim: FightSim::new(),
+            session,
             p1_tex: FighterTextures {
                 idle: tex_idle_1,
                 punch: tex_punch_1,
@@ -100,57 +136,84 @@ impl RollbackGame for FightGame {
             white_tex,
             demo_mode,
             demo_frame: 0,
+            printed_result: false,
         }
     }
 
-    fn sample_local_input(&self, engine: &Engine, player: usize) -> FightInput {
-        input::sample(self, engine, player)
-    }
+    fn update(&mut self, engine: &Engine) {
+        let num = self.session.num_players();
+        let frame = self.demo_frame;
+        let demo = self.demo_mode;
 
-    fn advance(&mut self, inputs: &[FightInput]) {
-        self.sim.advance(inputs);
-        if self.demo_mode {
+        let mut inputs = Vec::with_capacity(num);
+        for p in 0..num {
+            let input = if demo {
+                let (me, opp) = if p == 0 {
+                    (&self.sim.p1, &self.sim.p2)
+                } else {
+                    (&self.sim.p2, &self.sim.p1)
+                };
+                bot::bot_input(me, opp, frame, p as u32)
+            } else {
+                input::sample_from_engine(engine, p)
+            };
+            inputs.push(input);
+        }
+
+        let ticked = self.session.update(engine.dt(), &inputs, &mut self.sim);
+        if ticked && self.demo_mode {
             self.demo_frame += 1;
         }
+
+        if !self.printed_result && self.session.max_frames_reached() {
+            if self.session.desync_detected() {
+                println!("DESYNC");
+            } else if let Some(cf) = self.session.confirmed_frame() {
+                println!("OK {cf}");
+            } else {
+                let data = self.sim.save();
+                let checksum = rengine::fletcher64(&data);
+                println!("CHECKSUM {checksum:016x}");
+            }
+            self.printed_result = true;
+        }
     }
 
-    fn save(&self) -> Vec<u8> {
-        self.sim.save()
-    }
-
-    fn load(&mut self, data: &[u8]) {
-        self.sim.load(data);
-    }
-
-    fn render(&self, engine: &Engine, frame: &mut Frame) {
+    fn render(&mut self, engine: &Engine, frame: &mut Frame) {
         render::draw(self, engine, frame);
+    }
+
+    fn should_exit(&self) -> bool {
+        self.printed_result || (self.sim.winner().is_some() && self.sim.round_pause <= 0.0)
     }
 }
 
-fn main() {
-    let demo = std::env::args().any(|a| a == "--demo");
+fn arg_value(flag: &str) -> Option<String> {
+    std::env::args().skip_while(|a| a != flag).nth(1)
+}
 
-    rengine::run_rollback::<FightGame>(
-        EngineConfig {
-            title: if demo {
-                "Rengine Fighter — SYNC TEST DEMO".into()
-            } else {
-                "Rengine Fighter".into()
-            },
-            width: SCREEN_W,
-            height: SCREEN_H,
-            ..Default::default()
-        },
-        RollbackConfig {
-            num_players: 2,
-            fps: 60,
-            mode: if demo {
-                SessionMode::SyncTest { check_distance: 7 }
-            } else {
-                SessionMode::Local
-            },
-            ..Default::default()
-        },
-    )
+fn main() {
+    let online = std::env::args().any(|a| a == "--online");
+    let demo = std::env::args().any(|a| a == "--demo");
+    let headless = std::env::args().any(|a| a == "--headless");
+    let player: usize = arg_value("--player")
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(0);
+
+    let title = if online {
+        format!("Rengine Fighter — P{}", player + 1)
+    } else if demo {
+        "Rengine Fighter — SYNC TEST DEMO".into()
+    } else {
+        "Rengine Fighter".into()
+    };
+
+    rengine::run::<FightGame>(EngineConfig {
+        title,
+        width: SCREEN_W,
+        height: SCREEN_H,
+        headless,
+        ..Default::default()
+    })
     .unwrap();
 }
