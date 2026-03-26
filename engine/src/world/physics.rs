@@ -21,3 +21,25 @@ pub fn aabb_overlap(a: &Rect, b: &Rect) -> Option<Vec2> {
         Some(Vec2::new(0.0, sign * overlap_y))
     }
 }
+
+/// Returns the minimum translation vector to push circle A out of circle B,
+/// or `None` if the circles do not overlap. The MTV points from B toward A.
+pub fn circle_overlap(
+    center_a: Vec2,
+    radius_a: f32,
+    center_b: Vec2,
+    radius_b: f32,
+) -> Option<Vec2> {
+    let diff = center_a - center_b;
+    let dist_sq = diff.length_squared();
+    let min_dist = radius_a + radius_b;
+
+    if dist_sq >= min_dist * min_dist || dist_sq < 1e-10 {
+        return None;
+    }
+
+    let dist = dist_sq.sqrt();
+    let penetration = min_dist - dist;
+    let normal = diff / dist;
+    Some(normal * penetration)
+}

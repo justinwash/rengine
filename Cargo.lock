@@ -1679,6 +1679,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "rengine-racing"
+version = "0.1.0"
+dependencies = [
+ "rengine",
+ "winit",
+]
+
+[[package]]
 name = "rengine-topdown"
 version = "0.1.0"
 dependencies = [

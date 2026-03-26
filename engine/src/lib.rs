@@ -21,10 +21,10 @@ pub use assets::Color;
 pub use input::InputState;
 pub use math::Rect;
 pub use math::TimeState;
-pub use renderer::{Camera2D, DrawParams, Frame, TextureId};
+pub use renderer::{Camera2D, DrawParams, Frame, TextureId, WorldQuad};
 
 pub use world::tilemap;
-pub use world::{aabb_overlap, iso_to_screen, screen_to_iso, TileDef, TileMap};
+pub use world::{aabb_overlap, circle_overlap, iso_to_screen, screen_to_iso, TileDef, TileMap};
 
 pub use assets::pixelart;
 pub use assets::{Animation, SpriteSheet};

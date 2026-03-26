@@ -4,6 +4,7 @@ pub mod texture;
 
 pub use camera::Camera2D;
 pub use sprite::DrawParams;
+pub use sprite::WorldQuad;
 pub use texture::TextureId;
 
 use crate::assets::Color;
@@ -14,12 +15,13 @@ use sprite::Vertex;
 use std::sync::Arc;
 use winit::window::Window;
 
-const MAX_SPRITES: usize = 10_000;
+const MAX_SPRITES: usize = 20_000;
 const MAX_VERTICES: usize = MAX_SPRITES * 4;
 const MAX_INDICES: usize = MAX_SPRITES * 6;
 
 pub struct Frame {
     pub(crate) sprites: Vec<DrawParams>,
+    pub(crate) world_quads: Vec<WorldQuad>,
     pub camera: Camera2D,
     pub clear_color: Color,
 
@@ -30,6 +32,7 @@ impl Frame {
     pub fn new() -> Self {
         Self {
             sprites: Vec::with_capacity(256),
+            world_quads: Vec::with_capacity(256),
             camera: Camera2D::new(),
             clear_color: Color::BLACK,
             canvases: Vec::new(),
@@ -38,6 +41,37 @@ impl Frame {
 
     pub fn draw_sprite(&mut self, params: DrawParams) {
         self.sprites.push(params);
+    }
+
+    /// Draw a quad defined by 4 world-space positions (CCW winding).
+    /// Useful for track surfaces and other arbitrary geometry.
+    pub fn draw_world_quad(
+        &mut self,
+        texture: TextureId,
+        positions: [glam::Vec2; 4],
+        color: Color,
+    ) {
+        self.world_quads.push(WorldQuad {
+            texture,
+            positions,
+            color,
+        });
+    }
+
+    /// Draw a filled polygon defined by world-space vertices.
+    /// Uses fan triangulation from the first vertex — works well for convex polygons.
+    pub fn draw_world_polygon(&mut self, texture: TextureId, points: &[glam::Vec2], color: Color) {
+        if points.len() < 3 {
+            return;
+        }
+        for i in 1..points.len() - 1 {
+            // Emit triangle as degenerate quad (4th vertex duplicates 3rd)
+            self.world_quads.push(WorldQuad {
+                texture,
+                positions: [points[0], points[i], points[i + 1], points[i + 1]],
+                color,
+            });
+        }
     }
 
     pub fn draw(&mut self, texture: TextureId, position: glam::Vec2, size: glam::Vec2) {
@@ -407,7 +441,28 @@ impl Renderer {
         let mut sorted: Vec<&DrawParams> = frame.sprites.iter().collect();
         sorted.sort_by_key(|s| s.texture.0);
 
-        let mut vertices: Vec<Vertex> = Vec::with_capacity(sorted.len() * 4);
+        // Sort world quads by texture for batching
+        let mut sorted_wq: Vec<&WorldQuad> = frame.world_quads.iter().collect();
+        sorted_wq.sort_by_key(|q| q.texture.0);
+
+        let total_quads = sorted_wq.len() + sorted.len();
+        let mut vertices: Vec<Vertex> = Vec::with_capacity(total_quads * 4);
+
+        // Emit world quads first (rendered behind sprites)
+        let white_uv = [0.5_f32, 0.5];
+        for wq in &sorted_wq {
+            let color = wq.color.to_array();
+            // CCW winding: 0=BL, 1=BR, 2=TR, 3=TL
+            for i in 0..4 {
+                vertices.push(Vertex {
+                    position: [wq.positions[i].x, wq.positions[i].y],
+                    tex_coords: white_uv,
+                    color,
+                });
+            }
+        }
+
+        // Emit sprite vertices
         for sp in &sorted {
             let (x, y, w, h) = (sp.position.x, sp.position.y, sp.size.x, sp.size.y);
             let color = sp.color.to_array();
@@ -421,26 +476,31 @@ impl Renderer {
                 std::mem::swap(&mut vt, &mut vb);
             }
 
-            vertices.push(Vertex {
-                position: [x, y + h],
-                tex_coords: [ul, vt],
-                color,
-            });
-            vertices.push(Vertex {
-                position: [x + w, y + h],
-                tex_coords: [ur, vt],
-                color,
-            });
-            vertices.push(Vertex {
-                position: [x + w, y],
-                tex_coords: [ur, vb],
-                color,
-            });
-            vertices.push(Vertex {
-                position: [x, y],
-                tex_coords: [ul, vb],
-                color,
-            });
+            // Corners relative to center for rotation
+            let cx = x + w * 0.5;
+            let cy = y + h * 0.5;
+            let hw = w * 0.5;
+            let hh = h * 0.5;
+
+            // Pre-rotation corner offsets from center
+            let corners = [
+                [-hw, hh],  // bottom-left
+                [hw, hh],   // bottom-right
+                [hw, -hh],  // top-right
+                [-hw, -hh], // top-left
+            ];
+            let uvs = [[ul, vt], [ur, vt], [ur, vb], [ul, vb]];
+
+            let (sin_r, cos_r) = sp.rotation.sin_cos();
+            for i in 0..4 {
+                let rx = corners[i][0] * cos_r - corners[i][1] * sin_r;
+                let ry = corners[i][0] * sin_r + corners[i][1] * cos_r;
+                vertices.push(Vertex {
+                    position: [cx + rx, cy + ry],
+                    tex_coords: uvs[i],
+                    color,
+                });
+            }
         }
 
         if !vertices.is_empty() {
@@ -449,15 +509,23 @@ impl Renderer {
         }
 
         let mut batches: Vec<(usize, u32)> = Vec::new();
-        if !sorted.is_empty() {
-            let mut cur_tex = sorted[0].texture.0;
+
+        // Build batches: world quads first, then sprites
+        // Both are sorted by texture independently, so we process them
+        // as two consecutive sorted runs.
+        let wq_textures = sorted_wq.iter().map(|q| q.texture.0);
+        let sp_textures = sorted.iter().map(|s| s.texture.0);
+        let all_textures: Vec<usize> = wq_textures.chain(sp_textures).collect();
+
+        if !all_textures.is_empty() {
+            let mut cur_tex = all_textures[0];
             let mut count = 1u32;
-            for sp in sorted.iter().skip(1) {
-                if sp.texture.0 == cur_tex {
+            for &tex in all_textures.iter().skip(1) {
+                if tex == cur_tex {
                     count += 1;
                 } else {
                     batches.push((cur_tex, count));
-                    cur_tex = sp.texture.0;
+                    cur_tex = tex;
                     count = 1;
                 }
             }
