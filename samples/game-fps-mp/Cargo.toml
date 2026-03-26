@@ -1,0 +1,15 @@
+[package]
+name = "rengine-fps-mp"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "rengine-fps-mp"
+path = "src/main.rs"
+
+[dependencies]
+rengine = { path = "../../engine", features = ["rollback"] }
+bytemuck = { version = "1", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+bincode = "1"
+winit = "0.29"
