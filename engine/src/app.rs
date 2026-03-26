@@ -255,16 +255,22 @@ pub trait Game3D: 'static + Sized {
     fn new(engine: &mut Engine3D) -> Self;
     fn update(&mut self, engine: &Engine3D);
     fn render(&mut self, engine: &Engine3D, frame: &mut Frame3D);
+    fn should_exit(&self) -> bool {
+        false
+    }
 }
 
 pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
+
+    let headless = config.headless;
 
     let event_loop = EventLoop::new()?;
     let window = Arc::new(
         WindowBuilder::new()
             .with_title(&config.title)
             .with_inner_size(LogicalSize::new(config.width, config.height))
+            .with_visible(!headless)
             .build(&event_loop)?,
     );
 
@@ -285,6 +291,17 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
     };
 
     let mut game = G::new(&mut engine);
+
+    if headless {
+        loop {
+            engine.time.tick();
+            game.update(&engine);
+            if game.should_exit() {
+                return Ok(());
+            }
+            engine.input.end_frame();
+        }
+    }
 
     let _ = window
         .set_cursor_grab(CursorGrabMode::Confined)
@@ -372,6 +389,11 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
                     engine.time.tick();
 
                     game.update(&engine);
+
+                    if game.should_exit() {
+                        target.exit();
+                        return;
+                    }
 
                     let mut frame = Frame3D::new();
                     game.render(&engine, &mut frame);

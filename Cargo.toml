@@ -1,3 +1,3 @@
 [workspace]
-members = ["engine", "samples/game-platformer", "samples/game-topdown", "samples/game-iso", "samples/game-fps", "samples/game-fight"]
+members = ["engine", "samples/game-platformer", "samples/game-topdown", "samples/game-iso", "samples/game-fps", "samples/game-fight", "samples/game-fps-mp"]
 resolver = "2"
