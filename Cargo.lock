@@ -1652,6 +1652,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "rengine-fps-mp"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "bytemuck",
+ "rengine",
+ "serde",
+ "winit",
+]
+
+[[package]]
 name = "rengine-iso"
 version = "0.1.0"
 dependencies = [
