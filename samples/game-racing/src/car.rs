@@ -265,6 +265,9 @@ impl Car {
             .map(|&(pos, spd, _)| (pos, spd))
             .collect();
 
+        // Distance from the racing line (for line-distance-aware speed control)
+        let racing_line_dist = track.racing_line_dist(self.pos);
+
         // Compute AI inputs
         let inputs = self.ai.compute(
             track,
@@ -278,6 +281,7 @@ impl Car {
             boundary_dist,
             boundary_to_center,
             &nearby_cars,
+            racing_line_dist,
         );
 
         let mut throttle = inputs.throttle;
@@ -402,19 +406,6 @@ impl Car {
         if self.current_lap >= 1 {
             self.race_progress = (self.current_lap - 1) as f32 + fraction;
         }
-    }
-}
-
-/// Simple exposed steering for launch phase.
-impl RacingAi {
-    pub fn get_steering_simple(
-        &mut self,
-        track: &Track,
-        car_pos: Vec2,
-        car_rotation: f32,
-        angular_velocity: f32,
-    ) -> f32 {
-        self.get_steering(track, car_pos, car_rotation, angular_velocity, 0.0)
     }
 }
 

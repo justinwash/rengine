@@ -12,242 +12,243 @@ pub struct AiInputs {
     pub steer: f32,    // -1..1
 }
 
-/// Racing-line-following AI. Ported from Godot RacingLineAI.
+// ─── Racing AI ──────────────────────────────────────────────────────────────
+//
+// Architecture (v2 — improved from telemetry analysis):
+//
+//   1. **Pre-computed speed profile** on the Track handles braking zones via a
+//      backward deceleration pass.  The AI reads the target speed at the current
+//      (and a short look-ahead) offset.
+//
+//   2. **Pure-pursuit steering** chooses a target point on the racing line at a
+//      speed-proportional look-ahead distance, then computes the front-wheel
+//      angle.  When far from the racing line, a **recovery steering** component
+//      blends in to steer directly toward the closest line point.
+//
+//   3. **Speed controller** with:
+//      - P-controller against the speed profile minimum in look-ahead window
+//      - **Racing-line distance penalty**: target speed is reduced proportional
+//        to how far the car has drifted from the racing line
+//      - **Drift-rate emergency brake**: if the car is drifting further from the
+//        line each frame, additional braking is applied
+//      - **Trail-braking**: brake gain is boosted when steering hard, so cars
+//        can brake-and-turn into corners like real F1
+//      - **Boundary braking** starts earlier and is more aggressive
+//
+//   4. **Boundary + recovery steering** adds urgency steering when the car
+//      drifts toward the track edge.
+//
+//   5. **Driver personality** modulates cornering speed, brake point, throttle
+//      aggression, and steering smoothness per-driver.
+// ────────────────────────────────────────────────────────────────────────────
+
 pub struct RacingAi {
-    // Tuning
-    pub lookahead_distance: f32,
-    pub tangent_sample_distance: f32,
+    // Pure-pursuit
+    pub min_lookahead: f32,
+    pub max_lookahead: f32,
+    pub lookahead_time: f32,
+    pub wheelbase: f32,
 
-    // Steering zones
-    pub zone1_dist: f32,
-    pub zone2_dist: f32,
-    pub zone3_dist: f32,
-    pub zone1_gain: f32,
-    pub zone2_gain: f32,
-    pub zone3_gain: f32,
-    pub zone4_gain: f32,
-    pub zone1_damping: f32,
-    pub zone2_damping: f32,
-    pub zone3_damping: f32,
-    pub zone4_damping: f32,
+    // Speed controller
+    pub brake_gain: f32,
+    pub throttle_gain: f32,
+    pub speed_lookahead: f32,
+    pub speed_lookahead_steps: usize,
 
-    // Feedforward
-    pub feedforward_gain: f32,
-    pub feedforward_lookahead: f32,
+    // Boundary / racing-line awareness
+    pub boundary_margin: f32,
+    pub racing_line_penalty_start: f32, // start reducing speed when this far from line
+    pub racing_line_penalty_full: f32,  // full speed reduction at this distance
 
-    // Steering smoothing
+    // State
+    last_steer: f32,
     pub steering_smoothing: f32,
-    last_steering: f32,
-
-    // Predictive braking
-    pub predictive_lookahead: f32,
-    pub tight_corner_threshold: f32,
-    pub corner_speed_multiplier: f32,
-
-    // Throttle/brake
-    pub brake_divisor: f32,
-    pub throttle_divisor: f32,
-    pub low_speed_threshold: f32,
-    pub low_speed_throttle: f32,
-
-    // Misc
-    pub max_lateral_accel: f32,
-    pub min_corner_speed: f32,
-    pub max_corner_speed: f32,
+    prev_racing_line_dist: f32, // for drift-rate detection
 }
 
 impl Default for RacingAi {
     fn default() -> Self {
         Self {
-            lookahead_distance: 100.0 * TRACK_SCALE,
-            tangent_sample_distance: 40.0 * TRACK_SCALE,
-            zone1_dist: 8.0 * TRACK_SCALE,
-            zone2_dist: 40.0 * TRACK_SCALE,
-            zone3_dist: 200.0 * TRACK_SCALE,
-            zone1_gain: 3.0,
-            zone2_gain: 5.0,
-            zone3_gain: 8.0,
-            zone4_gain: 12.0,
-            zone1_damping: 1.5,
-            zone2_damping: 1.2,
-            zone3_damping: 0.8,
-            zone4_damping: 0.4,
-            feedforward_gain: 8.0 * TRACK_SCALE,
-            feedforward_lookahead: 60.0 * TRACK_SCALE,
-            steering_smoothing: 0.55,
-            last_steering: 0.0,
-            predictive_lookahead: 140.0 * TRACK_SCALE,
-            tight_corner_threshold: 0.006 / TRACK_SCALE,
-            corner_speed_multiplier: 0.45,
-            brake_divisor: 12.5 * TRACK_SCALE,
-            throttle_divisor: 80.0 * TRACK_SCALE,
-            low_speed_threshold: 30.0 * TRACK_SCALE,
-            low_speed_throttle: 0.7,
-            max_lateral_accel: 175.0 * TRACK_SCALE,
-            min_corner_speed: 40.0 * TRACK_SCALE,
-            max_corner_speed: 250.0 * TRACK_SCALE,
+            min_lookahead: 30.0 * TRACK_SCALE,
+            max_lookahead: 200.0 * TRACK_SCALE,
+            lookahead_time: 0.8,
+            wheelbase: 60.0 * TRACK_SCALE,
+            brake_gain: 0.07 / TRACK_SCALE,
+            throttle_gain: 0.012 / TRACK_SCALE,
+            speed_lookahead: 150.0 * TRACK_SCALE,
+            speed_lookahead_steps: 8,
+            boundary_margin: 35.0 * TRACK_SCALE,
+            racing_line_penalty_start: 30.0 * TRACK_SCALE,
+            racing_line_penalty_full: 80.0 * TRACK_SCALE,
+            last_steer: 0.0,
+            steering_smoothing: 0.15,
+            prev_racing_line_dist: 0.0,
         }
     }
 }
 
 impl RacingAi {
-    /// Compute steering, throttle, brake for this frame.
+    /// Main entry point — compute throttle, brake, steer for one frame.
     pub fn compute(
         &mut self,
         track: &Track,
         car_pos: Vec2,
         car_rotation: f32,
-        angular_velocity: f32,
+        _angular_velocity: f32,
         speed: f32,
         driver: &DriverProfile,
         speed_multiplier: f32,
         lateral_offset: f32,
         boundary_dist: f32,
         boundary_to_center: Vec2,
-        nearby_cars: &[(Vec2, f32)], // (position, speed) of very close cars
+        nearby_cars: &[(Vec2, f32)],
+        racing_line_dist: f32,
     ) -> AiInputs {
-        let mut steer = self.get_steering(
+        // Track drift rate for emergency braking
+        let drift_rate = racing_line_dist - self.prev_racing_line_dist;
+        self.prev_racing_line_dist = racing_line_dist;
+
+        // ── Steering ────────────────────────────────────────────────────
+        let steer = self.compute_steering(
             track,
             car_pos,
             car_rotation,
-            angular_velocity,
+            speed,
             lateral_offset,
+            boundary_dist,
+            boundary_to_center,
+            nearby_cars,
+            racing_line_dist,
         );
 
-        // Track boundary steering correction
-        let boundary_margin = 30.0 * TRACK_SCALE;
-        if boundary_dist < boundary_margin {
-            let urgency = (1.0 - boundary_dist / boundary_margin).clamp(0.0, 1.0);
-            let correction_angle = boundary_to_center.y.atan2(boundary_to_center.x);
-            let angle_diff = wrap_angle(correction_angle - car_rotation);
-            let boundary_steer = (angle_diff * 2.0 * urgency).clamp(-1.0, 1.0);
-            steer = lerp(steer, boundary_steer, urgency * 0.7);
-        }
-
-        // Nearby car avoidance — nudge steering away from very close cars
-        for &(other_pos, _other_speed) in nearby_cars {
-            let to_other = other_pos - car_pos;
-            let dist = to_other.length();
-            if dist < 40.0 * TRACK_SCALE && dist > 1.0 {
-                let avoidance_strength =
-                    ((40.0 * TRACK_SCALE - dist) / (40.0 * TRACK_SCALE)).clamp(0.0, 0.3);
-                let lateral_dir = Vec2::new(-car_rotation.sin(), car_rotation.cos());
-                let side = to_other.dot(lateral_dir);
-                // Steer away from the nearby car
-                if side > 0.0 {
-                    steer -= avoidance_strength;
-                } else {
-                    steer += avoidance_strength;
-                }
-            }
-        }
-        steer = steer.clamp(-1.0, 1.0);
-
-        let throttle_brake = self.get_throttle(
+        // ── Throttle / Brake ────────────────────────────────────────────
+        let tb = self.compute_throttle_brake(
             track,
             car_pos,
             speed,
             driver,
             speed_multiplier,
             boundary_dist,
+            racing_line_dist,
+            drift_rate,
+            steer,
         );
 
-        if throttle_brake >= 0.0 {
+        if tb >= 0.0 {
             AiInputs {
-                throttle: throttle_brake,
+                throttle: tb,
                 brake: 0.0,
                 steer,
             }
         } else {
             AiInputs {
                 throttle: 0.0,
-                brake: -throttle_brake,
+                brake: (-tb).min(1.0),
                 steer,
             }
         }
     }
 
-    /// Steering in [-1, 1]. Zone-based with feedforward.
-    pub fn get_steering(
+    // ── Steering (pure pursuit + recovery + boundary correction) ──────────
+    fn compute_steering(
         &mut self,
         track: &Track,
         car_pos: Vec2,
         car_rotation: f32,
-        angular_velocity: f32,
+        speed: f32,
         lateral_offset: f32,
+        boundary_dist: f32,
+        boundary_to_center: Vec2,
+        nearby_cars: &[(Vec2, f32)],
+        racing_line_dist: f32,
     ) -> f32 {
-        let closest_offset = track.closest_offset(car_pos);
-        let closest_point = offset_point(track, closest_offset, lateral_offset);
-        let dist = car_pos.distance(closest_point);
+        let max_steer_angle = 35.0f32.to_radians();
 
-        // Tangent alignment
-        let p1 = track.sample(closest_offset);
-        let ahead_offset = wrap_offset(closest_offset + self.tangent_sample_distance, track.length);
-        let p2 = track.sample(ahead_offset);
-        let line_angle = (p2 - p1).y.atan2((p2 - p1).x);
-        let tangent_diff = wrap_angle(line_angle - car_rotation);
+        // Speed-proportional look-ahead distance
+        let ld = (speed * self.lookahead_time).clamp(self.min_lookahead, self.max_lookahead);
 
-        // Pursuit target
-        let target_offset = wrap_offset(closest_offset + self.lookahead_distance, track.length);
-        let target_point = offset_point(track, target_offset, lateral_offset);
-        let to_target = target_point - car_pos;
-        let pursuit_angle = to_target.y.atan2(to_target.x);
-        let pursuit_diff = wrap_angle(pursuit_angle - car_rotation);
-
-        // Feedforward curvature
-        let ff_offset = wrap_offset(closest_offset + self.feedforward_lookahead, track.length);
-        let ff_curvature = track.curvature_at_offset(ff_offset);
-        let ff_p0 = track.sample(wrap_offset(ff_offset - 15.0 * TRACK_SCALE, track.length));
-        let ff_p1 = track.sample(ff_offset);
-        let ff_p2 = track.sample(wrap_offset(ff_offset + 15.0 * TRACK_SCALE, track.length));
-        let ff_v1 = (ff_p1 - ff_p0).normalize_or_zero();
-        let ff_v2 = (ff_p2 - ff_p1).normalize_or_zero();
-        let ff_cross = ff_v1.x * ff_v2.y - ff_v1.y * ff_v2.x;
-        let ff_steering = ff_curvature * self.feedforward_gain * ff_cross.signum() * 30.0;
-
-        // Lateral correction
-        let to_line_angle = (closest_point - car_pos)
-            .y
-            .atan2((closest_point - car_pos).x);
-        let to_line_diff = wrap_angle(to_line_angle - car_rotation);
-        let correction_strength = (dist / self.zone2_dist).clamp(0.0, 1.0) * 0.35;
-
-        // Zone selection
-        let (angle_diff, gain, damping, ff_blend);
-        if dist < self.zone1_dist {
-            angle_diff = tangent_diff + to_line_diff * correction_strength;
-            gain = self.zone1_gain;
-            damping = self.zone1_damping;
-            ff_blend = 1.0;
-        } else if dist < self.zone2_dist {
-            let blend = ((dist - self.zone1_dist) / (self.zone2_dist - self.zone1_dist)).sqrt();
-            angle_diff =
-                lerp(tangent_diff, pursuit_diff, blend) + to_line_diff * correction_strength * 1.5;
-            gain = self.zone2_gain;
-            damping = self.zone2_damping;
-            ff_blend = 1.0 - blend;
-        } else if dist < self.zone3_dist {
-            angle_diff = pursuit_diff;
-            gain = self.zone3_gain;
-            damping = self.zone3_damping;
-            ff_blend = 0.0;
-        } else {
-            angle_diff = pursuit_diff;
-            gain = self.zone4_gain;
-            damping = self.zone4_damping;
-            ff_blend = 0.0;
+        // Find the target point on the (potentially offset) racing line
+        let my_offset = track.closest_offset(car_pos);
+        let target_offset = wrap_offset(my_offset + ld, track.length);
+        let target_pos = {
+            let center = track.sample(target_offset);
+            if lateral_offset.abs() > 0.1 {
+                center + track.normal_at(target_offset) * lateral_offset
+            } else {
+                center
+            }
         };
 
-        let raw = (angle_diff * gain + ff_steering * ff_blend - angular_velocity * damping)
-            .clamp(-1.0, 1.0);
+        // Pure pursuit: compute angle to target point in car-local frame
+        let to_target = target_pos - car_pos;
+        let target_angle = to_target.y.atan2(to_target.x);
+        let alpha = wrap_angle(target_angle - car_rotation);
 
-        let smoothed = lerp(raw, self.last_steering, self.steering_smoothing).clamp(-1.0, 1.0);
-        self.last_steering = smoothed;
-        smoothed
+        // Classic pure pursuit: δ = atan(2·L·sin(α) / l_d)
+        let ld_actual = to_target.length().max(1.0);
+        let raw_steer = (2.0 * self.wheelbase * alpha.sin() / ld_actual).atan();
+        let mut steer = (raw_steer / max_steer_angle).clamp(-1.0, 1.0);
+
+        // ── Recovery steering: when far from the racing line, blend in a
+        // direct-to-line component so the car doesn't slowly drift forever ───
+        let recovery_start = self.racing_line_penalty_start;
+        if racing_line_dist > recovery_start {
+            let recovery_urgency = ((racing_line_dist - recovery_start)
+                / (self.racing_line_penalty_full - recovery_start))
+                .clamp(0.0, 1.0);
+            // Steer directly toward the nearest racing line point
+            let nearest_line_pos = track.sample(my_offset);
+            let to_line = nearest_line_pos - car_pos;
+            let line_angle = to_line.y.atan2(to_line.x);
+            let line_diff = wrap_angle(line_angle - car_rotation);
+            let recovery_steer = (line_diff / max_steer_angle).clamp(-1.0, 1.0);
+            // Squared urgency for progressive blend
+            let blend = recovery_urgency * recovery_urgency * 0.5;
+            steer = lerp(steer, recovery_steer, blend);
+        }
+
+        // ── Boundary correction ─────────────────────────────────────────
+        if boundary_dist < self.boundary_margin {
+            let urgency = (1.0 - boundary_dist / self.boundary_margin).powi(2);
+            let correction_angle = boundary_to_center.y.atan2(boundary_to_center.x);
+            let angle_diff = wrap_angle(correction_angle - car_rotation);
+            let boundary_steer = (angle_diff / max_steer_angle).clamp(-1.0, 1.0);
+            steer = lerp(steer, boundary_steer, urgency * 0.85);
+        }
+
+        // ── Nearby car avoidance ────────────────────────────────────────
+        for &(other_pos, _other_speed) in nearby_cars {
+            let to_other = other_pos - car_pos;
+            let dist = to_other.length();
+            if dist < 40.0 * TRACK_SCALE && dist > 1.0 {
+                let strength =
+                    ((40.0 * TRACK_SCALE - dist) / (40.0 * TRACK_SCALE)).clamp(0.0, 0.25);
+                let lateral_dir = Vec2::new(-car_rotation.sin(), car_rotation.cos());
+                let side = to_other.dot(lateral_dir);
+                if side > 0.0 {
+                    steer -= strength;
+                } else {
+                    steer += strength;
+                }
+            }
+        }
+
+        steer = steer.clamp(-1.0, 1.0);
+
+        // Smoothing — reduced from 0.30 to 0.12 for snappier steering response
+        let smoothed = lerp(steer, self.last_steer, self.steering_smoothing);
+        self.last_steer = smoothed;
+        smoothed.clamp(-1.0, 1.0)
     }
 
-    /// Throttle/brake in [-1, 1]. Positive = throttle, negative = brake.
-    pub fn get_throttle(
+    // ── Throttle / Brake ────────────────────────────────────────────────
+    //
+    // Enhanced with:
+    //  - Racing-line distance penalty (slow when drifting off line)
+    //  - Drift-rate emergency brake (lit up when drifting AWAY from line)
+    //  - Trail-braking (higher brake gain when steering hard)
+    //  - Earlier, more aggressive boundary braking
+    fn compute_throttle_brake(
         &self,
         track: &Track,
         car_pos: Vec2,
@@ -255,66 +256,114 @@ impl RacingAi {
         driver: &DriverProfile,
         speed_multiplier: f32,
         boundary_dist: f32,
+        racing_line_dist: f32,
+        drift_rate: f32,
+        steer_amount: f32,
     ) -> f32 {
-        let closest_offset = track.closest_offset(car_pos);
-        let mut target_speed = track.target_speed_at_offset(closest_offset)
-            * driver.speed_multiplier()
-            * speed_multiplier;
-        target_speed = target_speed.clamp(self.min_corner_speed, self.max_corner_speed * 1.15);
+        let my_offset = track.closest_offset(car_pos);
 
-        // Predictive braking — scan ahead for tight corners
-        if speed > 50.0 * TRACK_SCALE {
-            let effective_lookahead = self.predictive_lookahead / driver.brake_aggression;
-            let scan_steps = 8;
-            let step_size = effective_lookahead / scan_steps as f32;
-            let mut worst_curvature: f32 = 0.0;
-
-            for i in 1..=scan_steps {
-                let scan_offset = wrap_offset(closest_offset + step_size * i as f32, track.length);
-                worst_curvature = worst_curvature.max(track.curvature_at_offset(scan_offset));
-            }
-
-            if worst_curvature > self.tight_corner_threshold {
-                let corner_limit = (self.max_lateral_accel / worst_curvature.max(0.0005)).sqrt();
-                let corner_limit = corner_limit.clamp(self.min_corner_speed, self.max_corner_speed);
-                target_speed = target_speed.min(corner_limit * self.corner_speed_multiplier);
-            }
+        // Find the minimum target speed within the look-ahead window.
+        // cornering_caution modulates how far ahead we look: cautious drivers
+        // spot braking zones earlier, aggressive drivers brake late.
+        let effective_lookahead = self.speed_lookahead * driver.cornering_caution;
+        let step = effective_lookahead / self.speed_lookahead_steps as f32;
+        let mut min_target = track.target_speed_at_offset(my_offset);
+        for i in 1..=self.speed_lookahead_steps {
+            let off = wrap_offset(my_offset + step * i as f32, track.length);
+            min_target = min_target.min(track.target_speed_at_offset(off));
         }
 
-        // Off-line penalty
-        let dist = car_pos.distance(track.sample(closest_offset));
-        if dist > 100.0 * TRACK_SCALE {
-            let factor =
-                (1.0 - (dist - 100.0 * TRACK_SCALE) / (1500.0 * TRACK_SCALE)).clamp(0.8, 1.0);
-            target_speed *= factor;
+        let mut target_speed = min_target * driver.speed_multiplier() * speed_multiplier;
+
+        // ── Racing-line distance penalty ────────────────────────────────
+        // The further from the racing line, the more we reduce target speed.
+        // This prevents the car from accelerating while very far off-track.
+        if racing_line_dist > self.racing_line_penalty_start {
+            let off_line_ratio = ((racing_line_dist - self.racing_line_penalty_start)
+                / (self.racing_line_penalty_full - self.racing_line_penalty_start))
+                .clamp(0.0, 1.0);
+            // Up to 25% speed reduction when fully off-line
+            target_speed *= 1.0 - off_line_ratio * 0.25;
         }
 
-        // Track boundary speed reduction — slow down near edges
-        let boundary_margin = 30.0 * TRACK_SCALE;
-        if boundary_dist < boundary_margin {
-            let urgency = (1.0 - boundary_dist / boundary_margin).clamp(0.0, 1.0);
-            target_speed *= 1.0 - urgency * 0.5; // up to 50% speed reduction at the edge
+        // ── Boundary proximity slowdown ─────────────────────────────────
+        if boundary_dist < self.boundary_margin {
+            let urgency = (1.0 - boundary_dist / self.boundary_margin).clamp(0.0, 1.0);
+            target_speed *= 1.0 - urgency * 0.4;
         }
 
-        // Decision
         let speed_error = target_speed - speed;
 
-        if speed < self.low_speed_threshold {
-            return (self.low_speed_throttle * driver.throttle_aggression).clamp(0.0, 1.0);
+        // Low speed kickstart
+        if speed < 30.0 * TRACK_SCALE {
+            return (0.7 * driver.throttle_aggression).clamp(0.0, 1.0);
         }
 
-        // When very close to boundary, always brake if above target
-        if boundary_dist < boundary_margin * 0.5 && speed_error < 0.0 {
-            return (speed_error / (self.brake_divisor * 0.5)).clamp(-1.0, 0.0);
+        // ── Drift-rate emergency brake ──────────────────────────────────
+        // If we're drifting AWAY from the racing line (drift_rate > 0) and
+        // already far off-line, apply emergency braking.
+        if drift_rate > 0.5 && racing_line_dist > self.racing_line_penalty_start * 1.2 {
+            let drift_severity = (drift_rate / 2.0).clamp(0.0, 1.0);
+            let off_severity = ((racing_line_dist - self.racing_line_penalty_start)
+                / (self.racing_line_penalty_full * 0.5))
+                .clamp(0.0, 1.0);
+            let emergency_brake = drift_severity * off_severity * 0.6;
+            if emergency_brake > 0.15 {
+                return -emergency_brake.min(1.0);
+            }
+        }
+
+        // ── Hard brake near boundary ────────────────────────────────────
+        if boundary_dist < self.boundary_margin * 0.4 && speed_error < 0.0 {
+            return (speed_error * self.brake_gain * 2.0).clamp(-1.0, 0.0);
         }
 
         if speed_error < 0.0 {
-            (speed_error / self.brake_divisor).clamp(-1.0, 0.0)
-        } else if speed_error > 3.0 * TRACK_SCALE {
-            (speed_error / self.throttle_divisor * driver.throttle_aggression).clamp(0.0, 1.0)
+            // ── Trail-braking: boost brake gain when steering hard ──────
+            // Real cars brake into corners (trail-braking). Increase brake
+            // gain proportionally to how much the driver is turning.
+            let steer_factor = 1.0 + steer_amount.abs() * 0.6;
+            (speed_error * self.brake_gain * driver.brake_aggression * steer_factor)
+                .clamp(-1.0, 0.0)
+        } else if speed_error > 2.0 * TRACK_SCALE {
+            // Only accelerate hard if NOT drifting significantly off-line
+            let throttle_limit = if racing_line_dist > self.racing_line_penalty_start {
+                let off_ratio = ((racing_line_dist - self.racing_line_penalty_start)
+                    / (self.racing_line_penalty_full - self.racing_line_penalty_start))
+                    .clamp(0.0, 1.0);
+                1.0 - off_ratio * 0.5
+            } else {
+                1.0
+            };
+            (speed_error * self.throttle_gain * driver.throttle_aggression)
+                .clamp(0.0, 1.0)
+                .min(throttle_limit)
         } else {
+            // In the sweet spot — coast
             0.0
         }
+    }
+
+    /// Simplified steering for launch phase.
+    pub fn get_steering_simple(
+        &mut self,
+        track: &Track,
+        car_pos: Vec2,
+        car_rotation: f32,
+        _angular_velocity: f32,
+    ) -> f32 {
+        let ld = self.min_lookahead * 1.5;
+        let my_offset = track.closest_offset(car_pos);
+        let target_offset = wrap_offset(my_offset + ld, track.length);
+        let target_pos = track.sample(target_offset);
+
+        let to_target = target_pos - car_pos;
+        let target_angle = to_target.y.atan2(to_target.x);
+        let alpha = wrap_angle(target_angle - car_rotation);
+        let ld_actual = to_target.length().max(1.0);
+        let raw_steer = (2.0 * self.wheelbase * alpha.sin() / ld_actual).atan();
+        let max_steer_angle = 35.0f32.to_radians();
+        (raw_steer / max_steer_angle).clamp(-1.0, 1.0)
     }
 }
 
@@ -501,15 +550,6 @@ impl OvertakeManager {
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
-
-fn offset_point(track: &Track, offset: f32, lateral_offset: f32) -> Vec2 {
-    let center = track.sample(offset);
-    if lateral_offset.abs() < 0.1 {
-        center
-    } else {
-        center + track.normal_at(offset) * lateral_offset
-    }
-}
 
 fn wrap_angle(a: f32) -> f32 {
     let mut a = a % (2.0 * PI);

@@ -185,19 +185,70 @@ impl Track {
         curvatures
     }
 
-    /// Compute target speed at each point: v = sqrt(a_lat / curvature).
+    /// Compute target speed at each point using:
+    /// 1. Forward pass: v = sqrt(a_lat / curvature) — cornering limit
+    /// 2. Backward pass: propagate braking constraints so cars slow before corners
+    /// 3. Forward pass: propagate acceleration constraints
     fn compute_speed_profile(curvatures: &[f32]) -> Vec<f32> {
-        let max_lateral_accel = 175.0 * TRACK_SCALE;
+        // Lowered from 175 to better match actual physics grip.
+        let max_lateral_accel = 150.0 * TRACK_SCALE;
         let min_speed = 40.0 * TRACK_SCALE;
         let max_speed = 250.0 * TRACK_SCALE;
+        let bake_spacing = 5.0 * TRACK_SCALE;
+        // Max deceleration (braking): ~0.9g equivalent in our units
+        let max_decel = 3000.0 * TRACK_SCALE;
+        // Max acceleration: more limited than braking
+        let max_accel = 1200.0 * TRACK_SCALE;
 
-        curvatures
+        let n = curvatures.len();
+        if n == 0 {
+            return vec![];
+        }
+
+        // Pass 1: cornering speed limit at each point
+        let mut profile: Vec<f32> = curvatures
             .iter()
             .map(|&c| {
                 let s = (max_lateral_accel / c.max(0.0005)).sqrt();
                 s.clamp(min_speed, max_speed)
             })
-            .collect()
+            .collect();
+
+        // Pass 2 (backward): ensure we can brake from point i to point i+1.
+        // Walk backward around the loop: if profile[prev] is too fast to
+        // decelerate to profile[cur], reduce profile[prev].
+        // v_prev^2 = v_cur^2 + 2 * a * d  =>  v_prev = sqrt(v_cur^2 + 2*a*d)
+        for _ in 0..2 {
+            // Two passes around the loop to handle wrap-around
+            for i in (0..n).rev() {
+                let next = (i + 1) % n;
+                let v_next = profile[next];
+                let max_v = (v_next * v_next + 2.0 * max_decel * bake_spacing).sqrt();
+                if profile[i] > max_v {
+                    profile[i] = max_v;
+                }
+            }
+        }
+
+        // Pass 3 (forward): ensure we can accelerate from point i to point i+1.
+        // v_next^2 = v_cur^2 + 2 * a * d  =>  v_next = sqrt(v_cur^2 + 2*a*d)
+        for _ in 0..2 {
+            for i in 0..n {
+                let next = (i + 1) % n;
+                let v_cur = profile[i];
+                let max_v = (v_cur * v_cur + 2.0 * max_accel * bake_spacing).sqrt();
+                if profile[next] > max_v {
+                    profile[next] = max_v;
+                }
+            }
+        }
+
+        // Final clamp
+        for v in &mut profile {
+            *v = v.clamp(min_speed, max_speed);
+        }
+
+        profile
     }
 
     /// Find the closest baked point index to a world position.
@@ -315,6 +366,12 @@ impl Track {
         let center = self.sample(self.closest_offset(pos));
         let to_center = (center - pos).normalize_or_zero();
         (nearest_dist, to_center)
+    }
+
+    /// Distance from a position to the nearest point on the racing line.
+    pub fn racing_line_dist(&self, pos: Vec2) -> f32 {
+        let idx = self.closest_index(pos);
+        pos.distance(self.points[idx])
     }
 }
 
