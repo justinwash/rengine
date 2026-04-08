@@ -1,6 +1,5 @@
 use rengine::{AudioClip, MeshId, Vec3, Vertex3D};
 
-
 #[derive(Clone)]
 pub struct CollisionWall {
     pub x0: f32,
@@ -14,13 +13,11 @@ impl CollisionWall {
         Self { x0, z0, x1, z1 }
     }
 
-
     pub fn push_out(&self, px: f32, pz: f32, radius: f32) -> (f32, f32) {
         let dx = (self.x1 - self.x0).abs();
         let dz = (self.z1 - self.z0).abs();
 
         if dx > dz {
-
             let z_wall = self.z0;
             let x_min = self.x0.min(self.x1);
             let x_max = self.x0.max(self.x1);
@@ -32,7 +29,6 @@ impl CollisionWall {
                 }
             }
         } else {
-
             let x_wall = self.x0;
             let z_min = self.z0.min(self.z1);
             let z_max = self.z0.max(self.z1);
@@ -48,18 +44,17 @@ impl CollisionWall {
     }
 }
 
-
 pub struct Door {
     pub x: f32,
     pub z: f32,
     pub slides_x: bool,
+    pub slide_sign: f32,
     pub offset: f32,
     pub open: bool,
     pub mesh: MeshId,
     pub trigger_radius: f32,
     pub wall: CollisionWall,
 }
-
 
 pub struct Projectile {
     pub pos: Vec3,
@@ -71,13 +66,11 @@ pub struct Projectile {
     pub pair_id: u32,
 }
 
-
 pub struct Enemy {
     pub pos: Vec3,
     pub alive: bool,
     pub mesh: MeshId,
 }
-
 
 pub struct FpsGame {
     pub level_verts: Vec<Vertex3D>,

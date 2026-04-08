@@ -2,13 +2,18 @@ use rengine::Vec3;
 
 use crate::state::{FpsGame, Projectile};
 use crate::{
-    DOOR_OPEN_SPEED, ENEMY_SIZE, GRAVITY, JUMP_VEL, MOVE_SPEED, PLAYER_HEIGHT, PLAYER_RADIUS,
+    DOOR_OPEN_SPEED, GRAVITY, JUMP_VEL, MOVE_SPEED, PLAYER_HEIGHT, PLAYER_RADIUS,
     PROJECTILE_LIFETIME, PROJECTILE_SPEED, WALL_HEIGHT,
 };
 
 const PROJECTILE_RADIUS: f32 = 0.12;
 const RAY_STEP: f32 = 0.1;
-const VIEWMODEL_MUZZLE_OFFSET: Vec3 = Vec3::new(0.42, -0.22, -1.22);
+const DUMMY_MUZZLE_OFFSET: Vec3 = Vec3::new(0.36, -0.20, -0.94);
+const MIN_VISIBLE_IMPACT_DISTANCE: f32 = 0.85;
+const MIN_VISIBLE_TRAVEL_DISTANCE: f32 = 0.18;
+const ENEMY_HURT_RADIUS: f32 = 0.65;
+const ENEMY_HURT_HEIGHT: f32 = 1.6;
+const DOOR_OPEN_OFFSET_MAX: f32 = 1.35;
 
 enum ProjectileHit {
     Enemy(usize),
@@ -61,10 +66,10 @@ pub fn update_doors(game: &mut FpsGame, dt: f32) {
         if dist < door.trigger_radius {
             door.open = true;
         }
-        if door.open && door.offset < 2.2 {
+        if door.open && door.offset < DOOR_OPEN_OFFSET_MAX {
             door.offset += DOOR_OPEN_SPEED * dt;
-            if door.offset > 2.2 {
-                door.offset = 2.2;
+            if door.offset > DOOR_OPEN_OFFSET_MAX {
+                door.offset = DOOR_OPEN_OFFSET_MAX;
             }
         }
     }
@@ -85,8 +90,8 @@ pub fn shoot(game: &mut FpsGame) {
 
     let dummy_origin = viewmodel_muzzle_world(game);
     let dummy_delta = target_point - dummy_origin;
-    let dummy_distance = dummy_delta.length().max(0.001);
-    let dummy_vel = dummy_delta / actual_life.max(0.001);
+    let dummy_distance = dummy_delta.length();
+    let impact_forward_distance = (target_point - camera_origin).dot(cam_forward);
 
     game.projectiles.push(Projectile {
         pos: actual_origin,
@@ -97,15 +102,21 @@ pub fn shoot(game: &mut FpsGame) {
         collides: true,
         pair_id,
     });
-    game.projectiles.push(Projectile {
-        pos: dummy_origin,
-        vel: if dummy_distance > 0.0 { dummy_vel } else { cam_forward * PROJECTILE_SPEED },
-        life: actual_life,
-        alive: true,
-        visible: true,
-        collides: false,
-        pair_id,
-    });
+
+    if impact_forward_distance >= MIN_VISIBLE_IMPACT_DISTANCE
+        && dummy_distance >= MIN_VISIBLE_TRAVEL_DISTANCE
+    {
+        let dummy_vel = dummy_delta / actual_life.max(0.001);
+        game.projectiles.push(Projectile {
+            pos: dummy_origin,
+            vel: dummy_vel,
+            life: actual_life,
+            alive: true,
+            visible: true,
+            collides: false,
+            pair_id,
+        });
+    }
 }
 
 pub fn update_projectiles(game: &mut FpsGame, dt: f32) {
@@ -168,9 +179,8 @@ pub fn update_projectiles(game: &mut FpsGame, dt: f32) {
         }
     }
 
-    game.projectiles.retain(|projectile| {
-        projectile.alive && !pairs_to_kill.contains(&projectile.pair_id)
-    });
+    game.projectiles
+        .retain(|projectile| projectile.alive && !pairs_to_kill.contains(&projectile.pair_id));
 }
 
 fn camera_forward(yaw: f32, pitch: f32) -> Vec3 {
@@ -196,10 +206,8 @@ fn viewmodel_muzzle_world(game: &FpsGame) -> Vec3 {
     let forward = camera_forward(game.cam_yaw, game.cam_pitch);
     let right = camera_right(game.cam_yaw, game.cam_pitch);
     let up = camera_up(game.cam_yaw, game.cam_pitch);
-    game.player_pos
-        + right * VIEWMODEL_MUZZLE_OFFSET.x
-        + up * VIEWMODEL_MUZZLE_OFFSET.y
-        - forward * VIEWMODEL_MUZZLE_OFFSET.z
+    game.player_pos + right * DUMMY_MUZZLE_OFFSET.x + up * DUMMY_MUZZLE_OFFSET.y
+        - forward * DUMMY_MUZZLE_OFFSET.z
 }
 
 fn trace_aim_point(game: &FpsGame, origin: Vec3, direction: Vec3) -> Vec3 {
@@ -222,7 +230,7 @@ fn projectile_hit(game: &FpsGame, point: Vec3) -> Option<ProjectileHit> {
         if !enemy.alive {
             continue;
         }
-        if (point - enemy.pos).length() < ENEMY_SIZE * 0.7 {
+        if hits_enemy(enemy.pos, point) {
             return Some(ProjectileHit::Enemy(index));
         }
     }
@@ -248,6 +256,13 @@ fn projectile_hit(game: &FpsGame, point: Vec3) -> Option<ProjectileHit> {
     }
 
     None
+}
+
+fn hits_enemy(enemy_pos: Vec3, point: Vec3) -> bool {
+    let horizontal = Vec3::new(point.x - enemy_pos.x, 0.0, point.z - enemy_pos.z).length();
+    let vertical_min = enemy_pos.y;
+    let vertical_max = enemy_pos.y + ENEMY_HURT_HEIGHT;
+    horizontal <= ENEMY_HURT_RADIUS && point.y >= vertical_min && point.y <= vertical_max
 }
 
 fn collides_with_wall(wall: &crate::state::CollisionWall, point: Vec3, radius: f32) -> bool {
