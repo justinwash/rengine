@@ -1,0 +1,39 @@
+{
+  "asset": { "version": "2.0" },
+  "buffers": [
+    {
+      "uri": "data:application/octet-stream;base64,AAAAAArXoz0AAAAACtejPQAAAAAAAAAAAAAAAAAAAAAK16M9AAAAAArXoz0AAAAAAAAAAAAAAAAK16M9CtejvQAAAAAAAAAAAAAAAArXoz0AAAAACtejvQAAAAAAAAAAAAAAAAAAAAAK16O9AAAAAArXoz0AAAAAAAAAAAAAAAAK16O9CtejPQAAAAAAAAAAAAAAAArXo70AAAAAAAAAAAAAAAAK16M9CtejPQAAAAAAAAAAAAAAAArXo70AAAAACtejvQAAAAAAAAAAAAAAAAAAAAAK16M9AAAAAArXo70AAAAAAAAAAAAAAAAK16O9CtejvQAAAAAAAAAAAAAAAArXo70AAAAACtejPQAAAAAAAAAAAAAAAAAAAAAK16O9",
+      "byteLength": 288
+    }
+  ],
+  "bufferViews": [
+    { "buffer": 0, "byteOffset": 0, "byteLength": 288, "target": 34962 }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 24,
+      "type": "VEC3",
+      "min": [-0.08, -0.08, -0.08],
+      "max": [0.08, 0.08, 0.08]
+    }
+  ],
+  "meshes": [
+    {
+      "name": "projectile",
+      "primitives": [
+        {
+          "attributes": { "POSITION": 0 }
+        }
+      ]
+    }
+  ],
+  "nodes": [
+    { "mesh": 0 }
+  ],
+  "scenes": [
+    { "nodes": [0] }
+  ],
+  "scene": 0
+}

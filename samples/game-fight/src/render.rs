@@ -148,7 +148,7 @@ pub fn draw(game: &FightGame, engine: &Engine, frame: &mut Frame) {
 }
 
 fn draw_fighter(game: &FightGame, fighter: &FighterData, tex: &FighterTextures, frame: &mut Frame) {
-    let t = match fighter.state {
+    let uv = match fighter.state {
         FighterState::Punching => tex.punch,
         FighterState::Kicking => tex.kick,
         FighterState::Blocking => tex.block,
@@ -160,10 +160,11 @@ fn draw_fighter(game: &FightGame, fighter: &FighterData, tex: &FighterTextures, 
 
     frame.draw_sprite(
         DrawParams::new(
-            t,
+            tex.texture,
             Vec2::new(fighter.rect_x(), fighter.rect_y()),
             Vec2::new(FIGHTER_W, FIGHTER_H),
         )
+        .with_uv_rect(uv)
         .with_flip_x(flip),
     );
 

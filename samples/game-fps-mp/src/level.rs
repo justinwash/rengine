@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use rengine::*;
 
 use crate::state::{CollisionWall, DoorDef};
@@ -81,6 +83,8 @@ impl LevelBuilder {
 }
 
 pub fn build(engine: &mut Engine3D) -> BuildResult {
+    engine.set_asset_root(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets"));
+
     let mut builder = LevelBuilder::new();
 
     let floor_col = Color::from_rgba8(100, 100, 100, 255);
@@ -173,10 +177,10 @@ pub fn build(engine: &mut Engine3D) -> BuildResult {
         ));
     }
 
-    let door_color = Color::from_rgba8(139, 90, 43, 255);
-    let (dv, di) = cube_mesh(0.15, 2.2, 2.0, door_color);
-    let door_mesh1 = engine.create_mesh(dv.clone(), di.clone());
-    let door_mesh2 = engine.create_mesh(dv, di);
+    let door_mesh = engine
+        .load_obj_mesh("door.obj")
+        .expect("failed to load FPS-MP door mesh")
+        .mesh();
 
     let door_defs = vec![
         DoorDef {
@@ -195,13 +199,15 @@ pub fn build(engine: &mut Engine3D) -> BuildResult {
         },
     ];
 
-    let player_color = Color::from_rgba8(50, 150, 220, 255);
-    let (pv, pi) = cube_mesh(0.6, 1.7, 0.6, player_color);
-    let player_mesh = engine.create_mesh(pv, pi);
+    let player_mesh = engine
+        .load_obj_mesh("player.obj")
+        .expect("failed to load FPS-MP player mesh")
+        .mesh();
 
-    let projectile_color = Color::YELLOW;
-    let (bv, bi) = cube_mesh(0.1, 0.1, 0.3, projectile_color);
-    let projectile_mesh = engine.create_mesh(bv, bi);
+    let projectile_mesh = engine
+        .load_obj_mesh("projectile.obj")
+        .expect("failed to load FPS-MP projectile mesh")
+        .mesh();
 
     let spawn_points = [
         [4.0, crate::PLAYER_HEIGHT, 4.0],
@@ -213,7 +219,7 @@ pub fn build(engine: &mut Engine3D) -> BuildResult {
         level_idxs: builder.idxs,
         walls,
         door_defs,
-        door_meshes: vec![door_mesh1, door_mesh2],
+        door_meshes: vec![door_mesh, door_mesh],
         player_mesh,
         projectile_mesh,
         spawn_points,

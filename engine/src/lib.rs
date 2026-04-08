@@ -6,6 +6,7 @@ pub mod input;
 pub mod canvas;
 pub mod renderer;
 pub mod renderer3d;
+pub mod scene;
 pub mod text;
 
 pub mod world;
@@ -27,9 +28,16 @@ pub use world::tilemap;
 pub use world::{aabb_overlap, iso_to_screen, screen_to_iso, TileDef, TileMap};
 
 pub use assets::pixelart;
-pub use assets::{Animation, SpriteSheet};
+pub use assets::{
+    Animation, AssetError, AssetManifest, AssetPack, AudioBus, AudioClip, AudioId, MeshAsset,
+    SpriteSheet, SpriteSheetAssetDef, TextureAsset,
+};
 
 pub use canvas::{screen_to_ndc, Canvas, CanvasVertex};
+pub use scene::{
+    Prefab2D, Prefab2DDef, PrefabSprite2D, PrefabSprite2DDef, Scene2D, Scene2DDef, SceneInstance2D,
+    SceneInstance2DDef,
+};
 pub use text::FontAtlas;
 
 pub use gilrs::Button as GamepadButton;
@@ -42,7 +50,7 @@ pub use netcode::{fletcher64, RollbackConfig, RollbackSession, Rollbackable, Ses
 
 pub use app::{run3d, Engine3D, Game3D};
 pub use renderer3d::{cube_mesh, floor_quad, wall_quad};
-pub use renderer3d::{Camera3D, DrawCmd3D, Frame3D, MeshId, Vertex3D};
+pub use renderer3d::{Camera3D, DrawCmd3D, Frame3D, MeshId, Vertex3D, Viewmodel3D};
 
 pub use glam::{Vec2, Vec3};
 

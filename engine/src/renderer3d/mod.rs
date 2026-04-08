@@ -31,8 +31,32 @@ pub struct DrawCmd3D {
     pub position: Vec3,
 }
 
+#[derive(Debug, Clone)]
+pub struct Viewmodel3D {
+    pub camera: Camera3D,
+    pub(crate) draws: Vec<DrawCmd3D>,
+}
+
+impl Viewmodel3D {
+    pub fn new() -> Self {
+        let mut camera = Camera3D::new();
+        camera.z_near = 0.01;
+        camera.z_far = 16.0;
+        camera.fov_y = 50.0f32.to_radians();
+        Self {
+            camera,
+            draws: Vec::with_capacity(32),
+        }
+    }
+
+    pub fn draw_mesh(&mut self, mesh: MeshId, position: Vec3) {
+        self.draws.push(DrawCmd3D { mesh, position });
+    }
+}
+
 pub struct Frame3D {
     pub camera: Camera3D,
+    pub viewmodel: Viewmodel3D,
     pub clear_color: Color,
     pub light_dir: Vec3,
     pub light_color: Color,
@@ -51,6 +75,7 @@ impl Frame3D {
     pub fn new() -> Self {
         Self {
             camera: Camera3D::new(),
+            viewmodel: Viewmodel3D::new(),
             clear_color: Color::from_rgba8(40, 40, 50, 255),
             light_dir: Vec3::new(0.4, 0.8, 0.3).normalize(),
             light_color: Color::WHITE,
@@ -66,6 +91,10 @@ impl Frame3D {
 
     pub fn draw_mesh(&mut self, mesh: MeshId, position: Vec3) {
         self.draws.push(DrawCmd3D { mesh, position });
+    }
+
+    pub fn draw_viewmodel_mesh(&mut self, mesh: MeshId, position: Vec3) {
+        self.viewmodel.draw_mesh(mesh, position);
     }
 
     pub fn draw_raw(&mut self, vertices: &[V3], indices: &[u32]) {
@@ -305,6 +334,10 @@ impl Renderer3D {
         id
     }
 
+    pub fn replace_mesh(&mut self, id: MeshId, vertices: Vec<V3>, indices: Vec<u32>) {
+        self.meshes[id.0] = GpuMesh { vertices, indices };
+    }
+
     pub fn resize(&mut self, width: u32, height: u32) {
         if width > 0 && height > 0 {
             self.surface_config.width = width;
@@ -353,35 +386,7 @@ impl Renderer3D {
         self.queue
             .write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[uniforms]));
 
-        let mut all_verts: Vec<V3> = Vec::new();
-        let mut all_idxs: Vec<u32> = Vec::new();
-
-        for cmd in &frame.draws {
-            let mesh = &self.meshes[cmd.mesh.0];
-            let base = all_verts.len() as u32;
-            for v in &mesh.vertices {
-                let mut moved = *v;
-                moved.position[0] += cmd.position.x;
-                moved.position[1] += cmd.position.y;
-                moved.position[2] += cmd.position.z;
-                all_verts.push(moved);
-            }
-            all_idxs.extend(mesh.indices.iter().map(|i| i + base));
-        }
-
-        if !frame.raw_verts.is_empty() {
-            let base = all_verts.len() as u32;
-            all_verts.extend_from_slice(&frame.raw_verts);
-            all_idxs.extend(frame.raw_idxs.iter().map(|i| i + base));
-        }
-
-        if !all_verts.is_empty() {
-            self.queue
-                .write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&all_verts));
-            self.queue
-                .write_buffer(&self.index_buffer, 0, bytemuck::cast_slice(&all_idxs));
-        }
-
+        let (all_verts, all_idxs) = self.build_draw_geometry(&frame.draws, &frame.raw_verts, &frame.raw_idxs);
         let num_indices = all_idxs.len() as u32;
 
         let mut encoder = self
@@ -416,12 +421,80 @@ impl Renderer3D {
             });
 
             if num_indices > 0 {
+                self.queue
+                    .write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&all_verts));
+                self.queue
+                    .write_buffer(&self.index_buffer, 0, bytemuck::cast_slice(&all_idxs));
                 pass.set_pipeline(&self.pipeline);
                 pass.set_bind_group(0, &self.uniform_bind_group, &[]);
                 pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
                 pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                 pass.draw_indexed(0..num_indices, 0, 0..1);
             }
+        }
+
+        if !frame.viewmodel.draws.is_empty() {
+            let vm_vp = frame.viewmodel.camera.view_projection(aspect);
+            let vm_uniforms = Uniforms {
+                view_proj: vm_vp.to_cols_array_2d(),
+                light_dir: [frame.light_dir.x, frame.light_dir.y, frame.light_dir.z, 0.0],
+                light_color: [
+                    frame.light_color.r,
+                    frame.light_color.g,
+                    frame.light_color.b,
+                    frame.light_intensity,
+                ],
+                ambient: [
+                    frame.ambient_color.r,
+                    frame.ambient_color.g,
+                    frame.ambient_color.b,
+                    frame.ambient_intensity,
+                ],
+            };
+
+            let (vm_verts, vm_idxs) =
+                self.build_viewmodel_geometry(&frame.viewmodel.camera, &frame.viewmodel.draws);
+            if !vm_idxs.is_empty() {
+                self.queue
+                    .write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[vm_uniforms]));
+                self.queue
+                    .write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&vm_verts));
+                self.queue
+                    .write_buffer(&self.index_buffer, 0, bytemuck::cast_slice(&vm_idxs));
+
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("mesh3d_viewmodel_pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                        depth_slice: None,
+                    })],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: &self.depth_view,
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(1.0),
+                            store: wgpu::StoreOp::Discard,
+                        }),
+                        stencil_ops: None,
+                    }),
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
+
+                pass.set_pipeline(&self.pipeline);
+                pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+                pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+                pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..vm_idxs.len() as u32, 0, 0..1);
+            }
+
+            self.queue
+                .write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[uniforms]));
         }
 
         canvas::render_pass(
@@ -446,5 +519,65 @@ impl Renderer3D {
     #[allow(dead_code)]
     pub fn surface_height(&self) -> u32 {
         self.surface_config.height
+    }
+
+    fn build_draw_geometry(
+        &self,
+        draws: &[DrawCmd3D],
+        raw_verts: &[V3],
+        raw_idxs: &[u32],
+    ) -> (Vec<V3>, Vec<u32>) {
+        let mut verts = Vec::new();
+        let mut idxs = Vec::new();
+
+        for cmd in draws {
+            let mesh = &self.meshes[cmd.mesh.0];
+            let base = verts.len() as u32;
+            for v in &mesh.vertices {
+                let mut moved = *v;
+                moved.position[0] += cmd.position.x;
+                moved.position[1] += cmd.position.y;
+                moved.position[2] += cmd.position.z;
+                verts.push(moved);
+            }
+            idxs.extend(mesh.indices.iter().map(|i| i + base));
+        }
+
+        if !raw_verts.is_empty() {
+            let base = verts.len() as u32;
+            verts.extend_from_slice(raw_verts);
+            idxs.extend(raw_idxs.iter().map(|i| i + base));
+        }
+
+        (verts, idxs)
+    }
+
+    fn build_viewmodel_geometry(&self, camera: &Camera3D, draws: &[DrawCmd3D]) -> (Vec<V3>, Vec<u32>) {
+        let mut verts = Vec::new();
+        let mut idxs = Vec::new();
+        let camera_from_view = camera.view_matrix().inverse();
+
+        for cmd in draws {
+            let mesh = &self.meshes[cmd.mesh.0];
+            let base = verts.len() as u32;
+            for v in &mesh.vertices {
+                let mut moved = *v;
+                let local_position = Vec3::new(
+                    v.position[0] + cmd.position.x,
+                    v.position[1] + cmd.position.y,
+                    v.position[2] + cmd.position.z,
+                );
+                let world_position = camera_from_view.transform_point3(local_position);
+                let world_normal = camera_from_view
+                    .transform_vector3(Vec3::new(v.normal[0], v.normal[1], v.normal[2]))
+                    .normalize_or_zero();
+                moved.position = [world_position.x, world_position.y, world_position.z];
+                moved.normal = [world_normal.x, world_normal.y, world_normal.z];
+                verts.push(moved);
+            }
+            idxs.extend(mesh.indices.iter().map(|i| i + base));
+        }
+
+        (verts, idxs)
     }
 }
