@@ -30,9 +30,9 @@ pub fn draw(game: &FpsGame, engine: &Engine3D, frame: &mut Frame3D) {
 
     for door in &game.doors {
         let slide = if door.slides_x {
-            Vec3::new(door.offset, 0.0, 0.0)
+            Vec3::new(door.offset * door.slide_sign, 0.0, 0.0)
         } else {
-            Vec3::new(0.0, 0.0, door.offset)
+            Vec3::new(0.0, 0.0, door.offset * door.slide_sign)
         };
         let pos = Vec3::new(door.x, 1.1, door.z) + slide;
         frame.draw_mesh(door.mesh, pos);
