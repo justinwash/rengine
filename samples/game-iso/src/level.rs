@@ -1,24 +1,29 @@
-use rengine::{Color, Engine};
+use std::path::PathBuf;
 
-use crate::art;
+use rengine::Engine;
+
 use crate::state::{IsoGame, Tile};
 use crate::MAP_SIZE;
 
 
 pub fn build(engine: &mut Engine) -> IsoGame {
+    engine.set_asset_root(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets"));
 
-    let (w, h, d) = art::iso_grass_tile();
-    let grass_tex = engine.create_texture(w, h, &d);
-    let (w, h, d) = art::iso_dirt_tile();
-    let dirt_tex = engine.create_texture(w, h, &d);
-    let (w, h, d) = art::iso_water_tile();
-    let water_tex = engine.create_texture(w, h, &d);
-    let (w, h, d) = art::iso_stone_tile();
-    let stone_tex = engine.create_texture(w, h, &d);
-    let (w, h, d) = art::iso_tree();
-    let tree_tex = engine.create_texture(w, h, &d);
-    let (w, h, d) = art::iso_character(Color::from_rgba8(50, 100, 200, 255));
-    let player_tex = engine.create_texture(w, h, &d);
+    let tile_sheet = engine
+        .load_sprite_sheet("tiles.png", 64, 32)
+        .expect("failed to load iso tile sheet");
+    let grass_tex = tile_sheet.texture;
+    let dirt_tex = tile_sheet.texture;
+    let water_tex = tile_sheet.texture;
+    let stone_tex = tile_sheet.texture;
+    let tree_tex = engine
+        .load_texture("tree.png")
+        .expect("failed to load iso tree texture")
+        .texture();
+    let player_tex = engine
+        .load_texture("player.png")
+        .expect("failed to load iso player texture")
+        .texture();
 
 
     let mut map = vec![vec![Tile::Grass; MAP_SIZE as usize]; MAP_SIZE as usize];
@@ -76,6 +81,10 @@ pub fn build(engine: &mut Engine) -> IsoGame {
         dirt_tex,
         water_tex,
         stone_tex,
+        grass_uv: tile_sheet.uv_rect(0, 0),
+        dirt_uv: tile_sheet.uv_rect(1, 0),
+        water_uv: tile_sheet.uv_rect(2, 0),
+        stone_uv: tile_sheet.uv_rect(3, 0),
         tree_tex,
         player_tex,
         trees,

@@ -1,6 +1,7 @@
 use rengine::{Color, Engine3D, Frame3D, Vec3};
 
 use crate::state::FpsGame;
+use crate::{VIEWMODEL_FOV_DEG, WORLD_FOV_DEG};
 
 
 pub fn draw(game: &FpsGame, engine: &Engine3D, frame: &mut Frame3D) {
@@ -13,6 +14,15 @@ pub fn draw(game: &FpsGame, engine: &Engine3D, frame: &mut Frame3D) {
     frame.camera.position = game.player_pos;
     frame.camera.yaw = game.cam_yaw;
     frame.camera.pitch = game.cam_pitch;
+    frame.camera.fov_y = WORLD_FOV_DEG.to_radians();
+
+    frame.viewmodel.camera.position = game.player_pos;
+    frame.viewmodel.camera.yaw = game.cam_yaw;
+    frame.viewmodel.camera.pitch = game.cam_pitch;
+    frame.viewmodel.camera.fov_y = VIEWMODEL_FOV_DEG.to_radians();
+    frame.viewmodel.camera.z_near = 0.01;
+    frame.viewmodel.camera.z_far = 8.0;
+    frame.draw_viewmodel_mesh(game.viewmodel_mesh, Vec3::ZERO);
 
 
     frame.draw_raw(&game.level_verts, &game.level_idxs);
@@ -37,7 +47,9 @@ pub fn draw(game: &FpsGame, engine: &Engine3D, frame: &mut Frame3D) {
 
 
     for proj in &game.projectiles {
-        frame.draw_mesh(game.projectile_mesh, proj.pos);
+        if proj.visible {
+            frame.draw_mesh(game.projectile_mesh, proj.pos);
+        }
     }
 
 

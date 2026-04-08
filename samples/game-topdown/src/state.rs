@@ -1,5 +1,5 @@
 use rengine::tilemap::TileMap;
-use rengine::{TextureId, Vec2};
+use rengine::{Scene2D, TextureId, Vec2};
 
 
 pub struct Player {
@@ -26,6 +26,5 @@ pub struct TopDown {
     pub gems: Vec<Gem>,
     pub tilemap: TileMap,
     pub score: u32,
-    pub tree_tex: TextureId,
-    pub trees: Vec<Vec2>,
+    pub scene: Scene2D,
 }

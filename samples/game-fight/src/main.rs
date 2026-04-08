@@ -1,12 +1,13 @@
-mod art;
 pub mod bot;
 mod input;
 mod render;
 pub mod sim;
 pub mod state;
 
+use std::path::PathBuf;
+
 use rengine::{
-    Color, Engine, EngineConfig, Frame, Game, OnlineConfig, RollbackConfig, RollbackSession,
+    AudioBus, Engine, EngineConfig, Frame, Game, OnlineConfig, RollbackConfig, RollbackSession,
     SessionMode,
 };
 use state::{FightGame, FightSim, FighterTextures};
@@ -45,39 +46,31 @@ pub const FIXED_DT: f32 = 1.0 / 60.0;
 
 impl Game for FightGame {
     fn new(engine: &mut Engine) -> Self {
-        let body1 = Color::from_rgba8(50, 80, 180, 255);
-        let skin = Color::from_rgba8(230, 185, 140, 255);
-        let belt1 = Color::from_rgba8(30, 30, 30, 255);
+        engine.set_asset_root(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets"));
 
-        let (w, h, pix) = art::fighter_idle(body1, skin, belt1);
-        let tex_idle_1 = engine.create_texture(w, h, &pix);
-        let (w, h, pix) = art::fighter_punch(body1, skin, belt1);
-        let tex_punch_1 = engine.create_texture(w, h, &pix);
-        let (w, h, pix) = art::fighter_kick(body1, skin, belt1);
-        let tex_kick_1 = engine.create_texture(w, h, &pix);
-        let (w, h, pix) = art::fighter_block(body1, skin, belt1);
-        let tex_block_1 = engine.create_texture(w, h, &pix);
-        let (w, h, pix) = art::fighter_hit(body1, skin, belt1);
-        let tex_hit_1 = engine.create_texture(w, h, &pix);
-
-        let body2 = Color::from_rgba8(190, 50, 50, 255);
-        let belt2 = Color::from_rgba8(200, 180, 30, 255);
-
-        let (w, h, pix) = art::fighter_idle(body2, skin, belt2);
-        let tex_idle_2 = engine.create_texture(w, h, &pix);
-        let (w, h, pix) = art::fighter_punch(body2, skin, belt2);
-        let tex_punch_2 = engine.create_texture(w, h, &pix);
-        let (w, h, pix) = art::fighter_kick(body2, skin, belt2);
-        let tex_kick_2 = engine.create_texture(w, h, &pix);
-        let (w, h, pix) = art::fighter_block(body2, skin, belt2);
-        let tex_block_2 = engine.create_texture(w, h, &pix);
-        let (w, h, pix) = art::fighter_hit(body2, skin, belt2);
-        let tex_hit_2 = engine.create_texture(w, h, &pix);
-
-        let (w, h, pix) = art::dojo_floor_tile();
-        let floor_tex = engine.create_texture(w, h, &pix);
+        let blue_sheet = engine
+            .load_sprite_sheet("fighter_blue.png", 96, 144)
+            .expect("failed to load blue fighter sprite sheet");
+        let red_sheet = engine
+            .load_sprite_sheet("fighter_red.png", 96, 144)
+            .expect("failed to load red fighter sprite sheet");
+        let floor_tex = engine
+            .load_texture("dojo_floor.png")
+            .expect("failed to load dojo floor texture")
+            .texture();
+        let hit_sfx = engine
+            .load_audio("fight_hit.wav")
+            .expect("failed to load fight hit audio");
+        let theme = engine
+            .load_audio("fight_theme.wav")
+            .expect("failed to load fight theme audio");
 
         let white_tex = engine.white_texture();
+
+        engine.set_master_volume(0.9);
+        engine.set_audio_bus_volume(AudioBus::Music, 0.35);
+        engine.set_audio_bus_volume(AudioBus::Effects, 0.9);
+        let _ = engine.play_music_with_volume(&theme, 1.0);
 
         let demo_mode = std::env::args().any(|a| a == "--demo");
         let online = std::env::args().any(|a| a == "--online");
@@ -119,28 +112,34 @@ impl Game for FightGame {
             sim: FightSim::new(),
             session,
             p1_tex: FighterTextures {
-                idle: tex_idle_1,
-                punch: tex_punch_1,
-                kick: tex_kick_1,
-                block: tex_block_1,
-                hit: tex_hit_1,
+                texture: blue_sheet.texture,
+                idle: blue_sheet.uv_rect(0, 0),
+                punch: blue_sheet.uv_rect(1, 0),
+                kick: blue_sheet.uv_rect(2, 0),
+                block: blue_sheet.uv_rect(3, 0),
+                hit: blue_sheet.uv_rect(4, 0),
             },
             p2_tex: FighterTextures {
-                idle: tex_idle_2,
-                punch: tex_punch_2,
-                kick: tex_kick_2,
-                block: tex_block_2,
-                hit: tex_hit_2,
+                texture: red_sheet.texture,
+                idle: red_sheet.uv_rect(0, 0),
+                punch: red_sheet.uv_rect(1, 0),
+                kick: red_sheet.uv_rect(2, 0),
+                block: red_sheet.uv_rect(3, 0),
+                hit: red_sheet.uv_rect(4, 0),
             },
             floor_tex,
             white_tex,
             demo_mode,
             demo_frame: 0,
             printed_result: false,
+            hit_sfx,
         }
     }
 
     fn update(&mut self, engine: &Engine) {
+        let prev_p1_hp = self.sim.p1.hp;
+        let prev_p2_hp = self.sim.p2.hp;
+        let prev_round_pause = self.sim.round_pause;
         let num = self.session.num_players();
         let frame = self.demo_frame;
         let demo = self.demo_mode;
@@ -163,6 +162,19 @@ impl Game for FightGame {
         let ticked = self.session.update(engine.dt(), &inputs, &mut self.sim);
         if ticked && self.demo_mode {
             self.demo_frame += 1;
+        }
+
+        if ticked {
+            if self.sim.p1.hp < prev_p1_hp || self.sim.p2.hp < prev_p2_hp {
+                let _ = engine.play_sound_on_bus(AudioBus::Effects, &self.hit_sfx, 1.0);
+            }
+
+            if prev_round_pause <= 0.0 && self.sim.round_pause > 0.0 {
+                engine.pause_music();
+                let _ = engine.play_sound_on_bus(AudioBus::Ui, &self.hit_sfx, 0.55);
+            } else if prev_round_pause > 0.0 && self.sim.round_pause <= 0.0 && self.sim.winner().is_none() {
+                engine.resume_music();
+            }
         }
 
         if !self.printed_result && self.session.max_frames_reached() {

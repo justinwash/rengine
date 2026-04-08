@@ -1,8 +1,9 @@
+use std::path::PathBuf;
+
 use rengine::*;
 
 use crate::state::{CollisionWall, Door, Enemy, FpsGame};
-use crate::{ENEMY_SIZE, PLAYER_HEIGHT, WALL_HEIGHT};
-
+use crate::{PLAYER_HEIGHT, WALL_HEIGHT};
 
 pub struct LevelBuilder {
     pub verts: Vec<Vertex3D>,
@@ -100,8 +101,12 @@ impl LevelBuilder {
     }
 }
 
-
 pub fn build(engine: &mut Engine3D) -> FpsGame {
+    engine.set_asset_root(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets"));
+    let assets = engine
+        .load_asset_manifest("fps.assets.json")
+        .expect("failed to load FPS asset manifest");
+
     let mut builder = LevelBuilder::new();
 
     let floor_col = Color::from_rgba8(100, 100, 100, 255);
@@ -110,7 +115,6 @@ pub fn build(engine: &mut Engine3D) -> FpsGame {
     let ceil_col = Color::from_rgba8(80, 80, 90, 255);
     let accent = Color::from_rgba8(120, 60, 40, 255);
     let floor_col2 = Color::from_rgba8(120, 110, 100, 255);
-
 
     builder.floor_rect(0.0, 0.0, 8.0, 8.0, 0.0, floor_col);
     builder.ceiling_rect(0.0, 0.0, 8.0, 8.0, WALL_HEIGHT, ceil_col);
@@ -121,7 +125,6 @@ pub fn build(engine: &mut Engine3D) -> FpsGame {
     builder.wall(8.0, 5.0, 8.0, 8.0, 0.0, WALL_HEIGHT, wall_col);
     builder.wall(8.0, 3.0, 8.0, 5.0, 2.2, WALL_HEIGHT - 2.2, wall_col);
 
-
     builder.floor_rect(8.0, 2.0, 16.0, 6.0, 0.0, floor_col2);
     builder.ceiling_rect(8.0, 2.0, 16.0, 6.0, WALL_HEIGHT, ceil_col);
     builder.wall(8.0, 2.0, 16.0, 2.0, 0.0, WALL_HEIGHT, wall_col2);
@@ -130,7 +133,6 @@ pub fn build(engine: &mut Engine3D) -> FpsGame {
     builder.wall(16.0, 5.0, 16.0, 6.0, 0.0, WALL_HEIGHT, wall_col2);
     builder.wall(16.0, 3.0, 16.0, 5.0, 2.2, WALL_HEIGHT - 2.2, wall_col2);
 
-
     builder.floor_rect(16.0, 0.0, 28.0, 12.0, 0.0, floor_col);
     builder.ceiling_rect(16.0, 0.0, 28.0, 12.0, WALL_HEIGHT, ceil_col);
     builder.wall(16.0, 0.0, 28.0, 0.0, 0.0, WALL_HEIGHT, accent);
@@ -138,7 +140,6 @@ pub fn build(engine: &mut Engine3D) -> FpsGame {
     builder.wall(28.0, 0.0, 28.0, 12.0, 0.0, WALL_HEIGHT, accent);
     builder.wall(16.0, 12.0, 16.0, 6.0, 0.0, WALL_HEIGHT, wall_col2);
     builder.wall(16.0, 2.0, 16.0, 0.0, 0.0, WALL_HEIGHT, wall_col2);
-
 
     let pillar_col = Color::from_rgba8(90, 80, 70, 255);
     for &(px, pz) in &[(20.0, 3.0), (20.0, 9.0), (24.0, 3.0), (24.0, 9.0)] {
@@ -156,27 +157,22 @@ pub fn build(engine: &mut Engine3D) -> FpsGame {
     let level_verts = builder.verts;
     let level_idxs = builder.idxs;
 
-
     let mut walls = vec![
-
         CollisionWall::new(0.0, 0.0, 8.0, 0.0),
         CollisionWall::new(0.0, 8.0, 8.0, 8.0),
         CollisionWall::new(0.0, 0.0, 0.0, 8.0),
         CollisionWall::new(8.0, 0.0, 8.0, 3.0),
         CollisionWall::new(8.0, 5.0, 8.0, 8.0),
-
         CollisionWall::new(8.0, 2.0, 16.0, 2.0),
         CollisionWall::new(8.0, 6.0, 16.0, 6.0),
         CollisionWall::new(16.0, 2.0, 16.0, 3.0),
         CollisionWall::new(16.0, 5.0, 16.0, 6.0),
-
         CollisionWall::new(16.0, 0.0, 28.0, 0.0),
         CollisionWall::new(16.0, 12.0, 28.0, 12.0),
         CollisionWall::new(28.0, 0.0, 28.0, 12.0),
         CollisionWall::new(16.0, 6.0, 16.0, 12.0),
         CollisionWall::new(16.0, 0.0, 16.0, 2.0),
     ];
-
 
     for &(px, pz) in &[(20.0, 3.0), (20.0, 9.0), (24.0, 3.0), (24.0, 9.0)] {
         let half = 0.3;
@@ -206,11 +202,10 @@ pub fn build(engine: &mut Engine3D) -> FpsGame {
         ));
     }
 
-
-    let door_color = Color::from_rgba8(139, 90, 43, 255);
-    let (dv, di) = cube_mesh(0.15, 2.2, 2.0, door_color);
-    let door_mesh1 = engine.create_mesh(dv.clone(), di.clone());
-    let door_mesh2 = engine.create_mesh(dv, di);
+    let door_mesh = assets
+        .mesh("door")
+        .expect("manifest missing door mesh")
+        .mesh();
 
     let doors = vec![
         Door {
@@ -219,7 +214,7 @@ pub fn build(engine: &mut Engine3D) -> FpsGame {
             slides_x: false,
             offset: 0.0,
             open: false,
-            mesh: door_mesh1,
+            mesh: door_mesh,
             trigger_radius: 2.0,
             wall: CollisionWall::new(8.0, 3.0, 8.0, 5.0),
         },
@@ -229,36 +224,50 @@ pub fn build(engine: &mut Engine3D) -> FpsGame {
             slides_x: false,
             offset: 0.0,
             open: false,
-            mesh: door_mesh2,
+            mesh: door_mesh,
             trigger_radius: 2.0,
             wall: CollisionWall::new(16.0, 3.0, 16.0, 5.0),
         },
     ];
 
-
-    let enemy_color = Color::from_rgba8(200, 50, 50, 255);
+    let enemy_mesh = assets
+        .mesh("enemy")
+        .expect("manifest missing enemy mesh")
+        .mesh();
     let mut enemies = Vec::new();
     let enemy_positions = vec![
-        Vec3::new(12.0, ENEMY_SIZE / 2.0, 4.0),
-        Vec3::new(20.0, ENEMY_SIZE / 2.0, 6.0),
-        Vec3::new(24.0, ENEMY_SIZE / 2.0, 6.0),
-        Vec3::new(22.0, ENEMY_SIZE / 2.0, 1.5),
-        Vec3::new(22.0, ENEMY_SIZE / 2.0, 10.5),
-        Vec3::new(26.0, ENEMY_SIZE / 2.0, 6.0),
+        Vec3::new(12.0, 0.0, 4.0),
+        Vec3::new(20.0, 0.0, 6.0),
+        Vec3::new(24.0, 0.0, 6.0),
+        Vec3::new(22.0, 0.0, 1.5),
+        Vec3::new(22.0, 0.0, 10.5),
+        Vec3::new(26.0, 0.0, 6.0),
     ];
     for pos in enemy_positions {
-        let (ev, ei) = cube_mesh(ENEMY_SIZE, ENEMY_SIZE, ENEMY_SIZE, enemy_color);
-        let mesh = engine.create_mesh(ev, ei);
         enemies.push(Enemy {
             pos,
             alive: true,
-            mesh,
+            mesh: enemy_mesh,
         });
     }
 
-
-    let (pv, pi) = cube_mesh(0.1, 0.1, 0.3, Color::YELLOW);
-    let projectile_mesh = engine.create_mesh(pv, pi);
+    let projectile_mesh = assets
+        .mesh("projectile")
+        .expect("manifest missing projectile mesh")
+        .mesh();
+    let shoot_sfx = assets
+        .audio("shoot")
+        .expect("manifest missing shoot audio")
+        .clone();
+    let hit_sfx = assets
+        .audio("hit")
+        .expect("manifest missing hit audio")
+        .clone();
+    let jump_sfx = assets
+        .audio("jump")
+        .expect("manifest missing jump audio")
+        .clone();
+    let viewmodel_mesh = build_viewmodel_mesh(engine);
 
     FpsGame {
         level_verts,
@@ -271,8 +280,67 @@ pub fn build(engine: &mut Engine3D) -> FpsGame {
         player_vel_y: 0.0,
         on_ground: true,
         projectiles: Vec::new(),
+        next_projectile_pair_id: 1,
         projectile_mesh,
+        viewmodel_mesh,
         enemies,
         score: 0,
+        shoot_sfx,
+        hit_sfx,
+        jump_sfx,
     }
+}
+
+fn build_viewmodel_mesh(engine: &mut Engine3D) -> MeshId {
+    let mut vertices = Vec::new();
+    let mut indices = Vec::new();
+
+    append_box(
+        &mut vertices,
+        &mut indices,
+        Vec3::new(0.34, -0.24, -0.78),
+        Vec3::new(0.18, 0.12, 0.38),
+        Color::from_rgba8(80, 82, 90, 255),
+    );
+    append_box(
+        &mut vertices,
+        &mut indices,
+        Vec3::new(0.40, -0.21, -1.02),
+        Vec3::new(0.05, 0.04, 0.34),
+        Color::from_rgba8(110, 112, 122, 255),
+    );
+    append_box(
+        &mut vertices,
+        &mut indices,
+        Vec3::new(0.25, -0.34, -0.63),
+        Vec3::new(0.07, 0.18, 0.12),
+        Color::from_rgba8(55, 57, 63, 255),
+    );
+    append_box(
+        &mut vertices,
+        &mut indices,
+        Vec3::new(0.33, -0.17, -0.67),
+        Vec3::new(0.10, 0.03, 0.10),
+        Color::from_rgba8(180, 110, 45, 255),
+    );
+
+    engine.create_mesh(vertices, indices)
+}
+
+fn append_box(
+    vertices: &mut Vec<Vertex3D>,
+    indices: &mut Vec<u32>,
+    center: Vec3,
+    size: Vec3,
+    color: Color,
+) {
+    let (mut verts, idxs) = cube_mesh(size.x, size.y, size.z, color);
+    let base = vertices.len() as u32;
+    for vertex in &mut verts {
+        vertex.position[0] += center.x;
+        vertex.position[1] += center.y;
+        vertex.position[2] += center.z;
+    }
+    vertices.extend(verts);
+    indices.extend(idxs.into_iter().map(|index| base + index));
 }
