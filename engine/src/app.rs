@@ -16,7 +16,7 @@ use crate::input::{GamepadSystem, InputState};
 use crate::math::TimeState;
 use crate::renderer::{Frame, Renderer, TextureId};
 use crate::renderer3d::{Frame3D, MeshId, Renderer3D, Vertex3D};
-use crate::scene::Scene2D;
+use crate::scene::{Globals, Scene, Scene2D, Scene3D, SceneOp, SceneOp3D};
 use crate::text;
 
 pub struct EngineConfig {
@@ -27,6 +27,7 @@ pub struct EngineConfig {
     pub vsync: bool,
     pub headless: bool,
     pub hot_reload: bool,
+    pub show_fps: bool,
 }
 
 impl Default for EngineConfig {
@@ -38,6 +39,7 @@ impl Default for EngineConfig {
             vsync: false,
             headless: false,
             hot_reload: true,
+            show_fps: true,
         }
     }
 }
@@ -290,6 +292,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
     env_logger::init();
 
     let headless = config.headless;
+    let show_fps = config.show_fps;
 
     let event_loop = EventLoop::new()?;
     let window = Arc::new(
@@ -373,15 +376,17 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
                     let mut frame = Frame::new();
                     game.render(&engine, &mut frame);
 
-                    let screen_size = engine.window_size();
-                    let mut fps_canvas = canvas::Canvas::new();
-                    canvas::draw_fps(
-                        &mut fps_canvas,
-                        engine.time.fps(),
-                        screen_size,
-                        &engine.renderer.font_atlas,
-                    );
-                    frame.canvases.push(fps_canvas);
+                    if show_fps {
+                        let screen_size = engine.window_size();
+                        let mut fps_canvas = canvas::Canvas::new();
+                        canvas::draw_fps(
+                            &mut fps_canvas,
+                            engine.time.fps(),
+                            screen_size,
+                            &engine.renderer.font_atlas,
+                        );
+                        frame.canvases.push(fps_canvas);
+                    }
                     engine.renderer.render_frame(&frame);
 
                     engine.input.end_frame();
@@ -399,6 +404,188 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
     })?;
 
     Ok(())
+}
+
+pub fn run_with_scenes<F>(config: EngineConfig, init: F) -> Result<(), Box<dyn std::error::Error>>
+where
+    F: FnOnce(&mut Engine, &mut Globals) -> Box<dyn Scene>,
+{
+    env_logger::init();
+
+    let headless = config.headless;
+    let show_fps = config.show_fps;
+
+    let event_loop = EventLoop::new()?;
+    let window = Arc::new(
+        WindowBuilder::new()
+            .with_title(&config.title)
+            .with_inner_size(LogicalSize::new(config.width, config.height))
+            .with_visible(!headless)
+            .build(&event_loop)?,
+    );
+
+    let present_mode = if config.vsync {
+        wgpu::PresentMode::AutoVsync
+    } else {
+        wgpu::PresentMode::AutoNoVsync
+    };
+    let renderer = pollster::block_on(Renderer::new(window.clone(), present_mode));
+
+    let mut engine = Engine {
+        renderer,
+        assets: AssetPipeline::default(),
+        audio: AudioSystem::new(config.headless),
+        input: InputState::new(),
+        time: TimeState::new(),
+        window_width: config.width,
+        window_height: config.height,
+        gamepads: GamepadSystem::new(),
+        hot_reload_enabled: config.hot_reload,
+    };
+
+    let mut globals = Globals::new();
+    let mut stack: Vec<Box<dyn Scene>> = Vec::new();
+
+    let mut initial = init(&mut engine, &mut globals);
+    initial.on_enter(&mut engine, &mut globals);
+    stack.push(initial);
+
+    if headless {
+        loop {
+            engine.time.tick();
+            engine.gamepads.update();
+            engine.reload_assets_if_changed();
+
+            let op = if let Some(scene) = stack.last_mut() {
+                scene.update(&engine, &mut globals)
+            } else {
+                return Ok(());
+            };
+
+            apply_scene_op(&mut stack, op, &mut engine, &mut globals);
+
+            if stack.is_empty() {
+                return Ok(());
+            }
+
+            engine.input.end_frame();
+        }
+    }
+
+    event_loop.run(move |event, target| {
+        target.set_control_flow(winit::event_loop::ControlFlow::Poll);
+        match event {
+            Event::WindowEvent { event, .. } => match event {
+                WindowEvent::CloseRequested => target.exit(),
+
+                WindowEvent::Resized(new_size) => {
+                    engine.window_width = new_size.width;
+                    engine.window_height = new_size.height;
+                    engine.renderer.resize(new_size.width, new_size.height);
+                }
+
+                WindowEvent::KeyboardInput {
+                    event:
+                        KeyEvent {
+                            physical_key: PhysicalKey::Code(key),
+                            state,
+                            ..
+                        },
+                    ..
+                } => {
+                    engine.input.handle_key_event(key, state);
+                }
+
+                WindowEvent::RedrawRequested => {
+                    engine.time.tick();
+                    engine.gamepads.update();
+                    engine.reload_assets_if_changed();
+
+                    let op = if let Some(scene) = stack.last_mut() {
+                        scene.update(&engine, &mut globals)
+                    } else {
+                        target.exit();
+                        return;
+                    };
+
+                    apply_scene_op(&mut stack, op, &mut engine, &mut globals);
+
+                    if stack.is_empty() {
+                        target.exit();
+                        return;
+                    }
+
+                    let mut frame = Frame::new();
+                    for scene in stack.iter() {
+                        scene.render(&engine, &globals, &mut frame);
+                    }
+
+                    if show_fps {
+                        let screen_size = engine.window_size();
+                        let mut fps_canvas = canvas::Canvas::new();
+                        canvas::draw_fps(
+                            &mut fps_canvas,
+                            engine.time.fps(),
+                            screen_size,
+                            &engine.renderer.font_atlas,
+                        );
+                        frame.canvases.push(fps_canvas);
+                    }
+                    engine.renderer.render_frame(&frame);
+
+                    engine.input.end_frame();
+                }
+
+                _ => {}
+            },
+
+            Event::AboutToWait => {
+                window.request_redraw();
+            }
+
+            _ => {}
+        }
+    })?;
+
+    Ok(())
+}
+
+fn apply_scene_op(
+    stack: &mut Vec<Box<dyn Scene>>,
+    op: SceneOp,
+    engine: &mut Engine,
+    globals: &mut Globals,
+) {
+    match op {
+        SceneOp::Continue => {}
+        SceneOp::Quit => {
+            while let Some(mut scene) = stack.pop() {
+                scene.on_exit(engine, globals);
+            }
+        }
+        SceneOp::Push(mut new_scene) => {
+            if let Some(current) = stack.last_mut() {
+                current.on_pause(engine, globals);
+            }
+            new_scene.on_enter(engine, globals);
+            stack.push(new_scene);
+        }
+        SceneOp::Pop => {
+            if let Some(mut old) = stack.pop() {
+                old.on_exit(engine, globals);
+            }
+            if let Some(current) = stack.last_mut() {
+                current.on_resume(engine, globals);
+            }
+        }
+        SceneOp::Switch(mut new_scene) => {
+            if let Some(mut old) = stack.pop() {
+                old.on_exit(engine, globals);
+            }
+            new_scene.on_enter(engine, globals);
+            stack.push(new_scene);
+        }
+    }
 }
 
 pub struct Engine3D {
@@ -592,6 +779,7 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
     env_logger::init();
 
     let headless = config.headless;
+    let show_fps = config.show_fps;
 
     let event_loop = EventLoop::new()?;
     let window = Arc::new(
@@ -731,15 +919,17 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
                     let mut frame = Frame3D::new();
                     game.render(&engine, &mut frame);
 
-                    let screen_size = engine.window_size();
-                    let mut fps_canvas = canvas::Canvas::new();
-                    canvas::draw_fps(
-                        &mut fps_canvas,
-                        engine.time.fps(),
-                        screen_size,
-                        &engine.renderer.font_atlas,
-                    );
-                    frame.canvases.push(fps_canvas);
+                    if show_fps {
+                        let screen_size = engine.window_size();
+                        let mut fps_canvas = canvas::Canvas::new();
+                        canvas::draw_fps(
+                            &mut fps_canvas,
+                            engine.time.fps(),
+                            screen_size,
+                            &engine.renderer.font_atlas,
+                        );
+                        frame.canvases.push(fps_canvas);
+                    }
                     engine.renderer.render_frame(&frame);
 
                     engine.input.end_frame();
@@ -757,4 +947,242 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
     })?;
 
     Ok(())
+}
+
+pub fn run3d_with_scenes<F>(config: EngineConfig, init: F) -> Result<(), Box<dyn std::error::Error>>
+where
+    F: FnOnce(&mut Engine3D, &mut Globals) -> Box<dyn Scene3D>,
+{
+    env_logger::init();
+
+    let headless = config.headless;
+    let show_fps = config.show_fps;
+
+    let event_loop = EventLoop::new()?;
+    let window = Arc::new(
+        WindowBuilder::new()
+            .with_title(&config.title)
+            .with_inner_size(LogicalSize::new(config.width, config.height))
+            .with_visible(!headless)
+            .build(&event_loop)?,
+    );
+
+    let present_mode = if config.vsync {
+        wgpu::PresentMode::AutoVsync
+    } else {
+        wgpu::PresentMode::AutoNoVsync
+    };
+    let renderer = pollster::block_on(Renderer3D::new(window.clone(), present_mode));
+
+    let mut engine = Engine3D {
+        renderer,
+        assets: AssetPipeline::default(),
+        audio: AudioSystem::new(config.headless),
+        input: InputState::new(),
+        time: TimeState::new(),
+        window_width: config.width,
+        window_height: config.height,
+        mouse_captured: false,
+        hot_reload_enabled: config.hot_reload,
+    };
+
+    let mut globals = Globals::new();
+    let mut stack: Vec<Box<dyn Scene3D>> = Vec::new();
+
+    let mut initial = init(&mut engine, &mut globals);
+    initial.on_enter(&mut engine, &mut globals);
+    stack.push(initial);
+
+    if headless {
+        loop {
+            engine.time.tick();
+            engine.reload_assets_if_changed();
+
+            let op = if let Some(scene) = stack.last_mut() {
+                scene.update(&engine, &mut globals)
+            } else {
+                return Ok(());
+            };
+
+            apply_scene_op_3d(&mut stack, op, &mut engine, &mut globals);
+
+            if stack.is_empty() {
+                return Ok(());
+            }
+
+            engine.input.end_frame();
+        }
+    }
+
+    let _ = window
+        .set_cursor_grab(CursorGrabMode::Confined)
+        .or_else(|_| window.set_cursor_grab(CursorGrabMode::Locked));
+    window.set_cursor_visible(false);
+    engine.mouse_captured = true;
+
+    event_loop.run(move |event, target| {
+        target.set_control_flow(winit::event_loop::ControlFlow::Poll);
+        match event {
+            Event::DeviceEvent {
+                event: DeviceEvent::MouseMotion { delta: (dx, dy) },
+                ..
+            } => {
+                if engine.mouse_captured {
+                    engine.input.handle_mouse_motion(dx, dy);
+                }
+            }
+
+            Event::WindowEvent { event, .. } => match event {
+                WindowEvent::CloseRequested => target.exit(),
+
+                WindowEvent::Focused(focused) => {
+                    if focused {
+                        let _ = window
+                            .set_cursor_grab(CursorGrabMode::Confined)
+                            .or_else(|_| window.set_cursor_grab(CursorGrabMode::Locked));
+                        window.set_cursor_visible(false);
+                        engine.mouse_captured = true;
+                    } else {
+                        let _ = window.set_cursor_grab(CursorGrabMode::None);
+                        window.set_cursor_visible(true);
+                        engine.mouse_captured = false;
+                    }
+                }
+
+                WindowEvent::Resized(new_size) => {
+                    engine.window_width = new_size.width;
+                    engine.window_height = new_size.height;
+                    engine.renderer.resize(new_size.width, new_size.height);
+                }
+
+                WindowEvent::KeyboardInput {
+                    event:
+                        KeyEvent {
+                            physical_key: PhysicalKey::Code(key),
+                            state,
+                            ..
+                        },
+                    ..
+                } => {
+                    if key == winit::keyboard::KeyCode::Escape
+                        && state == winit::event::ElementState::Pressed
+                    {
+                        if engine.mouse_captured {
+                            let _ = window.set_cursor_grab(CursorGrabMode::None);
+                            window.set_cursor_visible(true);
+                            engine.mouse_captured = false;
+                        } else {
+                            target.exit();
+                        }
+                    }
+                    engine.input.handle_key_event(key, state);
+                }
+
+                WindowEvent::MouseInput { button, state, .. } => {
+                    let idx = match button {
+                        MouseButton::Left => 0,
+                        MouseButton::Right => 1,
+                        MouseButton::Middle => 2,
+                        _ => return,
+                    };
+
+                    if !engine.mouse_captured && state == winit::event::ElementState::Pressed {
+                        let _ = window
+                            .set_cursor_grab(CursorGrabMode::Confined)
+                            .or_else(|_| window.set_cursor_grab(CursorGrabMode::Locked));
+                        window.set_cursor_visible(false);
+                        engine.mouse_captured = true;
+                    }
+                    engine.input.handle_mouse_button(idx, state);
+                }
+
+                WindowEvent::RedrawRequested => {
+                    engine.time.tick();
+                    engine.reload_assets_if_changed();
+
+                    let op = if let Some(scene) = stack.last_mut() {
+                        scene.update(&engine, &mut globals)
+                    } else {
+                        target.exit();
+                        return;
+                    };
+
+                    apply_scene_op_3d(&mut stack, op, &mut engine, &mut globals);
+
+                    if stack.is_empty() {
+                        target.exit();
+                        return;
+                    }
+
+                    let mut frame = Frame3D::new();
+                    for scene in stack.iter() {
+                        scene.render(&engine, &globals, &mut frame);
+                    }
+
+                    if show_fps {
+                        let screen_size = engine.window_size();
+                        let mut fps_canvas = canvas::Canvas::new();
+                        canvas::draw_fps(
+                            &mut fps_canvas,
+                            engine.time.fps(),
+                            screen_size,
+                            &engine.renderer.font_atlas,
+                        );
+                        frame.canvases.push(fps_canvas);
+                    }
+                    engine.renderer.render_frame(&frame);
+
+                    engine.input.end_frame();
+                }
+
+                _ => {}
+            },
+
+            Event::AboutToWait => {
+                window.request_redraw();
+            }
+
+            _ => {}
+        }
+    })?;
+
+    Ok(())
+}
+
+fn apply_scene_op_3d(
+    stack: &mut Vec<Box<dyn Scene3D>>,
+    op: SceneOp3D,
+    engine: &mut Engine3D,
+    globals: &mut Globals,
+) {
+    match op {
+        SceneOp3D::Continue => {}
+        SceneOp3D::Quit => {
+            while let Some(mut scene) = stack.pop() {
+                scene.on_exit(engine, globals);
+            }
+        }
+        SceneOp3D::Push(mut new_scene) => {
+            if let Some(current) = stack.last_mut() {
+                current.on_pause(engine, globals);
+            }
+            new_scene.on_enter(engine, globals);
+            stack.push(new_scene);
+        }
+        SceneOp3D::Pop => {
+            if let Some(mut old) = stack.pop() {
+                old.on_exit(engine, globals);
+            }
+            if let Some(current) = stack.last_mut() {
+                current.on_resume(engine, globals);
+            }
+        }
+        SceneOp3D::Switch(mut new_scene) => {
+            if let Some(mut old) = stack.pop() {
+                old.on_exit(engine, globals);
+            }
+            new_scene.on_enter(engine, globals);
+            stack.push(new_scene);
+        }
+    }
 }

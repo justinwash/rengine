@@ -105,10 +105,11 @@ impl Scene2D {
             path: path.to_path_buf(),
             source,
         })?;
-        let definition: Scene2DDef = serde_json::from_str(&text).map_err(|source| AssetError::Json {
-            path: path.to_path_buf(),
-            source,
-        })?;
+        let definition: Scene2DDef =
+            serde_json::from_str(&text).map_err(|source| AssetError::Json {
+                path: path.to_path_buf(),
+                source,
+            })?;
         Self::from_definition(path, definition, assets)
     }
 
@@ -145,7 +146,9 @@ impl Scene2D {
     }
 
     pub fn by_prefab<'a>(&'a self, prefab: &'a str) -> impl Iterator<Item = &'a SceneInstance2D> {
-        self.instances.iter().filter(move |instance| instance.prefab == prefab)
+        self.instances
+            .iter()
+            .filter(move |instance| instance.prefab == prefab)
     }
 
     pub fn draw(&self, frame: &mut Frame) {
@@ -168,7 +171,10 @@ fn compile_prefabs(
             let Some(texture) = assets.texture_id(&sprite.asset) else {
                 return Err(AssetError::scene_message(
                     path,
-                    format!("prefab '{}' references missing asset alias '{}'", prefab.name, sprite.asset),
+                    format!(
+                        "prefab '{}' references missing asset alias '{}'",
+                        prefab.name, sprite.asset
+                    ),
                 ));
             };
 
@@ -176,7 +182,12 @@ fn compile_prefabs(
                 texture,
                 offset: Vec2::from_array(sprite.offset),
                 size: Vec2::from_array(sprite.size),
-                color: Color::new(sprite.color[0], sprite.color[1], sprite.color[2], sprite.color[3]),
+                color: Color::new(
+                    sprite.color[0],
+                    sprite.color[1],
+                    sprite.color[2],
+                    sprite.color[3],
+                ),
                 uv_rect: sprite.uv_rect.unwrap_or([0.0, 0.0, 1.0, 1.0]),
                 flip_x: sprite.flip_x,
                 flip_y: sprite.flip_y,
