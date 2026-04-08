@@ -1,3 +1,4 @@
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use winit::dpi::LogicalSize;
@@ -6,12 +7,16 @@ use winit::event_loop::EventLoop;
 use winit::keyboard::PhysicalKey;
 use winit::window::{CursorGrabMode, WindowBuilder};
 
-use crate::assets::Color;
+use crate::assets::{
+    AssetError, AssetPack, AssetPipeline, AudioBus, AudioClip, AudioSystem, Color, MeshAsset,
+    SpriteSheet, TextureAsset,
+};
 use crate::canvas;
 use crate::input::{GamepadSystem, InputState};
 use crate::math::TimeState;
 use crate::renderer::{Frame, Renderer, TextureId};
 use crate::renderer3d::{Frame3D, MeshId, Renderer3D, Vertex3D};
+use crate::scene::Scene2D;
 use crate::text;
 
 pub struct EngineConfig {
@@ -21,6 +26,7 @@ pub struct EngineConfig {
 
     pub vsync: bool,
     pub headless: bool,
+    pub hot_reload: bool,
 }
 
 impl Default for EngineConfig {
@@ -31,17 +37,21 @@ impl Default for EngineConfig {
             height: 600,
             vsync: false,
             headless: false,
+            hot_reload: true,
         }
     }
 }
 
 pub struct Engine {
     pub(crate) renderer: Renderer,
+    pub(crate) assets: AssetPipeline,
+    pub(crate) audio: AudioSystem,
     pub(crate) input: InputState,
     pub(crate) time: TimeState,
     pub(crate) window_width: u32,
     pub(crate) window_height: u32,
     pub(crate) gamepads: GamepadSystem,
+    pub(crate) hot_reload_enabled: bool,
 }
 
 impl Engine {
@@ -67,8 +77,178 @@ impl Engine {
         self.gamepads.connected_count()
     }
 
+    pub fn asset_root(&self) -> &Path {
+        self.assets.root()
+    }
+
+    pub fn set_asset_root<P: Into<PathBuf>>(&mut self, root: P) {
+        self.assets.set_root(root);
+    }
+
+    pub fn hot_reload_enabled(&self) -> bool {
+        self.hot_reload_enabled
+    }
+
+    pub fn set_hot_reload_enabled(&mut self, enabled: bool) {
+        self.hot_reload_enabled = enabled;
+    }
+
     pub fn create_texture(&mut self, width: u32, height: u32, pixels: &[u8]) -> TextureId {
         self.renderer.create_texture(width, height, pixels)
+    }
+
+    pub fn load_bytes<P: AsRef<Path>>(&mut self, path: P) -> Result<Arc<[u8]>, AssetError> {
+        self.assets.load_bytes(path)
+    }
+
+    pub fn load_text<P: AsRef<Path>>(&mut self, path: P) -> Result<Arc<str>, AssetError> {
+        self.assets.load_text(path)
+    }
+
+    pub fn load_asset_manifest<P: AsRef<Path>>(
+        &mut self,
+        path: P,
+    ) -> Result<AssetPack, AssetError> {
+        let manifest = self.assets.load_manifest(path)?;
+        let mut pack = AssetPack::default();
+
+        for (alias, rel_path) in manifest.bytes {
+            pack.insert_bytes(alias, self.assets.load_bytes(rel_path)?);
+        }
+        for (alias, rel_path) in manifest.text {
+            pack.insert_text(alias, self.assets.load_text(rel_path)?);
+        }
+        for (alias, rel_path) in manifest.textures {
+            pack.insert_texture(alias, self.load_texture(rel_path)?);
+        }
+        for (alias, sheet) in manifest.sprite_sheets {
+            pack.insert_sprite_sheet(
+                alias,
+                self.load_sprite_sheet(sheet.path, sheet.cell_width, sheet.cell_height)?,
+            );
+        }
+        for (alias, rel_path) in manifest.audio {
+            pack.insert_audio(alias, self.load_audio(rel_path)?);
+        }
+        if !manifest.meshes.is_empty() {
+            return Err(AssetError::manifest_message(
+                self.assets.root(),
+                "2D Engine manifest cannot load mesh entries; use Engine3D instead",
+            ));
+        }
+
+        Ok(pack)
+    }
+
+    pub fn load_texture<P: AsRef<Path>>(&mut self, path: P) -> Result<TextureAsset, AssetError> {
+        self.assets.load_texture(path, |width, height, pixels| {
+            self.renderer.create_texture(width, height, pixels)
+        })
+    }
+
+    pub fn load_sprite_sheet<P: AsRef<Path>>(
+        &mut self,
+        path: P,
+        cell_width: u32,
+        cell_height: u32,
+    ) -> Result<SpriteSheet, AssetError> {
+        self.assets
+            .load_sprite_sheet(path, cell_width, cell_height, |width, height, pixels| {
+                self.renderer.create_texture(width, height, pixels)
+            })
+    }
+
+    pub fn load_audio<P: AsRef<Path>>(&mut self, path: P) -> Result<AudioClip, AssetError> {
+        let resolved = self.assets.resolve_path(path.as_ref());
+        let bytes = self.assets.load_bytes(path)?;
+        Ok(self.audio.register_clip(resolved, bytes))
+    }
+
+    pub fn play_sound(&self, clip: &AudioClip) -> Result<(), AssetError> {
+        self.audio.play(clip)
+    }
+
+    pub fn play_sound_on_bus(
+        &self,
+        bus: AudioBus,
+        clip: &AudioClip,
+        volume: f32,
+    ) -> Result<(), AssetError> {
+        self.audio.play_on_bus(bus, clip, volume)
+    }
+
+    pub fn play_music(&self, clip: &AudioClip) -> Result<(), AssetError> {
+        self.audio.play_music(clip)
+    }
+
+    pub fn play_music_with_volume(&self, clip: &AudioClip, volume: f32) -> Result<(), AssetError> {
+        self.audio.play_music_with_volume(clip, volume)
+    }
+
+    pub fn stop_music(&self) {
+        self.audio.stop_music();
+    }
+
+    pub fn pause_music(&self) {
+        self.audio.pause_music();
+    }
+
+    pub fn resume_music(&self) {
+        self.audio.resume_music();
+    }
+
+    pub fn stop_audio_bus(&self, bus: AudioBus) {
+        self.audio.stop_bus(bus);
+    }
+
+    pub fn set_master_volume(&self, volume: f32) {
+        self.audio.set_master_volume(volume);
+    }
+
+    pub fn set_audio_bus_volume(&self, bus: AudioBus, volume: f32) {
+        self.audio.set_bus_volume(bus, volume);
+    }
+
+    pub fn audio_bus_volume(&self, bus: AudioBus) -> f32 {
+        self.audio.bus_volume(bus)
+    }
+
+    pub fn load_scene2d<P: AsRef<Path>>(
+        &mut self,
+        assets: &AssetPack,
+        path: P,
+    ) -> Result<Scene2D, AssetError> {
+        let resolved = self.assets.resolve_path(path.as_ref());
+        Scene2D::load_from_path(&resolved, assets)
+    }
+
+    pub fn reload_assets_if_changed(&mut self) {
+        if !self.hot_reload_enabled {
+            return;
+        }
+
+        for result in self
+            .assets
+            .reload_changed_textures(|id, width, height, pixels| {
+                self.renderer.replace_texture(id, width, height, pixels)
+            })
+        {
+            match result {
+                Ok(path) => log::info!("Reloaded texture {}", path.display()),
+                Err(error) => log::warn!("Texture reload failed: {error}"),
+            }
+        }
+
+        for path in self.assets.invalidate_changed_manifests() {
+            log::info!("Invalidated asset manifest {}", path.display());
+        }
+
+        for result in self.audio.reload_changed() {
+            match result {
+                Ok(path) => log::info!("Reloaded audio {}", path.display()),
+                Err(error) => log::warn!("Audio reload failed: {error}"),
+            }
+        }
     }
 
     pub fn create_color_texture(&mut self, width: u32, height: u32, color: Color) -> TextureId {
@@ -129,11 +309,14 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
 
     let mut engine = Engine {
         renderer,
+        assets: AssetPipeline::default(),
+        audio: AudioSystem::new(config.headless),
         input: InputState::new(),
         time: TimeState::new(),
         window_width: config.width,
         window_height: config.height,
         gamepads: GamepadSystem::new(),
+        hot_reload_enabled: config.hot_reload,
     };
 
     let mut game = G::new(&mut engine);
@@ -142,6 +325,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
         loop {
             engine.time.tick();
             engine.gamepads.update();
+            engine.reload_assets_if_changed();
             game.update(&engine);
             if game.should_exit() {
                 return Ok(());
@@ -177,6 +361,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
                 WindowEvent::RedrawRequested => {
                     engine.time.tick();
                     engine.gamepads.update();
+                    engine.reload_assets_if_changed();
 
                     game.update(&engine);
 
@@ -218,11 +403,14 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
 
 pub struct Engine3D {
     pub(crate) renderer: Renderer3D,
+    pub(crate) assets: AssetPipeline,
+    pub(crate) audio: AudioSystem,
     input: InputState,
     time: TimeState,
     window_width: u32,
     window_height: u32,
     mouse_captured: bool,
+    hot_reload_enabled: bool,
 }
 
 impl Engine3D {
@@ -242,8 +430,148 @@ impl Engine3D {
         self.mouse_captured
     }
 
+    pub fn asset_root(&self) -> &Path {
+        self.assets.root()
+    }
+
+    pub fn set_asset_root<P: Into<PathBuf>>(&mut self, root: P) {
+        self.assets.set_root(root);
+    }
+
     pub fn font_atlas(&self) -> &text::FontAtlas {
         &self.renderer.font_atlas
+    }
+
+    pub fn load_bytes<P: AsRef<Path>>(&mut self, path: P) -> Result<Arc<[u8]>, AssetError> {
+        self.assets.load_bytes(path)
+    }
+
+    pub fn load_text<P: AsRef<Path>>(&mut self, path: P) -> Result<Arc<str>, AssetError> {
+        self.assets.load_text(path)
+    }
+
+    pub fn load_asset_manifest<P: AsRef<Path>>(
+        &mut self,
+        path: P,
+    ) -> Result<AssetPack, AssetError> {
+        let manifest = self.assets.load_manifest(path)?;
+        let mut pack = AssetPack::default();
+
+        for (alias, rel_path) in manifest.bytes {
+            pack.insert_bytes(alias, self.assets.load_bytes(rel_path)?);
+        }
+        for (alias, rel_path) in manifest.text {
+            pack.insert_text(alias, self.assets.load_text(rel_path)?);
+        }
+        for (alias, rel_path) in manifest.audio {
+            pack.insert_audio(alias, self.load_audio(rel_path)?);
+        }
+        for (alias, rel_path) in manifest.meshes {
+            pack.insert_mesh(alias, self.load_mesh(rel_path)?);
+        }
+        if !manifest.textures.is_empty() || !manifest.sprite_sheets.is_empty() {
+            return Err(AssetError::manifest_message(
+                self.assets.root(),
+                "3D Engine manifest currently supports meshes, audio, text, and bytes only",
+            ));
+        }
+
+        Ok(pack)
+    }
+
+    pub fn load_obj_mesh<P: AsRef<Path>>(&mut self, path: P) -> Result<MeshAsset, AssetError> {
+        self.assets.load_obj_mesh(path, |vertices, indices| {
+            self.renderer.create_mesh(vertices, indices)
+        })
+    }
+
+    pub fn load_gltf_mesh<P: AsRef<Path>>(&mut self, path: P) -> Result<MeshAsset, AssetError> {
+        self.assets.load_gltf_mesh(path, |vertices, indices| {
+            self.renderer.create_mesh(vertices, indices)
+        })
+    }
+
+    pub fn load_mesh<P: AsRef<Path>>(&mut self, path: P) -> Result<MeshAsset, AssetError> {
+        self.assets.load_mesh(path, |vertices, indices| {
+            self.renderer.create_mesh(vertices, indices)
+        })
+    }
+
+    pub fn load_audio<P: AsRef<Path>>(&mut self, path: P) -> Result<AudioClip, AssetError> {
+        let resolved = self.assets.resolve_path(path.as_ref());
+        let bytes = self.assets.load_bytes(path)?;
+        Ok(self.audio.register_clip(resolved, bytes))
+    }
+
+    pub fn play_sound(&self, clip: &AudioClip) -> Result<(), AssetError> {
+        self.audio.play(clip)
+    }
+
+    pub fn play_sound_on_bus(
+        &self,
+        bus: AudioBus,
+        clip: &AudioClip,
+        volume: f32,
+    ) -> Result<(), AssetError> {
+        self.audio.play_on_bus(bus, clip, volume)
+    }
+
+    pub fn play_music(&self, clip: &AudioClip) -> Result<(), AssetError> {
+        self.audio.play_music(clip)
+    }
+
+    pub fn play_music_with_volume(&self, clip: &AudioClip, volume: f32) -> Result<(), AssetError> {
+        self.audio.play_music_with_volume(clip, volume)
+    }
+
+    pub fn stop_music(&self) {
+        self.audio.stop_music();
+    }
+
+    pub fn pause_music(&self) {
+        self.audio.pause_music();
+    }
+
+    pub fn resume_music(&self) {
+        self.audio.resume_music();
+    }
+
+    pub fn stop_audio_bus(&self, bus: AudioBus) {
+        self.audio.stop_bus(bus);
+    }
+
+    pub fn set_master_volume(&self, volume: f32) {
+        self.audio.set_master_volume(volume);
+    }
+
+    pub fn set_audio_bus_volume(&self, bus: AudioBus, volume: f32) {
+        self.audio.set_bus_volume(bus, volume);
+    }
+
+    pub fn reload_assets_if_changed(&mut self) {
+        if !self.hot_reload_enabled {
+            return;
+        }
+
+        for result in self.assets.reload_changed_meshes(|id, vertices, indices| {
+            self.renderer.replace_mesh(id, vertices, indices)
+        }) {
+            match result {
+                Ok(path) => log::info!("Reloaded mesh {}", path.display()),
+                Err(error) => log::warn!("Mesh reload failed: {error}"),
+            }
+        }
+
+        for path in self.assets.invalidate_changed_manifests() {
+            log::info!("Invalidated asset manifest {}", path.display());
+        }
+
+        for result in self.audio.reload_changed() {
+            match result {
+                Ok(path) => log::info!("Reloaded audio {}", path.display()),
+                Err(error) => log::warn!("Audio reload failed: {error}"),
+            }
+        }
     }
 
     pub fn create_mesh(&mut self, vertices: Vec<Vertex3D>, indices: Vec<u32>) -> MeshId {
@@ -283,11 +611,14 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
 
     let mut engine = Engine3D {
         renderer,
+        assets: AssetPipeline::default(),
+        audio: AudioSystem::new(config.headless),
         input: InputState::new(),
         time: TimeState::new(),
         window_width: config.width,
         window_height: config.height,
         mouse_captured: false,
+        hot_reload_enabled: config.hot_reload,
     };
 
     let mut game = G::new(&mut engine);
@@ -295,6 +626,7 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
     if headless {
         loop {
             engine.time.tick();
+            engine.reload_assets_if_changed();
             game.update(&engine);
             if game.should_exit() {
                 return Ok(());
@@ -387,6 +719,7 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
 
                 WindowEvent::RedrawRequested => {
                     engine.time.tick();
+                    engine.reload_assets_if_changed();
 
                     game.update(&engine);
 

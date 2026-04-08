@@ -1,6 +1,6 @@
 use glam::{Mat4, Vec3};
 
-
+#[derive(Debug, Clone)]
 pub struct Camera3D {
     pub position: Vec3,
 

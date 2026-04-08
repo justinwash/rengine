@@ -1,7 +1,7 @@
 use rengine::{Color, Frame, Vec2};
 
 use crate::state::TopDown;
-use crate::{PLAYER_SIZE, TILE_SIZE};
+use crate::PLAYER_SIZE;
 
 
 pub fn draw(game: &TopDown, frame: &mut Frame) {
@@ -13,11 +13,7 @@ pub fn draw(game: &TopDown, frame: &mut Frame) {
 
     game.tilemap.draw(frame);
 
-
-    let tree_draw_size = Vec2::splat(TILE_SIZE);
-    for pos in &game.trees {
-        frame.draw(game.tree_tex, *pos, tree_draw_size);
-    }
+    game.scene.draw(frame);
 
 
     for gem in &game.gems {

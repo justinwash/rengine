@@ -1,4 +1,3 @@
-mod art;
 mod input;
 mod level;
 mod physics;

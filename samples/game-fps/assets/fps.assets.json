@@ -1,0 +1,13 @@
+{
+  "audio": {
+    "shoot": "shoot.wav",
+    "hit": "hit.wav",
+    "jump": "jump.wav",
+    "music": "ambient_loop.wav"
+  },
+  "meshes": {
+    "door": "door.obj",
+    "enemy": "enemy.obj",
+    "projectile": "projectile.gltf"
+  }
+}
