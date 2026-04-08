@@ -1,8 +1,8 @@
 [package]
-name = "rengine-iso"
+name = "rengine-fps"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-rengine = { path = "../../engine" }
+rengine = { path = "../../../engine" }
 winit = "0.29"

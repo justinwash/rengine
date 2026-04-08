@@ -34,11 +34,15 @@ Recently completed or partially completed:
 - Completed: asset root configuration for both Engine and Engine3D
 - Completed: hot reload for textures, meshes, manifests, and audio clips
 - Completed: basic 2D scene and prefab loading with scene-driven sample content
-- Completed: richer audio controls for bus routing, master and per-bus volume, and music pause or resume
-- Completed: initial 3D mesh import support via OBJ and glTF
-- Completed: sample migrations for the platformer, top-down, fight, and FPS examples to exercise the new asset APIs
+- Completed: richer audio controls for bus routing, master and per-bus volume, music pause or resume, and one-shot sound effects on buses
+- Completed: initial 3D mesh import support via OBJ and glTF, including automatic winding correction against authored normals
+- Completed: sample migrations for the platformer, top-down, fight, FPS, and FPS-MP examples to exercise the new asset APIs
+- Completed: headless audio mode — mutes output while still exercising decode and playback paths so tests remain representative without audible output
+- Completed: dedicated viewmodel render layer for 3D — separate camera, projection, FOV, and depth clear so viewmodels do not clip into world geometry
+- Completed: camera-relative viewmodel rendering — viewmodel geometry is authored in local space and transformed through the player camera at render time
 - Partial: broader asset pipeline coverage still needs validation tooling, dependency tracking, and additional import formats beyond OBJ and glTF
-- Partial: sample adoption is in progress, with iso and FPS-MP still not using manifests or scene data
+- Partial: 3D transforms still only support position-based translation; rotation and scale per draw are not yet supported (caused the recurring door visibility issue)
+- Partial: scene switching and lifecycle management not yet implemented; needed before SP/MP FPS unification
 
 ---
 
@@ -70,8 +74,8 @@ These are the features that most directly increase the engine’s usefulness for
 8. Improved 2D camera system
    Zoom, rotation, smoothing, shake, dead zones, camera bounds, and parallax.
 
-9. Audio playback [partially done]
-   Music, sound effects, looping, pause or resume, channel groups, volume control, and fades.
+9. Audio playback [mostly done]
+   Music, sound effects, looping, pause or resume, bus routing, master and per-bus volume control, and headless silent mode are implemented. Still missing: fades, crossfades, and spatial audio.
 
 10. Input action mapping
     Bind actions like Jump, Attack, Pause, and Interact instead of hardcoding keys and buttons.
@@ -172,14 +176,14 @@ These features make 2D development substantially more practical.
 
 The 3D renderer exists, but these features are required before it becomes practical for general development.
 
-39. Full 3D transforms
-    Per-draw rotation and scale in addition to position.
+39. Full 3D transforms [not started — needed]
+    Per-draw rotation and scale in addition to position. Lack of rotation caused sample door meshes to be invisible when oriented wrong for the scene.
 
 40. Transform hierarchies
     Parent-child spatial relationships for weapons, bones, cameras, and grouped props.
 
-41. Mesh import [partially done]
-    OBJ and glTF loading are implemented. Next step is broader format support and richer imported material data.
+41. Mesh import [done]
+    OBJ and glTF loading are implemented with automatic face-winding correction against authored normals. Next step is richer imported material and texture data.
 
 42. 3D texture loading
     Bring in real textured assets rather than color-only geometry.

@@ -8,7 +8,7 @@ name = "rengine-fps-mp"
 path = "src/main.rs"
 
 [dependencies]
-rengine = { path = "../../engine", features = ["rollback"] }
+rengine = { path = "../../../engine", features = ["rollback"] }
 bytemuck = { version = "1", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 bincode = "1"
