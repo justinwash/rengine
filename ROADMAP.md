@@ -40,9 +40,14 @@ Recently completed or partially completed:
 - Completed: headless audio mode — mutes output while still exercising decode and playback paths so tests remain representative without audible output
 - Completed: dedicated viewmodel render layer for 3D — separate camera, projection, FOV, and depth clear so viewmodels do not clip into world geometry
 - Completed: camera-relative viewmodel rendering — viewmodel geometry is authored in local space and transformed through the player camera at render time
+- Completed: scene switching and lifecycle management — `Scene`/`Scene3D` traits with `on_enter`, `update`, `render`, `on_pause`, `on_resume`, `on_exit` hooks; `SceneOp`/`SceneOp3D` enums (`Continue`, `Push`, `Switch`, `Pop`, `Quit`); full scene stack with bottom-to-top rendering for transparent overlays
+- Completed: `Globals` typed key-value store — `TypeId`-keyed `Any` map shared across the scene stack for persistent cross-scene state
+- Completed: `run_with_scenes` / `run3d_with_scenes` entry points — scene-aware alternatives to `run` / `run3d` with init closure, automatic lifecycle dispatch, and stack management
+- Completed: `show_fps` config toggle on `EngineConfig` — FPS overlay is now opt-in (defaults to true for backward compat)
+- Completed: feature samples convention — `samples/features/feature-<name>/` directory for engine feature demos, separate from game samples
+- Completed: `feature-scenes` sample — demonstrates Switch, Push/Pop, pause overlay with transparency, Globals-based persistent counters, and all lifecycle hooks
 - Partial: broader asset pipeline coverage still needs validation tooling, dependency tracking, and additional import formats beyond OBJ and glTF
 - Partial: 3D transforms still only support position-based translation; rotation and scale per draw are not yet supported (caused the recurring door visibility issue)
-- Partial: scene switching and lifecycle management not yet implemented; needed before SP/MP FPS unification
 
 ---
 
@@ -56,11 +61,11 @@ These are the features that most directly increase the engine’s usefulness for
 2. Asset manager [partially done]
    Centralized loading, caching, handles, and lifetime management for textures, fonts, sounds, meshes, shaders, tilemaps, and other resources.
 
-3. Scene system [partially done]
-   Support scene creation, loading, unloading, transitions, and clean lifecycle boundaries for menus, gameplay, pause screens, and cutscenes.
+3. Scene system [done]
+   Scene/Scene3D traits with full lifecycle hooks, SceneOp transition enums, scene stack with bottom-to-top rendering, and Globals typed store for persistent cross-scene state.
 
-4. Scene switching
-   First-class support for changing between scenes without custom boilerplate in every game.
+4. Scene switching [done]
+   First-class support via run_with_scenes/run3d_with_scenes entry points. Push/Pop for overlays, Switch for transitions, Quit for clean exit. Feature sample demonstrates all operations.
 
 5. Prefabs or reusable scene instances [partially done]
    Allow reusable object templates with data overrides for enemies, pickups, UI panels, props, and level chunks.
