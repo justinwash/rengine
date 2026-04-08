@@ -3,6 +3,8 @@ mod physics;
 mod render;
 mod state;
 
+use std::path::PathBuf;
+
 use rengine::*;
 use state::{Platform, Platformer, Player};
 
@@ -14,11 +16,28 @@ const PLAYER_H: f32 = 44.0;
 
 impl Game for Platformer {
     fn new(engine: &mut Engine) -> Self {
-        let player_tex = engine.create_color_texture(1, 1, Color::from_rgba8(60, 130, 230, 255));
-        let eye_tex = engine.create_color_texture(1, 1, Color::WHITE);
-        let ground_tex = engine.create_color_texture(1, 1, Color::from_rgba8(72, 140, 54, 255));
-        let plat_tex = engine.create_color_texture(1, 1, Color::from_rgba8(139, 90, 43, 255));
-        let plat_tex2 = engine.create_color_texture(1, 1, Color::from_rgba8(160, 110, 60, 255));
+        engine.set_asset_root(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets"));
+
+        let player_tex = engine
+            .load_texture("player.ppm")
+            .expect("failed to load platformer player texture")
+            .texture();
+        let eye_tex = engine
+            .load_texture("eye.ppm")
+            .expect("failed to load platformer eye texture")
+            .texture();
+        let ground_tex = engine
+            .load_texture("ground.ppm")
+            .expect("failed to load platformer ground texture")
+            .texture();
+        let plat_tex = engine
+            .load_texture("platform.ppm")
+            .expect("failed to load platformer platform texture")
+            .texture();
+        let plat_tex2 = engine
+            .load_texture("platform_alt.ppm")
+            .expect("failed to load platformer alternate platform texture")
+            .texture();
 
         let platforms = vec![
             Platform {

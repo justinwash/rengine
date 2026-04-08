@@ -1,4 +1,4 @@
-use rengine::{Color, Frame, Vec2};
+use rengine::{Color, DrawParams, Frame, Vec2};
 
 use crate::state::{IsoGame, Tile};
 use crate::{MAP_SIZE, TILE_H, TILE_W};
@@ -22,9 +22,17 @@ pub fn draw(game: &IsoGame, frame: &mut Frame) {
                 Tile::Water => game.water_tex,
                 Tile::Stone => game.stone_tex,
             };
+            let uv = match tile {
+                Tile::Grass => game.grass_uv,
+                Tile::Dirt => game.dirt_uv,
+                Tile::Water => game.water_uv,
+                Tile::Stone => game.stone_uv,
+            };
             let screen = iso_to_screen(col, row, TILE_W, TILE_H);
             let draw_pos = Vec2::new(screen.x - TILE_W / 2.0, screen.y - TILE_H / 2.0);
-            frame.draw(tex, draw_pos, Vec2::new(TILE_W, TILE_H));
+            frame.draw_sprite(
+                DrawParams::new(tex, draw_pos, Vec2::new(TILE_W, TILE_H)).with_uv_rect(uv),
+            );
         }
     }
 

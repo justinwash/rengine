@@ -1,4 +1,4 @@
-use rengine::{RollbackSession, TextureId};
+use rengine::{AudioClip, RollbackSession, TextureId};
 use serde::{Deserialize, Serialize};
 
 use crate::{FIGHTER_FOOT_OFFSET, FIGHTER_W, GROUND_Y, MAX_HP};
@@ -149,11 +149,12 @@ impl FightSim {
 }
 
 pub struct FighterTextures {
-    pub idle: TextureId,
-    pub punch: TextureId,
-    pub kick: TextureId,
-    pub block: TextureId,
-    pub hit: TextureId,
+    pub texture: TextureId,
+    pub idle: [f32; 4],
+    pub punch: [f32; 4],
+    pub kick: [f32; 4],
+    pub block: [f32; 4],
+    pub hit: [f32; 4],
 }
 
 pub struct FightGame {
@@ -166,4 +167,5 @@ pub struct FightGame {
     pub demo_mode: bool,
     pub demo_frame: u32,
     pub printed_result: bool,
+    pub hit_sfx: AudioClip,
 }

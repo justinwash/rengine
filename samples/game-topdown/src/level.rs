@@ -1,40 +1,40 @@
-use rengine::tilemap::{TileDef, TileMap};
-use rengine::{Color, Engine, Vec2};
+use std::path::PathBuf;
 
-use crate::art;
+use rengine::tilemap::{TileDef, TileMap};
+use rengine::{Engine, Vec2};
+
 use crate::state::{Enemy, Gem, Player, TopDown};
 use crate::{ENEMY_SPEED, MAP_H, MAP_W, TILE_SIZE};
 
 
 pub fn build(engine: &mut Engine) -> TopDown {
+    engine.set_asset_root(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets"));
 
-    let (w, h, d) = art::grass_tile();
-    let grass_tex = engine.create_texture(w, h, &d);
-    let (w, h, d) = art::dirt_tile();
-    let dirt_tex = engine.create_texture(w, h, &d);
-    let (w, h, d) = art::stone_tile();
-    let stone_tex = engine.create_texture(w, h, &d);
-    let (w, h, d) = art::water_tile();
-    let water_tex = engine.create_texture(w, h, &d);
-    let (w, h, d) = art::character_topdown(
-        Color::from_rgba8(50, 100, 200, 255),
-        Color::from_rgba8(220, 180, 140, 255),
-        Color::BLACK,
-    );
-    let player_tex = engine.create_texture(w, h, &d);
-    let (w, h, d) = art::enemy_topdown();
-    let enemy_tex = engine.create_texture(w, h, &d);
-    let (w, h, d) = art::gem_sprite();
-    let gem_tex = engine.create_texture(w, h, &d);
-    let (w, h, d) = art::tree_top();
-    let tree_tex = engine.create_texture(w, h, &d);
+    let assets = engine
+        .load_asset_manifest("topdown.assets.json")
+        .expect("failed to load topdown asset manifest");
+    let world_sheet = assets
+        .sprite_sheet("world_tiles")
+        .expect("manifest missing world_tiles sprite sheet");
+    let grass_uv = world_sheet.uv_rect(0, 0);
+    let dirt_uv = world_sheet.uv_rect(1, 0);
+    let stone_uv = world_sheet.uv_rect(2, 0);
+    let water_uv = world_sheet.uv_rect(3, 0);
+
+    let player_tex = assets.texture_id("player").expect("manifest missing player texture");
+    let enemy_tex = assets.texture_id("enemy").expect("manifest missing enemy texture");
+    let gem_tex = assets.texture_id("gem").expect("manifest missing gem texture");
+
+    let scene = engine
+        .load_scene2d(&assets, "world.scene.json")
+        .expect("failed to load topdown scene");
 
 
     let mut tilemap = TileMap::new(MAP_W, MAP_H, TILE_SIZE);
-    let grass_id = tilemap.add_tile(TileDef::solid(grass_tex));
-    let dirt_id = tilemap.add_tile(TileDef::solid(dirt_tex));
-    let stone_id = tilemap.add_tile(TileDef::solid(stone_tex));
-    let _water_id = tilemap.add_tile(TileDef::solid(water_tex));
+    let grass_id = tilemap.add_tile(TileDef::solid(world_sheet.texture).with_uv(grass_uv));
+    let dirt_id = tilemap.add_tile(TileDef::solid(world_sheet.texture).with_uv(dirt_uv));
+    let stone_id = tilemap.add_tile(TileDef::solid(world_sheet.texture).with_uv(stone_uv));
+    let water_id = tilemap.add_tile(TileDef::solid(world_sheet.texture).with_uv(water_uv));
 
 
     for row in 0..MAP_H {
@@ -67,7 +67,7 @@ pub fn build(engine: &mut Engine) -> TopDown {
 
     for row in 3..6 {
         for col in 5..9 {
-            tilemap.set(col, row, Some(_water_id));
+            tilemap.set(col, row, Some(water_id));
         }
     }
 
@@ -92,72 +92,37 @@ pub fn build(engine: &mut Engine) -> TopDown {
     tilemap.set(25, 3, Some(dirt_id));
 
 
-    let trees: Vec<Vec2> = vec![
-        Vec2::new(3.0, 14.0),
-        Vec2::new(4.0, 16.0),
-        Vec2::new(7.0, 15.0),
-        Vec2::new(10.0, 3.0),
-        Vec2::new(11.0, 5.0),
-        Vec2::new(12.0, 2.0),
-        Vec2::new(3.0, 6.0),
-        Vec2::new(17.0, 16.0),
-        Vec2::new(18.0, 17.0),
-        Vec2::new(26.0, 15.0),
-        Vec2::new(27.0, 13.0),
-    ]
-    .into_iter()
-    .map(|v| v * TILE_SIZE)
-    .collect();
-
-
-    let enemies = vec![
-        Enemy {
-            pos: Vec2::new(12.0, 6.0) * TILE_SIZE,
-            vel: Vec2::new(ENEMY_SPEED, 0.0),
-            tex: enemy_tex,
-        },
-        Enemy {
-            pos: Vec2::new(18.0, 12.0) * TILE_SIZE,
-            vel: Vec2::new(0.0, ENEMY_SPEED),
-            tex: enemy_tex,
-        },
-        Enemy {
-            pos: Vec2::new(8.0, 15.0) * TILE_SIZE,
-            vel: Vec2::new(ENEMY_SPEED, ENEMY_SPEED * 0.5),
-            tex: enemy_tex,
-        },
-        Enemy {
-            pos: Vec2::new(25.0, 5.0) * TILE_SIZE,
-            vel: Vec2::new(0.0, ENEMY_SPEED),
-            tex: enemy_tex,
-        },
+    let enemy_directions = [
+        Vec2::new(ENEMY_SPEED, 0.0),
+        Vec2::new(0.0, ENEMY_SPEED),
+        Vec2::new(ENEMY_SPEED, ENEMY_SPEED * 0.5),
+        Vec2::new(0.0, ENEMY_SPEED),
     ];
+    let enemies = scene
+        .by_prefab("enemy_spawn")
+        .enumerate()
+        .map(|(index, instance)| Enemy {
+            pos: instance.position,
+            vel: enemy_directions[index % enemy_directions.len()],
+            tex: enemy_tex,
+        })
+        .collect();
 
-
-    let gem_positions = vec![
-        Vec2::new(5.0, 12.0),
-        Vec2::new(14.0, 7.0),
-        Vec2::new(22.0, 5.0),
-        Vec2::new(10.0, 16.0),
-        Vec2::new(25.0, 16.0),
-        Vec2::new(15.0, 12.0),
-        Vec2::new(8.0, 8.0),
-        Vec2::new(27.0, 10.0),
-        Vec2::new(3.0, 3.0),
-        Vec2::new(20.0, 2.0),
-    ];
-    let gems = gem_positions
-        .into_iter()
-        .map(|p| Gem {
-            pos: p * TILE_SIZE,
+    let gems = scene
+        .by_prefab("gem_spawn")
+        .map(|instance| Gem {
+            pos: instance.position,
             tex: gem_tex,
             collected: false,
         })
         .collect();
 
-
     let player = Player {
-        pos: Vec2::new(3.0, 9.0) * TILE_SIZE,
+        pos: scene
+            .by_prefab("player_spawn")
+            .next()
+            .map(|instance| instance.position)
+            .unwrap_or(Vec2::new(3.0, 9.0) * TILE_SIZE),
         tex: player_tex,
     };
 
@@ -167,7 +132,6 @@ pub fn build(engine: &mut Engine) -> TopDown {
         gems,
         tilemap,
         score: 0,
-        tree_tex,
-        trees,
+        scene,
     }
 }

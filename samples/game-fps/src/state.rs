@@ -1,4 +1,4 @@
-use rengine::{MeshId, Vec3, Vertex3D};
+use rengine::{AudioClip, MeshId, Vec3, Vertex3D};
 
 
 #[derive(Clone)]
@@ -66,6 +66,9 @@ pub struct Projectile {
     pub vel: Vec3,
     pub life: f32,
     pub alive: bool,
+    pub visible: bool,
+    pub collides: bool,
+    pub pair_id: u32,
 }
 
 
@@ -89,8 +92,13 @@ pub struct FpsGame {
     pub on_ground: bool,
 
     pub projectiles: Vec<Projectile>,
+    pub next_projectile_pair_id: u32,
     pub projectile_mesh: MeshId,
+    pub viewmodel_mesh: MeshId,
 
     pub enemies: Vec<Enemy>,
     pub score: u32,
+    pub shoot_sfx: AudioClip,
+    pub hit_sfx: AudioClip,
+    pub jump_sfx: AudioClip,
 }
