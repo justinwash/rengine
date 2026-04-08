@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use rengine::*;
 
-use crate::state::{CollisionWall, Door, Enemy, FpsGame};
+use crate::state::{CollisionWall, Enemy, FpsGame};
 use crate::{PLAYER_HEIGHT, WALL_HEIGHT};
 
 pub struct LevelBuilder {
@@ -202,33 +202,7 @@ pub fn build(engine: &mut Engine3D) -> FpsGame {
         ));
     }
 
-    let door_mesh = assets
-        .mesh("door")
-        .expect("manifest missing door mesh")
-        .mesh();
-
-    let doors = vec![
-        Door {
-            x: 8.0,
-            z: 4.0,
-            slides_x: false,
-            offset: 0.0,
-            open: false,
-            mesh: door_mesh,
-            trigger_radius: 2.0,
-            wall: CollisionWall::new(8.0, 3.0, 8.0, 5.0),
-        },
-        Door {
-            x: 16.0,
-            z: 4.0,
-            slides_x: false,
-            offset: 0.0,
-            open: false,
-            mesh: door_mesh,
-            trigger_radius: 2.0,
-            wall: CollisionWall::new(16.0, 3.0, 16.0, 5.0),
-        },
-    ];
+    let doors = Vec::new();
 
     let enemy_mesh = assets
         .mesh("enemy")
