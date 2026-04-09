@@ -1,0 +1,55 @@
+{
+  "prefabs": [
+    {
+      "name": "tree",
+      "sprites": [
+        {
+          "asset": "tree",
+          "offset": [0.0, 0.0],
+          "size": [32.0, 32.0],
+          "color": [1.0, 1.0, 1.0, 1.0]
+        }
+      ]
+    },
+    {
+      "name": "player_spawn",
+      "sprites": []
+    },
+    {
+      "name": "enemy_spawn",
+      "sprites": []
+    },
+    {
+      "name": "gem_spawn",
+      "sprites": []
+    }
+  ],
+  "instances": [
+    { "prefab": "player_spawn", "position": [96.0, 288.0], "scale": [1.0, 1.0] },
+    { "prefab": "enemy_spawn", "position": [384.0, 192.0], "scale": [1.0, 1.0] },
+    { "prefab": "enemy_spawn", "position": [576.0, 384.0], "scale": [1.0, 1.0] },
+    { "prefab": "enemy_spawn", "position": [256.0, 480.0], "scale": [1.0, 1.0] },
+    { "prefab": "enemy_spawn", "position": [800.0, 160.0], "scale": [1.0, 1.0] },
+    { "prefab": "gem_spawn", "position": [160.0, 384.0], "scale": [1.0, 1.0] },
+    { "prefab": "gem_spawn", "position": [448.0, 224.0], "scale": [1.0, 1.0] },
+    { "prefab": "gem_spawn", "position": [704.0, 160.0], "scale": [1.0, 1.0] },
+    { "prefab": "gem_spawn", "position": [320.0, 512.0], "scale": [1.0, 1.0] },
+    { "prefab": "gem_spawn", "position": [800.0, 512.0], "scale": [1.0, 1.0] },
+    { "prefab": "gem_spawn", "position": [480.0, 384.0], "scale": [1.0, 1.0] },
+    { "prefab": "gem_spawn", "position": [256.0, 256.0], "scale": [1.0, 1.0] },
+    { "prefab": "gem_spawn", "position": [864.0, 320.0], "scale": [1.0, 1.0] },
+    { "prefab": "gem_spawn", "position": [96.0, 96.0], "scale": [1.0, 1.0] },
+    { "prefab": "gem_spawn", "position": [640.0, 64.0], "scale": [1.0, 1.0] },
+    { "prefab": "tree", "position": [96.0, 448.0], "scale": [1.0, 1.0] },
+    { "prefab": "tree", "position": [128.0, 512.0], "scale": [1.0, 1.0] },
+    { "prefab": "tree", "position": [224.0, 480.0], "scale": [1.0, 1.0] },
+    { "prefab": "tree", "position": [320.0, 96.0], "scale": [1.0, 1.0] },
+    { "prefab": "tree", "position": [352.0, 160.0], "scale": [1.0, 1.0] },
+    { "prefab": "tree", "position": [384.0, 64.0], "scale": [1.0, 1.0] },
+    { "prefab": "tree", "position": [96.0, 192.0], "scale": [1.0, 1.0] },
+    { "prefab": "tree", "position": [544.0, 512.0], "scale": [1.0, 1.0] },
+    { "prefab": "tree", "position": [576.0, 544.0], "scale": [1.0, 1.0] },
+    { "prefab": "tree", "position": [832.0, 480.0], "scale": [1.0, 1.0] },
+    { "prefab": "tree", "position": [864.0, 416.0], "scale": [1.0, 1.0] }
+  ]
+}

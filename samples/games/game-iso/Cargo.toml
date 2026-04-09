@@ -1,0 +1,8 @@
+[package]
+name = "rengine-iso"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rengine = { path = "../../../engine" }
+winit = "0.29"
