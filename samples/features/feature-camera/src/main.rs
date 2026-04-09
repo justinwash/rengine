@@ -158,7 +158,7 @@ impl Game for CameraDemo {
         canvas.text(
             8.0,
             8.0,
-            "WASD:Move  Space:Shake  R:Rotation  |  Follow + DeadZone + Bounds + Shake",
+            "WASD:Move  Space:Shake  R:Rotation",
             11.0,
             Color::WHITE,
             (sw, sh),
