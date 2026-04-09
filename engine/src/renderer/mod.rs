@@ -468,7 +468,11 @@ impl Renderer {
         );
 
         let mut sorted: Vec<&DrawParams> = frame.sprites.iter().collect();
-        sorted.sort_by_key(|s| s.texture.0);
+        sorted.sort_by(|a, b| {
+            a.z_order
+                .cmp(&b.z_order)
+                .then(a.texture.0.cmp(&b.texture.0))
+        });
 
         let mut vertices: Vec<Vertex> = Vec::with_capacity(sorted.len() * 4);
         for sp in &sorted {
@@ -484,26 +488,38 @@ impl Renderer {
                 std::mem::swap(&mut vt, &mut vb);
             }
 
-            vertices.push(Vertex {
-                position: [x, y + h],
-                tex_coords: [ul, vt],
-                color,
-            });
-            vertices.push(Vertex {
-                position: [x + w, y + h],
-                tex_coords: [ur, vt],
-                color,
-            });
-            vertices.push(Vertex {
-                position: [x + w, y],
-                tex_coords: [ur, vb],
-                color,
-            });
-            vertices.push(Vertex {
-                position: [x, y],
-                tex_coords: [ul, vb],
-                color,
-            });
+            let ox = sp.origin.x;
+            let oy = sp.origin.y;
+            let corners = [
+                [x - ox, y - oy + h],
+                [x - ox + w, y - oy + h],
+                [x - ox + w, y - oy],
+                [x - ox, y - oy],
+            ];
+
+            let corners = if sp.rotation != 0.0 {
+                let cos = sp.rotation.cos();
+                let sin = sp.rotation.sin();
+                let px = x;
+                let py = y;
+                corners.map(|[cx, cy]| {
+                    let dx = cx - px;
+                    let dy = cy - py;
+                    [px + dx * cos - dy * sin, py + dx * sin + dy * cos]
+                })
+            } else {
+                corners
+            };
+
+            let uvs = [[ul, vt], [ur, vt], [ur, vb], [ul, vb]];
+
+            for i in 0..4 {
+                vertices.push(Vertex {
+                    position: corners[i],
+                    tex_coords: uvs[i],
+                    color,
+                });
+            }
         }
 
         if !vertices.is_empty() {
