@@ -2417,6 +2417,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rengine-feature-sprites"
+version = "0.1.0"
+dependencies = [
+ "rengine",
+]
+
+[[package]]
 name = "rengine-fight"
 version = "0.1.0"
 dependencies = [
