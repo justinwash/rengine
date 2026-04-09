@@ -323,6 +323,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
     };
 
     let mut game = G::new(&mut engine);
+    let mut frame = Frame::new();
 
     if headless {
         loop {
@@ -373,7 +374,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
                         return;
                     }
 
-                    let mut frame = Frame::new();
+                    frame.begin();
                     game.render(&engine, &mut frame);
 
                     if show_fps {
@@ -449,6 +450,7 @@ where
     let mut initial = init(&mut engine, &mut globals);
     initial.on_enter(&mut engine, &mut globals);
     stack.push(initial);
+    let mut frame = Frame::new();
 
     if headless {
         loop {
@@ -515,7 +517,7 @@ where
                         return;
                     }
 
-                    let mut frame = Frame::new();
+                    frame.begin();
                     for scene in stack.iter() {
                         scene.render(&engine, &globals, &mut frame);
                     }
