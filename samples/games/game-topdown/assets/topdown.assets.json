@@ -1,0 +1,15 @@
+{
+  "textures": {
+    "player": "player.png",
+    "enemy": "enemy.png",
+    "gem": "gem.png",
+    "tree": "tree.png"
+  },
+  "sprite_sheets": {
+    "world_tiles": {
+      "path": "world_tiles.png",
+      "cell_width": 16,
+      "cell_height": 16
+    }
+  }
+}

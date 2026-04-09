@@ -1,0 +1,7 @@
+[package]
+name = "rengine-feature-scenes"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rengine = { path = "../../../engine" }
