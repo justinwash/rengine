@@ -23,7 +23,7 @@ pub use assets::Color;
 pub use input::InputState;
 pub use math::Rect;
 pub use math::TimeState;
-pub use renderer::{Camera2D, DrawParams, Frame, TextureId};
+pub use renderer::{Camera2D, CameraBounds, DrawParams, Frame, TextureId};
 
 pub use world::tilemap;
 pub use world::{aabb_overlap, iso_to_screen, screen_to_iso, TileDef, TileMap};
