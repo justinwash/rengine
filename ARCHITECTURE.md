@@ -193,7 +193,13 @@ pub struct EngineConfig {
 }
 ```
 
-Default: 800×600, no vsync, not headless, hot reload on, FPS shown. The `headless` flag is critical for testing: the engine still creates a wgpu surface and device (needed for texture/buffer creation), but the window is invisible, audio is muted (volume 0), and the `run` function can use a tight loop instead of an event loop.
+Default: 800×600, no vsync, not headless, hot reload on, FPS shown.
+
+The `headless` flag is critical for testing:
+- The engine still creates a wgpu surface and device (needed for texture/buffer creation).
+- The window is invisible (`with_visible(false)`).
+- Audio is muted (master volume set to 0).
+- The `run` function uses a tight `loop {}` instead of the platform event loop.
 
 ### 3.2 The Engine struct (2D)
 
