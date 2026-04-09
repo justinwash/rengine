@@ -219,25 +219,25 @@ pub struct Engine {
 
 All fields are `pub(crate)` — the game only interacts through accessor methods:
 
-- `engine.input()` → `&InputState`
-- `engine.time()` / `engine.dt()` → `&TimeState` / `f32`
-- `engine.window_size()` → `(u32, u32)`
-- `engine.gamepad(player)` → `&GamepadState`
-- `engine.gamepads_connected()` → `usize`
-- `engine.asset_root()` / `engine.set_asset_root()`
-- `engine.create_texture(w, h, &rgba)` → `TextureId`
-- `engine.create_color_texture(w, h, color)` → `TextureId`
-- `engine.white_texture()` → `TextureId` (1×1 white pixel)
-- `engine.font_atlas()` → `&FontAtlas`
-- `engine.load_texture(path)` → `Result<TextureAsset, AssetError>`
-- `engine.load_sprite_sheet(path, cell_w, cell_h)` → `Result<SpriteSheet, AssetError>`
-- `engine.load_audio(path)` → `Result<AudioClip, AssetError>`
-- `engine.load_asset_manifest(path)` → `Result<AssetPack, AssetError>`
-- `engine.load_bytes(path)` / `engine.load_text(path)`
-- `engine.load_scene2d(assets, path)` → `Result<Scene2D, AssetError>`
-- Audio controls: `play_sound`, `play_sound_on_bus`, `play_music`, `play_music_with_volume`, `stop_music`, `pause_music`, `resume_music`, `stop_audio_bus`, `set_master_volume`, `set_audio_bus_volume`, `audio_bus_volume`
-- `engine.reload_assets_if_changed()` — called every frame automatically
-- `engine.hot_reload_enabled()` / `engine.set_hot_reload_enabled()`
+- [`engine.input()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L60) → `&InputState`
+- [`engine.time()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L63) / [`engine.dt()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L67) → `&TimeState` / `f32`
+- [`engine.window_size()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L70) → `(u32, u32)`
+- [`engine.gamepad(player)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L74) → `&GamepadState`
+- [`engine.gamepads_connected()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L78) → `usize`
+- [`engine.asset_root()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L82) / [`engine.set_asset_root()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L86)
+- [`engine.create_texture(w, h, &rgba)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L98) → `TextureId`
+- [`engine.create_color_texture(w, h, color)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L256) → `TextureId`
+- [`engine.white_texture()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L270) → `TextureId` (1×1 white pixel)
+- [`engine.font_atlas()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L274) → `&FontAtlas`
+- [`engine.load_texture(path)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L145) → `Result<TextureAsset, AssetError>`
+- [`engine.load_sprite_sheet(path, cell_w, cell_h)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L151) → `Result<SpriteSheet, AssetError>`
+- [`engine.load_audio(path)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L163) → `Result<AudioClip, AssetError>`
+- [`engine.load_asset_manifest(path)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L110) → `Result<AssetPack, AssetError>`
+- [`engine.load_bytes(path)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L102) / [`engine.load_text(path)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L106)
+- [`engine.load_scene2d(assets, path)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L218) → `Result<Scene2D, AssetError>`
+- Audio controls: [`play_sound`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L169), [`play_sound_on_bus`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L173), [`play_music`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L182), [`play_music_with_volume`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L186), [`stop_music`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L190), [`pause_music`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L194), [`resume_music`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L198), [`stop_audio_bus`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L202), [`set_master_volume`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L206), [`set_audio_bus_volume`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L210), [`audio_bus_volume`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L214)
+- [`engine.reload_assets_if_changed()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L227) — called every frame automatically
+- [`engine.hot_reload_enabled()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L90) / [`engine.set_hot_reload_enabled()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L94)
 
 ### 3.3 [`run::<G: Game>()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L291) — the 2D trait-based entry point
 
@@ -321,8 +321,8 @@ This is the scene-aware alternative. Instead of a [`Game`](https://github.com/ju
 
 `Engine3D` mirrors `Engine` but wraps a `Renderer3D` instead of `Renderer`, and adds `mouse_captured: bool`. It provides the same asset/audio/input API plus 3D-specific methods:
 
-- `engine.load_obj_mesh(path)` / `engine.load_gltf_mesh(path)` / `engine.load_mesh(path)` → `Result<MeshAsset, AssetError>`
-- `engine.create_mesh(vertices, indices)` → `MeshId`
+- [`engine.load_obj_mesh(path)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L669) / [`engine.load_gltf_mesh(path)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L675) / [`engine.load_mesh(path)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L681) → `Result<MeshAsset, AssetError>`
+- [`engine.create_mesh(vertices, indices)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L764) → `MeshId`
 
 [`Game3D`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L769) trait:
 ```rust
@@ -418,18 +418,18 @@ struct GpuTexture {
 }
 ```
 
-`TextureId(usize)` is an index into this vector. `create_texture()`:
+`TextureId(usize)` is an index into this vector. [`create_texture()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/renderer/mod.rs#L307):
 - Asserts `pixels.len() == width × height × 4`
 - Creates an `Rgba8UnormSrgb` texture
 - Writes pixels via `queue.write_texture()`
 - Creates a view and bind group (texture + sampler)
 - Pushes to `self.textures` and returns `TextureId(len - 1)`
 
-`replace_texture()` follows the same process but writes to an existing slot, enabling hot reload.
+[`replace_texture()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/renderer/mod.rs#L373) follows the same process but writes to an existing slot, enabling hot reload.
 
 ### 4.4 [`Frame`](https://github.com/justinwash/rengine/blob/re-write/engine/src/renderer/mod.rs#L21) Submission and Batched Rendering
 
-`render_frame(&frame)` performs the actual GPU work:
+[`render_frame(&frame)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/renderer/mod.rs#L444) performs the actual GPU work:
 
 1. **Surface acquire** — `self.surface.get_current_texture()`. On `Lost` or `Outdated`, reconfigures and returns early.
 
@@ -473,7 +473,7 @@ pub struct Camera2D {
 }
 ```
 
-The projection is an orthographic matrix:
+The [`projection`](https://github.com/justinwash/rengine/blob/re-write/engine/src/renderer/camera.rs#L18) is an orthographic matrix:
 ```rust
 fn projection(&self, viewport_width: f32, viewport_height: f32) -> Mat4 {
     let half_w = viewport_width / 2.0 / self.zoom;
@@ -566,9 +566,9 @@ pub struct DrawCmd3D {
 ```
 
 The frame is populated via:
-- `frame.draw_mesh(mesh_id, position)` — World-space mesh
-- `frame.draw_viewmodel_mesh(mesh_id, position)` — Camera-relative viewmodel mesh
-- `frame.draw_raw(vertices, indices)` — Inline geometry (no MeshId needed)
+- [`frame.draw_mesh(mesh_id, position)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/renderer3d/mod.rs#L92) — World-space mesh
+- [`frame.draw_viewmodel_mesh(mesh_id, position)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/renderer3d/mod.rs#L96) — Camera-relative viewmodel mesh
+- [`frame.draw_raw(vertices, indices)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/renderer3d/mod.rs#L100) — Inline geometry (no MeshId needed)
 
 **Rendering flow:**
 
@@ -648,11 +648,11 @@ pub struct Camera3D {
 }
 ```
 
-- `forward()` — Computes the unit direction vector from yaw + pitch using spherical coordinates.
-- `right()` — Cross product of forward and world up.
-- `view_matrix()` — `Mat4::look_at_rh(position, position + forward(), Y)`.
-- `projection_matrix()` — `Mat4::perspective_rh(fov_y, aspect, z_near, z_far)`.
-- `mouse_look(dx, dy, sensitivity)` — Adds to yaw/pitch from mouse deltas, clamps pitch to ±89°.
+- [`forward()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/renderer3d/camera.rs#L31) — Computes the unit direction vector from yaw + pitch using spherical coordinates.
+- [`right()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/renderer3d/camera.rs#L41) — Cross product of forward and world up.
+- [`view_matrix()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/renderer3d/camera.rs#L46) — `Mat4::look_at_rh(position, position + forward(), Y)`.
+- [`projection_matrix()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/renderer3d/camera.rs#L52) — `Mat4::perspective_rh(fov_y, aspect, z_near, z_far)`.
+- [`mouse_look(dx, dy, sensitivity)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/renderer3d/camera.rs#L62) — Adds to yaw/pitch from mouse deltas, clamps pitch to ±89°.
 
 ---
 
@@ -664,7 +664,7 @@ The engine embeds `assets/font.ttf` at compile time via `include_bytes!()`. At i
 
 1. Parse the font with `fontdue::Font::from_bytes()`.
 2. Allocate a 512×512 single-channel (`R8Unorm`) pixel buffer.
-3. Write a 2×2 white pixel block at the top-left corner (used for solid rectangles) → `white_uv = [1.0/512.0, 1.0/512.0]`.
+3. Write a 2×2 white pixel block at the top-left corner (used for solid rectangles) → [`white_uv = [1.0/512.0, 1.0/512.0]`](https://github.com/justinwash/rengine/blob/re-write/engine/src/text.rs#L25).
 4. Rasterize ASCII characters 32–126 at 48px using fontdue.
 5. Pack glyphs into the atlas using a simple left-to-right, top-to-bottom bin packer with 1px padding.
 6. For each glyph, store UV coordinates, pixel dimensions, x/y offsets, and advance width in a `[Option<GlyphEntry>; 128]` array.
@@ -682,9 +682,9 @@ pub struct Canvas {
 ```
 
 Methods:
-- **`canvas.rect(x, y, w, h, color, screen_size)`** — Draws a solid rectangle. Converts screen coordinates to NDC via `screen_to_ndc()`, uses the `white_uv` from the font atlas so the fragment shader returns a solid color.
-- **`canvas.text(x, y, text, size, color, screen_size, atlas)`** — Renders text by emitting two triangles per visible glyph. Scales glyphs by `size / FONT_SIZE`. Each quad's UV maps to the glyph's region in the font atlas.
-- **`canvas.shape(triangles)`** — Accepts raw `CanvasVertex` triangles for custom shapes.
+- **[`canvas.rect(x, y, w, h, color, screen_size)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/canvas/mod.rs#L55)** — Draws a solid rectangle. Converts screen coordinates to NDC via `screen_to_ndc()`, uses the `white_uv` from the font atlas so the fragment shader returns a solid color.
+- **[`canvas.text(x, y, text, size, color, screen_size, atlas)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/canvas/mod.rs#L84)** — Renders text by emitting two triangles per visible glyph. Scales glyphs by `size / FONT_SIZE`. Each quad's UV maps to the glyph's region in the font atlas.
+- **[`canvas.shape(triangles)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/canvas/mod.rs#L51)** — Accepts raw `CanvasVertex` triangles for custom shapes.
 
 **NDC conversion:**
 ```rust
@@ -736,25 +736,25 @@ pub struct InputState {
 ```
 
 **Three-state key model:**
-- `is_key_down(key)` — True every frame the key is held.
-- `is_key_pressed(key)` — True only the first frame of a press (edge trigger).
-- `is_key_released(key)` — True only the frame the key is released.
+- [`is_key_down(key)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/input/keyboard.rs#L30) — True every frame the key is held.
+- [`is_key_pressed(key)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/input/keyboard.rs#L35) — True only the first frame of a press (edge trigger).
+- [`is_key_released(key)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/input/keyboard.rs#L40) — True only the frame the key is released.
 
-`handle_key_event()` logic:
+[`handle_key_event()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/input/keyboard.rs#L70) logic:
 - On `Pressed`: insert into `keys_down`. If it was newly inserted (not already held), also insert into `keys_pressed`.
 - On `Released`: remove from `keys_down`, insert into `keys_released`.
 
-`end_frame()` clears `keys_pressed`, `keys_released`, `mouse_delta`, and `mouse_buttons_pressed/released`. This ensures "pressed" and "released" are one-frame events.
+[`end_frame()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/input/keyboard.rs#L107) clears `keys_pressed`, `keys_released`, `mouse_delta`, and `mouse_buttons_pressed/released`. This ensures "pressed" and "released" are one-frame events.
 
 ### 7.2 Mouse State
 
-Mouse motion is accumulated via `handle_mouse_motion(dx, dy)`:
+Mouse motion is accumulated via [`handle_mouse_motion(dx, dy)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/input/keyboard.rs#L84):
 ```rust
 self.mouse_delta.0 += dx;
 self.mouse_delta.1 += dy;
 ```
 
-Multiple motion events per frame are summed. The game reads `input.mouse_delta()` and the total is reset at `end_frame()`.
+Multiple motion events per frame are summed. The game reads [`input.mouse_delta()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/input/keyboard.rs#L45) and the total is reset at [`end_frame()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/input/keyboard.rs#L107).
 
 Mouse buttons use the same pressed/down/released model as keys, mapped by index: 0=Left, 1=Right, 2=Middle.
 
@@ -780,9 +780,9 @@ pub struct GamepadSystem {
 5. **Dead zone:** Values below 0.15 are clamped to 0.
 
 `GamepadState` provides:
-- `is_button_down(button)`, `is_button_pressed(button)`, `is_button_released(button)`
+- [`is_button_down(button)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/input/gamepad.rs#L37), [`is_button_pressed(button)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/input/gamepad.rs#L42), [`is_button_released(button)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/input/gamepad.rs#L47)
 - `left_stick_x`, `left_stick_y` (public fields)
-- `is_connected()`
+- [`is_connected()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/input/gamepad.rs#L52)
 
 ---
 
@@ -839,7 +839,7 @@ pub struct AssetPack {
 }
 ```
 
-The `AssetPack` provides typed accessors by alias: `pack.texture("player")`, `pack.sprite_sheet("walk")`, `pack.audio("jump")`, etc. It also provides `texture_id(alias)` which checks both textures and sprite sheets.
+The `AssetPack` provides typed accessors by alias: [`pack.texture("player")`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/pipeline.rs#L192), [`pack.sprite_sheet("walk")`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/pipeline.rs#L196), [`pack.audio("jump")`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/pipeline.rs#L204), etc. It also provides [`texture_id(alias)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/pipeline.rs#L208) which checks both textures and sprite sheets.
 
 ### 8.3 Texture Loading
 
@@ -862,9 +862,9 @@ pub struct SpriteSheet {
 }
 ```
 
-- `columns()` → `texture_width / cell_width`
-- `rows()` → `texture_height / cell_height`
-- `uv_rect(col, row)` → `[u, v, w, h]` in 0..1 range for the specified cell
+- [`columns()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/spritesheet.rs#L35) → `texture_width / cell_width`
+- [`rows()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/spritesheet.rs#L40) → `texture_height / cell_height`
+- [`uv_rect(col, row)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/spritesheet.rs#L45) → `[u, v, w, h]` in 0..1 range for the specified cell
 
 Loading validates that the texture dimensions are evenly divisible by cell dimensions.
 
@@ -878,10 +878,10 @@ pub struct Animation {
 }
 ```
 
-- `Animation::new(frames, fps)` — Creates an animation with `frame_time = 1.0 / fps`.
-- `update(dt)` — Advances the timer; when `elapsed >= frame_time`, cycles to the next frame (wrapping). Returns the current `(col, row)`.
-- `current_frame()` — Returns current without advancing.
-- `reset()` — Resets to frame 0.
+- [`Animation::new(frames, fps)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/spritesheet.rs#L68) — Creates an animation with `frame_time = 1.0 / fps`.
+- [`update(dt)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/spritesheet.rs#L78) — Advances the timer; when `elapsed >= frame_time`, cycles to the next frame (wrapping). Returns the current `(col, row)`.
+- [`current_frame()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/spritesheet.rs#L88) — Returns current without advancing.
+- [`reset()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/spritesheet.rs#L93) — Resets to frame 0.
 
 Usage pattern:
 ```rust
@@ -953,9 +953,9 @@ Four buses: `Music`, `Effects`, `Ui`, `Ambient`. Each has an independent volume 
 final_volume = master_volume × bus_volume × clip_volume
 ```
 
-`AudioSystem` uses `RefCell`-based interior mutability for the active sinks and music sink, allowing `play()` to be called from `&self` contexts.
+`AudioSystem` uses `RefCell`-based interior mutability for the active sinks and music sink, allowing [`play()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/audio.rs#L106) to be called from `&self` contexts.
 
-`play_on_bus(bus, clip, volume)`:
+[`play_on_bus(bus, clip, volume)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/audio.rs#L110):
 1. Clean up finished sinks.
 2. Create a new `rodio::Sink`.
 3. Set volume to `final_volume`.
@@ -964,20 +964,20 @@ final_volume = master_volume × bus_volume × clip_volume
 
 ### 9.2 Music Playback
 
-`play_music_with_volume(clip, volume)`:
+[`play_music_with_volume(clip, volume)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/audio.rs#L137):
 1. Stops any existing music.
 2. Creates a new sink.
 3. Decodes the clip and appends it with `.repeat_infinite()` for looping.
 4. Stores in `music_sink`.
 
-`pause_music()` / `resume_music()` call `.pause()` / `.play()` on the music sink.
+[`pause_music()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/audio.rs#L164) / [`resume_music()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/audio.rs#L170) call `.pause()` / `.play()` on the music sink.
 
 ### 9.3 Headless Mode
 
 When `headless` is true:
 - Master volume is set to 0.
-- `play_on_bus()` still decodes the clip (exercises the decode path for testing) but if no audio handle is available, returns early after decoding.
-- `set_master_volume()` forces 0 if `silent` is true.
+- [`play_on_bus()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/audio.rs#L110) still decodes the clip (exercises the decode path for testing) but if no audio handle is available, returns early after decoding.
+- [`set_master_volume()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/audio.rs#L191) forces 0 if `silent` is true.
 
 ---
 
@@ -991,9 +991,9 @@ pub struct Color { pub r: f32, pub g: f32, pub b: f32, pub a: f32 }
 
 Constants: `WHITE`, `BLACK`, `RED`, `ORANGE`, `YELLOW`, `GREEN`, `BLUE`, `INDIGO`, `VIOLET`.
 
-Constructors: `new(r,g,b,a)`, `rgb(r,g,b)`, `from_rgba8(r,g,b,a)`.
+Constructors: [`new(r,g,b,a)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/color.rs#L65), [`rgb(r,g,b)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/color.rs#L69), [`from_rgba8(r,g,b,a)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/color.rs#L73).
 
-Conversions: `to_array() → [f32; 4]`, `to_wgpu() → wgpu::Color`.
+Conversions: [`to_array() → [f32; 4]`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/color.rs#L82), [`to_wgpu() → wgpu::Color`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/color.rs#L86).
 
 ### [`PixelCanvas`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/pixelart.rs#L3) (Procedural Texture Generation)
 
@@ -1003,7 +1003,7 @@ Conversions: `to_array() → [f32; 4]`, `to_wgpu() → wgpu::Color`.
 pub struct PixelCanvas { pub width: u32, pub height: u32, pixels: Vec<[u8; 4]> }
 ```
 
-Methods: `fill(color)`, `set(x, y, color)`, `fill_rect(x, y, w, h, color)`, `fill_circle(cx, cy, radius, color)`, `fill_diamond(color)`, `stroke_diamond(color, thickness)`, `into_bytes() → Vec<u8>`.
+Methods: [`fill(color)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/pixelart.rs#L18), [`set(x, y, color)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/pixelart.rs#L23), [`fill_rect(x, y, w, h, color)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/pixelart.rs#L29), [`fill_circle(cx, cy, radius, color)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/pixelart.rs#L42), [`fill_diamond(color)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/pixelart.rs#L58), [`stroke_diamond(color, thickness)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/pixelart.rs#L73), [`into_bytes() → Vec<u8>`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/pixelart.rs#L89).
 
 Usage pattern:
 ```rust
@@ -1060,7 +1060,7 @@ pub struct Globals {
 }
 ```
 
-Methods: `set<T>(value)`, `get<T>() → Option<&T>`, `get_mut<T>() → Option<&mut T>`, `remove<T>() → Option<T>`, `contains<T>() → bool`.
+Methods: [`set<T>(value)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/scene/globals.rs#L21), [`get<T>() → Option<&T>`](https://github.com/justinwash/rengine/blob/re-write/engine/src/scene/globals.rs#L25), [`get_mut<T>() → Option<&mut T>`](https://github.com/justinwash/rengine/blob/re-write/engine/src/scene/globals.rs#L29), [`remove<T>() → Option<T>`](https://github.com/justinwash/rengine/blob/re-write/engine/src/scene/globals.rs#L33), [`contains<T>() → bool`](https://github.com/justinwash/rengine/blob/re-write/engine/src/scene/globals.rs#L39).
 
 This uses `TypeId` as keys and `Any` for type-erased storage. Each type `T` can have exactly one value stored. This is a common pattern for cross-scene shared state (scores, player data, settings).
 
@@ -1110,12 +1110,12 @@ Rengine supports data-driven 2D scenes via JSON:
 }
 ```
 
-`Scene2D::load_from_path(path, assets)` parses this JSON, resolves texture aliases against an `AssetPack`, and produces `SceneInstance2D` objects that can be queried and drawn:
+[`Scene2D::load_from_path(path, assets)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/scene/data2d.rs#L103) parses this JSON, resolves texture aliases against an `AssetPack`, and produces `SceneInstance2D` objects that can be queried and drawn:
 
-- `scene.instances()` → slice of all instances
-- `scene.by_prefab("tree")` → iterator of instances using that prefab
-- `scene.draw(frame)` — draws all instances
-- Each instance has `property("type")` for custom key-value metadata
+- [`scene.instances()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/scene/data2d.rs#L144) → slice of all instances
+- [`scene.by_prefab("tree")`](https://github.com/justinwash/rengine/blob/re-write/engine/src/scene/data2d.rs#L148) → iterator of instances using that prefab
+- [`scene.draw(frame)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/scene/data2d.rs#L154) — draws all instances
+- Each instance has [`property("type")`](https://github.com/justinwash/rengine/blob/re-write/engine/src/scene/data2d.rs#L76) for custom key-value metadata
 
 ---
 
@@ -1141,12 +1141,12 @@ pub struct TileDef {
 ```
 
 API:
-- `tilemap.add_tile(def)` → `usize` (tile ID)
-- `tilemap.set(col, row, Some(tile_id))` / `tilemap.get(col, row)`
-- `tilemap.cell_position(col, row)` → `Vec2`
-- `tilemap.world_width()` / `world_height()`
-- **`tilemap.collide_rect(rect)`** → `Option<Vec2>` — Checks a `Rect` against all occupied tiles within range, accumulates AABB minimum translation vectors. Returns the total push-back vector to resolve overlap.
-- **`tilemap.draw(frame)`** — Frustum-culled tile rendering: only draws tiles visible within a hardcoded 600×400 half-extent around the camera. Each visible tile emits a `DrawParams` with the tile's texture, color, and UV rect.
+- [`tilemap.add_tile(def)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/world/tilemap.rs#L59) → `usize` (tile ID)
+- [`tilemap.set(col, row, Some(tile_id))`](https://github.com/justinwash/rengine/blob/re-write/engine/src/world/tilemap.rs#L66) / [`tilemap.get(col, row)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/world/tilemap.rs#L73)
+- [`tilemap.cell_position(col, row)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/world/tilemap.rs#L82) → `Vec2`
+- [`tilemap.world_width()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/world/tilemap.rs#L87) / [`world_height()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/world/tilemap.rs#L92)
+- **[`tilemap.collide_rect(rect)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/world/tilemap.rs#L97)** → `Option<Vec2>` — Checks a `Rect` against all occupied tiles within range, accumulates AABB minimum translation vectors. Returns the total push-back vector to resolve overlap.
+- **[`tilemap.draw(frame)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/world/tilemap.rs#L141)** — Frustum-culled tile rendering: only draws tiles visible within a hardcoded 600×400 half-extent around the camera. Each visible tile emits a `DrawParams` with the tile's texture, color, and UV rect.
 
 ### 12.2 [`aabb_overlap`](https://github.com/justinwash/rengine/blob/re-write/engine/src/world/physics.rs#L5) — AABB Physics
 
@@ -1179,9 +1179,9 @@ Standard diamond-shaped isometric projection. `iso_to_screen` converts grid coor
 pub struct Rect { pub x: f32, pub y: f32, pub width: f32, pub height: f32 }
 ```
 
-Methods: `new()`, `from_pos_size()`, `left()`, `right()`, `bottom()`, `top()`, `center()`, `contains_point()`, `overlaps()`.
+Methods: [`new()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/math/rect.rs#L13), [`from_pos_size()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/math/rect.rs#L22), [`left()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/math/rect.rs#L31), [`right()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/math/rect.rs#L35), [`bottom()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/math/rect.rs#L39), [`top()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/math/rect.rs#L43), [`center()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/math/rect.rs#L47), [`contains_point()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/math/rect.rs#L51), [`overlaps()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/math/rect.rs#L58).
 
-Note: `bottom()` returns `y` and `top()` returns `y + height`, so Y increases upward (matching the world coordinate system).
+Note: [`bottom()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/math/rect.rs#L39) returns `y` and [`top()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/math/rect.rs#L43) returns `y + height`, so Y increases upward (matching the world coordinate system).
 
 ### 13.2 [`TimeState`](https://github.com/justinwash/rengine/blob/re-write/engine/src/math/time.rs#L4)
 
@@ -1195,11 +1195,11 @@ pub struct TimeState {
 }
 ```
 
-- `dt()` — Seconds since last frame (capped at 0.1 to prevent spiral-of-death).
-- `total_time()` — Seconds since engine start.
-- `frame_count()` — Total frames processed.
-- `fps()` — `1.0 / dt`.
-- `tick()` — Called once per frame by the engine; updates all fields.
+- [`dt()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/math/time.rs#L25) — Seconds since last frame (capped at 0.1 to prevent spiral-of-death).
+- [`total_time()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/math/time.rs#L30) — Seconds since engine start.
+- [`frame_count()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/math/time.rs#L34) — Total frames processed.
+- [`fps()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/math/time.rs#L38) — `1.0 / dt`.
+- [`tick()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/math/time.rs#L46) — Called once per frame by the engine; updates all fields.
 
 ---
 
@@ -1242,7 +1242,7 @@ pub struct RollbackSession<I: InputT> {
 - **`SyncTest { check_distance }`** — Runs all players locally and uses GGRS sync testing to validate determinism.
 - **`Online(`[`OnlineConfig`](https://github.com/justinwash/rengine/blob/re-write/engine/src/netcode/mod.rs#L39)`)`** — Real P2P rollback over UDP.
 
-**`update(dt, inputs, sim)`** — The central tick function:
+**[`update(dt, inputs, sim)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/netcode/mod.rs#L186)** — The central tick function:
 1. Accumulates `dt` into the fixed-timestep accumulator.
 2. If not enough time has passed, just polls remote clients (P2P) and returns `false`.
 3. Otherwise, subtracts `fixed_dt` from accumulator and processes one tick.
@@ -1973,34 +1973,34 @@ fn main() {
 
 | Feature | Where Used |
 |---|---|
-| `EngineConfig` (all fields) | `main()` — title, width, height, vsync, headless, hot_reload, show_fps |
-| `run_with_scenes()` | `main()` — scene-stack entry point |
-| `Scene` trait (all hooks) | `TitleScene`, `GameScene`, `PauseOverlay` — on_enter, update, render, on_pause, on_resume, on_exit |
-| `SceneOp::Switch` | Title → Game, Game → Title |
-| `SceneOp::Push` / `Pop` | Game → PauseOverlay, PauseOverlay → Game |
-| `SceneOp::Quit` | Escape from title |
-| `Globals` typed store | `TransitionCounter`, `PlayerStats` — set, get, get_mut, contains |
-| `pixelart::PixelCanvas` | Player, coin, ground, sky textures — fill, fill_rect, set, darken, lighten |
-| `Engine::create_texture()` | Procedural texture upload |
-| `SpriteSheet` | Coin animation sprite sheet (4 frames) |
-| `Animation` | `coin_anim` — new, update, current_frame |
-| `TileMap` | Level geometry — new, add_tile, set, collide_rect, draw |
-| `TileDef::solid()` | Ground tile |
-| `TileMap::collide_rect()` | Player vs tilemap collision |
-| `Rect` | Player collision box |
-| `DrawParams` builder | position, size, color, uv_rect, flip_x, rotation, origin, z_order |
-| `Frame::draw_sprite()` | Player, coins, background |
-| `Frame::canvas()` | HUD text, pause overlay |
-| `Canvas::rect()` | HUD background, pause darkening |
-| `Canvas::text()` | Score, controls, stats |
-| `Camera2D` | position, zoom — smooth follow with lerp |
-| `InputState` | is_key_down, is_key_pressed for movement/jump/menu |
-| `GamepadState` | Left stick for movement, South for jump, Start for unpause |
-| `TimeState` | dt() for physics, total_time tracking |
-| `Color` constants + constructors | WHITE, BLACK, YELLOW, GREEN, ORANGE, rgb(), new() |
-| `FontAtlas` | Passed to canvas.text() calls |
-| `screen_to_ndc` (implicit) | Used by Canvas internally |
-| `aabb_overlap` (implicit) | Used by TileMap::collide_rect internally |
+| [`EngineConfig`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L22) (all fields) | `main()` — title, width, height, vsync, headless, hot_reload, show_fps |
+| [`run_with_scenes()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L409) | `main()` — scene-stack entry point |
+| [`Scene`](https://github.com/justinwash/rengine/blob/re-write/engine/src/scene/mod.rs#L24) trait (all hooks) | `TitleScene`, `GameScene`, `PauseOverlay` — on_enter, update, render, on_pause, on_resume, on_exit |
+| [`SceneOp::Switch`](https://github.com/justinwash/rengine/blob/re-write/engine/src/scene/mod.rs#L16) | Title → Game, Game → Title |
+| [`SceneOp::Push`](https://github.com/justinwash/rengine/blob/re-write/engine/src/scene/mod.rs#L16) / `Pop` | Game → PauseOverlay, PauseOverlay → Game |
+| [`SceneOp::Quit`](https://github.com/justinwash/rengine/blob/re-write/engine/src/scene/mod.rs#L16) | Escape from title |
+| [`Globals`](https://github.com/justinwash/rengine/blob/re-write/engine/src/scene/globals.rs#L4) typed store | `TransitionCounter`, `PlayerStats` — [`set`](https://github.com/justinwash/rengine/blob/re-write/engine/src/scene/globals.rs#L21), [`get`](https://github.com/justinwash/rengine/blob/re-write/engine/src/scene/globals.rs#L25), [`get_mut`](https://github.com/justinwash/rengine/blob/re-write/engine/src/scene/globals.rs#L29), [`contains`](https://github.com/justinwash/rengine/blob/re-write/engine/src/scene/globals.rs#L39) |
+| [`pixelart::PixelCanvas`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/pixelart.rs#L3) | Player, coin, ground, sky textures — [`fill`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/pixelart.rs#L18), [`fill_rect`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/pixelart.rs#L29), [`set`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/pixelart.rs#L23), [`darken`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/pixelart.rs#L106), [`lighten`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/pixelart.rs#L110) |
+| [`Engine::create_texture()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L98) | Procedural texture upload |
+| [`SpriteSheet`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/spritesheet.rs#L5) | Coin animation sprite sheet (4 frames) |
+| [`Animation`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/spritesheet.rs#L56) | `coin_anim` — [`new`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/spritesheet.rs#L68), [`update`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/spritesheet.rs#L78), [`current_frame`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/spritesheet.rs#L88) |
+| [`TileMap`](https://github.com/justinwash/rengine/blob/re-write/engine/src/world/tilemap.rs#L6) | Level geometry — [`new`](https://github.com/justinwash/rengine/blob/re-write/engine/src/world/tilemap.rs#L48), [`add_tile`](https://github.com/justinwash/rengine/blob/re-write/engine/src/world/tilemap.rs#L59), [`set`](https://github.com/justinwash/rengine/blob/re-write/engine/src/world/tilemap.rs#L66), [`collide_rect`](https://github.com/justinwash/rengine/blob/re-write/engine/src/world/tilemap.rs#L97), [`draw`](https://github.com/justinwash/rengine/blob/re-write/engine/src/world/tilemap.rs#L141) |
+| [`TileDef::solid()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/world/tilemap.rs#L24) | Ground tile |
+| [`TileMap::collide_rect()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/world/tilemap.rs#L97) | Player vs tilemap collision |
+| [`Rect`](https://github.com/justinwash/rengine/blob/re-write/engine/src/math/rect.rs#L5) | Player collision box |
+| [`DrawParams`](https://github.com/justinwash/rengine/blob/re-write/engine/src/renderer/sprite.rs#L6) builder | position, size, color, uv_rect, flip_x, rotation, origin, z_order |
+| [`Frame::draw_sprite()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/renderer/mod.rs#L39) | Player, coins, background |
+| [`Frame::canvas()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/renderer/mod.rs#L58) | HUD text, pause overlay |
+| [`Canvas::rect()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/canvas/mod.rs#L55) | HUD background, pause darkening |
+| [`Canvas::text()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/canvas/mod.rs#L84) | Score, controls, stats |
+| [`Camera2D`](https://github.com/justinwash/rengine/blob/re-write/engine/src/renderer/camera.rs#L4) | position, zoom — smooth follow with lerp |
+| [`InputState`](https://github.com/justinwash/rengine/blob/re-write/engine/src/input/keyboard.rs#L6) | [`is_key_down`](https://github.com/justinwash/rengine/blob/re-write/engine/src/input/keyboard.rs#L30), [`is_key_pressed`](https://github.com/justinwash/rengine/blob/re-write/engine/src/input/keyboard.rs#L35) for movement/jump/menu |
+| [`GamepadState`](https://github.com/justinwash/rengine/blob/re-write/engine/src/input/gamepad.rs#L9) | Left stick for movement, South for jump, Start for unpause |
+| [`TimeState`](https://github.com/justinwash/rengine/blob/re-write/engine/src/math/time.rs#L4) | [`dt()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/math/time.rs#L25) for physics, [`total_time`](https://github.com/justinwash/rengine/blob/re-write/engine/src/math/time.rs#L30) tracking |
+| [`Color`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/color.rs#L2) constants + constructors | WHITE, BLACK, YELLOW, GREEN, ORANGE, [`rgb()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/color.rs#L69), [`new()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/color.rs#L65) |
+| [`FontAtlas`](https://github.com/justinwash/rengine/blob/re-write/engine/src/text.rs#L17) | Passed to canvas.text() calls |
+| [`screen_to_ndc`](https://github.com/justinwash/rengine/blob/re-write/engine/src/canvas/mod.rs#L145) (implicit) | Used by Canvas internally |
+| [`aabb_overlap`](https://github.com/justinwash/rengine/blob/re-write/engine/src/world/physics.rs#L5) (implicit) | Used by TileMap::collide_rect internally |
 | `Vec2` | All positions, velocities, sizes |
 | Hot reload | Enabled via config — textures would auto-reload if files change |
 | FPS overlay | Enabled via config — rendered by engine after game render |
@@ -2010,21 +2010,21 @@ fn main() {
 
 | Feature | How to Use |
 |---|---|
-| `run::<G: Game>()` | Implement `Game` trait directly instead of using scenes |
-| `AssetManifest` / `AssetPack` | Create a `manifest.json` file, call `engine.load_asset_manifest("manifest.json")` |
-| `Scene2D` / Prefabs | Create a scene JSON with prefabs + instances, call `engine.load_scene2d(assets, "level.json")` |
-| File-based textures | `engine.load_texture("player.png")` instead of procedural generation |
-| `AudioClip` / `play_sound` | `let clip = engine.load_audio("jump.wav"); engine.play_sound(&clip);` |
-| `play_music` / `stop_music` | `engine.play_music(&bgm); engine.pause_music(); engine.resume_music();` |
-| `AudioBus` / volume | `engine.play_sound_on_bus(AudioBus::Effects, &clip, 0.5)` |
-| `set_master_volume` | `engine.set_master_volume(0.8)` |
-| 3D rendering | Use `run3d::<G: Game3D>()` with `Frame3D`, `Camera3D`, `DrawCmd3D`, `cube_mesh()`, etc. |
-| Rollback netcode | Enable `rollback` feature, implement `Rollbackable`, create `RollbackSession` |
-| `iso_to_screen` / `screen_to_iso` | Use in an isometric game for tile placement |
-| `Canvas::shape()` | Pass raw `CanvasVertex` triangles for custom shapes |
-| `create_color_texture` | `engine.create_color_texture(32, 32, Color::RED)` for solid-color textures |
-| `white_texture()` | `engine.white_texture()` for drawing solid rectangles without a texture file |
-| Mouse input | `engine.input().mouse_delta()`, `is_mouse_down(0)`, `is_mouse_pressed(1)` |
+| [`run::<G: Game>()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L291) | Implement [`Game`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L279) trait directly instead of using scenes |
+| [`AssetManifest`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/pipeline.rs#L158) / [`AssetPack`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/pipeline.rs#L174) | Create a `manifest.json` file, call [`engine.load_asset_manifest("manifest.json")`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L110) |
+| [`Scene2D`](https://github.com/justinwash/rengine/blob/re-write/engine/src/scene/data2d.rs#L98) / Prefabs | Create a scene JSON with prefabs + instances, call [`engine.load_scene2d(assets, "level.json")`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L218) |
+| File-based textures | [`engine.load_texture("player.png")`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L145) instead of procedural generation |
+| [`AudioClip`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/audio.rs#L25) / [`play_sound`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L169) | `let clip = engine.load_audio("jump.wav"); engine.play_sound(&clip);` |
+| [`play_music`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L182) / [`stop_music`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L190) | `engine.play_music(&bgm); engine.pause_music(); engine.resume_music();` |
+| [`AudioBus`](https://github.com/justinwash/rengine/blob/re-write/engine/src/assets/audio.rs#L14) / volume | [`engine.play_sound_on_bus(AudioBus::Effects, &clip, 0.5)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L173) |
+| [`set_master_volume`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L206) | `engine.set_master_volume(0.8)` |
+| 3D rendering | Use [`run3d::<G: Game3D>()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L778) with [`Frame3D`](https://github.com/justinwash/rengine/blob/re-write/engine/src/renderer3d/mod.rs#L57), [`Camera3D`](https://github.com/justinwash/rengine/blob/re-write/engine/src/renderer3d/camera.rs#L4), [`DrawCmd3D`](https://github.com/justinwash/rengine/blob/re-write/engine/src/renderer3d/mod.rs#L29), [`cube_mesh()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/renderer3d/mesh.rs#L54), etc. |
+| Rollback netcode | Enable `rollback` feature, implement [`Rollbackable`](https://github.com/justinwash/rengine/blob/re-write/engine/src/netcode/mod.rs#L73), create [`RollbackSession`](https://github.com/justinwash/rengine/blob/re-write/engine/src/netcode/mod.rs#L86) |
+| [`iso_to_screen`](https://github.com/justinwash/rengine/blob/re-write/engine/src/world/iso.rs#L4) / [`screen_to_iso`](https://github.com/justinwash/rengine/blob/re-write/engine/src/world/iso.rs#L11) | Use in an isometric game for tile placement |
+| [`Canvas::shape()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/canvas/mod.rs#L51) | Pass raw [`CanvasVertex`](https://github.com/justinwash/rengine/blob/re-write/engine/src/canvas/mod.rs#L6) triangles for custom shapes |
+| [`create_color_texture`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L256) | `engine.create_color_texture(32, 32, Color::RED)` for solid-color textures |
+| [`white_texture()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/app.rs#L270) | `engine.white_texture()` for drawing solid rectangles without a texture file |
+| Mouse input | [`engine.input().mouse_delta()`](https://github.com/justinwash/rengine/blob/re-write/engine/src/input/keyboard.rs#L45), [`is_mouse_down(0)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/input/keyboard.rs#L50), [`is_mouse_pressed(1)`](https://github.com/justinwash/rengine/blob/re-write/engine/src/input/keyboard.rs#L55) |
 
 ---
 
