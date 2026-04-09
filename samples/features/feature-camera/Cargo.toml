@@ -1,0 +1,11 @@
+[package]
+name = "rengine-feature-camera"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "rengine-feature-camera"
+path = "src/main.rs"
+
+[dependencies]
+rengine = { path = "../../../engine" }

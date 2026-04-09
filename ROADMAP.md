@@ -46,6 +46,8 @@ Recently completed or partially completed:
 - Completed: `show_fps` config toggle on `EngineConfig` — FPS overlay is now opt-in (defaults to true for backward compat)
 - Completed: feature samples convention — `samples/features/feature-<name>/` directory for engine feature demos, separate from game samples
 - Completed: `feature-scenes` sample — demonstrates Switch, Push/Pop, pause overlay with transparency, Globals-based persistent counters, and all lifecycle hooks
+- Completed: improved 2D camera — rotation, smooth follow with configurable speed, dead zones, screen shake with decay, camera bounds clamping via `CameraBounds`, projection refactored to ortho × view matrix
+- Completed: `feature-camera` sample — demonstrates follow, dead zone, bounds, shake, and rotation toggle
 - Partial: broader asset pipeline coverage still needs validation tooling, dependency tracking, and additional import formats beyond OBJ and glTF
 - Partial: 3D transforms still only support position-based translation; rotation and scale per draw are not yet supported (caused the recurring door visibility issue)
 
@@ -73,11 +75,10 @@ These are the features that most directly increase the engine’s usefulness for
 6. Serializable resources
    Data-driven definitions for entities, items, attacks, animation clips, tile sets, dialogue, and configuration.
 
-7. Better 2D transforms
-   Add rotation, scale, origin or pivot, per-sprite layering, and explicit draw order.
-
-8. Improved 2D camera system
-   Zoom, rotation, smoothing, shake, dead zones, camera bounds, and parallax.
+7. Better 2D transforms [done]
+   Add rotation, scale, and origin support.
+8. Improved 2D camera system [done]
+   Rotation, smooth follow with dead zones, screen shake (intensity + duration with decay), camera bounds clamping. Projection uses view matrix (translate + rotate) applied to centered orthographic.
 
 9. Audio playback [mostly done]
    Music, sound effects, looping, pause or resume, bus routing, master and per-bus volume control, and headless silent mode are implemented. Still missing: fades, crossfades, and spatial audio.

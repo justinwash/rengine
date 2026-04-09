@@ -2,7 +2,7 @@ pub mod camera;
 pub mod sprite;
 pub mod texture;
 
-pub use camera::Camera2D;
+pub use camera::{Camera2D, CameraBounds};
 pub use sprite::DrawParams;
 pub use texture::TextureId;
 
@@ -53,6 +53,12 @@ impl Frame {
     ) {
         self.sprites
             .push(DrawParams::new(texture, position, size).with_color(color));
+    }
+
+    pub fn begin(&mut self) {
+        self.sprites.clear();
+        self.canvases.clear();
+        self.clear_color = Color::BLACK;
     }
 
     pub fn canvas(&mut self, index: usize) -> &mut Canvas {
