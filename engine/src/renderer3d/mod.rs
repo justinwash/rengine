@@ -7,7 +7,7 @@ pub use mesh::{cube_mesh, floor_quad, wall_quad, MeshId, Vertex3D};
 use crate::assets::Color;
 use crate::canvas::{self, Canvas};
 use crate::text;
-use glam::Vec3;
+use glam::{Mat4, Quat, Vec3};
 use mesh::Vertex3D as V3;
 
 use std::sync::Arc;
@@ -29,6 +29,38 @@ struct Uniforms {
 pub struct DrawCmd3D {
     pub mesh: MeshId,
     pub position: Vec3,
+    pub rotation: Quat,
+    pub scale: Vec3,
+}
+
+impl DrawCmd3D {
+    pub fn new(mesh: MeshId, position: Vec3) -> Self {
+        Self {
+            mesh,
+            position,
+            rotation: Quat::IDENTITY,
+            scale: Vec3::ONE,
+        }
+    }
+
+    pub fn with_rotation(mut self, rotation: Quat) -> Self {
+        self.rotation = rotation;
+        self
+    }
+
+    pub fn with_scale(mut self, scale: Vec3) -> Self {
+        self.scale = scale;
+        self
+    }
+
+    pub fn with_uniform_scale(mut self, scale: f32) -> Self {
+        self.scale = Vec3::splat(scale);
+        self
+    }
+
+    pub(crate) fn transform_matrix(&self) -> Mat4 {
+        Mat4::from_scale_rotation_translation(self.scale, self.rotation, self.position)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -50,7 +82,11 @@ impl Viewmodel3D {
     }
 
     pub fn draw_mesh(&mut self, mesh: MeshId, position: Vec3) {
-        self.draws.push(DrawCmd3D { mesh, position });
+        self.draws.push(DrawCmd3D::new(mesh, position));
+    }
+
+    pub fn draw_mesh_transformed(&mut self, cmd: DrawCmd3D) {
+        self.draws.push(cmd);
     }
 }
 
@@ -90,7 +126,11 @@ impl Frame3D {
     }
 
     pub fn draw_mesh(&mut self, mesh: MeshId, position: Vec3) {
-        self.draws.push(DrawCmd3D { mesh, position });
+        self.draws.push(DrawCmd3D::new(mesh, position));
+    }
+
+    pub fn draw_mesh_transformed(&mut self, cmd: DrawCmd3D) {
+        self.draws.push(cmd);
     }
 
     pub fn draw_viewmodel_mesh(&mut self, mesh: MeshId, position: Vec3) {
@@ -533,11 +573,16 @@ impl Renderer3D {
         for cmd in draws {
             let mesh = &self.meshes[cmd.mesh.0];
             let base = verts.len() as u32;
+            let mat = cmd.transform_matrix();
+            let normal_mat = glam::Mat3::from_quat(cmd.rotation);
             for v in &mesh.vertices {
                 let mut moved = *v;
-                moved.position[0] += cmd.position.x;
-                moved.position[1] += cmd.position.y;
-                moved.position[2] += cmd.position.z;
+                let pos = Vec3::new(v.position[0], v.position[1], v.position[2]);
+                let transformed = mat.transform_point3(pos);
+                moved.position = [transformed.x, transformed.y, transformed.z];
+                let n = Vec3::new(v.normal[0], v.normal[1], v.normal[2]);
+                let transformed_n = (normal_mat * n).normalize_or_zero();
+                moved.normal = [transformed_n.x, transformed_n.y, transformed_n.z];
                 verts.push(moved);
             }
             idxs.extend(mesh.indices.iter().map(|i| i + base));
@@ -560,16 +605,17 @@ impl Renderer3D {
         for cmd in draws {
             let mesh = &self.meshes[cmd.mesh.0];
             let base = verts.len() as u32;
+            let local_mat = cmd.transform_matrix();
+            let normal_mat = glam::Mat3::from_quat(cmd.rotation);
             for v in &mesh.vertices {
                 let mut moved = *v;
-                let local_position = Vec3::new(
-                    v.position[0] + cmd.position.x,
-                    v.position[1] + cmd.position.y,
-                    v.position[2] + cmd.position.z,
-                );
-                let world_position = camera_from_view.transform_point3(local_position);
+                let local_pos = Vec3::new(v.position[0], v.position[1], v.position[2]);
+                let local_transformed = local_mat.transform_point3(local_pos);
+                let world_position = camera_from_view.transform_point3(local_transformed);
+                let local_normal = Vec3::new(v.normal[0], v.normal[1], v.normal[2]);
+                let rotated_normal = normal_mat * local_normal;
                 let world_normal = camera_from_view
-                    .transform_vector3(Vec3::new(v.normal[0], v.normal[1], v.normal[2]))
+                    .transform_vector3(rotated_normal)
                     .normalize_or_zero();
                 moved.position = [world_position.x, world_position.y, world_position.z];
                 moved.normal = [world_normal.x, world_normal.y, world_normal.z];
