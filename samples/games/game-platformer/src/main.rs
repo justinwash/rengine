@@ -18,6 +18,26 @@ impl Game for Platformer {
     fn new(engine: &mut Engine) -> Self {
         engine.set_asset_root(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets"));
 
+        let actions = engine.actions_mut();
+        actions.bind_axis(
+            "move_x",
+            AxisMapping {
+                positive: vec![
+                    Binding::Key(KeyCode::KeyD),
+                    Binding::Key(KeyCode::ArrowRight),
+                ],
+                negative: vec![
+                    Binding::Key(KeyCode::KeyA),
+                    Binding::Key(KeyCode::ArrowLeft),
+                ],
+                gamepad_axis: Some(GamepadAxis::LeftStickX),
+            },
+        );
+        actions.bind("jump", Binding::Key(KeyCode::Space));
+        actions.bind("jump", Binding::Key(KeyCode::ArrowUp));
+        actions.bind("jump", Binding::Key(KeyCode::KeyW));
+        actions.bind("jump", Binding::GamepadButton(GamepadButton::South));
+
         let player_tex = engine
             .load_texture("player.ppm")
             .expect("failed to load platformer player texture")

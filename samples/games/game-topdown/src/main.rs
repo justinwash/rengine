@@ -18,6 +18,36 @@ pub const ENEMY_SPEED: f32 = 60.0;
 
 impl Game for TopDown {
     fn new(engine: &mut Engine) -> Self {
+        let actions = engine.actions_mut();
+        actions.bind_axis(
+            "move_x",
+            AxisMapping {
+                positive: vec![
+                    Binding::Key(KeyCode::KeyD),
+                    Binding::Key(KeyCode::ArrowRight),
+                ],
+                negative: vec![
+                    Binding::Key(KeyCode::KeyA),
+                    Binding::Key(KeyCode::ArrowLeft),
+                ],
+                gamepad_axis: Some(GamepadAxis::LeftStickX),
+            },
+        );
+        actions.bind_axis(
+            "move_y",
+            AxisMapping {
+                positive: vec![
+                    Binding::Key(KeyCode::KeyW),
+                    Binding::Key(KeyCode::ArrowUp),
+                ],
+                negative: vec![
+                    Binding::Key(KeyCode::KeyS),
+                    Binding::Key(KeyCode::ArrowDown),
+                ],
+                gamepad_axis: Some(GamepadAxis::LeftStickY),
+            },
+        );
+
         level::build(engine)
     }
 
