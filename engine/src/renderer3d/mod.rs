@@ -386,7 +386,8 @@ impl Renderer3D {
         self.queue
             .write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[uniforms]));
 
-        let (all_verts, all_idxs) = self.build_draw_geometry(&frame.draws, &frame.raw_verts, &frame.raw_idxs);
+        let (all_verts, all_idxs) =
+            self.build_draw_geometry(&frame.draws, &frame.raw_verts, &frame.raw_idxs);
         let num_indices = all_idxs.len() as u32;
 
         let mut encoder = self
@@ -455,8 +456,11 @@ impl Renderer3D {
             let (vm_verts, vm_idxs) =
                 self.build_viewmodel_geometry(&frame.viewmodel.camera, &frame.viewmodel.draws);
             if !vm_idxs.is_empty() {
-                self.queue
-                    .write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[vm_uniforms]));
+                self.queue.write_buffer(
+                    &self.uniform_buffer,
+                    0,
+                    bytemuck::cast_slice(&[vm_uniforms]),
+                );
                 self.queue
                     .write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&vm_verts));
                 self.queue
@@ -552,7 +556,11 @@ impl Renderer3D {
         (verts, idxs)
     }
 
-    fn build_viewmodel_geometry(&self, camera: &Camera3D, draws: &[DrawCmd3D]) -> (Vec<V3>, Vec<u32>) {
+    fn build_viewmodel_geometry(
+        &self,
+        camera: &Camera3D,
+        draws: &[DrawCmd3D],
+    ) -> (Vec<V3>, Vec<u32>) {
         let mut verts = Vec::new();
         let mut idxs = Vec::new();
         let camera_from_view = camera.view_matrix().inverse();

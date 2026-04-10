@@ -13,14 +13,38 @@ use crate::renderer3d::{MeshId, Vertex3D};
 
 #[derive(Debug)]
 pub enum AssetError {
-    Io { path: PathBuf, source: std::io::Error },
-    Utf8 { path: PathBuf, source: std::string::FromUtf8Error },
-    Json { path: PathBuf, source: serde_json::Error },
-    Image { path: PathBuf, source: image::ImageError },
-    Mesh { path: PathBuf, message: String },
-    Manifest { path: PathBuf, message: String },
-    Scene { path: PathBuf, message: String },
-    Audio { path: PathBuf, message: String },
+    Io {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+    Utf8 {
+        path: PathBuf,
+        source: std::string::FromUtf8Error,
+    },
+    Json {
+        path: PathBuf,
+        source: serde_json::Error,
+    },
+    Image {
+        path: PathBuf,
+        source: image::ImageError,
+    },
+    Mesh {
+        path: PathBuf,
+        message: String,
+    },
+    Manifest {
+        path: PathBuf,
+        message: String,
+    },
+    Scene {
+        path: PathBuf,
+        message: String,
+    },
+    Audio {
+        path: PathBuf,
+        message: String,
+    },
     InvalidSpriteSheet {
         path: PathBuf,
         texture_width: u32,
@@ -63,7 +87,11 @@ impl fmt::Display for AssetError {
                 write!(f, "asset '{}' is not valid UTF-8: {source}", path.display())
             }
             Self::Json { path, source } => {
-                write!(f, "asset '{}' contains invalid JSON: {source}", path.display())
+                write!(
+                    f,
+                    "asset '{}' contains invalid JSON: {source}",
+                    path.display()
+                )
             }
             Self::Image { path, source } => {
                 write!(f, "failed to decode image '{}': {source}", path.display())
@@ -78,7 +106,11 @@ impl fmt::Display for AssetError {
                 write!(f, "failed to load scene '{}': {message}", path.display())
             }
             Self::Audio { path, message } => {
-                write!(f, "failed to use audio asset '{}': {message}", path.display())
+                write!(
+                    f,
+                    "failed to use audio asset '{}': {message}",
+                    path.display()
+                )
             }
             Self::InvalidSpriteSheet {
                 path,
@@ -347,10 +379,11 @@ impl AssetPipeline {
             path: resolved.clone(),
             source,
         })?;
-        let manifest: AssetManifest = serde_json::from_str(&text).map_err(|source| AssetError::Json {
-            path: resolved.clone(),
-            source,
-        })?;
+        let manifest: AssetManifest =
+            serde_json::from_str(&text).map_err(|source| AssetError::Json {
+                path: resolved.clone(),
+                source,
+            })?;
         if let Ok(modified) = file_modified_time(&resolved) {
             self.manifest_timestamps.insert(resolved.clone(), modified);
         }
@@ -358,7 +391,11 @@ impl AssetPipeline {
         Ok(manifest)
     }
 
-    pub fn load_texture<P, F>(&mut self, path: P, create_texture: F) -> Result<TextureAsset, AssetError>
+    pub fn load_texture<P, F>(
+        &mut self,
+        path: P,
+        create_texture: F,
+    ) -> Result<TextureAsset, AssetError>
     where
         P: AsRef<Path>,
         F: FnOnce(u32, u32, &[u8]) -> TextureId,
@@ -458,7 +495,10 @@ impl AssetPipeline {
 
         let (mut vertices, mut indices) = read_mesh(&resolved)?;
         fix_winding_from_normals(&vertices, &mut indices);
-        if vertices.iter().all(|vertex| vertex.normal == [0.0, 0.0, 0.0]) {
+        if vertices
+            .iter()
+            .all(|vertex| vertex.normal == [0.0, 0.0, 0.0])
+        {
             compute_flat_normals(&mut vertices, &indices);
         }
 
@@ -478,7 +518,10 @@ impl AssetPipeline {
         Ok(asset)
     }
 
-    pub fn reload_changed_textures<F>(&mut self, mut replace_texture: F) -> Vec<Result<PathBuf, AssetError>>
+    pub fn reload_changed_textures<F>(
+        &mut self,
+        mut replace_texture: F,
+    ) -> Vec<Result<PathBuf, AssetError>>
     where
         F: FnMut(TextureId, u32, u32, &[u8]),
     {
@@ -520,7 +563,10 @@ impl AssetPipeline {
         results
     }
 
-    pub fn reload_changed_meshes<F>(&mut self, mut replace_mesh: F) -> Vec<Result<PathBuf, AssetError>>
+    pub fn reload_changed_meshes<F>(
+        &mut self,
+        mut replace_mesh: F,
+    ) -> Vec<Result<PathBuf, AssetError>>
     where
         F: FnMut(MeshId, Vec<Vertex3D>, Vec<u32>),
     {
@@ -547,7 +593,10 @@ impl AssetPipeline {
             match read_mesh(&path) {
                 Ok((mut vertices, mut indices)) => {
                     fix_winding_from_normals(&vertices, &mut indices);
-                    if vertices.iter().all(|vertex| vertex.normal == [0.0, 0.0, 0.0]) {
+                    if vertices
+                        .iter()
+                        .all(|vertex| vertex.normal == [0.0, 0.0, 0.0])
+                    {
                         compute_flat_normals(&mut vertices, &indices);
                     }
                     let vertex_count = vertices.len();
@@ -651,10 +700,7 @@ impl AssetPipeline {
             if !file_path.exists() {
                 errors.push(AssetError::Io {
                     path: file_path,
-                    source: std::io::Error::new(
-                        std::io::ErrorKind::NotFound,
-                        "file not found",
-                    ),
+                    source: std::io::Error::new(std::io::ErrorKind::NotFound, "file not found"),
                 });
             }
         }
@@ -664,10 +710,7 @@ impl AssetPipeline {
             if !file_path.exists() {
                 errors.push(AssetError::Io {
                     path: file_path.clone(),
-                    source: std::io::Error::new(
-                        std::io::ErrorKind::NotFound,
-                        "file not found",
-                    ),
+                    source: std::io::Error::new(std::io::ErrorKind::NotFound, "file not found"),
                 });
             }
             if sheet_def.cell_width == 0 || sheet_def.cell_height == 0 {
