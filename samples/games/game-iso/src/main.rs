@@ -16,6 +16,36 @@ pub const PLAYER_SPEED: f32 = 120.0;
 
 impl Game for IsoGame {
     fn new(engine: &mut Engine) -> Self {
+        let actions = engine.actions_mut();
+        actions.bind_axis(
+            "move_col",
+            AxisMapping {
+                positive: vec![
+                    Binding::Key(KeyCode::KeyD),
+                    Binding::Key(KeyCode::ArrowRight),
+                ],
+                negative: vec![
+                    Binding::Key(KeyCode::KeyA),
+                    Binding::Key(KeyCode::ArrowLeft),
+                ],
+                gamepad_axis: Some(GamepadAxis::LeftStickX),
+            },
+        );
+        actions.bind_axis(
+            "move_row",
+            AxisMapping {
+                positive: vec![
+                    Binding::Key(KeyCode::KeyS),
+                    Binding::Key(KeyCode::ArrowDown),
+                ],
+                negative: vec![
+                    Binding::Key(KeyCode::KeyW),
+                    Binding::Key(KeyCode::ArrowUp),
+                ],
+                gamepad_axis: None,
+            },
+        );
+
         level::build(engine)
     }
 

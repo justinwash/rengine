@@ -1,13 +1,10 @@
 use gilrs::{Axis, Button, EventType, GamepadId, Gilrs};
 use std::collections::HashMap;
 
-
 pub const MAX_PLAYERS: usize = 4;
-
 
 #[derive(Debug, Clone)]
 pub struct GamepadState {
-
     pub(crate) id: Option<GamepadId>,
 
     buttons_down: Vec<Button>,
@@ -33,27 +30,22 @@ impl GamepadState {
         }
     }
 
-
     pub fn is_button_down(&self, button: Button) -> bool {
         self.buttons_down.contains(&button)
     }
-
 
     pub fn is_button_pressed(&self, button: Button) -> bool {
         self.buttons_pressed.contains(&button)
     }
 
-
     pub fn is_button_released(&self, button: Button) -> bool {
         self.buttons_released.contains(&button)
     }
-
 
     pub fn is_connected(&self) -> bool {
         self.id.is_some()
     }
 }
-
 
 pub struct GamepadSystem {
     gilrs: Gilrs,
@@ -72,7 +64,8 @@ impl GamepadSystem {
             id_to_slot: HashMap::new(),
         };
 
-        let connected: Vec<GamepadId> = sys.gilrs
+        let connected: Vec<GamepadId> = sys
+            .gilrs
             .gamepads()
             .filter(|(_, gp)| gp.is_connected())
             .map(|(id, _)| id)
@@ -82,7 +75,6 @@ impl GamepadSystem {
         }
         sys
     }
-
 
     pub fn player(&self, index: usize) -> &GamepadState {
         &self.slots[index]
@@ -100,19 +92,15 @@ impl GamepadSystem {
         self.slots.get(index).unwrap_or(&DEFAULT)
     }
 
-
     pub fn connected_count(&self) -> usize {
         self.slots.iter().filter(|s| s.is_connected()).count()
     }
 
-
     pub(crate) fn update(&mut self) {
-
         for slot in &mut self.slots {
             slot.buttons_pressed.clear();
             slot.buttons_released.clear();
         }
-
 
         while let Some(event) = self.gilrs.next_event() {
             match event.event {
@@ -145,13 +133,11 @@ impl GamepadSystem {
             }
         }
 
-
         for slot in &mut self.slots {
             if let Some(id) = slot.id {
                 if let Some(gp) = self.gilrs.connected_gamepad(id) {
                     slot.left_stick_x = gp.value(Axis::LeftStickX);
                     slot.left_stick_y = gp.value(Axis::LeftStickY);
-
 
                     if gp.is_pressed(Button::DPadLeft) {
                         slot.left_stick_x = -1.0;
@@ -163,7 +149,6 @@ impl GamepadSystem {
                     } else if gp.is_pressed(Button::DPadDown) {
                         slot.left_stick_y = -1.0;
                     }
-
 
                     if slot.left_stick_x.abs() < 0.15 {
                         slot.left_stick_x = 0.0;

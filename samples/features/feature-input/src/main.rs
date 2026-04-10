@@ -40,10 +40,7 @@ impl Game for InputDemo {
         actions.bind_axis(
             "move_y",
             AxisMapping {
-                positive: vec![
-                    Binding::Key(KeyCode::KeyW),
-                    Binding::Key(KeyCode::ArrowUp),
-                ],
+                positive: vec![Binding::Key(KeyCode::KeyW), Binding::Key(KeyCode::ArrowUp)],
                 negative: vec![
                     Binding::Key(KeyCode::KeyS),
                     Binding::Key(KeyCode::ArrowDown),
@@ -151,12 +148,8 @@ impl Game for InputDemo {
         let my = engine.axis("move_y");
         let hud_y = h as f32 - 20.0;
         frame.draw_sprite(
-            DrawParams::new(
-                self.white,
-                Vec2::new(9.0, hud_y - 1.0),
-                Vec2::new(6.0, 6.0),
-            )
-            .with_color(Color::new(0.31, 0.31, 0.35, 0.4)),
+            DrawParams::new(self.white, Vec2::new(9.0, hud_y - 1.0), Vec2::new(6.0, 6.0))
+                .with_color(Color::new(0.31, 0.31, 0.35, 0.4)),
         );
         if mx.abs() > 0.0 || my.abs() > 0.0 {
             frame.draw_sprite(
