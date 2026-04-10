@@ -2417,6 +2417,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rengine-feature-input"
+version = "0.1.0"
+dependencies = [
+ "rengine",
+]
+
+[[package]]
 name = "rengine-feature-scenes"
 version = "0.1.0"
 dependencies = [
@@ -2464,7 +2471,6 @@ name = "rengine-iso"
 version = "0.1.0"
 dependencies = [
  "rengine",
- "winit",
 ]
 
 [[package]]
@@ -2472,7 +2478,6 @@ name = "rengine-platformer"
 version = "0.1.0"
 dependencies = [
  "rengine",
- "winit",
 ]
 
 [[package]]
@@ -2480,7 +2485,6 @@ name = "rengine-topdown"
 version = "0.1.0"
 dependencies = [
  "rengine",
- "winit",
 ]
 
 [[package]]

@@ -21,6 +21,7 @@ pub use app::run_with_scenes;
 pub use app::{Engine, EngineConfig, Game};
 pub use assets::Color;
 pub use input::InputState;
+pub use input::{ActionMap, AxisMapping, Binding, GamepadAxis};
 pub use math::Rect;
 pub use math::TimeState;
 pub use renderer::{Camera2D, CameraBounds, DrawParams, Frame, TextureId};

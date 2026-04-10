@@ -7,8 +7,8 @@ pub mod state;
 use std::path::PathBuf;
 
 use rengine::{
-    AudioBus, Engine, EngineConfig, Frame, Game, OnlineConfig, RollbackConfig, RollbackSession,
-    SessionMode,
+    AudioBus, AxisMapping, Binding, Engine, EngineConfig, Frame, Game, GamepadAxis, GamepadButton,
+    KeyCode, OnlineConfig, RollbackConfig, RollbackSession, SessionMode,
 };
 use state::{FightGame, FightSim, FighterTextures};
 
@@ -47,6 +47,37 @@ pub const FIXED_DT: f32 = 1.0 / 60.0;
 impl Game for FightGame {
     fn new(engine: &mut Engine) -> Self {
         engine.set_asset_root(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets"));
+
+        let actions = engine.actions_mut();
+        for (prefix, keys) in [
+            ("p1", [KeyCode::KeyA, KeyCode::KeyD, KeyCode::KeyW, KeyCode::KeyS, KeyCode::KeyF, KeyCode::KeyG]),
+            ("p2", [KeyCode::ArrowLeft, KeyCode::ArrowRight, KeyCode::ArrowUp, KeyCode::ArrowDown, KeyCode::KeyK, KeyCode::KeyL]),
+        ] {
+            actions.bind_axis(
+                &format!("{prefix}_move_x"),
+                AxisMapping {
+                    positive: vec![Binding::Key(keys[1])],
+                    negative: vec![Binding::Key(keys[0])],
+                    gamepad_axis: Some(GamepadAxis::LeftStickX),
+                },
+            );
+            actions.bind_axis(
+                &format!("{prefix}_move_y"),
+                AxisMapping {
+                    positive: vec![Binding::Key(keys[2])],
+                    negative: vec![Binding::Key(keys[3])],
+                    gamepad_axis: Some(GamepadAxis::LeftStickY),
+                },
+            );
+            actions.bind(&format!("{prefix}_jump"), Binding::Key(keys[2]));
+            actions.bind(&format!("{prefix}_jump"), Binding::GamepadButton(GamepadButton::DPadUp));
+            actions.bind(&format!("{prefix}_crouch"), Binding::Key(keys[3]));
+            actions.bind(&format!("{prefix}_crouch"), Binding::GamepadButton(GamepadButton::DPadDown));
+            actions.bind(&format!("{prefix}_punch"), Binding::Key(keys[4]));
+            actions.bind(&format!("{prefix}_punch"), Binding::GamepadButton(GamepadButton::South));
+            actions.bind(&format!("{prefix}_kick"), Binding::Key(keys[5]));
+            actions.bind(&format!("{prefix}_kick"), Binding::GamepadButton(GamepadButton::West));
+        }
 
         let blue_sheet = engine
             .load_sprite_sheet("fighter_blue.png", 96, 144)

@@ -12,7 +12,7 @@ use crate::assets::{
     SpriteSheet, TextureAsset,
 };
 use crate::canvas;
-use crate::input::{GamepadSystem, InputState};
+use crate::input::{ActionMap, GamepadSystem, InputState};
 use crate::math::TimeState;
 use crate::renderer::{Frame, Renderer, TextureId};
 use crate::renderer3d::{Frame3D, MeshId, Renderer3D, Vertex3D};
@@ -54,6 +54,7 @@ pub struct Engine {
     pub(crate) window_height: u32,
     pub(crate) gamepads: GamepadSystem,
     pub(crate) hot_reload_enabled: bool,
+    pub(crate) actions: ActionMap,
 }
 
 impl Engine {
@@ -77,6 +78,54 @@ impl Engine {
 
     pub fn gamepads_connected(&self) -> usize {
         self.gamepads.connected_count()
+    }
+
+    pub fn actions(&self) -> &ActionMap {
+        &self.actions
+    }
+
+    pub fn actions_mut(&mut self) -> &mut ActionMap {
+        &mut self.actions
+    }
+
+    pub fn action_down(&self, action: &str) -> bool {
+        self.actions
+            .is_down(action, &self.input, self.gamepads.player(0))
+    }
+
+    pub fn action_pressed(&self, action: &str) -> bool {
+        self.actions
+            .is_pressed(action, &self.input, self.gamepads.player(0))
+    }
+
+    pub fn action_released(&self, action: &str) -> bool {
+        self.actions
+            .is_released(action, &self.input, self.gamepads.player(0))
+    }
+
+    pub fn axis(&self, name: &str) -> f32 {
+        self.actions
+            .axis(name, &self.input, self.gamepads.player(0))
+    }
+
+    pub fn action_down_player(&self, action: &str, player: usize) -> bool {
+        self.actions
+            .is_down(action, &self.input, self.gamepads.player_or_default(player))
+    }
+
+    pub fn action_pressed_player(&self, action: &str, player: usize) -> bool {
+        self.actions
+            .is_pressed(action, &self.input, self.gamepads.player_or_default(player))
+    }
+
+    pub fn action_released_player(&self, action: &str, player: usize) -> bool {
+        self.actions
+            .is_released(action, &self.input, self.gamepads.player_or_default(player))
+    }
+
+    pub fn axis_player(&self, name: &str, player: usize) -> f32 {
+        self.actions
+            .axis(name, &self.input, self.gamepads.player_or_default(player))
     }
 
     pub fn asset_root(&self) -> &Path {
@@ -320,6 +369,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
         window_height: config.height,
         gamepads: GamepadSystem::new(),
         hot_reload_enabled: config.hot_reload,
+        actions: ActionMap::new(),
     };
 
     let mut game = G::new(&mut engine);
@@ -442,6 +492,7 @@ where
         window_height: config.height,
         gamepads: GamepadSystem::new(),
         hot_reload_enabled: config.hot_reload,
+        actions: ActionMap::new(),
     };
 
     let mut globals = Globals::new();
@@ -600,6 +651,8 @@ pub struct Engine3D {
     window_height: u32,
     mouse_captured: bool,
     hot_reload_enabled: bool,
+    actions: ActionMap,
+    no_gamepad: crate::input::GamepadState,
 }
 
 impl Engine3D {
@@ -617,6 +670,32 @@ impl Engine3D {
     }
     pub fn is_mouse_captured(&self) -> bool {
         self.mouse_captured
+    }
+
+    pub fn actions(&self) -> &ActionMap {
+        &self.actions
+    }
+
+    pub fn actions_mut(&mut self) -> &mut ActionMap {
+        &mut self.actions
+    }
+
+    pub fn action_down(&self, action: &str) -> bool {
+        self.actions.is_down(action, &self.input, &self.no_gamepad)
+    }
+
+    pub fn action_pressed(&self, action: &str) -> bool {
+        self.actions
+            .is_pressed(action, &self.input, &self.no_gamepad)
+    }
+
+    pub fn action_released(&self, action: &str) -> bool {
+        self.actions
+            .is_released(action, &self.input, &self.no_gamepad)
+    }
+
+    pub fn axis(&self, name: &str) -> f32 {
+        self.actions.axis(name, &self.input, &self.no_gamepad)
     }
 
     pub fn asset_root(&self) -> &Path {
@@ -809,6 +888,8 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
         window_height: config.height,
         mouse_captured: false,
         hot_reload_enabled: config.hot_reload,
+        actions: ActionMap::new(),
+        no_gamepad: crate::input::GamepadState::new(),
     };
 
     let mut game = G::new(&mut engine);
@@ -986,6 +1067,8 @@ where
         window_height: config.height,
         mouse_captured: false,
         hot_reload_enabled: config.hot_reload,
+        actions: ActionMap::new(),
+        no_gamepad: crate::input::GamepadState::new(),
     };
 
     let mut globals = Globals::new();
