@@ -19,15 +19,17 @@ pub struct GamepadState {
 }
 
 impl GamepadState {
+    pub const DEFAULT: Self = Self {
+        id: None,
+        buttons_down: Vec::new(),
+        buttons_pressed: Vec::new(),
+        buttons_released: Vec::new(),
+        left_stick_x: 0.0,
+        left_stick_y: 0.0,
+    };
+
     pub fn new() -> Self {
-        Self {
-            id: None,
-            buttons_down: Vec::new(),
-            buttons_pressed: Vec::new(),
-            buttons_released: Vec::new(),
-            left_stick_x: 0.0,
-            left_stick_y: 0.0,
-        }
+        Self::DEFAULT
     }
 
     pub fn is_button_down(&self, button: Button) -> bool {
@@ -81,14 +83,7 @@ impl GamepadSystem {
     }
 
     pub fn player_or_default(&self, index: usize) -> &GamepadState {
-        static DEFAULT: GamepadState = GamepadState {
-            id: None,
-            buttons_down: Vec::new(),
-            buttons_pressed: Vec::new(),
-            buttons_released: Vec::new(),
-            left_stick_x: 0.0,
-            left_stick_y: 0.0,
-        };
+        static DEFAULT: GamepadState = GamepadState::DEFAULT;
         self.slots.get(index).unwrap_or(&DEFAULT)
     }
 
