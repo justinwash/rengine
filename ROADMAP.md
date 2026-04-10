@@ -48,6 +48,8 @@ Recently completed or partially completed:
 - Completed: `feature-scenes` sample — demonstrates Switch, Push/Pop, pause overlay with transparency, Globals-based persistent counters, and all lifecycle hooks
 - Completed: improved 2D camera — rotation, smooth follow with configurable speed, dead zones, screen shake with decay, camera bounds clamping via `CameraBounds`, projection refactored to ortho × view matrix
 - Completed: `feature-camera` sample — demonstrates follow, dead zone, bounds, shake, and rotation toggle
+- Completed: input action mapping — `ActionMap` with named digital actions and analog axes, `Binding` enum for Key/MouseButton/GamepadButton, `AxisMapping` with positive/negative bindings and optional gamepad stick axis, convenience methods on `Engine` and `Engine3D`
+- Completed: `feature-input` sample — demonstrates action binding setup, axis-driven movement, pressed/down/released queries with visual feedback
 - Partial: broader asset pipeline coverage still needs validation tooling, dependency tracking, and additional import formats beyond OBJ and glTF
 - Partial: 3D transforms still only support position-based translation; rotation and scale per draw are not yet supported (caused the recurring door visibility issue)
 
@@ -83,8 +85,8 @@ These are the features that most directly increase the engine’s usefulness for
 9. Audio playback [mostly done]
    Music, sound effects, looping, pause or resume, bus routing, master and per-bus volume control, and headless silent mode are implemented. Still missing: fades, crossfades, and spatial audio.
 
-10. Input action mapping
-    Bind actions like Jump, Attack, Pause, and Interact instead of hardcoding keys and buttons.
+10. Input action mapping [done]
+    Named actions (`"jump"`, `"shoot"`) and axes (`"move_x"`, `"move_y"`) bound to keyboard keys, mouse buttons, and gamepad buttons/sticks. Queries via `engine.action_down()`, `action_pressed()`, `action_released()`, `axis()`. Per-player variants for multiplayer.
 
 11. Rebindable controls
     Let players or games remap keyboard and gamepad actions.
