@@ -88,6 +88,18 @@ impl GamepadSystem {
         &self.slots[index]
     }
 
+    pub fn player_or_default(&self, index: usize) -> &GamepadState {
+        static DEFAULT: GamepadState = GamepadState {
+            id: None,
+            buttons_down: Vec::new(),
+            buttons_pressed: Vec::new(),
+            buttons_released: Vec::new(),
+            left_stick_x: 0.0,
+            left_stick_y: 0.0,
+        };
+        self.slots.get(index).unwrap_or(&DEFAULT)
+    }
+
 
     pub fn connected_count(&self) -> usize {
         self.slots.iter().filter(|s| s.is_connected()).count()
