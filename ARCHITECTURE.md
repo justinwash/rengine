@@ -844,7 +844,7 @@ Abstracts raw key/button/stick input into named **actions** (digital) and **axes
 pub enum Binding {
     Key(KeyCode),
     MouseButton(usize),
-    GamepadButton(Button),
+    GamepadButton(GamepadButton),
 }
 
 pub enum GamepadAxis {
