@@ -170,6 +170,18 @@ pub struct AssetManifest {
     pub audio: HashMap<String, String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct AssetSummary {
+    pub bytes_count: usize,
+    pub text_count: usize,
+    pub texture_count: usize,
+    pub sprite_sheet_count: usize,
+    pub mesh_count: usize,
+    pub manifest_count: usize,
+    pub texture_paths: Vec<PathBuf>,
+    pub mesh_paths: Vec<PathBuf>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct AssetPack {
     bytes: HashMap<String, Arc<[u8]>>,
@@ -255,6 +267,8 @@ pub(crate) struct AssetPipeline {
     texture_timestamps: HashMap<PathBuf, SystemTime>,
     mesh_timestamps: HashMap<PathBuf, SystemTime>,
     manifest_timestamps: HashMap<PathBuf, SystemTime>,
+    /// Maps a manifest path to the set of file paths it loaded.
+    manifest_deps: HashMap<PathBuf, Vec<PathBuf>>,
 }
 
 impl AssetPipeline {
@@ -270,6 +284,7 @@ impl AssetPipeline {
             texture_timestamps: HashMap::new(),
             mesh_timestamps: HashMap::new(),
             manifest_timestamps: HashMap::new(),
+            manifest_deps: HashMap::new(),
         }
     }
 
@@ -573,6 +588,146 @@ impl AssetPipeline {
         }
 
         invalidated
+    }
+
+    /// Validate that all files referenced by a manifest exist on disk.
+    /// Returns a list of errors for missing or unreadable files.
+    /// Call this before `load_manifest` to catch problems early.
+    pub fn validate_manifest<P: AsRef<Path>>(&self, path: P) -> Vec<AssetError> {
+        let resolved = self.resolve_path(path.as_ref());
+        let text = match fs::read_to_string(&resolved) {
+            Ok(t) => t,
+            Err(source) => {
+                return vec![AssetError::Io {
+                    path: resolved,
+                    source,
+                }];
+            }
+        };
+        let manifest: AssetManifest = match serde_json::from_str(&text) {
+            Ok(m) => m,
+            Err(source) => {
+                return vec![AssetError::Json {
+                    path: resolved,
+                    source,
+                }];
+            }
+        };
+
+        let mut errors = Vec::new();
+
+        let all_paths: Vec<(&str, &str)> = manifest
+            .bytes
+            .iter()
+            .map(|(alias, p)| (alias.as_str(), p.as_str()))
+            .chain(
+                manifest
+                    .text
+                    .iter()
+                    .map(|(alias, p)| (alias.as_str(), p.as_str())),
+            )
+            .chain(
+                manifest
+                    .textures
+                    .iter()
+                    .map(|(alias, p)| (alias.as_str(), p.as_str())),
+            )
+            .chain(
+                manifest
+                    .meshes
+                    .iter()
+                    .map(|(alias, p)| (alias.as_str(), p.as_str())),
+            )
+            .chain(
+                manifest
+                    .audio
+                    .iter()
+                    .map(|(alias, p)| (alias.as_str(), p.as_str())),
+            )
+            .collect();
+
+        for (_alias, rel_path) in &all_paths {
+            let file_path = self.resolve_path(Path::new(rel_path));
+            if !file_path.exists() {
+                errors.push(AssetError::Io {
+                    path: file_path,
+                    source: std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        "file not found",
+                    ),
+                });
+            }
+        }
+
+        for (_alias, sheet_def) in &manifest.sprite_sheets {
+            let file_path = self.resolve_path(Path::new(&sheet_def.path));
+            if !file_path.exists() {
+                errors.push(AssetError::Io {
+                    path: file_path.clone(),
+                    source: std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        "file not found",
+                    ),
+                });
+            }
+            if sheet_def.cell_width == 0 || sheet_def.cell_height == 0 {
+                errors.push(AssetError::InvalidSpriteSheet {
+                    path: file_path,
+                    texture_width: 0,
+                    texture_height: 0,
+                    cell_width: sheet_def.cell_width,
+                    cell_height: sheet_def.cell_height,
+                });
+            }
+        }
+
+        errors
+    }
+
+    /// Record that a manifest loaded the given file paths.
+    pub(crate) fn record_manifest_deps(&mut self, manifest_path: PathBuf, deps: Vec<PathBuf>) {
+        self.manifest_deps.insert(manifest_path, deps);
+    }
+
+    /// Get the file paths that a manifest loaded.
+    pub fn manifest_dependencies<P: AsRef<Path>>(&self, path: P) -> Option<&[PathBuf]> {
+        let resolved = self.resolve_path(path.as_ref());
+        self.manifest_deps.get(&resolved).map(|v| v.as_slice())
+    }
+
+    /// Returns a summary of all cached assets for debugging.
+    pub fn loaded_asset_summary(&self) -> AssetSummary {
+        AssetSummary {
+            bytes_count: self.bytes.len(),
+            text_count: self.text.len(),
+            texture_count: self.textures.len(),
+            sprite_sheet_count: self.sprite_sheets.len(),
+            mesh_count: self.meshes.len(),
+            manifest_count: self.manifests.len(),
+            texture_paths: self.textures.keys().cloned().collect(),
+            mesh_paths: self.meshes.keys().cloned().collect(),
+        }
+    }
+
+    /// Evict a cached texture so the next load reads from disk.
+    pub fn unload_texture<P: AsRef<Path>>(&mut self, path: P) {
+        let resolved = self.resolve_path(path.as_ref());
+        self.textures.remove(&resolved);
+        self.texture_timestamps.remove(&resolved);
+    }
+
+    /// Evict a cached mesh so the next load reads from disk.
+    pub fn unload_mesh<P: AsRef<Path>>(&mut self, path: P) {
+        let resolved = self.resolve_path(path.as_ref());
+        self.meshes.remove(&resolved);
+        self.mesh_timestamps.remove(&resolved);
+    }
+
+    /// Evict all cached bytes and text entries.
+    pub fn unload_data<P: AsRef<Path>>(&mut self, path: P) {
+        let resolved = self.resolve_path(path.as_ref());
+        self.bytes.remove(&resolved);
+        self.text.remove(&resolved);
     }
 
     fn read_image_rgba(&self, path: &Path) -> Result<(u32, u32, Vec<u8>), AssetError> {

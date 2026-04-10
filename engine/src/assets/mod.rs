@@ -9,6 +9,7 @@ pub use audio::{AudioBus, AudioClip, AudioId};
 pub use color::Color;
 pub(crate) use pipeline::AssetPipeline;
 pub use pipeline::{
-    AssetError, AssetManifest, AssetPack, MeshAsset, SpriteSheetAssetDef, TextureAsset,
+    AssetError, AssetManifest, AssetPack, AssetSummary, MeshAsset, SpriteSheetAssetDef,
+    TextureAsset,
 };
 pub use spritesheet::{Animation, SpriteSheet};
