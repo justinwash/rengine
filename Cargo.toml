@@ -1,3 +1,3 @@
 [workspace]
-members = ["engine", "samples/games/game-platformer", "samples/games/game-topdown", "samples/games/game-iso", "samples/games/game-fps", "samples/games/game-fight", "samples/games/game-fps-mp", "samples/features/feature-scenes", "samples/features/feature-sprites", "samples/features/feature-camera", "samples/features/feature-input"]
+members = ["engine", "samples/games/game-platformer", "samples/games/game-topdown", "samples/games/game-iso", "samples/games/game-fps", "samples/games/game-fight", "samples/games/game-fps-mp", "samples/features/feature-scenes", "samples/features/feature-sprites", "samples/features/feature-camera", "samples/features/feature-input", "samples/features/feature-canvas"]
 resolver = "2"
