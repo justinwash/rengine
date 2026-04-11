@@ -2431,6 +2431,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "rengine-feature-everything"
+version = "0.1.0"
+dependencies = [
+ "rengine",
+ "serde",
+]
+
+[[package]]
 name = "rengine-feature-input"
 version = "0.1.0"
 dependencies = [
