@@ -54,6 +54,7 @@ Recently completed or partially completed:
 - Completed: serializable resources — `load_resource<T>()` and `load_resource_list<T>()` on Engine and Engine3D for JSON-driven data definitions with serde deserialization
 - Completed: fixed-timestep update — `EngineConfig::fixed_dt` (default 1/60), accumulator-based `consume_fixed_step()`, `fixed_update()` hooks on Game, Game3D, Scene, and Scene3D traits wired into all four run functions
 - Completed: collision layers and masks — `CollisionLayer` bitmask struct with named constants (WORLD, PLAYER, ENEMY, PROJECTILE, TRIGGER, UI), `interacts_with()` check, `aabb_overlap_layered()` for filtered AABB tests
+- Completed: trigger volumes and overlap sensors — `TriggerSystem` with `TriggerZone` (Rect + CollisionLayer), enter/stay/exit events via `OverlapEvent`, per-zone enable/disable, `feature-triggers` sample
 - Partial: 3D transforms still only support position-based translation; rotation and scale per draw are not yet supported (caused the recurring door visibility issue)
 
 ---
@@ -97,8 +98,8 @@ These are the features that most directly increase the engine’s usefulness for
 12. Collision layers and masks [done]
     `CollisionLayer` with `layer` and `mask` u32 bitmasks. Named constants for WORLD, PLAYER, ENEMY, PROJECTILE, TRIGGER, UI. `aabb_overlap_layered()` checks layer compatibility before spatial overlap. Default is all-bits so existing code is unaffected.
 
-13. Trigger volumes and overlap sensors
-    Needed for pickups, checkpoints, dialogue zones, scripted events, and hurtboxes.
+13. Trigger volumes and overlap sensors [done]
+    `TriggerSystem` tracks bodies against `TriggerZone` regions (Rect + CollisionLayer). Produces `OverlapEvent::Enter`, `Stay`, `Exit` each tick. Zones can be enabled/disabled at runtime. `feature-triggers` sample demonstrates checkpoint, pickup, damage, and layer-filtered zones.
 
 14. Stronger 2D physics
     Expand beyond simple AABB overlap into rigid bodies, velocity, gravity, friction, restitution, and moving platforms.
