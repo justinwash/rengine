@@ -176,7 +176,7 @@ Then selective re-exports:
 - **Input:** [`InputState`](https://github.com/justinwash/rengine/blob/master/engine/src/input/keyboard.rs#L6), `KeyCode` (from winit), `GamepadButton` (from gilrs), [`GamepadState`](https://github.com/justinwash/rengine/blob/master/engine/src/input/gamepad.rs#L9), [`GamepadSystem`](https://github.com/justinwash/rengine/blob/master/engine/src/input/gamepad.rs#L58), [`ActionMap`](https://github.com/justinwash/rengine/blob/master/engine/src/input/action.rs), [`Binding`](https://github.com/justinwash/rengine/blob/master/engine/src/input/action.rs), [`AxisMapping`](https://github.com/justinwash/rengine/blob/master/engine/src/input/action.rs), [`GamepadAxis`](https://github.com/justinwash/rengine/blob/master/engine/src/input/action.rs)
 - **Assets:** [`Color`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/color.rs#L2), [`Animation`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/spritesheet.rs#L56), [`AssetError`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pipeline.rs#L15), [`AssetManifest`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pipeline.rs#L158), [`AssetPack`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pipeline.rs#L174), [`AudioBus`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/audio.rs#L14), [`AudioClip`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/audio.rs#L25), [`AudioId`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/audio.rs#L22), [`MeshAsset`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pipeline.rs#L137), [`SpriteSheet`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/spritesheet.rs#L5), [`SpriteSheetAssetDef`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pipeline.rs#L151), [`TextureAsset`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pipeline.rs#L119)
 - **Scene:** [`Globals`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/globals.rs#L4), [`Prefab2D`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/data2d.rs#L61)/[`Prefab2DDef`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/data2d.rs#L26), [`PrefabSprite2D`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/data2d.rs#L50)/[`PrefabSprite2DDef`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/data2d.rs#L11), [`Scene`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/mod.rs#L24), [`Scene2D`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/data2d.rs#L98)/[`Scene2DDef`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/data2d.rs#L42), [`SceneInstance2D`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/data2d.rs#L67)/[`SceneInstance2DDef`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/data2d.rs#L32), [`SceneOp`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/mod.rs#L16), [`Scene3D`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/mod.rs#L47), [`SceneOp3D`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/mod.rs#L39)
-- **World:** [`tilemap`](https://github.com/justinwash/rengine/blob/master/engine/src/world/tilemap.rs), [`aabb_overlap`](https://github.com/justinwash/rengine/blob/master/engine/src/world/physics.rs#L5), [`iso_to_screen`](https://github.com/justinwash/rengine/blob/master/engine/src/world/iso.rs#L4), [`screen_to_iso`](https://github.com/justinwash/rengine/blob/master/engine/src/world/iso.rs#L11), [`TileDef`](https://github.com/justinwash/rengine/blob/master/engine/src/world/tilemap.rs#L16), [`TileMap`](https://github.com/justinwash/rengine/blob/master/engine/src/world/tilemap.rs#L6)
+- **World:** [`tilemap`](https://github.com/justinwash/rengine/blob/master/engine/src/world/tilemap.rs), [`aabb_overlap`](https://github.com/justinwash/rengine/blob/master/engine/src/world/physics.rs), [`aabb_overlap_layered`](https://github.com/justinwash/rengine/blob/master/engine/src/world/physics.rs), [`CollisionLayer`](https://github.com/justinwash/rengine/blob/master/engine/src/world/physics.rs), [`iso_to_screen`](https://github.com/justinwash/rengine/blob/master/engine/src/world/iso.rs#L4), [`screen_to_iso`](https://github.com/justinwash/rengine/blob/master/engine/src/world/iso.rs#L11), [`TileDef`](https://github.com/justinwash/rengine/blob/master/engine/src/world/tilemap.rs#L16), [`TileMap`](https://github.com/justinwash/rengine/blob/master/engine/src/world/tilemap.rs#L6)
 - **Canvas/Text:** [`screen_to_ndc`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs#L145), [`Canvas`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs#L42), [`CanvasVertex`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs#L6), [`FontAtlas`](https://github.com/justinwash/rengine/blob/master/engine/src/text.rs#L17)
 - **Pixel art:** [`pixelart`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pixelart.rs) (module-level re-export of [`PixelCanvas`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pixelart.rs#L3), [`darken`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pixelart.rs#L106), [`lighten`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pixelart.rs#L110))
 - **Math:** [`Rect`](https://github.com/justinwash/rengine/blob/master/engine/src/math/rect.rs#L5), [`TimeState`](https://github.com/justinwash/rengine/blob/master/engine/src/math/time.rs#L4), `Vec2`, `Vec3` (from glam)
@@ -198,10 +198,11 @@ pub struct EngineConfig {
     pub headless: bool,     // Skip window creation visibility + mute audio
     pub hot_reload: bool,   // File-watching for assets at runtime
     pub show_fps: bool,     // Render FPS counter overlay on canvas
+    pub fixed_dt: f32,      // Fixed-timestep interval (default 1/60)
 }
 ```
 
-Default: 800×600, no vsync, not headless, hot reload on, FPS shown.
+Default: 800×600, no vsync, not headless, hot reload on, FPS shown, fixed_dt 1/60.
 
 The `headless` flag is critical for testing:
 
@@ -243,6 +244,8 @@ All fields are `pub(crate)` — the game only interacts through accessor methods
 - [`engine.load_audio(path)`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L163) → `Result<AudioClip, AssetError>`
 - [`engine.load_asset_manifest(path)`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L110) → `Result<AssetPack, AssetError>`
 - [`engine.load_bytes(path)`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L102) / [`engine.load_text(path)`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L106)
+- [`engine.load_resource::<T>(path)`] → `Result<T, AssetError>` — Load a JSON file and deserialize into any `Deserialize + DeserializeOwned` type.
+- [`engine.load_resource_list::<T>(path)`] → `Result<Vec<T>, AssetError>` — Load a JSON array and deserialize into a `Vec<T>`.
 - [`engine.load_scene2d(assets, path)`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L218) → `Result<Scene2D, AssetError>`
 - Audio controls: [`play_sound`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L169), [`play_sound_on_bus`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L173), [`play_music`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L182), [`play_music_with_volume`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L186), [`stop_music`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L190), [`pause_music`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L194), [`resume_music`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L198), [`stop_audio_bus`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L202), [`set_master_volume`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L206), [`set_audio_bus_volume`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L210), [`audio_bus_volume`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L214)
 - [`engine.reload_assets_if_changed()`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L227) — called every frame automatically
@@ -256,9 +259,15 @@ This is the simplest way to run a 2D game. The type parameter `G` must implement
 pub trait Game: 'static + Sized {
     fn new(engine: &mut Engine) -> Self;     // Constructor — load assets, init state
     fn update(&mut self, engine: &Engine);   // Logic tick — receives immutable engine
+    fn fixed_update(&mut self, _engine: &Engine) {} // Fixed-timestep tick (default empty)
     fn render(&mut self, engine: &Engine, frame: &mut Frame);  // Populate frame for rendering
     fn should_exit(&self) -> bool { false }  // Return true to exit the game loop
 }
+```
+
+`fixed_update()` is called N times per frame (where N depends on the accumulated time vs `EngineConfig::fixed_dt`) **before** the variable-rate `update()`. The same pattern exists on `Game3D`, `Scene`, and `Scene3D`.
+
+```rust
 ```
 
 **Line-by-line boot sequence in `run()`:**
@@ -291,10 +300,12 @@ pub trait Game: 'static + Sized {
 On every `WindowEvent::RedrawRequested`:
 
 ```
-┌─ engine.time.tick()              // Measure delta-time
+┌─ engine.time.tick()              // Measure delta-time, accumulate for fixed step
 ├─ engine.gamepads.update()        // Poll gilrs for gamepad events
 ├─ engine.reload_assets_if_changed() // Hot-reload textures, manifests, audio
-├─ game.update(&engine)            // Run game logic (reads input, modifies game state)
+├─ while engine.time.consume_fixed_step():
+│   └─ game.fixed_update(&engine)  // Fixed-timestep logic (physics, netcode)
+├─ game.update(&engine)            // Variable-rate logic (reads input, modifies game state)
 ├─ if game.should_exit() → exit
 ├─ frame.begin()                   // Clear sprites + canvases; camera state persists
 ├─ game.render(&engine, &mut frame)// Game populates frame with DrawParams + canvases
@@ -1279,7 +1290,7 @@ API:
 - **[`tilemap.collide_rect(rect)`](https://github.com/justinwash/rengine/blob/master/engine/src/world/tilemap.rs#L97)** → `Option<Vec2>` — Checks a `Rect` against all occupied tiles within range, accumulates AABB minimum translation vectors. Returns the total push-back vector to resolve overlap.
 - **[`tilemap.draw(frame)`](https://github.com/justinwash/rengine/blob/master/engine/src/world/tilemap.rs#L141)** — Frustum-culled tile rendering: only draws tiles visible within a hardcoded 600×400 half-extent around the camera. Each visible tile emits a `DrawParams` with the tile's texture, color, and UV rect.
 
-### 12.2 [`aabb_overlap`](https://github.com/justinwash/rengine/blob/master/engine/src/world/physics.rs#L5) — AABB Physics
+### 12.2 [`aabb_overlap`](https://github.com/justinwash/rengine/blob/master/engine/src/world/physics.rs) — AABB Physics
 
 ```rust
 pub fn aabb_overlap(a: &Rect, b: &Rect) -> Option<Vec2>
@@ -1291,6 +1302,23 @@ Computes the **Minimum Translation Vector (MTV)** for two overlapping AABBs. Ret
 - Returns the smaller overlap as the push direction, with sign determined by the relative center positions.
 
 This is used by `TileMap::collide_rect()` for tilemap collision.
+
+#### Collision Layers
+
+```rust
+pub struct CollisionLayer {
+    pub layer: u32,  // which groups this body belongs to
+    pub mask: u32,   // which groups this body collides with
+}
+```
+
+Bitmask-based collision filtering. Two bodies interact when `a.layer & b.mask != 0 && b.layer & a.mask != 0`. Named constants: `WORLD`, `PLAYER`, `ENEMY`, `PROJECTILE`, `TRIGGER`, `UI`. `CollisionLayer::default()` sets all bits so existing code is unaffected.
+
+```rust
+pub fn aabb_overlap_layered(a: &Rect, a_layer: &CollisionLayer, b: &Rect, b_layer: &CollisionLayer) -> Option<Vec2>
+```
+
+Checks layer compatibility via `interacts_with()` before delegating to `aabb_overlap()`. Returns `None` if layers don't interact or AABBs don't overlap.
 
 ### 12.3 [`iso_to_screen`](https://github.com/justinwash/rengine/blob/master/engine/src/world/iso.rs#L4) / [`screen_to_iso`](https://github.com/justinwash/rengine/blob/master/engine/src/world/iso.rs#L11) — Isometric Helpers
 
@@ -1324,6 +1352,8 @@ pub struct TimeState {
     dt: f32,
     total_time: f32,
     frame_count: u64,
+    fixed_dt: f32,       // Fixed-timestep interval (default 1/60)
+    accumulator: f32,    // Accumulated time for fixed steps
 }
 ```
 
@@ -1331,7 +1361,9 @@ pub struct TimeState {
 - [`total_time()`](https://github.com/justinwash/rengine/blob/master/engine/src/math/time.rs#L30) — Seconds since engine start.
 - [`frame_count()`](https://github.com/justinwash/rengine/blob/master/engine/src/math/time.rs#L34) — Total frames processed.
 - [`fps()`](https://github.com/justinwash/rengine/blob/master/engine/src/math/time.rs#L38) — `1.0 / dt`.
-- [`tick()`](https://github.com/justinwash/rengine/blob/master/engine/src/math/time.rs#L46) — Called once per frame by the engine; updates all fields.
+- [`tick()`](https://github.com/justinwash/rengine/blob/master/engine/src/math/time.rs#L46) — Called once per frame by the engine; updates all fields and adds `dt` to `accumulator`.
+- [`fixed_dt()`] — Returns the configured fixed-timestep interval.
+- [`consume_fixed_step()`] — Returns `true` and subtracts `fixed_dt` from `accumulator` if enough time has accumulated. Called in a `while` loop before `update()` to drive `fixed_update()` N times per frame.
 
 ---
 

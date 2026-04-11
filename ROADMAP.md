@@ -51,6 +51,9 @@ Recently completed or partially completed:
 - Completed: input action mapping — `ActionMap` with named digital actions and analog axes, `Binding` enum for Key/MouseButton/GamepadButton, `AxisMapping` with positive/negative bindings and optional gamepad stick axis, convenience methods on `Engine` and `Engine3D`
 - Completed: `feature-input` sample — demonstrates action binding setup, axis-driven movement, pressed/down/released queries with visual feedback
 - Completed: asset pipeline validation and dependency tracking — `validate_manifest()` for pre-load checks, `manifest_dependencies()` for tracking which files each manifest loaded, `loaded_asset_summary()` for debugging, `unload_texture/mesh/data()` for cache eviction
+- Completed: serializable resources — `load_resource<T>()` and `load_resource_list<T>()` on Engine and Engine3D for JSON-driven data definitions with serde deserialization
+- Completed: fixed-timestep update — `EngineConfig::fixed_dt` (default 1/60), accumulator-based `consume_fixed_step()`, `fixed_update()` hooks on Game, Game3D, Scene, and Scene3D traits wired into all four run functions
+- Completed: collision layers and masks — `CollisionLayer` bitmask struct with named constants (WORLD, PLAYER, ENEMY, PROJECTILE, TRIGGER, UI), `interacts_with()` check, `aabb_overlap_layered()` for filtered AABB tests
 - Partial: 3D transforms still only support position-based translation; rotation and scale per draw are not yet supported (caused the recurring door visibility issue)
 
 ---
@@ -74,8 +77,8 @@ These are the features that most directly increase the engine’s usefulness for
 5. Prefabs or reusable scene instances [partially done]
    Allow reusable object templates with data overrides for enemies, pickups, UI panels, props, and level chunks.
 
-6. Serializable resources
-   Data-driven definitions for entities, items, attacks, animation clips, tile sets, dialogue, and configuration.
+6. Serializable resources [done]
+   `load_resource<T>()` and `load_resource_list<T>()` on Engine and Engine3D load JSON files through the asset pipeline and deserialize them with serde. Any `Deserialize + DeserializeOwned` type works.
 
 7. Better 2D transforms [done]
    Add rotation, scale, and origin support.
@@ -91,8 +94,8 @@ These are the features that most directly increase the engine’s usefulness for
 11. Rebindable controls
     Let players or games remap keyboard and gamepad actions.
 
-12. Collision layers and masks
-    Support filtering between world, player, enemy, trigger, projectile, and UI collision groups.
+12. Collision layers and masks [done]
+    `CollisionLayer` with `layer` and `mask` u32 bitmasks. Named constants for WORLD, PLAYER, ENEMY, PROJECTILE, TRIGGER, UI. `aabb_overlap_layered()` checks layer compatibility before spatial overlap. Default is all-bits so existing code is unaffected.
 
 13. Trigger volumes and overlap sensors
     Needed for pickups, checkpoints, dialogue zones, scripted events, and hurtboxes.
@@ -100,8 +103,8 @@ These are the features that most directly increase the engine’s usefulness for
 14. Stronger 2D physics
     Expand beyond simple AABB overlap into rigid bodies, velocity, gravity, friction, restitution, and moving platforms.
 
-15. Fixed update support
-    Make simulation-friendly fixed stepping explicit and ergonomic.
+15. Fixed update support [done]
+    `EngineConfig::fixed_dt` sets the step size (default 1/60). `TimeState` accumulates frame time and `consume_fixed_step()` drains it. `Game::fixed_update()`, `Game3D::fixed_update()`, `Scene::fixed_update()`, and `Scene3D::fixed_update()` are called N times per frame before the variable `update()`. All four run functions and their headless paths are wired.
 
 16. Save and load support
     Profiles, settings, progress, keybindings, and serialized game state.
