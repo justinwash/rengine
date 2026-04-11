@@ -39,7 +39,7 @@ impl CollisionLayer {
 
     /// Returns `true` if these two layers should interact.
     pub const fn interacts_with(&self, other: &CollisionLayer) -> bool {
-        (self.layer & other.mask != 0) && (other.layer & self.mask != 0)
+        ((self.layer & other.mask) != 0) && ((other.layer & self.mask) != 0)
     }
 }
 
