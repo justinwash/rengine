@@ -51,6 +51,7 @@ Recently completed or partially completed:
 - Completed: input action mapping — `ActionMap` with named digital actions and analog axes, `Binding` enum for Key/MouseButton/GamepadButton, `AxisMapping` with positive/negative bindings and optional gamepad stick axis, convenience methods on `Engine` and `Engine3D`
 - Completed: `feature-input` sample — demonstrates action binding setup, axis-driven movement, pressed/down/released queries with visual feedback
 - Completed: asset pipeline validation and dependency tracking — `validate_manifest()` for pre-load checks, `manifest_dependencies()` for tracking which files each manifest loaded, `loaded_asset_summary()` for debugging, `unload_texture/mesh/data()` for cache eviction
+- Completed: serializable resources — `load_resource<T>()` and `load_resource_list<T>()` on Engine and Engine3D for JSON-driven data definitions with serde deserialization
 - Partial: 3D transforms still only support position-based translation; rotation and scale per draw are not yet supported (caused the recurring door visibility issue)
 
 ---
@@ -74,8 +75,8 @@ These are the features that most directly increase the engine’s usefulness for
 5. Prefabs or reusable scene instances [partially done]
    Allow reusable object templates with data overrides for enemies, pickups, UI panels, props, and level chunks.
 
-6. Serializable resources
-   Data-driven definitions for entities, items, attacks, animation clips, tile sets, dialogue, and configuration.
+6. Serializable resources [done]
+   `load_resource<T>()` and `load_resource_list<T>()` on Engine and Engine3D load JSON files through the asset pipeline and deserialize them with serde. Any `Deserialize + DeserializeOwned` type works.
 
 7. Better 2D transforms [done]
    Add rotation, scale, and origin support.
