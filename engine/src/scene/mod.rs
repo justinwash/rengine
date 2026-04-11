@@ -12,7 +12,6 @@ use crate::app::{Engine, Engine3D};
 use crate::renderer::Frame;
 use crate::renderer3d::Frame3D;
 
-
 pub enum SceneOp {
     Continue,
     Push(Box<dyn Scene>),
@@ -36,7 +35,6 @@ pub trait Scene: 'static {
 
     fn on_exit(&mut self, _engine: &Engine, _globals: &Globals) {}
 }
-
 
 pub enum SceneOp3D {
     Continue,
