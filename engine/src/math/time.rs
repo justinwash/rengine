@@ -7,6 +7,8 @@ pub struct TimeState {
     dt: f32,
     total_time: f32,
     frame_count: u64,
+    fixed_dt: f32,
+    accumulator: f32,
 }
 
 impl TimeState {
@@ -18,6 +20,8 @@ impl TimeState {
             dt: 1.0 / 60.0,
             total_time: 0.0,
             frame_count: 0,
+            fixed_dt: 1.0 / 60.0,
+            accumulator: 0.0,
         }
     }
 
@@ -43,6 +47,14 @@ impl TimeState {
         }
     }
 
+    pub fn fixed_dt(&self) -> f32 {
+        self.fixed_dt
+    }
+
+    pub(crate) fn set_fixed_dt(&mut self, fixed_dt: f32) {
+        self.fixed_dt = fixed_dt;
+    }
+
     pub(crate) fn tick(&mut self) {
         let now = Instant::now();
         self.dt = now.duration_since(self.last_frame).as_secs_f32();
@@ -53,5 +65,18 @@ impl TimeState {
         self.total_time = now.duration_since(self.start_time).as_secs_f32();
         self.last_frame = now;
         self.frame_count += 1;
+        self.accumulator += self.dt;
+    }
+
+    /// Consume one fixed-step tick from the accumulator. Returns `true` if a
+    /// step was consumed (caller should run fixed_update), `false` when the
+    /// accumulator is drained.
+    pub(crate) fn consume_fixed_step(&mut self) -> bool {
+        if self.accumulator >= self.fixed_dt {
+            self.accumulator -= self.fixed_dt;
+            true
+        } else {
+            false
+        }
     }
 }

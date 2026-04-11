@@ -29,6 +29,7 @@ pub struct EngineConfig {
     pub headless: bool,
     pub hot_reload: bool,
     pub show_fps: bool,
+    pub fixed_dt: f32,
 }
 
 impl Default for EngineConfig {
@@ -41,6 +42,7 @@ impl Default for EngineConfig {
             headless: false,
             hot_reload: true,
             show_fps: true,
+            fixed_dt: 1.0 / 60.0,
         }
     }
 }
@@ -400,6 +402,8 @@ pub trait Game: 'static + Sized {
 
     fn update(&mut self, engine: &Engine);
 
+    fn fixed_update(&mut self, _engine: &Engine) {}
+
     fn render(&mut self, engine: &Engine, frame: &mut Frame);
 
     fn should_exit(&self) -> bool {
@@ -412,6 +416,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
 
     let headless = config.headless;
     let show_fps = config.show_fps;
+    let fixed_dt = config.fixed_dt;
 
     let event_loop = EventLoop::new()?;
     let window = Arc::new(
@@ -441,6 +446,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
         hot_reload_enabled: config.hot_reload,
         actions: ActionMap::new(),
     };
+    engine.time.set_fixed_dt(fixed_dt);
 
     let mut game = G::new(&mut engine);
     let mut frame = Frame::new();
@@ -450,6 +456,9 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
             engine.time.tick();
             engine.gamepads.update();
             engine.reload_assets_if_changed();
+            while engine.time.consume_fixed_step() {
+                game.fixed_update(&engine);
+            }
             game.update(&engine);
             if game.should_exit() {
                 return Ok(());
@@ -487,6 +496,9 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
                     engine.gamepads.update();
                     engine.reload_assets_if_changed();
 
+                    while engine.time.consume_fixed_step() {
+                        game.fixed_update(&engine);
+                    }
                     game.update(&engine);
 
                     if game.should_exit() {
@@ -535,6 +547,7 @@ where
 
     let headless = config.headless;
     let show_fps = config.show_fps;
+    let fixed_dt = config.fixed_dt;
 
     let event_loop = EventLoop::new()?;
     let window = Arc::new(
@@ -564,6 +577,7 @@ where
         hot_reload_enabled: config.hot_reload,
         actions: ActionMap::new(),
     };
+    engine.time.set_fixed_dt(fixed_dt);
 
     let mut globals = Globals::new();
     let mut stack: Vec<Box<dyn Scene>> = Vec::new();
@@ -578,6 +592,12 @@ where
             engine.time.tick();
             engine.gamepads.update();
             engine.reload_assets_if_changed();
+
+            while engine.time.consume_fixed_step() {
+                if let Some(scene) = stack.last_mut() {
+                    scene.fixed_update(&engine, &mut globals);
+                }
+            }
 
             let op = if let Some(scene) = stack.last_mut() {
                 scene.update(&engine, &mut globals)
@@ -623,6 +643,12 @@ where
                     engine.time.tick();
                     engine.gamepads.update();
                     engine.reload_assets_if_changed();
+
+                    while engine.time.consume_fixed_step() {
+                        if let Some(scene) = stack.last_mut() {
+                            scene.fixed_update(&engine, &mut globals);
+                        }
+                    }
 
                     let op = if let Some(scene) = stack.last_mut() {
                         scene.update(&engine, &mut globals)
@@ -987,6 +1013,7 @@ impl Engine3D {
 pub trait Game3D: 'static + Sized {
     fn new(engine: &mut Engine3D) -> Self;
     fn update(&mut self, engine: &Engine3D);
+    fn fixed_update(&mut self, _engine: &Engine3D) {}
     fn render(&mut self, engine: &Engine3D, frame: &mut Frame3D);
     fn should_exit(&self) -> bool {
         false
@@ -998,6 +1025,7 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
 
     let headless = config.headless;
     let show_fps = config.show_fps;
+    let fixed_dt = config.fixed_dt;
 
     let event_loop = EventLoop::new()?;
     let window = Arc::new(
@@ -1028,6 +1056,7 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
         actions: ActionMap::new(),
         no_gamepad: crate::input::GamepadState::new(),
     };
+    engine.time.set_fixed_dt(fixed_dt);
 
     let mut game = G::new(&mut engine);
 
@@ -1035,6 +1064,9 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
         loop {
             engine.time.tick();
             engine.reload_assets_if_changed();
+            while engine.time.consume_fixed_step() {
+                game.fixed_update(&engine);
+            }
             game.update(&engine);
             if game.should_exit() {
                 return Ok(());
@@ -1129,6 +1161,9 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
                     engine.time.tick();
                     engine.reload_assets_if_changed();
 
+                    while engine.time.consume_fixed_step() {
+                        game.fixed_update(&engine);
+                    }
                     game.update(&engine);
 
                     if game.should_exit() {
@@ -1177,6 +1212,7 @@ where
 
     let headless = config.headless;
     let show_fps = config.show_fps;
+    let fixed_dt = config.fixed_dt;
 
     let event_loop = EventLoop::new()?;
     let window = Arc::new(
@@ -1207,6 +1243,7 @@ where
         actions: ActionMap::new(),
         no_gamepad: crate::input::GamepadState::new(),
     };
+    engine.time.set_fixed_dt(fixed_dt);
 
     let mut globals = Globals::new();
     let mut stack: Vec<Box<dyn Scene3D>> = Vec::new();
@@ -1219,6 +1256,12 @@ where
         loop {
             engine.time.tick();
             engine.reload_assets_if_changed();
+
+            while engine.time.consume_fixed_step() {
+                if let Some(scene) = stack.last_mut() {
+                    scene.fixed_update(&engine, &mut globals);
+                }
+            }
 
             let op = if let Some(scene) = stack.last_mut() {
                 scene.update(&engine, &mut globals)
@@ -1321,6 +1364,12 @@ where
                 WindowEvent::RedrawRequested => {
                     engine.time.tick();
                     engine.reload_assets_if_changed();
+
+                    while engine.time.consume_fixed_step() {
+                        if let Some(scene) = stack.last_mut() {
+                            scene.fixed_update(&engine, &mut globals);
+                        }
+                    }
 
                     let op = if let Some(scene) = stack.last_mut() {
                         scene.update(&engine, &mut globals)
