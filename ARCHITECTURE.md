@@ -1331,9 +1331,10 @@ pub enum OverlapEvent { Enter, Stay, Exit }
 pub struct TriggerSystem { /* ... */ }
 ```
 
-Tracks bodies against named trigger zones and produces enter/stay/exit events each tick.
+Tracks bodies against registered trigger zones and produces enter/stay/exit events each tick. Events are stored in a `BTreeMap` for deterministic iteration order (rollback-safe).
 
 API:
+
 - **`add_zone(zone)`** → `TriggerZoneId` — register a trigger region
 - **`tick(bodies)`** — update with `&[(BodyId, Rect, CollisionLayer)]`; compares current overlaps against previous tick
 - **`events()`** — iterate all `(TriggerZoneId, BodyId, OverlapEvent)` this tick
