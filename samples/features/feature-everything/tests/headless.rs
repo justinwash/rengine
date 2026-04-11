@@ -14,7 +14,7 @@ fn game_binary() -> String {
     target_dir.join(name).to_string_lossy().into_owned()
 }
 
-/// Run the kitchen-sink sample in headless demo mode for 300 frames,
+/// Run the kitchen-sink sample in headless demo mode for 600 frames,
 /// then verify that all key features were successfully demonstrated
 /// by checking the `[FEATURE OK]` log lines in stdout.
 #[test]

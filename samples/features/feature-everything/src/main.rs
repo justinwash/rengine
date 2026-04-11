@@ -6,7 +6,7 @@
 // Run modes:
 //   cargo run -p rengine-feature-everything                     # interactive
 //   cargo run -p rengine-feature-everything -- --demo           # visible auto-play
-//   cargo run -p rengine-feature-everything -- --demo --headless --frames 300  # CI test
+//   cargo run -p rengine-feature-everything -- --demo --headless --frames 600  # CI test
 //
 // Demonstrates: EngineConfig (all fields), run_with_scenes(), Scene trait (all hooks
 // including fixed_update), SceneOp (Switch, Push, Pop, Quit), Globals,
