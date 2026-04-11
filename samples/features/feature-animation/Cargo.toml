@@ -1,0 +1,11 @@
+[package]
+name = "rengine-feature-animation"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "rengine-feature-animation"
+path = "src/main.rs"
+
+[dependencies]
+rengine = { path = "../../../engine" }
