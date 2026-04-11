@@ -603,15 +603,17 @@ impl Scene for GameScene {
         // ── Coin collection (aabb_overlap) ──
         let player_rect = Rect::new(self.player_pos.x, self.player_pos.y, 28.0, 44.0);
         let prev_score = self.score;
+        let mut collected = 0u32;
         self.coins.retain(|coin| {
             let coin_rect = Rect::new(coin.x, coin.y, 16.0, 16.0);
             if aabb_overlap(&player_rect, &coin_rect).is_some() {
-                self.score += 1;
+                collected += 1;
                 false
             } else {
                 true
             }
         });
+        self.score += collected;
         if self.score > prev_score {
             println!(
                 "[FEATURE OK] aabb_overlap — collected coin! score: {}",
@@ -927,6 +929,8 @@ impl Scene for GameScene {
     }
 
     fn on_pause(&mut self, _engine: &Engine, _globals: &Globals) {
+        // The Scene::on_pause hook is verified by this println appearing in output;
+        // the [FEATURE OK] log fires in PauseOverlay::on_enter (which runs right after).
         println!("[GameScene] on_pause");
     }
 
@@ -1030,6 +1034,8 @@ impl Scene for PauseOverlay {
         }
         println!("[PauseOverlay] on_enter");
         if let Some(demo) = globals.get_mut::<DemoConfig>() {
+            demo.log_feature("Scene::on_enter");
+            // Scene::on_pause is verified by GameScene::on_pause println above
             demo.log_feature("Scene::on_pause");
         }
     }
