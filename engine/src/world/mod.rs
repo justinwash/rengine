@@ -3,5 +3,5 @@ pub mod physics;
 pub mod tilemap;
 
 pub use iso::{iso_to_screen, screen_to_iso};
-pub use physics::aabb_overlap;
+pub use physics::{aabb_overlap, aabb_overlap_layered, CollisionLayer};
 pub use tilemap::{TileDef, TileMap};
