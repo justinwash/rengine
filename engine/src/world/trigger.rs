@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 
 use crate::math::rect::Rect;
 use crate::world::physics::CollisionLayer;
@@ -53,8 +53,8 @@ pub struct TriggerSystem {
     zones: Vec<TriggerZone>,
     /// For each zone, the set of body IDs that were overlapping last tick.
     prev_overlaps: Vec<HashSet<BodyId>>,
-    /// Events produced by the most recent tick: (zone_id, body_id) → event.
-    current_events: HashMap<(TriggerZoneId, BodyId), OverlapEvent>,
+    /// Events produced by the most recent tick, deterministically ordered.
+    current_events: BTreeMap<(TriggerZoneId, BodyId), OverlapEvent>,
 }
 
 impl TriggerSystem {
@@ -62,7 +62,7 @@ impl TriggerSystem {
         Self {
             zones: Vec::new(),
             prev_overlaps: Vec::new(),
-            current_events: HashMap::new(),
+            current_events: BTreeMap::new(),
         }
     }
 
@@ -109,39 +109,29 @@ impl TriggerSystem {
                 continue;
             }
 
-            let mut current = HashSet::new();
+            let mut prev = std::mem::take(&mut self.prev_overlaps[zone_id]);
 
             for &(body_id, ref body_rect, ref body_layer) in bodies {
                 if !zone.layer.interacts_with(body_layer) {
                     continue;
                 }
                 if zone.rect.overlaps(body_rect) {
-                    current.insert(body_id);
+                    let event = if prev.remove(&body_id) {
+                        OverlapEvent::Stay
+                    } else {
+                        OverlapEvent::Enter
+                    };
+                    self.current_events
+                        .insert((zone_id, body_id), event);
+                    self.prev_overlaps[zone_id].insert(body_id);
                 }
             }
 
-            let prev = &self.prev_overlaps[zone_id];
-
-            // Enter: in current but not in prev
-            for &body_id in &current {
-                if prev.contains(&body_id) {
-                    self.current_events
-                        .insert((zone_id, body_id), OverlapEvent::Stay);
-                } else {
-                    self.current_events
-                        .insert((zone_id, body_id), OverlapEvent::Enter);
-                }
+            // Remaining in prev are exits
+            for &body_id in &prev {
+                self.current_events
+                    .insert((zone_id, body_id), OverlapEvent::Exit);
             }
-
-            // Exit: in prev but not in current
-            for &body_id in prev {
-                if !current.contains(&body_id) {
-                    self.current_events
-                        .insert((zone_id, body_id), OverlapEvent::Exit);
-                }
-            }
-
-            self.prev_overlaps[zone_id] = current;
         }
     }
 
@@ -174,11 +164,7 @@ impl TriggerSystem {
     }
 
     /// Get the event for a specific zone+body pair this tick, if any.
-    pub fn event_for(
-        &self,
-        zone_id: TriggerZoneId,
-        body_id: BodyId,
-    ) -> Option<OverlapEvent> {
+    pub fn event_for(&self, zone_id: TriggerZoneId, body_id: BodyId) -> Option<OverlapEvent> {
         self.current_events.get(&(zone_id, body_id)).copied()
     }
 }

@@ -30,8 +30,7 @@ impl Game for TriggerDemo {
             triggers.add_zone(TriggerZone::new(Rect::new(-300.0, -50.0, 80.0, 100.0)));
 
         // Pickup zone (yellow) — one-time collection
-        let zone_pickup =
-            triggers.add_zone(TriggerZone::new(Rect::new(100.0, 100.0, 40.0, 40.0)));
+        let zone_pickup = triggers.add_zone(TriggerZone::new(Rect::new(100.0, 100.0, 40.0, 40.0)));
 
         // Damage zone (red) — continuous overlap
         let zone_damage =
@@ -90,7 +89,10 @@ impl Game for TriggerDemo {
             PLAYER_SIZE,
             PLAYER_SIZE,
         );
-        let player_layer = CollisionLayer::symmetric(CollisionLayer::PLAYER);
+        let player_layer = CollisionLayer::new(
+            CollisionLayer::PLAYER,
+            CollisionLayer::PLAYER | CollisionLayer::TRIGGER,
+        );
 
         // Tick trigger system
         self.triggers
