@@ -595,23 +595,18 @@ pub struct Frame3D {
 }
 ```
 
-`DrawCmd3D` holds a mesh reference with full TRS (translation, rotation, scale) transform:
+`DrawCmd3D` is a position + mesh reference:
 
 ```rust
 pub struct DrawCmd3D {
     pub mesh: MeshId,
     pub position: Vec3,
-    pub rotation: Quat,
-    pub scale: Vec3,
 }
 ```
 
-Create via `DrawCmd3D::new(mesh, position)` (defaults to identity rotation and unit scale), then chain builder methods: `.with_rotation(quat)`, `.with_scale(vec3)`, `.with_uniform_scale(f32)`. The `transform_matrix()` method computes `Mat4::from_scale_rotation_translation(scale, rotation, position)`.
-
 The frame is populated via:
 
-- [`frame.draw_mesh(mesh_id, position)`](https://github.com/justinwash/rengine/blob/master/engine/src/renderer3d/mod.rs#L92) — World-space mesh (identity rotation, unit scale)
-- [`frame.draw_mesh_transformed(cmd)`](https://github.com/justinwash/rengine/blob/master/engine/src/renderer3d/mod.rs) — World-space mesh with full TRS
+- [`frame.draw_mesh(mesh_id, position)`](https://github.com/justinwash/rengine/blob/master/engine/src/renderer3d/mod.rs#L92) — World-space mesh
 - [`frame.draw_viewmodel_mesh(mesh_id, position)`](https://github.com/justinwash/rengine/blob/master/engine/src/renderer3d/mod.rs#L96) — Camera-relative viewmodel mesh
 - [`frame.draw_raw(vertices, indices)`](https://github.com/justinwash/rengine/blob/master/engine/src/renderer3d/mod.rs#L100) — Inline geometry (no MeshId needed)
 
@@ -619,7 +614,7 @@ The frame is populated via:
 
 1. Compute view-projection from `frame.camera`.
 2. Upload uniforms (VP matrix + lighting).
-3. **Build geometry:** `build_draw_geometry()` iterates all `DrawCmd3D`s, computes a full TRS `Mat4` per draw, applies it to vertex positions CPU-side, and uses `Mat3::from_quat` for correct normal rotation. All vertices/indices are concatenated. Raw vertices/indices are appended after.
+3. **Build geometry:** `build_draw_geometry()` iterates all `DrawCmd3D`s, copies each mesh's vertices with position offset applied CPU-side, and concatenates all indices with base offsets. Raw vertices/indices are appended after.
 4. Upload concatenated vertices + indices to GPU buffers.
 5. Render pass with clear + depth attachment.
 6. If viewmodel draws exist: a second render pass with the viewmodel camera's VP matrix and depth cleared to 1.0 (viewmodel always renders on top).
@@ -629,14 +624,12 @@ The frame is populated via:
 
 The `Viewmodel3D` has its own `Camera3D` with tight near/far planes (0.01–16.0) and narrow FOV (50°). This prevents viewmodel geometry from clipping into walls.
 
-`build_viewmodel_geometry()` applies the per-draw TRS transform in local space, then transforms from camera-local space to world space using the inverse of the viewmodel camera's view matrix:
+`build_viewmodel_geometry()` transforms each mesh vertex from camera-local space to world space using the inverse of the viewmodel camera's view matrix:
 
 ```rust
-let local_transform = cmd.transform_matrix(); // TRS
 let camera_from_view = camera.view_matrix().inverse();
-let world_position = camera_from_view.transform_point3(local_transform.transform_point3(v));
-let normal_rot = Mat3::from_quat(cmd.rotation);
-let world_normal = camera_from_view.transform_vector3(normal_rot * normal).normalize_or_zero();
+let world_position = camera_from_view.transform_point3(local_position);
+let world_normal = camera_from_view.transform_vector3(normal).normalize_or_zero();
 ```
 
 The viewmodel pass clears depth but **loads** the existing color (preserving the world render), then renders the viewmodel geometry on top.

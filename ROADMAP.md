@@ -51,7 +51,7 @@ Recently completed or partially completed:
 - Completed: input action mapping — `ActionMap` with named digital actions and analog axes, `Binding` enum for Key/MouseButton/GamepadButton, `AxisMapping` with positive/negative bindings and optional gamepad stick axis, convenience methods on `Engine` and `Engine3D`
 - Completed: `feature-input` sample — demonstrates action binding setup, axis-driven movement, pressed/down/released queries with visual feedback
 - Completed: asset pipeline validation and dependency tracking — `validate_manifest()` for pre-load checks, `manifest_dependencies()` for tracking which files each manifest loaded, `loaded_asset_summary()` for debugging, `unload_texture/mesh/data()` for cache eviction
-- Completed: full 3D transforms — per-draw rotation (`Quat`) and scale (`Vec3`) via `DrawCmd3D` builder pattern, TRS matrix applied to positions, `Mat3::from_quat` for correct normal transforms
+- Partial: 3D transforms still only support position-based translation; rotation and scale per draw are not yet supported (caused the recurring door visibility issue)
 
 ---
 
@@ -184,8 +184,8 @@ These features make 2D development substantially more practical.
 
 The 3D renderer exists, but these features are required before it becomes practical for general development.
 
-39. Full 3D transforms [done]
-    Per-draw rotation (Quat) and scale (Vec3) via DrawCmd3D builder pattern. TRS matrix applied to vertex positions, Mat3::from_quat for normal transforms. Backward compatible — existing draw_mesh(mesh, pos) calls unchanged.
+39. Full 3D transforms [not started — needed]
+    Per-draw rotation and scale in addition to position. Lack of rotation caused sample door meshes to be invisible when oriented wrong for the scene.
 
 40. Transform hierarchies
     Parent-child spatial relationships for weapons, bones, cameras, and grouped props.
