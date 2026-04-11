@@ -55,6 +55,6 @@ pub use renderer3d::{cube_mesh, floor_quad, wall_quad};
 pub use renderer3d::{Camera3D, DrawCmd3D, Frame3D, MeshId, Vertex3D, Viewmodel3D};
 pub use scene::{Scene3D, SceneOp3D};
 
-pub use glam::{Vec2, Vec3};
+pub use glam::{Quat, Vec2, Vec3};
 
 pub use winit::keyboard::KeyCode;
