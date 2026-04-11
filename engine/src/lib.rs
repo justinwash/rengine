@@ -27,7 +27,7 @@ pub use math::TimeState;
 pub use renderer::{Camera2D, CameraBounds, DrawParams, Frame, TextureId};
 
 pub use world::tilemap;
-pub use world::{aabb_overlap, iso_to_screen, screen_to_iso, TileDef, TileMap};
+pub use world::{aabb_overlap, aabb_overlap_layered, iso_to_screen, screen_to_iso, CollisionLayer, TileDef, TileMap};
 
 pub use assets::pixelart;
 pub use assets::{
