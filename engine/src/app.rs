@@ -157,9 +157,9 @@ impl Engine {
         self.assets.load_text(path)
     }
 
-    pub fn load_resource<T: DeserializeOwned, P: AsRef<Path>>(
+    pub fn load_resource<T: DeserializeOwned>(
         &mut self,
-        path: P,
+        path: impl AsRef<Path>,
     ) -> Result<T, AssetError> {
         let text = self.assets.load_text(&path)?;
         let resolved = self.assets.resolve_path(path.as_ref());
@@ -169,9 +169,9 @@ impl Engine {
         })
     }
 
-    pub fn load_resource_list<T: DeserializeOwned, P: AsRef<Path>>(
+    pub fn load_resource_list<T: DeserializeOwned>(
         &mut self,
-        path: P,
+        path: impl AsRef<Path>,
     ) -> Result<Vec<T>, AssetError> {
         let text = self.assets.load_text(&path)?;
         let resolved = self.assets.resolve_path(path.as_ref());
@@ -788,9 +788,9 @@ impl Engine3D {
         self.assets.load_text(path)
     }
 
-    pub fn load_resource<T: DeserializeOwned, P: AsRef<Path>>(
+    pub fn load_resource<T: DeserializeOwned>(
         &mut self,
-        path: P,
+        path: impl AsRef<Path>,
     ) -> Result<T, AssetError> {
         let text = self.assets.load_text(&path)?;
         let resolved = self.assets.resolve_path(path.as_ref());
@@ -800,9 +800,9 @@ impl Engine3D {
         })
     }
 
-    pub fn load_resource_list<T: DeserializeOwned, P: AsRef<Path>>(
+    pub fn load_resource_list<T: DeserializeOwned>(
         &mut self,
-        path: P,
+        path: impl AsRef<Path>,
     ) -> Result<Vec<T>, AssetError> {
         let text = self.assets.load_text(&path)?;
         let resolved = self.assets.resolve_path(path.as_ref());
