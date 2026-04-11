@@ -9,6 +9,7 @@ const PLAYER_SPEED: f32 = 160.0;
 
 struct TileMapDemo {
     map: TileMap,
+    floor_map: TileMap,
     player_tex: TextureId,
     player_pos: Vec2,
 }
@@ -75,10 +76,13 @@ impl Game for TileMapDemo {
 
         let mut map = TileMap::new(MAP_W, MAP_H, TILE_SIZE);
         let wall_id = map.add_tile(TileDef::solid(wall_tex));
-        let _floor_id = map.add_tile(TileDef::solid(floor_tex));
+
+        let mut floor_map = TileMap::new(MAP_W, MAP_H, TILE_SIZE);
+        let floor_id = floor_map.add_tile(TileDef::solid(floor_tex));
 
         for row in 0..MAP_H {
             for col in 0..MAP_W {
+                floor_map.set(col, row, Some(floor_id));
                 if LEVEL[row * MAP_W + col] == 1 {
                     map.set(col, row, Some(wall_id));
                 }
@@ -92,6 +96,7 @@ impl Game for TileMapDemo {
 
         Self {
             map,
+            floor_map,
             player_tex,
             player_pos,
         }
@@ -134,10 +139,9 @@ impl Game for TileMapDemo {
     }
 
     fn render(&mut self, engine: &Engine, frame: &mut Frame) {
-        frame.clear_color = Color::new(0.55, 0.65, 0.5, 1.0);
-
         frame.camera.position = self.player_pos;
 
+        self.floor_map.draw(frame);
         self.map.draw(frame);
 
         let half = PLAYER_SIZE * 0.5;
