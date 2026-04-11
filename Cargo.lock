@@ -2466,6 +2466,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rengine-feature-triggers"
+version = "0.1.0"
+dependencies = [
+ "rengine",
+]
+
+[[package]]
 name = "rengine-fight"
 version = "0.1.0"
 dependencies = [

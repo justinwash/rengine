@@ -28,8 +28,8 @@ pub use renderer::{Camera2D, CameraBounds, DrawParams, Frame, TextureId};
 
 pub use world::tilemap;
 pub use world::{
-    aabb_overlap, aabb_overlap_layered, iso_to_screen, screen_to_iso, CollisionLayer, TileDef,
-    TileMap,
+    aabb_overlap, aabb_overlap_layered, iso_to_screen, screen_to_iso, BodyId, CollisionLayer,
+    OverlapEvent, TileDef, TileMap, TriggerSystem, TriggerZone, TriggerZoneId,
 };
 
 pub use assets::pixelart;
