@@ -508,8 +508,7 @@ impl Scene for GameScene {
         }
 
         // ── Jump (opposite to gravity) ──
-        let should_jump =
-            demo_jump || (engine.action_pressed("jump") && self.player_on_ground);
+        let should_jump = demo_jump || (engine.action_pressed("jump") && self.player_on_ground);
         if should_jump && self.player_on_ground {
             let vel_surface = self.player_vel.dot(move_dir);
             self.player_vel = move_dir * vel_surface + up_dir * cfg_jump;
@@ -533,11 +532,15 @@ impl Scene for GameScene {
                 if mtv.dot(up_dir) > 0.1 {
                     self.player_on_ground = true;
                 }
-                if mtv.y.abs() > 0.001 {
-                    self.player_vel.y = 0.0;
-                }
-                if mtv.x.abs() > 0.001 {
-                    self.player_vel.x = 0.0;
+                // Zero out velocity along the MTV direction so the player
+                // doesn't stick to or climb walls in rotated gravity.
+                let mtv_len = mtv.length();
+                if mtv_len > 0.001 {
+                    let mtv_norm = mtv / mtv_len;
+                    let vel_into_wall = self.player_vel.dot(mtv_norm);
+                    if vel_into_wall < 0.0 {
+                        self.player_vel -= mtv_norm * vel_into_wall;
+                    }
                 }
                 if let Some(demo) = globals.get_mut::<DemoConfig>() {
                     demo.log_feature("TileMap::collide_rect");
@@ -586,10 +589,15 @@ impl Scene for GameScene {
         let dt = engine.dt();
         self.play_time += dt;
 
+        // Cosmetic spin while airborne; decays quickly on landing and
+        // snaps to zero so it doesn't accumulate across gravity changes.
         if !self.player_on_ground {
-            self.player_rotation += dt * 5.0 * if self.facing_right { 1.0 } else { -1.0 };
+            self.player_rotation += dt * 3.0 * if self.facing_right { 1.0 } else { -1.0 };
         } else {
-            self.player_rotation *= (1.0 - dt * 10.0).max(0.0);
+            self.player_rotation *= (1.0 - dt * 15.0).max(0.0);
+            if self.player_rotation.abs() < 0.01 {
+                self.player_rotation = 0.0;
+            }
         }
 
         // ── Coin collection (aabb_overlap) ──
@@ -636,35 +644,39 @@ impl Scene for GameScene {
 
                 // Only process events when the physics frame has advanced
                 if f != prev {
-                    if f >= 40 && prev < 40 {
+                    // Each rotation gets ~3 seconds (180 frames at 60fps)
+                    // to fully animate and let the player run around.
+                    if f >= 60 && prev < 60 {
                         use std::f32::consts::FRAC_PI_2;
                         self.target_gravity_angle = FRAC_PI_2;
                         demo.log_feature("Directional gravity (gravity follows camera rotation)");
                         demo.log_feature("Camera2D::rotation");
-                        println!("[GameScene] demo: gravity → 90° (walk on wall) at frame 40");
+                        println!(
+                            "[GameScene] demo: gravity → 90° (walk on right wall) at frame 60"
+                        );
                     }
-                    if f >= 80 && prev < 80 {
+                    if f >= 180 && prev < 180 {
                         use std::f32::consts::PI;
                         self.target_gravity_angle = PI;
                         self.cam_zoom = 1.5;
                         demo.log_feature("Camera2D::zoom");
-                        println!("[GameScene] demo: gravity → 180° (walk on ceiling) + zoom at frame 80");
+                        println!("[GameScene] demo: gravity → 180° (walk on ceiling) + zoom at frame 180");
                     }
-                    if f >= 120 && prev < 120 {
+                    if f >= 300 && prev < 300 {
                         use std::f32::consts::FRAC_PI_2;
                         self.target_gravity_angle = 3.0 * FRAC_PI_2;
                         self.cam_zoom = 1.0;
-                        println!("[GameScene] demo: gravity → 270° (other wall) at frame 120");
+                        println!("[GameScene] demo: gravity → 270° (left wall) at frame 300");
                     }
-                    if f >= 160 && prev < 160 {
+                    if f >= 420 && prev < 420 {
                         self.target_gravity_angle = 0.0;
                         self.pending_shake.set(true);
-                        println!("[GameScene] demo: gravity → 0° (normal) + shake at frame 160");
+                        println!("[GameScene] demo: gravity → 0° (normal) + shake at frame 420");
                     }
-                    if f >= 200 && !self.demo_did_pause {
+                    if f >= 500 && !self.demo_did_pause {
                         self.demo_did_pause = true;
                         demo.log_feature("SceneOp::Push (Pause)");
-                        println!("[GameScene] demo: pushing PauseOverlay at frame 200");
+                        println!("[GameScene] demo: pushing PauseOverlay at frame 500");
                         return SceneOp::Push(Box::new(PauseOverlay { demo_frames: 0 }));
                     }
                 }
@@ -868,7 +880,11 @@ impl Scene for GameScene {
         hud.text(
             10.0,
             89.0,
-            &format!("Gravity: {} ({:.0}\u{00B0})", grav_label, self.gravity_angle.to_degrees()),
+            &format!(
+                "Gravity: {} ({:.0}\u{00B0})",
+                grav_label,
+                self.gravity_angle.to_degrees()
+            ),
             12.0,
             Color::new(0.0, 0.9, 1.0, 1.0),
             (sw, sh),
@@ -929,6 +945,73 @@ impl Scene for GameScene {
                 stats.coins, stats.best_height
             );
         }
+    }
+}
+
+// ──────────────────────────────────────────────────────────────
+// Countdown Scene — gives time to start screen capture before demo
+// ──────────────────────────────────────────────────────────────
+
+struct CountdownScene {
+    timer: f32,
+}
+
+impl CountdownScene {
+    fn new() -> Self {
+        Self { timer: 3.5 }
+    }
+}
+
+impl Scene for CountdownScene {
+    fn on_enter(&mut self, _engine: &mut Engine, _globals: &mut Globals) {
+        println!("[CountdownScene] on_enter — 3 second countdown");
+    }
+
+    fn update(&mut self, engine: &Engine, _globals: &mut Globals) -> SceneOp {
+        self.timer -= engine.dt();
+        if self.timer <= 0.0 {
+            return SceneOp::Switch(Box::new(GameScene::default()));
+        }
+        SceneOp::Continue
+    }
+
+    fn render(&self, engine: &Engine, _globals: &Globals, frame: &mut Frame) {
+        frame.clear_color = Color::new(0.05, 0.05, 0.15, 1.0);
+
+        let (sw, sh) = engine.window_size();
+        let atlas = engine.font_atlas();
+        let canvas = frame.canvas(0);
+
+        let secs = self.timer.ceil() as i32;
+        let label = if secs <= 0 {
+            "GO!".to_string()
+        } else {
+            format!("{secs}")
+        };
+
+        canvas.text(
+            sw as f32 / 2.0 - 40.0,
+            sh as f32 / 2.0 - 50.0,
+            &label,
+            80.0,
+            Color::WHITE,
+            (sw, sh),
+            atlas,
+        );
+
+        canvas.text(
+            sw as f32 / 2.0 - 140.0,
+            sh as f32 / 2.0 + 50.0,
+            "Demo starting... start recording!",
+            16.0,
+            Color::new(0.7, 0.7, 0.7, 1.0),
+            (sw, sh),
+            atlas,
+        );
+    }
+
+    fn on_exit(&mut self, _engine: &Engine, _globals: &Globals) {
+        println!("[CountdownScene] on_exit — starting demo");
     }
 }
 
@@ -1052,7 +1135,7 @@ fn main() {
     let demo = has_flag("--demo");
     let max_frames: u32 = arg_value("--frames")
         .and_then(|f| f.parse().ok())
-        .unwrap_or(300);
+        .unwrap_or(600);
 
     if demo {
         println!("==============================================");
@@ -1134,8 +1217,13 @@ fn main() {
             println!("[FEATURE OK] run_with_scenes — scene-stack entry point");
 
             if demo {
-                println!("[Demo] Skipping TitleScene, starting GameScene directly");
-                Box::new(GameScene::default()) as Box<dyn Scene>
+                if headless {
+                    println!("[Demo] Headless: skipping countdown, starting GameScene directly");
+                    Box::new(GameScene::default()) as Box<dyn Scene>
+                } else {
+                    println!("[Demo] 3-second countdown before demo starts");
+                    Box::new(CountdownScene::new()) as Box<dyn Scene>
+                }
             } else {
                 Box::new(TitleScene { blink_timer: 0.0 }) as Box<dyn Scene>
             }
