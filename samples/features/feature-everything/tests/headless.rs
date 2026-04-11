@@ -41,9 +41,7 @@ fn headless_demo() {
     );
 
     // Look for "OK <frame_count>" line anywhere in output (on_exit prints after it)
-    let ok_line = stdout
-        .lines()
-        .find(|l| l.starts_with("OK "));
+    let ok_line = stdout.lines().find(|l| l.starts_with("OK "));
     assert!(
         ok_line.is_some(),
         "Expected 'OK <n>' line in stdout.\nFull stdout:\n{stdout}"
@@ -73,6 +71,7 @@ fn headless_demo() {
         "Camera2D::shake",
         "Camera2D::rotation",
         "Camera2D::zoom",
+        "Directional gravity",
         "SceneOp::Push (Pause)",
         "SceneOp::Pop (Unpause)",
         "Scene::on_resume",
