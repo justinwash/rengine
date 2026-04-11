@@ -2438,6 +2438,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rengine-feature-pixelart"
+version = "0.1.0"
+dependencies = [
+ "rengine",
+]
+
+[[package]]
 name = "rengine-feature-scenes"
 version = "0.1.0"
 dependencies = [
