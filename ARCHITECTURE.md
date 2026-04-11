@@ -915,12 +915,19 @@ struct AssetPipeline {
     texture_timestamps: HashMap<PathBuf, SystemTime>,
     mesh_timestamps: HashMap<PathBuf, SystemTime>,
     manifest_timestamps: HashMap<PathBuf, SystemTime>,
+    manifest_deps: HashMap<PathBuf, Vec<PathBuf>>,
 }
 ```
 
 **Path resolution:** `resolve_path()` joins relative paths with `self.root` and canonicalizes. Absolute paths are used as-is.
 
 **Caching:** All `load_*` methods check the cache first. This means calling `load_texture("player.png")` twice returns the same `TextureId` without re-uploading.
+
+**Dependency tracking:** When `load_asset_manifest()` is called, the engine records every file path loaded by that manifest in `manifest_deps`. Query with `engine.manifest_dependencies("assets.json")`.
+
+**Manifest validation:** `engine.validate_manifest("assets.json")` parses the manifest JSON and checks that every referenced file exists on disk. Returns `Vec<AssetError>` with all problems found rather than failing on the first. Useful for build-time or startup validation.
+
+**Cache management:** `engine.loaded_asset_summary()` returns an `AssetSummary` with counts and paths. Use `unload_texture()`, `unload_mesh()`, or `unload_data()` to evict cached assets.
 
 ### 8.2 [`AssetManifest`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pipeline.rs#L158) and [`AssetPack`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pipeline.rs#L174)
 

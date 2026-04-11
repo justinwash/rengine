@@ -160,25 +160,37 @@ impl Engine {
         &mut self,
         path: P,
     ) -> Result<AssetPack, AssetError> {
-        let manifest = self.assets.load_manifest(path)?;
+        let manifest_path = self.assets.resolve_path(path.as_ref());
+        let manifest = self.assets.load_manifest(&manifest_path)?;
         let mut pack = AssetPack::default();
+        let mut deps = Vec::new();
 
         for (alias, rel_path) in manifest.bytes {
+            let resolved = self.assets.resolve_path(Path::new(&rel_path));
+            deps.push(resolved);
             pack.insert_bytes(alias, self.assets.load_bytes(rel_path)?);
         }
         for (alias, rel_path) in manifest.text {
+            let resolved = self.assets.resolve_path(Path::new(&rel_path));
+            deps.push(resolved);
             pack.insert_text(alias, self.assets.load_text(rel_path)?);
         }
         for (alias, rel_path) in manifest.textures {
+            let resolved = self.assets.resolve_path(Path::new(&rel_path));
+            deps.push(resolved);
             pack.insert_texture(alias, self.load_texture(rel_path)?);
         }
         for (alias, sheet) in manifest.sprite_sheets {
+            let resolved = self.assets.resolve_path(Path::new(&sheet.path));
+            deps.push(resolved);
             pack.insert_sprite_sheet(
                 alias,
                 self.load_sprite_sheet(sheet.path, sheet.cell_width, sheet.cell_height)?,
             );
         }
         for (alias, rel_path) in manifest.audio {
+            let resolved = self.assets.resolve_path(Path::new(&rel_path));
+            deps.push(resolved);
             pack.insert_audio(alias, self.load_audio(rel_path)?);
         }
         if !manifest.meshes.is_empty() {
@@ -188,6 +200,7 @@ impl Engine {
             ));
         }
 
+        self.assets.record_manifest_deps(manifest_path, deps);
         Ok(pack)
     }
 
@@ -300,6 +313,38 @@ impl Engine {
                 Err(error) => log::warn!("Audio reload failed: {error}"),
             }
         }
+    }
+
+    pub fn validate_manifest<P: AsRef<Path>>(&self, path: P) -> Vec<AssetError> {
+        let path = path.as_ref();
+        let mut errors = self.assets.validate_manifest(path);
+        if let Ok(manifest) = self.assets.peek_manifest(path) {
+            if !manifest.meshes.is_empty() {
+                errors.push(AssetError::manifest_message(
+                    &self.assets.resolve_path(path),
+                    "2D Engine manifest cannot contain mesh entries; use Engine3D instead",
+                ));
+            }
+        }
+        errors
+    }
+
+    pub fn loaded_asset_summary(&self) -> crate::assets::AssetSummary {
+        self.assets.loaded_asset_summary()
+    }
+
+    pub fn manifest_dependencies<P: AsRef<Path>>(&self, path: P) -> Option<Vec<PathBuf>> {
+        self.assets
+            .manifest_dependencies(path)
+            .map(|deps| deps.to_vec())
+    }
+
+    pub fn unload_texture<P: AsRef<Path>>(&mut self, path: P) {
+        self.assets.unload_texture(path);
+    }
+
+    pub fn unload_data<P: AsRef<Path>>(&mut self, path: P) {
+        self.assets.unload_data(path);
     }
 
     pub fn create_color_texture(&mut self, width: u32, height: u32, color: Color) -> TextureId {
@@ -722,19 +767,29 @@ impl Engine3D {
         &mut self,
         path: P,
     ) -> Result<AssetPack, AssetError> {
-        let manifest = self.assets.load_manifest(path)?;
+        let manifest_path = self.assets.resolve_path(path.as_ref());
+        let manifest = self.assets.load_manifest(&manifest_path)?;
         let mut pack = AssetPack::default();
+        let mut deps = Vec::new();
 
         for (alias, rel_path) in manifest.bytes {
+            let resolved = self.assets.resolve_path(Path::new(&rel_path));
+            deps.push(resolved);
             pack.insert_bytes(alias, self.assets.load_bytes(rel_path)?);
         }
         for (alias, rel_path) in manifest.text {
+            let resolved = self.assets.resolve_path(Path::new(&rel_path));
+            deps.push(resolved);
             pack.insert_text(alias, self.assets.load_text(rel_path)?);
         }
         for (alias, rel_path) in manifest.audio {
+            let resolved = self.assets.resolve_path(Path::new(&rel_path));
+            deps.push(resolved);
             pack.insert_audio(alias, self.load_audio(rel_path)?);
         }
         for (alias, rel_path) in manifest.meshes {
+            let resolved = self.assets.resolve_path(Path::new(&rel_path));
+            deps.push(resolved);
             pack.insert_mesh(alias, self.load_mesh(rel_path)?);
         }
         if !manifest.textures.is_empty() || !manifest.sprite_sheets.is_empty() {
@@ -744,6 +799,7 @@ impl Engine3D {
             ));
         }
 
+        self.assets.record_manifest_deps(manifest_path, deps);
         Ok(pack)
     }
 
@@ -840,6 +896,38 @@ impl Engine3D {
                 Err(error) => log::warn!("Audio reload failed: {error}"),
             }
         }
+    }
+
+    pub fn validate_manifest<P: AsRef<Path>>(&self, path: P) -> Vec<AssetError> {
+        let path = path.as_ref();
+        let mut errors = self.assets.validate_manifest(path);
+        if let Ok(manifest) = self.assets.peek_manifest(path) {
+            if !manifest.textures.is_empty() || !manifest.sprite_sheets.is_empty() {
+                errors.push(AssetError::manifest_message(
+                    &self.assets.resolve_path(path),
+                    "3D Engine manifest does not support textures or sprite_sheets",
+                ));
+            }
+        }
+        errors
+    }
+
+    pub fn loaded_asset_summary(&self) -> crate::assets::AssetSummary {
+        self.assets.loaded_asset_summary()
+    }
+
+    pub fn manifest_dependencies<P: AsRef<Path>>(&self, path: P) -> Option<Vec<PathBuf>> {
+        self.assets
+            .manifest_dependencies(path)
+            .map(|deps| deps.to_vec())
+    }
+
+    pub fn unload_mesh<P: AsRef<Path>>(&mut self, path: P) {
+        self.assets.unload_mesh(path);
+    }
+
+    pub fn unload_data<P: AsRef<Path>>(&mut self, path: P) {
+        self.assets.unload_data(path);
     }
 
     pub fn create_mesh(&mut self, vertices: Vec<Vertex3D>, indices: Vec<u32>) -> MeshId {

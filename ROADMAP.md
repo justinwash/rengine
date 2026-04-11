@@ -50,7 +50,7 @@ Recently completed or partially completed:
 - Completed: `feature-camera` sample — demonstrates follow, dead zone, bounds, shake, and rotation toggle
 - Completed: input action mapping — `ActionMap` with named digital actions and analog axes, `Binding` enum for Key/MouseButton/GamepadButton, `AxisMapping` with positive/negative bindings and optional gamepad stick axis, convenience methods on `Engine` and `Engine3D`
 - Completed: `feature-input` sample — demonstrates action binding setup, axis-driven movement, pressed/down/released queries with visual feedback
-- Partial: broader asset pipeline coverage still needs validation tooling, dependency tracking, and additional import formats beyond OBJ and glTF
+- Completed: asset pipeline validation and dependency tracking — `validate_manifest()` for pre-load checks, `manifest_dependencies()` for tracking which files each manifest loaded, `loaded_asset_summary()` for debugging, `unload_texture/mesh/data()` for cache eviction
 - Partial: 3D transforms still only support position-based translation; rotation and scale per draw are not yet supported (caused the recurring door visibility issue)
 
 ---
