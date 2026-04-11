@@ -213,6 +213,7 @@ pub struct AssetSummary {
     pub bytes_paths: Vec<PathBuf>,
     pub text_paths: Vec<PathBuf>,
     pub texture_paths: Vec<PathBuf>,
+    pub sprite_sheet_paths: Vec<PathBuf>,
     pub mesh_paths: Vec<PathBuf>,
     pub manifest_paths: Vec<PathBuf>,
 }
@@ -725,15 +726,22 @@ impl AssetPipeline {
                     cell_width: sheet_def.cell_width,
                     cell_height: sheet_def.cell_height,
                 });
-            } else if let Ok((w, h, _)) = self.read_image_rgba(&file_path) {
-                if w % sheet_def.cell_width != 0 || h % sheet_def.cell_height != 0 {
-                    errors.push(AssetError::InvalidSpriteSheet {
-                        path: file_path,
-                        texture_width: w,
-                        texture_height: h,
-                        cell_width: sheet_def.cell_width,
-                        cell_height: sheet_def.cell_height,
-                    });
+            } else {
+                match self.read_image_rgba(&file_path) {
+                    Ok((w, h, _)) => {
+                        if w % sheet_def.cell_width != 0 || h % sheet_def.cell_height != 0 {
+                            errors.push(AssetError::InvalidSpriteSheet {
+                                path: file_path,
+                                texture_width: w,
+                                texture_height: h,
+                                cell_width: sheet_def.cell_width,
+                                cell_height: sheet_def.cell_height,
+                            });
+                        }
+                    }
+                    Err(e) => {
+                        errors.push(e);
+                    }
                 }
             }
         }
@@ -743,7 +751,10 @@ impl AssetPipeline {
 
     /// Parse a manifest from disk without caching it. Used by engine-level
     /// validation to check engine-specific constraints.
-    pub(crate) fn peek_manifest<P: AsRef<Path>>(&self, path: P) -> Result<AssetManifest, AssetError> {
+    pub(crate) fn peek_manifest<P: AsRef<Path>>(
+        &self,
+        path: P,
+    ) -> Result<AssetManifest, AssetError> {
         let resolved = self.resolve_path(path.as_ref());
         let text = fs::read_to_string(&resolved).map_err(|source| AssetError::Io {
             path: resolved.clone(),
@@ -781,6 +792,7 @@ impl AssetPipeline {
             bytes_paths: self.bytes.keys().cloned().collect(),
             text_paths: self.text.keys().cloned().collect(),
             texture_paths: self.textures.keys().cloned().collect(),
+            sprite_sheet_paths: self.sprite_sheets.keys().map(|k| k.path.clone()).collect(),
             mesh_paths: self.meshes.keys().cloned().collect(),
             manifest_paths: self.manifests.keys().cloned().collect(),
         }
