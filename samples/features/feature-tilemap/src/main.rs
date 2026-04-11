@@ -103,10 +103,10 @@ impl Game for TileMapDemo {
 
         let mut dir = Vec2::ZERO;
         if input.is_key_down(KeyCode::KeyW) || input.is_key_down(KeyCode::ArrowUp) {
-            dir.y -= 1.0;
+            dir.y += 1.0;
         }
         if input.is_key_down(KeyCode::KeyS) || input.is_key_down(KeyCode::ArrowDown) {
-            dir.y += 1.0;
+            dir.y -= 1.0;
         }
         if input.is_key_down(KeyCode::KeyA) || input.is_key_down(KeyCode::ArrowLeft) {
             dir.x -= 1.0;
