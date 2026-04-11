@@ -52,6 +52,10 @@ impl TimeState {
     }
 
     pub(crate) fn set_fixed_dt(&mut self, fixed_dt: f32) {
+        assert!(
+            fixed_dt.is_finite() && fixed_dt > 0.0,
+            "fixed_dt must be finite and > 0.0"
+        );
         self.fixed_dt = fixed_dt;
     }
 
@@ -66,6 +70,11 @@ impl TimeState {
         self.last_frame = now;
         self.frame_count += 1;
         self.accumulator += self.dt;
+        // Cap accumulator to prevent spiral-of-death with very small fixed_dt
+        let max_accumulator = self.fixed_dt * 10.0;
+        if self.accumulator > max_accumulator {
+            self.accumulator = max_accumulator;
+        }
     }
 
     /// Consume one fixed-step tick from the accumulator. Returns `true` if a

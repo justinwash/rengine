@@ -265,10 +265,7 @@ pub trait Game: 'static + Sized {
 }
 ```
 
-`fixed_update()` is called N times per frame (where N depends on the accumulated time vs `EngineConfig::fixed_dt`) **before** the variable-rate `update()`. The same pattern exists on `Game3D`, `Scene`, and `Scene3D`.
-
-```rust
-```
+`fixed_update()` is called N times per frame (where N depends on the accumulated time vs `EngineConfig::fixed_dt`) **before** the variable-rate `update()`. The same pattern exists on `Game3D`, `Scene`, and `Scene3D`. The accumulator is capped at `10 * fixed_dt` to prevent spiral-of-death.
 
 **Line-by-line boot sequence in `run()`:**
 
