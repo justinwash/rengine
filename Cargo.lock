@@ -2410,6 +2410,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rengine-feature-animation"
+version = "0.1.0"
+dependencies = [
+ "rengine",
+]
+
+[[package]]
 name = "rengine-feature-camera"
 version = "0.1.0"
 dependencies = [
