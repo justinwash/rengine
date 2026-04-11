@@ -210,8 +210,11 @@ pub struct AssetSummary {
     pub sprite_sheet_count: usize,
     pub mesh_count: usize,
     pub manifest_count: usize,
+    pub bytes_paths: Vec<PathBuf>,
+    pub text_paths: Vec<PathBuf>,
     pub texture_paths: Vec<PathBuf>,
     pub mesh_paths: Vec<PathBuf>,
+    pub manifest_paths: Vec<PathBuf>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -639,9 +642,11 @@ impl AssetPipeline {
         invalidated
     }
 
-    /// Validate that all files referenced by a manifest exist on disk.
-    /// Returns a list of errors for missing or unreadable files.
-    /// Call this before `load_manifest` to catch problems early.
+    /// Validate that the manifest can be read and parsed, and that all files
+    /// referenced by the manifest exist on disk.
+    /// Returns a list of errors for a missing or unreadable manifest, invalid
+    /// manifest JSON, or missing referenced files.
+    /// Call this before `load_manifest` to catch these problems early.
     pub fn validate_manifest<P: AsRef<Path>>(&self, path: P) -> Vec<AssetError> {
         let resolved = self.resolve_path(path.as_ref());
         let text = match fs::read_to_string(&resolved) {
@@ -712,8 +717,7 @@ impl AssetPipeline {
                     path: file_path.clone(),
                     source: std::io::Error::new(std::io::ErrorKind::NotFound, "file not found"),
                 });
-            }
-            if sheet_def.cell_width == 0 || sheet_def.cell_height == 0 {
+            } else if sheet_def.cell_width == 0 || sheet_def.cell_height == 0 {
                 errors.push(AssetError::InvalidSpriteSheet {
                     path: file_path,
                     texture_width: 0,
@@ -721,14 +725,41 @@ impl AssetPipeline {
                     cell_width: sheet_def.cell_width,
                     cell_height: sheet_def.cell_height,
                 });
+            } else if let Ok((w, h, _)) = self.read_image_rgba(&file_path) {
+                if w % sheet_def.cell_width != 0 || h % sheet_def.cell_height != 0 {
+                    errors.push(AssetError::InvalidSpriteSheet {
+                        path: file_path,
+                        texture_width: w,
+                        texture_height: h,
+                        cell_width: sheet_def.cell_width,
+                        cell_height: sheet_def.cell_height,
+                    });
+                }
             }
         }
 
         errors
     }
 
-    /// Record that a manifest loaded the given file paths.
-    pub(crate) fn record_manifest_deps(&mut self, manifest_path: PathBuf, deps: Vec<PathBuf>) {
+    /// Parse a manifest from disk without caching it. Used by engine-level
+    /// validation to check engine-specific constraints.
+    pub(crate) fn peek_manifest<P: AsRef<Path>>(&self, path: P) -> Result<AssetManifest, AssetError> {
+        let resolved = self.resolve_path(path.as_ref());
+        let text = fs::read_to_string(&resolved).map_err(|source| AssetError::Io {
+            path: resolved.clone(),
+            source,
+        })?;
+        serde_json::from_str(&text).map_err(|source| AssetError::Json {
+            path: resolved,
+            source,
+        })
+    }
+
+    /// Record the manifest itself and the file paths it loaded (deduplicated).
+    pub(crate) fn record_manifest_deps(&mut self, manifest_path: PathBuf, mut deps: Vec<PathBuf>) {
+        deps.push(manifest_path.clone());
+        deps.sort();
+        deps.dedup();
         self.manifest_deps.insert(manifest_path, deps);
     }
 
@@ -747,16 +778,20 @@ impl AssetPipeline {
             sprite_sheet_count: self.sprite_sheets.len(),
             mesh_count: self.meshes.len(),
             manifest_count: self.manifests.len(),
+            bytes_paths: self.bytes.keys().cloned().collect(),
+            text_paths: self.text.keys().cloned().collect(),
             texture_paths: self.textures.keys().cloned().collect(),
             mesh_paths: self.meshes.keys().cloned().collect(),
+            manifest_paths: self.manifests.keys().cloned().collect(),
         }
     }
 
-    /// Evict a cached texture so the next load reads from disk.
+    /// Evict a cached texture and any sprite sheets using it.
     pub fn unload_texture<P: AsRef<Path>>(&mut self, path: P) {
         let resolved = self.resolve_path(path.as_ref());
         self.textures.remove(&resolved);
         self.texture_timestamps.remove(&resolved);
+        self.sprite_sheets.retain(|key, _| key.path != resolved);
     }
 
     /// Evict a cached mesh so the next load reads from disk.

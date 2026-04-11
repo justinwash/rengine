@@ -316,7 +316,17 @@ impl Engine {
     }
 
     pub fn validate_manifest<P: AsRef<Path>>(&self, path: P) -> Vec<AssetError> {
-        self.assets.validate_manifest(path)
+        let path = path.as_ref();
+        let mut errors = self.assets.validate_manifest(path);
+        if let Ok(manifest) = self.assets.peek_manifest(path) {
+            if !manifest.meshes.is_empty() {
+                errors.push(AssetError::manifest_message(
+                    &self.assets.resolve_path(path),
+                    "2D Engine manifest cannot contain mesh entries; use Engine3D instead",
+                ));
+            }
+        }
+        errors
     }
 
     pub fn loaded_asset_summary(&self) -> crate::assets::AssetSummary {
@@ -889,7 +899,17 @@ impl Engine3D {
     }
 
     pub fn validate_manifest<P: AsRef<Path>>(&self, path: P) -> Vec<AssetError> {
-        self.assets.validate_manifest(path)
+        let path = path.as_ref();
+        let mut errors = self.assets.validate_manifest(path);
+        if let Ok(manifest) = self.assets.peek_manifest(path) {
+            if !manifest.textures.is_empty() || !manifest.sprite_sheets.is_empty() {
+                errors.push(AssetError::manifest_message(
+                    &self.assets.resolve_path(path),
+                    "3D Engine manifest does not support textures or sprite_sheets",
+                ));
+            }
+        }
+        errors
     }
 
     pub fn loaded_asset_summary(&self) -> crate::assets::AssetSummary {
