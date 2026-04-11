@@ -13,14 +13,38 @@ use crate::renderer3d::{MeshId, Vertex3D};
 
 #[derive(Debug)]
 pub enum AssetError {
-    Io { path: PathBuf, source: std::io::Error },
-    Utf8 { path: PathBuf, source: std::string::FromUtf8Error },
-    Json { path: PathBuf, source: serde_json::Error },
-    Image { path: PathBuf, source: image::ImageError },
-    Mesh { path: PathBuf, message: String },
-    Manifest { path: PathBuf, message: String },
-    Scene { path: PathBuf, message: String },
-    Audio { path: PathBuf, message: String },
+    Io {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+    Utf8 {
+        path: PathBuf,
+        source: std::string::FromUtf8Error,
+    },
+    Json {
+        path: PathBuf,
+        source: serde_json::Error,
+    },
+    Image {
+        path: PathBuf,
+        source: image::ImageError,
+    },
+    Mesh {
+        path: PathBuf,
+        message: String,
+    },
+    Manifest {
+        path: PathBuf,
+        message: String,
+    },
+    Scene {
+        path: PathBuf,
+        message: String,
+    },
+    Audio {
+        path: PathBuf,
+        message: String,
+    },
     InvalidSpriteSheet {
         path: PathBuf,
         texture_width: u32,
@@ -63,7 +87,11 @@ impl fmt::Display for AssetError {
                 write!(f, "asset '{}' is not valid UTF-8: {source}", path.display())
             }
             Self::Json { path, source } => {
-                write!(f, "asset '{}' contains invalid JSON: {source}", path.display())
+                write!(
+                    f,
+                    "asset '{}' contains invalid JSON: {source}",
+                    path.display()
+                )
             }
             Self::Image { path, source } => {
                 write!(f, "failed to decode image '{}': {source}", path.display())
@@ -78,7 +106,11 @@ impl fmt::Display for AssetError {
                 write!(f, "failed to load scene '{}': {message}", path.display())
             }
             Self::Audio { path, message } => {
-                write!(f, "failed to use audio asset '{}': {message}", path.display())
+                write!(
+                    f,
+                    "failed to use audio asset '{}': {message}",
+                    path.display()
+                )
             }
             Self::InvalidSpriteSheet {
                 path,
@@ -170,6 +202,22 @@ pub struct AssetManifest {
     pub audio: HashMap<String, String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct AssetSummary {
+    pub bytes_count: usize,
+    pub text_count: usize,
+    pub texture_count: usize,
+    pub sprite_sheet_count: usize,
+    pub mesh_count: usize,
+    pub manifest_count: usize,
+    pub bytes_paths: Vec<PathBuf>,
+    pub text_paths: Vec<PathBuf>,
+    pub texture_paths: Vec<PathBuf>,
+    pub sprite_sheet_paths: Vec<PathBuf>,
+    pub mesh_paths: Vec<PathBuf>,
+    pub manifest_paths: Vec<PathBuf>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct AssetPack {
     bytes: HashMap<String, Arc<[u8]>>,
@@ -255,6 +303,8 @@ pub(crate) struct AssetPipeline {
     texture_timestamps: HashMap<PathBuf, SystemTime>,
     mesh_timestamps: HashMap<PathBuf, SystemTime>,
     manifest_timestamps: HashMap<PathBuf, SystemTime>,
+    /// Maps a manifest path to the set of file paths it loaded.
+    manifest_deps: HashMap<PathBuf, Vec<PathBuf>>,
 }
 
 impl AssetPipeline {
@@ -270,6 +320,7 @@ impl AssetPipeline {
             texture_timestamps: HashMap::new(),
             mesh_timestamps: HashMap::new(),
             manifest_timestamps: HashMap::new(),
+            manifest_deps: HashMap::new(),
         }
     }
 
@@ -332,10 +383,11 @@ impl AssetPipeline {
             path: resolved.clone(),
             source,
         })?;
-        let manifest: AssetManifest = serde_json::from_str(&text).map_err(|source| AssetError::Json {
-            path: resolved.clone(),
-            source,
-        })?;
+        let manifest: AssetManifest =
+            serde_json::from_str(&text).map_err(|source| AssetError::Json {
+                path: resolved.clone(),
+                source,
+            })?;
         if let Ok(modified) = file_modified_time(&resolved) {
             self.manifest_timestamps.insert(resolved.clone(), modified);
         }
@@ -343,7 +395,11 @@ impl AssetPipeline {
         Ok(manifest)
     }
 
-    pub fn load_texture<P, F>(&mut self, path: P, create_texture: F) -> Result<TextureAsset, AssetError>
+    pub fn load_texture<P, F>(
+        &mut self,
+        path: P,
+        create_texture: F,
+    ) -> Result<TextureAsset, AssetError>
     where
         P: AsRef<Path>,
         F: FnOnce(u32, u32, &[u8]) -> TextureId,
@@ -443,7 +499,10 @@ impl AssetPipeline {
 
         let (mut vertices, mut indices) = read_mesh(&resolved)?;
         fix_winding_from_normals(&vertices, &mut indices);
-        if vertices.iter().all(|vertex| vertex.normal == [0.0, 0.0, 0.0]) {
+        if vertices
+            .iter()
+            .all(|vertex| vertex.normal == [0.0, 0.0, 0.0])
+        {
             compute_flat_normals(&mut vertices, &indices);
         }
 
@@ -463,7 +522,10 @@ impl AssetPipeline {
         Ok(asset)
     }
 
-    pub fn reload_changed_textures<F>(&mut self, mut replace_texture: F) -> Vec<Result<PathBuf, AssetError>>
+    pub fn reload_changed_textures<F>(
+        &mut self,
+        mut replace_texture: F,
+    ) -> Vec<Result<PathBuf, AssetError>>
     where
         F: FnMut(TextureId, u32, u32, &[u8]),
     {
@@ -505,7 +567,10 @@ impl AssetPipeline {
         results
     }
 
-    pub fn reload_changed_meshes<F>(&mut self, mut replace_mesh: F) -> Vec<Result<PathBuf, AssetError>>
+    pub fn reload_changed_meshes<F>(
+        &mut self,
+        mut replace_mesh: F,
+    ) -> Vec<Result<PathBuf, AssetError>>
     where
         F: FnMut(MeshId, Vec<Vertex3D>, Vec<u32>),
     {
@@ -532,7 +597,10 @@ impl AssetPipeline {
             match read_mesh(&path) {
                 Ok((mut vertices, mut indices)) => {
                     fix_winding_from_normals(&vertices, &mut indices);
-                    if vertices.iter().all(|vertex| vertex.normal == [0.0, 0.0, 0.0]) {
+                    if vertices
+                        .iter()
+                        .all(|vertex| vertex.normal == [0.0, 0.0, 0.0])
+                    {
                         compute_flat_normals(&mut vertices, &indices);
                     }
                     let vertex_count = vertices.len();
@@ -573,6 +641,183 @@ impl AssetPipeline {
         }
 
         invalidated
+    }
+
+    /// Validate that the manifest can be read and parsed, and that all files
+    /// referenced by the manifest exist on disk.
+    /// Returns a list of errors for a missing or unreadable manifest, invalid
+    /// manifest JSON, or missing referenced files.
+    /// Call this before `load_manifest` to catch these problems early.
+    pub fn validate_manifest<P: AsRef<Path>>(&self, path: P) -> Vec<AssetError> {
+        let resolved = self.resolve_path(path.as_ref());
+        let text = match fs::read_to_string(&resolved) {
+            Ok(t) => t,
+            Err(source) => {
+                return vec![AssetError::Io {
+                    path: resolved,
+                    source,
+                }];
+            }
+        };
+        let manifest: AssetManifest = match serde_json::from_str(&text) {
+            Ok(m) => m,
+            Err(source) => {
+                return vec![AssetError::Json {
+                    path: resolved,
+                    source,
+                }];
+            }
+        };
+
+        let mut errors = Vec::new();
+
+        let all_paths: Vec<(&str, &str)> = manifest
+            .bytes
+            .iter()
+            .map(|(alias, p)| (alias.as_str(), p.as_str()))
+            .chain(
+                manifest
+                    .text
+                    .iter()
+                    .map(|(alias, p)| (alias.as_str(), p.as_str())),
+            )
+            .chain(
+                manifest
+                    .textures
+                    .iter()
+                    .map(|(alias, p)| (alias.as_str(), p.as_str())),
+            )
+            .chain(
+                manifest
+                    .meshes
+                    .iter()
+                    .map(|(alias, p)| (alias.as_str(), p.as_str())),
+            )
+            .chain(
+                manifest
+                    .audio
+                    .iter()
+                    .map(|(alias, p)| (alias.as_str(), p.as_str())),
+            )
+            .collect();
+
+        for (_alias, rel_path) in &all_paths {
+            let file_path = self.resolve_path(Path::new(rel_path));
+            if !file_path.exists() {
+                errors.push(AssetError::Io {
+                    path: file_path,
+                    source: std::io::Error::new(std::io::ErrorKind::NotFound, "file not found"),
+                });
+            }
+        }
+
+        for (_alias, sheet_def) in &manifest.sprite_sheets {
+            let file_path = self.resolve_path(Path::new(&sheet_def.path));
+            if !file_path.exists() {
+                errors.push(AssetError::Io {
+                    path: file_path.clone(),
+                    source: std::io::Error::new(std::io::ErrorKind::NotFound, "file not found"),
+                });
+            } else if sheet_def.cell_width == 0 || sheet_def.cell_height == 0 {
+                errors.push(AssetError::InvalidSpriteSheet {
+                    path: file_path,
+                    texture_width: 0,
+                    texture_height: 0,
+                    cell_width: sheet_def.cell_width,
+                    cell_height: sheet_def.cell_height,
+                });
+            } else {
+                match self.read_image_rgba(&file_path) {
+                    Ok((w, h, _)) => {
+                        if w % sheet_def.cell_width != 0 || h % sheet_def.cell_height != 0 {
+                            errors.push(AssetError::InvalidSpriteSheet {
+                                path: file_path,
+                                texture_width: w,
+                                texture_height: h,
+                                cell_width: sheet_def.cell_width,
+                                cell_height: sheet_def.cell_height,
+                            });
+                        }
+                    }
+                    Err(e) => {
+                        errors.push(e);
+                    }
+                }
+            }
+        }
+
+        errors
+    }
+
+    /// Parse a manifest from disk without caching it. Used by engine-level
+    /// validation to check engine-specific constraints.
+    pub(crate) fn peek_manifest<P: AsRef<Path>>(
+        &self,
+        path: P,
+    ) -> Result<AssetManifest, AssetError> {
+        let resolved = self.resolve_path(path.as_ref());
+        let text = fs::read_to_string(&resolved).map_err(|source| AssetError::Io {
+            path: resolved.clone(),
+            source,
+        })?;
+        serde_json::from_str(&text).map_err(|source| AssetError::Json {
+            path: resolved,
+            source,
+        })
+    }
+
+    /// Record the manifest itself and the file paths it loaded (deduplicated).
+    pub(crate) fn record_manifest_deps(&mut self, manifest_path: PathBuf, mut deps: Vec<PathBuf>) {
+        deps.push(manifest_path.clone());
+        deps.sort();
+        deps.dedup();
+        self.manifest_deps.insert(manifest_path, deps);
+    }
+
+    /// Get the file paths that a manifest loaded.
+    pub fn manifest_dependencies<P: AsRef<Path>>(&self, path: P) -> Option<&[PathBuf]> {
+        let resolved = self.resolve_path(path.as_ref());
+        self.manifest_deps.get(&resolved).map(|v| v.as_slice())
+    }
+
+    /// Returns a summary of all cached assets for debugging.
+    pub fn loaded_asset_summary(&self) -> AssetSummary {
+        AssetSummary {
+            bytes_count: self.bytes.len(),
+            text_count: self.text.len(),
+            texture_count: self.textures.len(),
+            sprite_sheet_count: self.sprite_sheets.len(),
+            mesh_count: self.meshes.len(),
+            manifest_count: self.manifests.len(),
+            bytes_paths: self.bytes.keys().cloned().collect(),
+            text_paths: self.text.keys().cloned().collect(),
+            texture_paths: self.textures.keys().cloned().collect(),
+            sprite_sheet_paths: self.sprite_sheets.keys().map(|k| k.path.clone()).collect(),
+            mesh_paths: self.meshes.keys().cloned().collect(),
+            manifest_paths: self.manifests.keys().cloned().collect(),
+        }
+    }
+
+    /// Evict a cached texture and any sprite sheets using it.
+    pub fn unload_texture<P: AsRef<Path>>(&mut self, path: P) {
+        let resolved = self.resolve_path(path.as_ref());
+        self.textures.remove(&resolved);
+        self.texture_timestamps.remove(&resolved);
+        self.sprite_sheets.retain(|key, _| key.path != resolved);
+    }
+
+    /// Evict a cached mesh so the next load reads from disk.
+    pub fn unload_mesh<P: AsRef<Path>>(&mut self, path: P) {
+        let resolved = self.resolve_path(path.as_ref());
+        self.meshes.remove(&resolved);
+        self.mesh_timestamps.remove(&resolved);
+    }
+
+    /// Evict all cached bytes and text entries.
+    pub fn unload_data<P: AsRef<Path>>(&mut self, path: P) {
+        let resolved = self.resolve_path(path.as_ref());
+        self.bytes.remove(&resolved);
+        self.text.remove(&resolved);
     }
 
     fn read_image_rgba(&self, path: &Path) -> Result<(u32, u32, Vec<u8>), AssetError> {

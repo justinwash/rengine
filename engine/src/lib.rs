@@ -31,8 +31,8 @@ pub use world::{aabb_overlap, iso_to_screen, screen_to_iso, TileDef, TileMap};
 
 pub use assets::pixelart;
 pub use assets::{
-    Animation, AssetError, AssetManifest, AssetPack, AudioBus, AudioClip, AudioId, MeshAsset,
-    SpriteSheet, SpriteSheetAssetDef, TextureAsset,
+    Animation, AssetError, AssetManifest, AssetPack, AssetSummary, AudioBus, AudioClip, AudioId,
+    MeshAsset, SpriteSheet, SpriteSheetAssetDef, TextureAsset,
 };
 
 pub use canvas::{screen_to_ndc, Canvas, CanvasVertex};
