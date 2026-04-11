@@ -176,7 +176,7 @@ Then selective re-exports:
 - **Input:** [`InputState`](https://github.com/justinwash/rengine/blob/master/engine/src/input/keyboard.rs#L6), `KeyCode` (from winit), `GamepadButton` (from gilrs), [`GamepadState`](https://github.com/justinwash/rengine/blob/master/engine/src/input/gamepad.rs#L9), [`GamepadSystem`](https://github.com/justinwash/rengine/blob/master/engine/src/input/gamepad.rs#L58), [`ActionMap`](https://github.com/justinwash/rengine/blob/master/engine/src/input/action.rs), [`Binding`](https://github.com/justinwash/rengine/blob/master/engine/src/input/action.rs), [`AxisMapping`](https://github.com/justinwash/rengine/blob/master/engine/src/input/action.rs), [`GamepadAxis`](https://github.com/justinwash/rengine/blob/master/engine/src/input/action.rs)
 - **Assets:** [`Color`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/color.rs#L2), [`Animation`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/spritesheet.rs#L56), [`AssetError`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pipeline.rs#L15), [`AssetManifest`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pipeline.rs#L158), [`AssetPack`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pipeline.rs#L174), [`AudioBus`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/audio.rs#L14), [`AudioClip`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/audio.rs#L25), [`AudioId`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/audio.rs#L22), [`MeshAsset`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pipeline.rs#L137), [`SpriteSheet`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/spritesheet.rs#L5), [`SpriteSheetAssetDef`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pipeline.rs#L151), [`TextureAsset`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pipeline.rs#L119)
 - **Scene:** [`Globals`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/globals.rs#L4), [`Prefab2D`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/data2d.rs#L61)/[`Prefab2DDef`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/data2d.rs#L26), [`PrefabSprite2D`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/data2d.rs#L50)/[`PrefabSprite2DDef`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/data2d.rs#L11), [`Scene`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/mod.rs#L24), [`Scene2D`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/data2d.rs#L98)/[`Scene2DDef`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/data2d.rs#L42), [`SceneInstance2D`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/data2d.rs#L67)/[`SceneInstance2DDef`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/data2d.rs#L32), [`SceneOp`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/mod.rs#L16), [`Scene3D`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/mod.rs#L47), [`SceneOp3D`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/mod.rs#L39)
-- **World:** [`tilemap`](https://github.com/justinwash/rengine/blob/master/engine/src/world/tilemap.rs), [`aabb_overlap`](https://github.com/justinwash/rengine/blob/master/engine/src/world/physics.rs#L5), [`iso_to_screen`](https://github.com/justinwash/rengine/blob/master/engine/src/world/iso.rs#L4), [`screen_to_iso`](https://github.com/justinwash/rengine/blob/master/engine/src/world/iso.rs#L11), [`TileDef`](https://github.com/justinwash/rengine/blob/master/engine/src/world/tilemap.rs#L16), [`TileMap`](https://github.com/justinwash/rengine/blob/master/engine/src/world/tilemap.rs#L6)
+- **World:** [`tilemap`](https://github.com/justinwash/rengine/blob/master/engine/src/world/tilemap.rs), [`aabb_overlap`](https://github.com/justinwash/rengine/blob/master/engine/src/world/physics.rs), [`aabb_overlap_layered`](https://github.com/justinwash/rengine/blob/master/engine/src/world/physics.rs), [`CollisionLayer`](https://github.com/justinwash/rengine/blob/master/engine/src/world/physics.rs), [`iso_to_screen`](https://github.com/justinwash/rengine/blob/master/engine/src/world/iso.rs#L4), [`screen_to_iso`](https://github.com/justinwash/rengine/blob/master/engine/src/world/iso.rs#L11), [`TileDef`](https://github.com/justinwash/rengine/blob/master/engine/src/world/tilemap.rs#L16), [`TileMap`](https://github.com/justinwash/rengine/blob/master/engine/src/world/tilemap.rs#L6)
 - **Canvas/Text:** [`screen_to_ndc`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs#L145), [`Canvas`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs#L42), [`CanvasVertex`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs#L6), [`FontAtlas`](https://github.com/justinwash/rengine/blob/master/engine/src/text.rs#L17)
 - **Pixel art:** [`pixelart`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pixelart.rs) (module-level re-export of [`PixelCanvas`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pixelart.rs#L3), [`darken`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pixelart.rs#L106), [`lighten`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pixelart.rs#L110))
 - **Math:** [`Rect`](https://github.com/justinwash/rengine/blob/master/engine/src/math/rect.rs#L5), [`TimeState`](https://github.com/justinwash/rengine/blob/master/engine/src/math/time.rs#L4), `Vec2`, `Vec3` (from glam)
@@ -1287,7 +1287,7 @@ API:
 - **[`tilemap.collide_rect(rect)`](https://github.com/justinwash/rengine/blob/master/engine/src/world/tilemap.rs#L97)** → `Option<Vec2>` — Checks a `Rect` against all occupied tiles within range, accumulates AABB minimum translation vectors. Returns the total push-back vector to resolve overlap.
 - **[`tilemap.draw(frame)`](https://github.com/justinwash/rengine/blob/master/engine/src/world/tilemap.rs#L141)** — Frustum-culled tile rendering: only draws tiles visible within a hardcoded 600×400 half-extent around the camera. Each visible tile emits a `DrawParams` with the tile's texture, color, and UV rect.
 
-### 12.2 [`aabb_overlap`](https://github.com/justinwash/rengine/blob/master/engine/src/world/physics.rs#L5) — AABB Physics
+### 12.2 [`aabb_overlap`](https://github.com/justinwash/rengine/blob/master/engine/src/world/physics.rs) — AABB Physics
 
 ```rust
 pub fn aabb_overlap(a: &Rect, b: &Rect) -> Option<Vec2>
@@ -1299,6 +1299,23 @@ Computes the **Minimum Translation Vector (MTV)** for two overlapping AABBs. Ret
 - Returns the smaller overlap as the push direction, with sign determined by the relative center positions.
 
 This is used by `TileMap::collide_rect()` for tilemap collision.
+
+#### Collision Layers
+
+```rust
+pub struct CollisionLayer {
+    pub layer: u32,  // which groups this body belongs to
+    pub mask: u32,   // which groups this body collides with
+}
+```
+
+Bitmask-based collision filtering. Two bodies interact when `a.layer & b.mask != 0 && b.layer & a.mask != 0`. Named constants: `WORLD`, `PLAYER`, `ENEMY`, `PROJECTILE`, `TRIGGER`, `UI`. `CollisionLayer::default()` sets all bits so existing code is unaffected.
+
+```rust
+pub fn aabb_overlap_layered(a: &Rect, a_layer: &CollisionLayer, b: &Rect, b_layer: &CollisionLayer) -> Option<Vec2>
+```
+
+Checks layer compatibility via `interacts_with()` before delegating to `aabb_overlap()`. Returns `None` if layers don't interact or AABBs don't overlap.
 
 ### 12.3 [`iso_to_screen`](https://github.com/justinwash/rengine/blob/master/engine/src/world/iso.rs#L4) / [`screen_to_iso`](https://github.com/justinwash/rengine/blob/master/engine/src/world/iso.rs#L11) — Isometric Helpers
 
