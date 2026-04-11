@@ -198,10 +198,11 @@ pub struct EngineConfig {
     pub headless: bool,     // Skip window creation visibility + mute audio
     pub hot_reload: bool,   // File-watching for assets at runtime
     pub show_fps: bool,     // Render FPS counter overlay on canvas
+    pub fixed_dt: f32,      // Fixed-timestep interval (default 1/60)
 }
 ```
 
-Default: 800×600, no vsync, not headless, hot reload on, FPS shown.
+Default: 800×600, no vsync, not headless, hot reload on, FPS shown, fixed_dt 1/60.
 
 The `headless` flag is critical for testing:
 
@@ -258,9 +259,15 @@ This is the simplest way to run a 2D game. The type parameter `G` must implement
 pub trait Game: 'static + Sized {
     fn new(engine: &mut Engine) -> Self;     // Constructor — load assets, init state
     fn update(&mut self, engine: &Engine);   // Logic tick — receives immutable engine
+    fn fixed_update(&mut self, _engine: &Engine) {} // Fixed-timestep tick (default empty)
     fn render(&mut self, engine: &Engine, frame: &mut Frame);  // Populate frame for rendering
     fn should_exit(&self) -> bool { false }  // Return true to exit the game loop
 }
+```
+
+`fixed_update()` is called N times per frame (where N depends on the accumulated time vs `EngineConfig::fixed_dt`) **before** the variable-rate `update()`. The same pattern exists on `Game3D`, `Scene`, and `Scene3D`.
+
+```rust
 ```
 
 **Line-by-line boot sequence in `run()`:**
@@ -293,10 +300,12 @@ pub trait Game: 'static + Sized {
 On every `WindowEvent::RedrawRequested`:
 
 ```
-┌─ engine.time.tick()              // Measure delta-time
+┌─ engine.time.tick()              // Measure delta-time, accumulate for fixed step
 ├─ engine.gamepads.update()        // Poll gilrs for gamepad events
 ├─ engine.reload_assets_if_changed() // Hot-reload textures, manifests, audio
-├─ game.update(&engine)            // Run game logic (reads input, modifies game state)
+├─ while engine.time.consume_fixed_step():
+│   └─ game.fixed_update(&engine)  // Fixed-timestep logic (physics, netcode)
+├─ game.update(&engine)            // Variable-rate logic (reads input, modifies game state)
 ├─ if game.should_exit() → exit
 ├─ frame.begin()                   // Clear sprites + canvases; camera state persists
 ├─ game.render(&engine, &mut frame)// Game populates frame with DrawParams + canvases
@@ -1326,6 +1335,8 @@ pub struct TimeState {
     dt: f32,
     total_time: f32,
     frame_count: u64,
+    fixed_dt: f32,       // Fixed-timestep interval (default 1/60)
+    accumulator: f32,    // Accumulated time for fixed steps
 }
 ```
 
@@ -1333,7 +1344,9 @@ pub struct TimeState {
 - [`total_time()`](https://github.com/justinwash/rengine/blob/master/engine/src/math/time.rs#L30) — Seconds since engine start.
 - [`frame_count()`](https://github.com/justinwash/rengine/blob/master/engine/src/math/time.rs#L34) — Total frames processed.
 - [`fps()`](https://github.com/justinwash/rengine/blob/master/engine/src/math/time.rs#L38) — `1.0 / dt`.
-- [`tick()`](https://github.com/justinwash/rengine/blob/master/engine/src/math/time.rs#L46) — Called once per frame by the engine; updates all fields.
+- [`tick()`](https://github.com/justinwash/rengine/blob/master/engine/src/math/time.rs#L46) — Called once per frame by the engine; updates all fields and adds `dt` to `accumulator`.
+- [`fixed_dt()`] — Returns the configured fixed-timestep interval.
+- [`consume_fixed_step()`] — Returns `true` and subtracts `fixed_dt` from `accumulator` if enough time has accumulated. Called in a `while` loop before `update()` to drive `fixed_update()` N times per frame.
 
 ---
 

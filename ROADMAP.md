@@ -52,6 +52,7 @@ Recently completed or partially completed:
 - Completed: `feature-input` sample — demonstrates action binding setup, axis-driven movement, pressed/down/released queries with visual feedback
 - Completed: asset pipeline validation and dependency tracking — `validate_manifest()` for pre-load checks, `manifest_dependencies()` for tracking which files each manifest loaded, `loaded_asset_summary()` for debugging, `unload_texture/mesh/data()` for cache eviction
 - Completed: serializable resources — `load_resource<T>()` and `load_resource_list<T>()` on Engine and Engine3D for JSON-driven data definitions with serde deserialization
+- Completed: fixed-timestep update — `EngineConfig::fixed_dt` (default 1/60), accumulator-based `consume_fixed_step()`, `fixed_update()` hooks on Game, Game3D, Scene, and Scene3D traits wired into all four run functions
 - Partial: 3D transforms still only support position-based translation; rotation and scale per draw are not yet supported (caused the recurring door visibility issue)
 
 ---
@@ -101,8 +102,8 @@ These are the features that most directly increase the engine’s usefulness for
 14. Stronger 2D physics
     Expand beyond simple AABB overlap into rigid bodies, velocity, gravity, friction, restitution, and moving platforms.
 
-15. Fixed update support
-    Make simulation-friendly fixed stepping explicit and ergonomic.
+15. Fixed update support [done]
+    `EngineConfig::fixed_dt` sets the step size (default 1/60). `TimeState` accumulates frame time and `consume_fixed_step()` drains it. `Game::fixed_update()`, `Game3D::fixed_update()`, `Scene::fixed_update()`, and `Scene3D::fixed_update()` are called N times per frame before the variable `update()`. All four run functions and their headless paths are wired.
 
 16. Save and load support
     Profiles, settings, progress, keybindings, and serialized game state.
