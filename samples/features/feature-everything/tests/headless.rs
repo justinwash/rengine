@@ -20,7 +20,7 @@ fn game_binary() -> String {
 #[test]
 fn headless_demo() {
     let bin = game_binary();
-    let frames = "300";
+    let frames = "600";
 
     let output = Command::new(&bin)
         .args(["--headless", "--demo", "--frames", frames])
