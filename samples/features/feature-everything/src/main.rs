@@ -210,7 +210,10 @@ struct GameScene {
     checkpoint_msg: String,
 
     cam_zoom: f32,
-    rotation_mode: bool,
+    // Directional gravity: gravity rotates with the camera so the player
+    // can run on walls and ceilings. The angle determines "down".
+    gravity_angle: f32,
+    target_gravity_angle: f32,
     // Cell allows mutation from &self in render() — fixes the
     // fixed_update→update→render ordering so shake actually fires.
     pending_shake: Cell<bool>,
@@ -264,7 +267,8 @@ impl Default for GameScene {
             checkpoint_flash: 0.0,
             checkpoint_msg: String::new(),
             cam_zoom: 1.0,
-            rotation_mode: false,
+            gravity_angle: 0.0,
+            target_gravity_angle: 0.0,
             pending_shake: Cell::new(false),
             play_time: 0.0,
             demo_jump_cooldown: 0.0,
@@ -335,11 +339,7 @@ impl Scene for GameScene {
         let mut gc = pixelart::PixelCanvas::new(16, 16);
         gc.fill(Color::new(0.4, 0.25, 0.1, 1.0));
         gc.fill_rect(0, 0, 16, 3, Color::new(0.2, 0.7, 0.2, 1.0));
-        gc.set(
-            3,
-            5,
-            pixelart::darken(Color::new(0.4, 0.25, 0.1, 1.0), 0.7),
-        );
+        gc.set(3, 5, pixelart::darken(Color::new(0.4, 0.25, 0.1, 1.0), 0.7));
         gc.set(
             10,
             8,
@@ -365,14 +365,23 @@ impl Scene for GameScene {
         println!("[FEATURE OK] Engine::create_texture — 4 procedural textures uploaded");
         println!("[FEATURE OK] Color::rgb — gradient background");
 
-        // ── Build tilemap ──
+        // ── Build tilemap — enclosed arena for directional gravity ──
         let ground = self.ground_tex.unwrap();
         let mut tilemap = TileMap::new(50, 30, 32.0);
         let ground_tile = tilemap.add_tile(TileDef::solid(ground));
+        // Floor (rows 0-1) and ceiling (rows 28-29)
         for col in 0..50 {
             tilemap.set(col, 0, Some(ground_tile));
             tilemap.set(col, 1, Some(ground_tile));
+            tilemap.set(col, 28, Some(ground_tile));
+            tilemap.set(col, 29, Some(ground_tile));
         }
+        // Left wall (col 0) and right wall (col 49)
+        for row in 2..28 {
+            tilemap.set(0, row, Some(ground_tile));
+            tilemap.set(49, row, Some(ground_tile));
+        }
+        // Interior platforms (serve as walls/ceilings when gravity rotates)
         for col in 5..10 {
             tilemap.set(col, 5, Some(ground_tile));
         }
@@ -388,21 +397,34 @@ impl Scene for GameScene {
         for col in 30..40 {
             tilemap.set(col, 10, Some(ground_tile));
         }
+        // Vertical pillars (become platforms in horizontal gravity)
         for row in 2..8 {
             tilemap.set(40, row, Some(ground_tile));
         }
+        for row in 12..20 {
+            tilemap.set(20, row, Some(ground_tile));
+        }
         self.tilemap = Some(tilemap);
-        println!("[FEATURE OK] TileMap — 50x30 grid, TileDef::solid, platforms, wall");
+        println!(
+            "[FEATURE OK] TileMap — 50x30 enclosed arena, ceiling+walls for directional gravity"
+        );
 
         self.coins = vec![
+            // Floor coins (gravity normal)
             Vec2::new(200.0, 80.0),
-            Vec2::new(300.0, 80.0),
             Vec2::new(400.0, 80.0),
+            // Right-wall coins (reachable when gravity rotates 90°)
+            Vec2::new(1500.0, 300.0),
+            Vec2::new(1500.0, 500.0),
+            // Ceiling coins (reachable when gravity inverts)
+            Vec2::new(300.0, 860.0),
+            Vec2::new(600.0, 860.0),
+            // Left-wall coins (reachable when gravity rotates 270°)
+            Vec2::new(50.0, 400.0),
+            Vec2::new(50.0, 650.0),
+            // Platform coins
             Vec2::new(550.0, 300.0),
-            Vec2::new(600.0, 300.0),
-            Vec2::new(250.0, 420.0),
-            Vec2::new(350.0, 420.0),
-            Vec2::new(850.0, 80.0),
+            Vec2::new(850.0, 350.0),
         ];
 
         self.player_pos = Vec2::new(100.0, 100.0);
@@ -434,6 +456,24 @@ impl Scene for GameScene {
         let cfg_speed = self.config.as_ref().map_or(250.0, |c| c.move_speed);
         let cfg_jump = self.config.as_ref().map_or(500.0, |c| c.jump_force);
 
+        // ── Smooth gravity angle interpolation ──
+        {
+            use std::f32::consts::{PI, TAU};
+            let diff = self.target_gravity_angle - self.gravity_angle;
+            let diff = (diff + PI).rem_euclid(TAU) - PI; // shortest path
+            if diff.abs() < 0.01 {
+                self.gravity_angle = self.target_gravity_angle;
+            } else {
+                self.gravity_angle += diff * (3.0 * fixed_dt).min(1.0);
+            }
+        }
+
+        // ── Directional gravity vectors ──
+        let angle = self.gravity_angle;
+        let move_dir = Vec2::new(angle.cos(), -angle.sin());
+        let up_dir = Vec2::new(angle.sin(), angle.cos());
+        let grav_dir = Vec2::new(-angle.sin(), -angle.cos());
+
         // ── Demo auto-play: simulate inputs ──
         let is_demo = globals.get::<DemoConfig>().map_or(false, |d| d.enabled);
         let demo_move_x;
@@ -457,17 +497,22 @@ impl Scene for GameScene {
             engine.axis("move_x")
         };
 
-        self.player_vel.x = move_x * cfg_speed;
+        // ── Movement along surface (perpendicular to gravity) ──
+        let vel_gravity = self.player_vel.dot(grav_dir);
+        self.player_vel = move_dir * (move_x * cfg_speed) + grav_dir * vel_gravity;
+
         if move_x > 0.1 {
             self.facing_right = true;
         } else if move_x < -0.1 {
             self.facing_right = false;
         }
 
+        // ── Jump (opposite to gravity) ──
         let should_jump =
             demo_jump || (engine.action_pressed("jump") && self.player_on_ground);
         if should_jump && self.player_on_ground {
-            self.player_vel.y = cfg_jump;
+            let vel_surface = self.player_vel.dot(move_dir);
+            self.player_vel = move_dir * vel_surface + up_dir * cfg_jump;
             self.player_on_ground = false;
             self.pending_shake.set(true);
             if let Some(demo) = globals.get_mut::<DemoConfig>() {
@@ -475,20 +520,23 @@ impl Scene for GameScene {
             }
         }
 
-        self.player_vel.y += cfg_gravity * fixed_dt;
+        // ── Apply directional gravity ──
+        self.player_vel += grav_dir * cfg_gravity.abs() * fixed_dt;
         self.player_pos += self.player_vel * fixed_dt;
 
+        // ── Tilemap collision with gravity-aware ground detection ──
         if let Some(tilemap) = &self.tilemap {
             let player_rect = Rect::new(self.player_pos.x, self.player_pos.y, 28.0, 44.0);
             if let Some(mtv) = tilemap.collide_rect(&player_rect) {
                 self.player_pos += mtv;
-                if mtv.y > 0.0 {
-                    self.player_vel.y = 0.0;
+                // Surface that opposes gravity = "ground"
+                if mtv.dot(up_dir) > 0.1 {
                     self.player_on_ground = true;
-                } else if mtv.y < 0.0 {
+                }
+                if mtv.y.abs() > 0.001 {
                     self.player_vel.y = 0.0;
                 }
-                if mtv.x != 0.0 {
+                if mtv.x.abs() > 0.001 {
                     self.player_vel.x = 0.0;
                 }
                 if let Some(demo) = globals.get_mut::<DemoConfig>() {
@@ -588,25 +636,35 @@ impl Scene for GameScene {
 
                 // Only process events when the physics frame has advanced
                 if f != prev {
-                    if f >= 50 && prev < 50 {
-                        self.rotation_mode = true;
+                    if f >= 40 && prev < 40 {
+                        use std::f32::consts::FRAC_PI_2;
+                        self.target_gravity_angle = FRAC_PI_2;
+                        demo.log_feature("Directional gravity (gravity follows camera rotation)");
                         demo.log_feature("Camera2D::rotation");
-                        println!("[GameScene] demo: enabled camera rotation at frame 50");
+                        println!("[GameScene] demo: gravity → 90° (walk on wall) at frame 40");
                     }
                     if f >= 80 && prev < 80 {
+                        use std::f32::consts::PI;
+                        self.target_gravity_angle = PI;
                         self.cam_zoom = 1.5;
                         demo.log_feature("Camera2D::zoom");
-                        println!("[GameScene] demo: zoom to 1.5 at frame 80");
+                        println!("[GameScene] demo: gravity → 180° (walk on ceiling) + zoom at frame 80");
                     }
                     if f >= 120 && prev < 120 {
+                        use std::f32::consts::FRAC_PI_2;
+                        self.target_gravity_angle = 3.0 * FRAC_PI_2;
                         self.cam_zoom = 1.0;
-                        self.rotation_mode = false;
-                        println!("[GameScene] demo: reset camera at frame 120");
+                        println!("[GameScene] demo: gravity → 270° (other wall) at frame 120");
                     }
-                    if f >= 150 && !self.demo_did_pause {
+                    if f >= 160 && prev < 160 {
+                        self.target_gravity_angle = 0.0;
+                        self.pending_shake.set(true);
+                        println!("[GameScene] demo: gravity → 0° (normal) + shake at frame 160");
+                    }
+                    if f >= 200 && !self.demo_did_pause {
                         self.demo_did_pause = true;
                         demo.log_feature("SceneOp::Push (Pause)");
-                        println!("[GameScene] demo: pushing PauseOverlay at frame 150");
+                        println!("[GameScene] demo: pushing PauseOverlay at frame 200");
                         return SceneOp::Push(Box::new(PauseOverlay { demo_frames: 0 }));
                     }
                 }
@@ -641,7 +699,15 @@ impl Scene for GameScene {
             self.cam_zoom = self.cam_zoom.clamp(0.3, 3.0);
 
             if engine.input().is_key_pressed(KeyCode::KeyR) {
-                self.rotation_mode = !self.rotation_mode;
+                use std::f32::consts::FRAC_PI_2;
+                self.target_gravity_angle += FRAC_PI_2;
+                if self.target_gravity_angle >= std::f32::consts::TAU - 0.01 {
+                    self.target_gravity_angle = 0.0;
+                }
+                println!(
+                    "[GameScene] gravity rotation → {:.0}°",
+                    self.target_gravity_angle.to_degrees()
+                );
             }
         }
 
@@ -677,13 +743,12 @@ impl Scene for GameScene {
             max: Vec2::new(1600.0, 960.0),
         });
         cam.zoom = self.cam_zoom;
+        // Camera rotation tracks gravity angle so the level rotates visually
+        cam.rotation = self.gravity_angle;
         // Cell<bool> lets render() consume the flag despite &self
         if self.pending_shake.get() {
             self.pending_shake.set(false);
             cam.shake(4.0, 0.15);
-        }
-        if self.rotation_mode {
-            cam.rotation += engine.dt() * 1.5;
         }
         cam.update(engine.dt());
 
@@ -748,7 +813,7 @@ impl Scene for GameScene {
             frame.draw_sprite(
                 DrawParams::new(player_tex, self.player_pos, Vec2::new(28.0, 44.0))
                     .with_flip_x(!self.facing_right)
-                    .with_rotation(self.player_rotation * 0.05)
+                    .with_rotation(self.gravity_angle + self.player_rotation * 0.05)
                     .with_origin(Vec2::new(14.0, 22.0))
                     .with_z_order(10),
             );
@@ -762,7 +827,7 @@ impl Scene for GameScene {
             5.0,
             30.0,
             200.0,
-            80.0,
+            95.0,
             Color::new(0.0, 0.0, 0.0, 0.5),
             (sw, sh),
         );
@@ -793,11 +858,27 @@ impl Scene for GameScene {
             (sw, sh),
             atlas,
         );
+        let grav_label = match ((self.target_gravity_angle.to_degrees() + 22.5) as u32 / 90) % 4 {
+            0 => "Down",
+            1 => "Left",
+            2 => "Up",
+            3 => "Right",
+            _ => "?",
+        };
+        hud.text(
+            10.0,
+            89.0,
+            &format!("Gravity: {} ({:.0}\u{00B0})", grav_label, self.gravity_angle.to_degrees()),
+            12.0,
+            Color::new(0.0, 0.9, 1.0, 1.0),
+            (sw, sh),
+            atlas,
+        );
 
         if self.checkpoint_flash > 0.0 {
             hud.text(
                 10.0,
-                90.0,
+                105.0,
                 &self.checkpoint_msg,
                 14.0,
                 Color::GREEN,
@@ -807,9 +888,9 @@ impl Scene for GameScene {
         }
 
         hud.text(
-            sw as f32 - 500.0,
+            sw as f32 - 560.0,
             sh as f32 - 20.0,
-            "WASD/Arrows: Move | Space: Jump | P: Pause | T: Title | R: Rotate | +/-: Zoom | Q: Quit",
+            "WASD: Move | Space: Jump | R: Rotate Gravity | +/-: Zoom | P: Pause | T: Title | Q: Quit",
             10.0,
             Color::new(1.0, 1.0, 1.0, 0.6),
             (sw, sh),
