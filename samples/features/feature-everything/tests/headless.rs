@@ -47,7 +47,12 @@ fn headless_demo() {
         "Expected 'OK <n>' line in stdout.\nFull stdout:\n{stdout}"
     );
 
-    // Verify key features were logged
+    // Verify key features were logged.
+    //
+    // NOTE: Camera2D features (shake, rotation, zoom) are *configured* in
+    // update/fixed_update and the feature-log fires there. In headless mode
+    // render() is never called, so the actual Camera2D methods are not
+    // exercised. The visual_demo test (run with --ignored) covers rendering.
     let required_features = [
         "Engine::set_asset_root",
         "ActionMap",
@@ -76,6 +81,7 @@ fn headless_demo() {
         "SceneOp::Pop (Unpause)",
         "Scene::on_resume",
         "Scene::on_pause",
+        "Scene::on_enter",
     ];
 
     let mut missing = Vec::new();
