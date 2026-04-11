@@ -53,6 +53,7 @@ Recently completed or partially completed:
 - Completed: asset pipeline validation and dependency tracking — `validate_manifest()` for pre-load checks, `manifest_dependencies()` for tracking which files each manifest loaded, `loaded_asset_summary()` for debugging, `unload_texture/mesh/data()` for cache eviction
 - Completed: serializable resources — `load_resource<T>()` and `load_resource_list<T>()` on Engine and Engine3D for JSON-driven data definitions with serde deserialization
 - Completed: fixed-timestep update — `EngineConfig::fixed_dt` (default 1/60), accumulator-based `consume_fixed_step()`, `fixed_update()` hooks on Game, Game3D, Scene, and Scene3D traits wired into all four run functions
+- Completed: collision layers and masks — `CollisionLayer` bitmask struct with named constants (WORLD, PLAYER, ENEMY, PROJECTILE, TRIGGER, UI), `interacts_with()` check, `aabb_overlap_layered()` for filtered AABB tests
 - Partial: 3D transforms still only support position-based translation; rotation and scale per draw are not yet supported (caused the recurring door visibility issue)
 
 ---
@@ -93,8 +94,8 @@ These are the features that most directly increase the engine’s usefulness for
 11. Rebindable controls
     Let players or games remap keyboard and gamepad actions.
 
-12. Collision layers and masks
-    Support filtering between world, player, enemy, trigger, projectile, and UI collision groups.
+12. Collision layers and masks [done]
+    `CollisionLayer` with `layer` and `mask` u32 bitmasks. Named constants for WORLD, PLAYER, ENEMY, PROJECTILE, TRIGGER, UI. `aabb_overlap_layered()` checks layer compatibility before spatial overlap. Default is all-bits so existing code is unaffected.
 
 13. Trigger volumes and overlap sensors
     Needed for pickups, checkpoints, dialogue zones, scripted events, and hurtboxes.
