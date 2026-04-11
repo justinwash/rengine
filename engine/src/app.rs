@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use serde::de::DeserializeOwned;
 use winit::dpi::LogicalSize;
 use winit::event::{DeviceEvent, Event, KeyEvent, MouseButton, WindowEvent};
 use winit::event_loop::EventLoop;
@@ -154,6 +155,30 @@ impl Engine {
 
     pub fn load_text<P: AsRef<Path>>(&mut self, path: P) -> Result<Arc<str>, AssetError> {
         self.assets.load_text(path)
+    }
+
+    pub fn load_resource<T: DeserializeOwned>(
+        &mut self,
+        path: impl AsRef<Path>,
+    ) -> Result<T, AssetError> {
+        let text = self.assets.load_text(&path)?;
+        let resolved = self.assets.resolve_path(path.as_ref());
+        serde_json::from_str(&text).map_err(|source| AssetError::Json {
+            path: resolved,
+            source,
+        })
+    }
+
+    pub fn load_resource_list<T: DeserializeOwned>(
+        &mut self,
+        path: impl AsRef<Path>,
+    ) -> Result<Vec<T>, AssetError> {
+        let text = self.assets.load_text(&path)?;
+        let resolved = self.assets.resolve_path(path.as_ref());
+        serde_json::from_str(&text).map_err(|source| AssetError::Json {
+            path: resolved,
+            source,
+        })
     }
 
     pub fn load_asset_manifest<P: AsRef<Path>>(
@@ -761,6 +786,30 @@ impl Engine3D {
 
     pub fn load_text<P: AsRef<Path>>(&mut self, path: P) -> Result<Arc<str>, AssetError> {
         self.assets.load_text(path)
+    }
+
+    pub fn load_resource<T: DeserializeOwned>(
+        &mut self,
+        path: impl AsRef<Path>,
+    ) -> Result<T, AssetError> {
+        let text = self.assets.load_text(&path)?;
+        let resolved = self.assets.resolve_path(path.as_ref());
+        serde_json::from_str(&text).map_err(|source| AssetError::Json {
+            path: resolved,
+            source,
+        })
+    }
+
+    pub fn load_resource_list<T: DeserializeOwned>(
+        &mut self,
+        path: impl AsRef<Path>,
+    ) -> Result<Vec<T>, AssetError> {
+        let text = self.assets.load_text(&path)?;
+        let resolved = self.assets.resolve_path(path.as_ref());
+        serde_json::from_str(&text).map_err(|source| AssetError::Json {
+            path: resolved,
+            source,
+        })
     }
 
     pub fn load_asset_manifest<P: AsRef<Path>>(
