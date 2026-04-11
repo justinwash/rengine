@@ -109,28 +109,30 @@ impl TriggerSystem {
                 continue;
             }
 
-            let mut prev = std::mem::take(&mut self.prev_overlaps[zone_id]);
+            // Swap prev_overlaps out, keeping capacity for reuse after clearing.
+            let prev: Vec<BodyId> = self.prev_overlaps[zone_id].drain().collect();
 
             for &(body_id, ref body_rect, ref body_layer) in bodies {
                 if !zone.layer.interacts_with(body_layer) {
                     continue;
                 }
                 if zone.rect.overlaps(body_rect) {
-                    let event = if prev.remove(&body_id) {
+                    let event = if prev.contains(&body_id) {
                         OverlapEvent::Stay
                     } else {
                         OverlapEvent::Enter
                     };
-                    self.current_events
-                        .insert((zone_id, body_id), event);
+                    self.current_events.insert((zone_id, body_id), event);
                     self.prev_overlaps[zone_id].insert(body_id);
                 }
             }
 
             // Remaining in prev are exits
             for &body_id in &prev {
-                self.current_events
-                    .insert((zone_id, body_id), OverlapEvent::Exit);
+                if !self.prev_overlaps[zone_id].contains(&body_id) {
+                    self.current_events
+                        .insert((zone_id, body_id), OverlapEvent::Exit);
+                }
             }
         }
     }
