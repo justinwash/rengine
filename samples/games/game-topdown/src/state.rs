@@ -1,7 +1,6 @@
 use rengine::tilemap::TileMap;
 use rengine::{Scene2D, TextureId, Vec2};
 
-
 pub struct Player {
     pub pos: Vec2,
     pub tex: TextureId,
@@ -18,7 +17,6 @@ pub struct Gem {
     pub tex: TextureId,
     pub collected: bool,
 }
-
 
 pub struct TopDown {
     pub player: Player,

@@ -1,6 +1,5 @@
 use rengine::TextureId;
 
-
 #[derive(Clone, Copy, PartialEq)]
 pub enum Tile {
     Grass,
@@ -8,7 +7,6 @@ pub enum Tile {
     Water,
     Stone,
 }
-
 
 pub struct IsoGame {
     pub map: Vec<Vec<Tile>>,

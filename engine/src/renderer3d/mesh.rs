@@ -1,9 +1,7 @@
 use crate::assets::Color;
 
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct MeshId(pub(crate) usize);
-
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -50,7 +48,6 @@ impl Vertex3D {
     }
 }
 
-
 pub fn cube_mesh(sx: f32, sy: f32, sz: f32, color: Color) -> (Vec<Vertex3D>, Vec<u32>) {
     let hx = sx / 2.0;
     let hy = sy / 2.0;
@@ -60,7 +57,6 @@ pub fn cube_mesh(sx: f32, sy: f32, sz: f32, color: Color) -> (Vec<Vertex3D>, Vec
     let mut verts = Vec::with_capacity(24);
     let mut idxs = Vec::with_capacity(36);
 
-
     let mut add_face = |positions: [[f32; 3]; 4], normal: [f32; 3]| {
         let base = verts.len() as u32;
         for p in &positions {
@@ -68,7 +64,6 @@ pub fn cube_mesh(sx: f32, sy: f32, sz: f32, color: Color) -> (Vec<Vertex3D>, Vec
         }
         idxs.extend_from_slice(&[base + 2, base + 1, base, base, base + 3, base + 2]);
     };
-
 
     add_face(
         [[-hx, hy, -hz], [hx, hy, -hz], [hx, hy, hz], [-hx, hy, hz]],
@@ -103,7 +98,6 @@ pub fn cube_mesh(sx: f32, sy: f32, sz: f32, color: Color) -> (Vec<Vertex3D>, Vec
     (verts, idxs)
 }
 
-
 pub fn floor_quad(width: f32, depth: f32, y: f32, color: Color) -> (Vec<Vertex3D>, Vec<u32>) {
     let hw = width / 2.0;
     let hd = depth / 2.0;
@@ -118,7 +112,6 @@ pub fn floor_quad(width: f32, depth: f32, y: f32, color: Color) -> (Vec<Vertex3D
     let idxs = vec![2, 1, 0, 0, 3, 2];
     (verts, idxs)
 }
-
 
 pub fn wall_quad(
     p0: [f32; 3],

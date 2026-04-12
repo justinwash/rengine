@@ -27,7 +27,6 @@ impl Camera3D {
         }
     }
 
-
     pub fn forward(&self) -> Vec3 {
         Vec3::new(
             self.yaw.sin() * self.pitch.cos(),
@@ -37,27 +36,22 @@ impl Camera3D {
         .normalize()
     }
 
-
     pub fn right(&self) -> Vec3 {
         self.forward().cross(Vec3::Y).normalize()
     }
-
 
     pub fn view_matrix(&self) -> Mat4 {
         let target = self.position + self.forward();
         Mat4::look_at_rh(self.position, target, Vec3::Y)
     }
 
-
     pub fn projection_matrix(&self, aspect_ratio: f32) -> Mat4 {
         Mat4::perspective_rh(self.fov_y, aspect_ratio, self.z_near, self.z_far)
     }
 
-
     pub fn view_projection(&self, aspect_ratio: f32) -> Mat4 {
         self.projection_matrix(aspect_ratio) * self.view_matrix()
     }
-
 
     pub fn mouse_look(&mut self, dx: f64, dy: f64, sensitivity: f32) {
         self.yaw += dx as f32 * sensitivity;

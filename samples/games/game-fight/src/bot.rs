@@ -1,17 +1,14 @@
 use crate::state::{FightInput, FighterData, FighterState};
 use crate::{KICK_RANGE, PUNCH_RANGE};
 
-
 pub fn bot_input(me: &FighterData, opponent: &FighterData, frame: u32, player: u32) -> FightInput {
     let dx = opponent.x - me.x;
     let dist = dx.abs();
     let mut flags = 0u8;
 
-
     let rng = frame
         .wrapping_mul(2654435761)
         .wrapping_add(player.wrapping_mul(1013904223));
-
 
     if dist > PUNCH_RANGE + 20.0 {
         if dx > 0.0 {
@@ -21,7 +18,6 @@ pub fn bot_input(me: &FighterData, opponent: &FighterData, frame: u32, player: u
         }
     }
 
-
     if dist < KICK_RANGE + 10.0 && me.can_act() {
         if rng % 3 == 0 {
             flags |= FightInput::PUNCH;
@@ -30,11 +26,9 @@ pub fn bot_input(me: &FighterData, opponent: &FighterData, frame: u32, player: u
         }
     }
 
-
     if rng % 37 == 0 && me.is_on_ground() {
         flags |= FightInput::JUMP;
     }
-
 
     if dist < KICK_RANGE + 30.0
         && matches!(
@@ -52,15 +46,12 @@ pub fn bot_input(me: &FighterData, opponent: &FighterData, frame: u32, player: u
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::state::FightSim;
 
-
     const SIXTY_SECONDS: u32 = 60 * 60;
-
 
     fn bot_inputs(sim: &FightSim, frame: u32) -> [FightInput; 2] {
         [
@@ -68,7 +59,6 @@ mod tests {
             bot_input(&sim.p2, &sim.p1, frame, 1),
         ]
     }
-
 
     fn fletcher64(data: &[u8]) -> u64 {
         let mut s1: u32 = 0;
@@ -79,7 +69,6 @@ mod tests {
         }
         ((s2 as u64) << 32) | s1 as u64
     }
-
 
     fn run_match(frames: u32) -> (Vec<u8>, Vec<u64>) {
         let mut sim = FightSim::new();
@@ -92,7 +81,6 @@ mod tests {
         (sim.save(), checksums)
     }
 
-
     #[test]
     fn determinism_two_identical_runs() {
         let (state_a, checksums_a) = run_match(SIXTY_SECONDS);
@@ -100,7 +88,6 @@ mod tests {
         assert_eq!(checksums_a, checksums_b, "Per-frame checksums diverged");
         assert_eq!(state_a, state_b, "Final states differ");
     }
-
 
     #[test]
     fn save_load_determinism() {
@@ -133,7 +120,6 @@ mod tests {
         }
         assert_eq!(sim.save(), baseline_final);
     }
-
 
     #[test]
     fn rollback_packet_loss_determinism() {

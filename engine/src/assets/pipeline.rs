@@ -303,7 +303,6 @@ pub(crate) struct AssetPipeline {
     texture_timestamps: HashMap<PathBuf, SystemTime>,
     mesh_timestamps: HashMap<PathBuf, SystemTime>,
     manifest_timestamps: HashMap<PathBuf, SystemTime>,
-    /// Maps a manifest path to the set of file paths it loaded.
     manifest_deps: HashMap<PathBuf, Vec<PathBuf>>,
 }
 
@@ -643,11 +642,6 @@ impl AssetPipeline {
         invalidated
     }
 
-    /// Validate that the manifest can be read and parsed, and that all files
-    /// referenced by the manifest exist on disk.
-    /// Returns a list of errors for a missing or unreadable manifest, invalid
-    /// manifest JSON, or missing referenced files.
-    /// Call this before `load_manifest` to catch these problems early.
     pub fn validate_manifest<P: AsRef<Path>>(&self, path: P) -> Vec<AssetError> {
         let resolved = self.resolve_path(path.as_ref());
         let text = match fs::read_to_string(&resolved) {
@@ -749,8 +743,6 @@ impl AssetPipeline {
         errors
     }
 
-    /// Parse a manifest from disk without caching it. Used by engine-level
-    /// validation to check engine-specific constraints.
     pub(crate) fn peek_manifest<P: AsRef<Path>>(
         &self,
         path: P,
@@ -766,7 +758,6 @@ impl AssetPipeline {
         })
     }
 
-    /// Record the manifest itself and the file paths it loaded (deduplicated).
     pub(crate) fn record_manifest_deps(&mut self, manifest_path: PathBuf, mut deps: Vec<PathBuf>) {
         deps.push(manifest_path.clone());
         deps.sort();
@@ -774,13 +765,11 @@ impl AssetPipeline {
         self.manifest_deps.insert(manifest_path, deps);
     }
 
-    /// Get the file paths that a manifest loaded.
     pub fn manifest_dependencies<P: AsRef<Path>>(&self, path: P) -> Option<&[PathBuf]> {
         let resolved = self.resolve_path(path.as_ref());
         self.manifest_deps.get(&resolved).map(|v| v.as_slice())
     }
 
-    /// Returns a summary of all cached assets for debugging.
     pub fn loaded_asset_summary(&self) -> AssetSummary {
         AssetSummary {
             bytes_count: self.bytes.len(),
@@ -798,7 +787,6 @@ impl AssetPipeline {
         }
     }
 
-    /// Evict a cached texture and any sprite sheets using it.
     pub fn unload_texture<P: AsRef<Path>>(&mut self, path: P) {
         let resolved = self.resolve_path(path.as_ref());
         self.textures.remove(&resolved);
@@ -806,14 +794,12 @@ impl AssetPipeline {
         self.sprite_sheets.retain(|key, _| key.path != resolved);
     }
 
-    /// Evict a cached mesh so the next load reads from disk.
     pub fn unload_mesh<P: AsRef<Path>>(&mut self, path: P) {
         let resolved = self.resolve_path(path.as_ref());
         self.meshes.remove(&resolved);
         self.mesh_timestamps.remove(&resolved);
     }
 
-    /// Evict all cached bytes and text entries.
     pub fn unload_data<P: AsRef<Path>>(&mut self, path: P) {
         let resolved = self.resolve_path(path.as_ref());
         self.bytes.remove(&resolved);

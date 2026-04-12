@@ -1,6 +1,5 @@
 use crate::renderer::TextureId;
 
-
 #[derive(Debug, Clone)]
 pub struct SpriteSheet {
     pub texture: TextureId,
@@ -31,16 +30,13 @@ impl SpriteSheet {
         }
     }
 
-
     pub fn columns(&self) -> u32 {
         self.texture_width / self.cell_width
     }
 
-
     pub fn rows(&self) -> u32 {
         self.texture_height / self.cell_height
     }
-
 
     pub fn uv_rect(&self, col: u32, row: u32) -> [f32; 4] {
         let tw = self.texture_width as f32;
@@ -50,7 +46,6 @@ impl SpriteSheet {
         [col as f32 * cw / tw, row as f32 * ch / th, cw / tw, ch / th]
     }
 }
-
 
 #[derive(Debug, Clone)]
 pub struct Animation {
@@ -74,7 +69,6 @@ impl Animation {
         }
     }
 
-
     pub fn update(&mut self, dt: f32) -> (u32, u32) {
         self.elapsed += dt;
         if self.elapsed >= self.frame_time {
@@ -84,11 +78,9 @@ impl Animation {
         self.frames[self.current]
     }
 
-
     pub fn current_frame(&self) -> (u32, u32) {
         self.frames[self.current]
     }
-
 
     pub fn reset(&mut self) {
         self.current = 0;

@@ -142,11 +142,6 @@ impl Canvas {
     }
 }
 
-/// Convert world coordinates (center-origin, Y-up) to NDC.
-///
-/// The world coordinate system has (0, 0) at the centre of the viewport,
-/// with *x* increasing rightward and *y* increasing upward – the same
-/// convention used by the sprite renderer.
 pub fn world_to_ndc(x: f32, y: f32, screen_size: (u32, u32)) -> [f32; 2] {
     let hw = screen_size.0 as f32 / 2.0;
     let hh = screen_size.1 as f32 / 2.0;
