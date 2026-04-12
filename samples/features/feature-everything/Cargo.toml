@@ -3,6 +3,10 @@ name = "rengine-feature-everything"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "rengine-feature-everything"
+path = "src/main.rs"
+
 [dependencies]
 rengine = { path = "../../../engine" }
 serde = { version = "1", features = ["derive"] }
