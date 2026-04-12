@@ -70,6 +70,7 @@
   - [13. Math Utilities (`math/`)](#13-math-utilities-math)
     - [13.1 `Rect`](#131-rect)
     - [13.2 `TimeState`](#132-timestate)
+    - [13.3 `Rng` — Seeded Random Number Generator](#133-rng--seeded-random-number-generator)
   - [14. Rollback Netcode (`netcode/`, feature-gated)](#14-rollback-netcode-netcode-feature-gated)
     - [14.1 Architecture Overview (`Rollbackable`)](#141-architecture-overview-rollbackable)
     - [14.2 `RollbackSession`](#142-rollbacksession)
@@ -95,7 +96,7 @@ rengine/
 │       ├── text.rs        # FontAtlas — glyph rasterization + GPU atlas
 │       ├── canvas/        # Canvas overlay: mod.rs + canvas.wgsl
 │       ├── input/         # keyboard.rs, gamepad.rs, action.rs, mod.rs
-│       ├── math/          # Rect, TimeState
+│       ├── math/          # Rect, TimeState, Rng
 │       ├── renderer/      # 2D sprite renderer: camera, sprite, texture, mod.rs, sprite.wgsl
 │       ├── renderer3d/    # 3D mesh renderer: camera, mesh, mod.rs, mesh3d.wgsl
 │       ├── scene/         # Scene trait, Globals, 2D scene data (prefabs/instances)
@@ -179,7 +180,7 @@ Then selective re-exports:
 - **World:** [`tilemap`](https://github.com/justinwash/rengine/blob/master/engine/src/world/tilemap.rs), [`aabb_overlap`](https://github.com/justinwash/rengine/blob/master/engine/src/world/physics.rs), [`aabb_overlap_layered`](https://github.com/justinwash/rengine/blob/master/engine/src/world/physics.rs), [`CollisionLayer`](https://github.com/justinwash/rengine/blob/master/engine/src/world/physics.rs), [`BodyId`](https://github.com/justinwash/rengine/blob/master/engine/src/world/trigger.rs), [`TriggerSystem`](https://github.com/justinwash/rengine/blob/master/engine/src/world/trigger.rs), [`TriggerZone`](https://github.com/justinwash/rengine/blob/master/engine/src/world/trigger.rs), [`TriggerZoneId`](https://github.com/justinwash/rengine/blob/master/engine/src/world/trigger.rs), [`OverlapEvent`](https://github.com/justinwash/rengine/blob/master/engine/src/world/trigger.rs), [`iso_to_screen`](https://github.com/justinwash/rengine/blob/master/engine/src/world/iso.rs#L4), [`screen_to_iso`](https://github.com/justinwash/rengine/blob/master/engine/src/world/iso.rs#L11), [`TileDef`](https://github.com/justinwash/rengine/blob/master/engine/src/world/tilemap.rs#L16), [`TileMap`](https://github.com/justinwash/rengine/blob/master/engine/src/world/tilemap.rs#L6)
 - **Canvas/Text:** [`screen_to_ndc`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs#L145), [`Canvas`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs#L42), [`CanvasVertex`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs#L6), [`FontAtlas`](https://github.com/justinwash/rengine/blob/master/engine/src/text.rs#L17)
 - **Pixel art:** [`pixelart`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pixelart.rs) (module-level re-export of [`PixelCanvas`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pixelart.rs#L3), [`darken`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pixelart.rs#L106), [`lighten`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pixelart.rs#L110))
-- **Math:** [`Rect`](https://github.com/justinwash/rengine/blob/master/engine/src/math/rect.rs#L5), [`TimeState`](https://github.com/justinwash/rengine/blob/master/engine/src/math/time.rs#L4), `Vec2`, `Vec3`, `Quat` (from glam)
+- **Math:** [`Rect`](https://github.com/justinwash/rengine/blob/master/engine/src/math/rect.rs#L5), [`TimeState`](https://github.com/justinwash/rengine/blob/master/engine/src/math/time.rs#L4), [`Rng`](https://github.com/justinwash/rengine/blob/master/engine/src/math/rng.rs), `Vec2`, `Vec3`, `Quat` (from glam)
 
 The guiding design philosophy: **a game crate writes `use rengine::*;` and gets everything it needs.**
 
@@ -224,6 +225,7 @@ pub struct Engine {
     pub(crate) window_height: u32,
     pub(crate) gamepads: GamepadSystem,   // gilrs-backed gamepad state
     pub(crate) hot_reload_enabled: bool,
+    pub(crate) rng: Rng,                  // Seeded xoshiro256** PRNG
 }
 ```
 
@@ -231,6 +233,7 @@ All fields are `pub(crate)` — the game only interacts through accessor methods
 
 - [`engine.input()`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L60) → `&InputState`
 - [`engine.time()`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L63) / [`engine.dt()`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L67) → `&TimeState` / `f32`
+- [`engine.rng()`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs) → `&mut Rng`
 - [`engine.window_size()`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L70) → `(u32, u32)`
 - [`engine.gamepad(player)`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L74) → `&GamepadState`
 - [`engine.gamepads_connected()`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L78) → `usize`
@@ -1391,6 +1394,38 @@ pub struct TimeState {
 - [`tick()`](https://github.com/justinwash/rengine/blob/master/engine/src/math/time.rs#L46) — Called once per frame by the engine; updates all fields and adds `dt` to `accumulator`.
 - [`fixed_dt()`] — Returns the configured fixed-timestep interval.
 - [`consume_fixed_step()`] — Returns `true` and subtracts `fixed_dt` from `accumulator` if enough time has accumulated. Called in a `while` loop before `update()` to drive `fixed_update()` N times per frame.
+
+### 13.3 [`Rng`](https://github.com/justinwash/rengine/blob/master/engine/src/math/rng.rs) — Seeded Random Number Generator
+
+Zero-dependency seeded PRNG based on **xoshiro256\*\*** — fast, high-quality, deterministic for a given seed.
+
+```rust
+let mut rng = Rng::new(42);         // deterministic seed
+let mut rng = Rng::from_time();     // seeded from system clock
+let mut child = rng.fork();         // independent sub-stream
+```
+
+**Accessible on Engine:**
+- `engine.rng()` → `RefMut<Rng>` (seeded from system time at startup; uses interior mutability so it works from `&Engine`/`&Engine3D`)
+
+**Core methods:**
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `next_u64()` | `u64` | Raw 64-bit value |
+| `f32()` / `f64()` | `f32` / `f64` | Uniform `[0, 1)` |
+| `f32_range(min, max)` | `f32` | Uniform `[min, max)` |
+| `range(min, max)` | `i32` | Inclusive `[min, max]` |
+| `bool()` | `bool` | 50/50 |
+| `chance(p)` | `bool` | `true` with probability `p` |
+| `pick(slice)` | `&T` | Random element |
+| `shuffle(slice)` | — | Fisher–Yates in-place |
+| `weighted(weights)` | `usize` | Index by relative weight |
+| `normal(mean, std)` | `f32` | Gaussian (Box–Muller) |
+| `sample_indices(len, n)` | `Vec<usize>` | `n` distinct indices |
+| `vec2()` | `Vec2` | Each component `[0, 1)` |
+| `in_circle(r)` | `Vec2` | Uniform inside circle |
+| `direction()` | `Vec2` | Random unit vector |
+| `fork()` | `Rng` | Independent child stream |
 
 ---
 
