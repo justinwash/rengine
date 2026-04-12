@@ -86,7 +86,7 @@ pub fn draw(game: &FpsMpGame, engine: &Engine3D, frame: &mut Frame3D) {
     };
     hud.rect(bar_x, bar_y, bar_w * hp_frac, bar_h, hp_color, screen_size);
 
-    let score_y = bar_y + bar_h + 8.0;
+    let score_y = bar_y + bar_h + 8.0 + 16.0;
     let my_score = player.score;
     let opp_score = game.sim.players[1 - local].score;
     let font = engine.font_atlas();

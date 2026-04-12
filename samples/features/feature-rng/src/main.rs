@@ -96,7 +96,7 @@ impl Game for RngDemo {
             (sw, sh),
         );
 
-        canvas.text(-hw + 20.0, hh - 20.0 - 28.0, "Rng Feature Demo", 28.0, Color::WHITE, (sw, sh), atlas);
+        canvas.text(-hw + 20.0, hh - 20.0, "Rng Feature Demo", 28.0, Color::WHITE, (sw, sh), atlas);
         canvas.text(
             -hw + 20.0, hh - 52.0 - 18.0,
             &format!("Seed: {}", self.seed),
@@ -105,13 +105,13 @@ impl Game for RngDemo {
             (sw, sh), atlas,
         );
 
-        let mut y = hh - 90.0 - 16.0;
+        let mut y = hh - 90.0;
         for line in &self.results {
             canvas.text(-hw + 20.0, y, line, 16.0, Color::from_rgba8(200, 220, 255, 255), (sw, sh), atlas);
             y -= 22.0;
         }
 
-        canvas.text(-hw + 20.0, y - 20.0 - 14.0, "ESC to quit", 14.0, Color::from_rgba8(120, 120, 120, 255), (sw, sh), atlas);
+        canvas.text(-hw + 20.0, y - 20.0, "ESC to quit", 14.0, Color::from_rgba8(120, 120, 120, 255), (sw, sh), atlas);
     }
 
     fn should_exit(&self) -> bool {
