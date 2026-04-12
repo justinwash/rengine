@@ -7,10 +7,12 @@ use rengine::*;
 /// - draw_nine_slice() at various sizes
 /// - Corners stay fixed, edges stretch, center fills
 /// - Color tinting via with_color()
+/// - Animated panel resizing
 
 struct NineSliceDemo {
     panel: NineSlice,
     quit: bool,
+    time: f32,
 }
 
 /// Build a 32×32 panel texture using PixelCanvas:
@@ -100,35 +102,60 @@ fn make_panel_texture(engine: &mut Engine) -> TextureId {
     engine.create_texture(size, size, &canvas.into_bytes())
 }
 
+fn lerp(a: f32, b: f32, t: f32) -> f32 {
+    a + (b - a) * t
+}
+
 impl Game for NineSliceDemo {
     fn new(engine: &mut Engine) -> Self {
         let tex = make_panel_texture(engine);
         let panel = NineSlice::uniform(tex, 32, 32, 8);
 
-        Self { panel, quit: false }
+        Self {
+            panel,
+            quit: false,
+            time: 0.0,
+        }
     }
 
     fn update(&mut self, engine: &Engine) {
         if engine.input().is_key_pressed(KeyCode::Escape) {
             self.quit = true;
         }
+        self.time += engine.time().dt();
     }
 
     fn render(&mut self, engine: &Engine, frame: &mut Frame) {
         let (sw, sh) = engine.window_size();
         let atlas = engine.font_atlas();
+        let t = self.time;
 
-        // Define panels
-        let panels: &[(&str, f32, f32, f32, f32)] = &[
-            ("Small (60x40)", 30.0, 90.0, 60.0, 40.0),
-            ("Medium (200x120)", 110.0, 90.0, 200.0, 120.0),
-            ("Wide (400x50)", 330.0, 90.0, 400.0, 50.0),
-            ("Tall (80x250)", 30.0, 220.0, 80.0, 250.0),
-            ("Large (500x200)", 130.0, 220.0, 500.0, 200.0),
+        // Animated sizes — smooth ping-pong using sin
+        let anim_w1 = lerp(60.0, 200.0, (t * 0.8).sin() * 0.5 + 0.5);
+        let anim_h1 = lerp(40.0, 150.0, (t * 1.2).sin() * 0.5 + 0.5);
+        let anim_w2 = lerp(100.0, 400.0, (t * 0.6).sin() * 0.5 + 0.5);
+
+        // Layout: two rows with generous spacing
+        // Row 1 (y=90): static panels — Small, Medium, Wide
+        // Row 2 (y=320): Tall, Tinted, comparison textures
+        // Row 3 (y=530): animated panels
+
+        let label_color = Color::from_rgba8(200, 200, 255, 255);
+        let label_size = 14.0;
+        let row1_y = 90.0;
+        let row2_y = 310.0;
+        let row3_y = 540.0;
+
+        // --- Static panels ---
+        let static_panels: &[(&str, f32, f32, f32, f32)] = &[
+            ("Small (60x40)", 30.0, row1_y, 60.0, 40.0),
+            ("Medium (200x120)", 130.0, row1_y, 200.0, 120.0),
+            ("Wide (400x50)", 370.0, row1_y, 400.0, 50.0),
+            ("Tall (80x250)", 30.0, row2_y, 80.0, 250.0),
+            ("Large (500x200)", 150.0, row2_y, 500.0, 200.0),
         ];
 
-        // --- Sprite draws first (frame borrows) ---
-        for &(_label, x, y, w, h) in panels {
+        for &(_label, x, y, w, h) in static_panels {
             frame.draw_nine_slice(&self.panel, Vec2::new(x, y), Vec2::new(w, h));
         }
 
@@ -137,23 +164,44 @@ impl Game for NineSliceDemo {
             .panel
             .clone()
             .with_color(Color::from_rgba8(255, 180, 100, 255));
-        frame.draw_nine_slice(&tinted, Vec2::new(650.0, 220.0), Vec2::new(180.0, 150.0));
+        frame.draw_nine_slice(&tinted, Vec2::new(700.0, row2_y), Vec2::new(180.0, 150.0));
 
         // Source texture at 1:1 for comparison
         frame.draw(
             self.panel.texture,
-            Vec2::new(650.0, 108.0),
+            Vec2::new(700.0, row1_y),
             Vec2::new(32.0, 32.0),
         );
 
         // Naive stretch for comparison
         frame.draw(
             self.panel.texture,
-            Vec2::new(700.0, 108.0),
+            Vec2::new(760.0, row1_y),
             Vec2::new(120.0, 60.0),
         );
 
-        // --- Canvas text overlay (drawn on top) ---
+        // --- Animated panels ---
+        let anim_color = Color::from_rgba8(100, 220, 180, 200);
+        let anim_panel = self.panel.clone().with_color(anim_color);
+        frame.draw_nine_slice(
+            &anim_panel,
+            Vec2::new(30.0, row3_y),
+            Vec2::new(anim_w1, anim_h1),
+        );
+        frame.draw_nine_slice(
+            &anim_panel,
+            Vec2::new(280.0, row3_y),
+            Vec2::new(anim_w2, 80.0),
+        );
+        // Breathing square
+        let breath = lerp(60.0, 160.0, (t * 1.5).sin() * 0.5 + 0.5);
+        frame.draw_nine_slice(
+            &anim_panel,
+            Vec2::new(730.0, row3_y),
+            Vec2::new(breath, breath),
+        );
+
+        // --- Canvas text overlay ---
         frame.clear_color = Color::from_rgba8(15, 15, 25, 255);
         let canvas = frame.canvas(0);
 
@@ -176,45 +224,71 @@ impl Game for NineSliceDemo {
             atlas,
         );
 
-        for &(label, x, y, _w, _h) in panels {
-            canvas.text(
-                x,
-                y - 18.0,
-                label,
-                14.0,
-                Color::from_rgba8(200, 200, 255, 255),
-                (sw, sh),
-                atlas,
-            );
+        // Static panel labels
+        for &(label, x, y, _w, _h) in static_panels {
+            canvas.text(x, y - 18.0, label, label_size, label_color, (sw, sh), atlas);
         }
 
         canvas.text(
-            650.0,
-            202.0,
+            700.0,
+            row2_y - 18.0,
             "Tinted (180x150)",
-            14.0,
+            label_size,
             Color::from_rgba8(255, 200, 150, 255),
             (sw, sh),
             atlas,
         );
-        canvas.text(
-            650.0,
-            90.0,
-            "Source texture (1:1)",
-            14.0,
-            Color::from_rgba8(200, 200, 255, 255),
-            (sw, sh),
-            atlas,
-        );
+
+        // Comparison labels
         canvas.text(
             700.0,
-            90.0,
-            "Naive stretch",
-            14.0,
-            Color::from_rgba8(200, 200, 255, 255),
+            row1_y - 18.0,
+            "Source (1:1)",
+            label_size,
+            label_color,
             (sw, sh),
             atlas,
         );
+        canvas.text(
+            760.0,
+            row1_y - 18.0,
+            "Naive stretch",
+            label_size,
+            label_color,
+            (sw, sh),
+            atlas,
+        );
+
+        // Animated panel labels
+        let anim_label_color = Color::from_rgba8(150, 255, 220, 255);
+        canvas.text(
+            30.0,
+            row3_y - 18.0,
+            "Animated (resizing)",
+            label_size,
+            anim_label_color,
+            (sw, sh),
+            atlas,
+        );
+        canvas.text(
+            280.0,
+            row3_y - 18.0,
+            "Animated (width stretch)",
+            label_size,
+            anim_label_color,
+            (sw, sh),
+            atlas,
+        );
+        canvas.text(
+            730.0,
+            row3_y - 18.0,
+            "Animated (breathing)",
+            label_size,
+            anim_label_color,
+            (sw, sh),
+            atlas,
+        );
+
         canvas.text(
             20.0,
             sh as f32 - 30.0,
@@ -234,8 +308,8 @@ impl Game for NineSliceDemo {
 fn main() {
     let config = EngineConfig {
         title: "Feature: Nine-Slice".into(),
-        width: 900,
-        height: 520,
+        width: 960,
+        height: 760,
         show_fps: false,
         ..Default::default()
     };
