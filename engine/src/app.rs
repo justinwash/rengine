@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -58,7 +59,7 @@ pub struct Engine {
     pub(crate) gamepads: GamepadSystem,
     pub(crate) hot_reload_enabled: bool,
     pub(crate) actions: ActionMap,
-    pub(crate) rng: Rng,
+    pub(crate) rng: RefCell<Rng>,
 }
 
 impl Engine {
@@ -92,8 +93,8 @@ impl Engine {
         &mut self.actions
     }
 
-    pub fn rng(&mut self) -> &mut Rng {
-        &mut self.rng
+    pub fn rng(&self) -> std::cell::RefMut<'_, Rng> {
+        self.rng.borrow_mut()
     }
 
     pub fn action_down(&self, action: &str) -> bool {
@@ -450,7 +451,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
         gamepads: GamepadSystem::new(),
         hot_reload_enabled: config.hot_reload,
         actions: ActionMap::new(),
-        rng: Rng::from_time(),
+        rng: RefCell::new(Rng::from_time()),
     };
     engine.time.set_fixed_dt(fixed_dt);
 
@@ -582,7 +583,7 @@ where
         gamepads: GamepadSystem::new(),
         hot_reload_enabled: config.hot_reload,
         actions: ActionMap::new(),
-        rng: Rng::from_time(),
+        rng: RefCell::new(Rng::from_time()),
     };
     engine.time.set_fixed_dt(fixed_dt);
 
@@ -756,7 +757,7 @@ pub struct Engine3D {
     hot_reload_enabled: bool,
     actions: ActionMap,
     no_gamepad: crate::input::GamepadState,
-    rng: Rng,
+    rng: RefCell<Rng>,
 }
 
 impl Engine3D {
@@ -784,8 +785,8 @@ impl Engine3D {
         &mut self.actions
     }
 
-    pub fn rng(&mut self) -> &mut Rng {
-        &mut self.rng
+    pub fn rng(&self) -> std::cell::RefMut<'_, Rng> {
+        self.rng.borrow_mut()
     }
 
     pub fn action_down(&self, action: &str) -> bool {
@@ -1067,7 +1068,7 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
         hot_reload_enabled: config.hot_reload,
         actions: ActionMap::new(),
         no_gamepad: crate::input::GamepadState::new(),
-        rng: Rng::from_time(),
+        rng: RefCell::new(Rng::from_time()),
     };
     engine.time.set_fixed_dt(fixed_dt);
 
@@ -1255,7 +1256,7 @@ where
         hot_reload_enabled: config.hot_reload,
         actions: ActionMap::new(),
         no_gamepad: crate::input::GamepadState::new(),
-        rng: Rng::from_time(),
+        rng: RefCell::new(Rng::from_time()),
     };
     engine.time.set_fixed_dt(fixed_dt);
 
