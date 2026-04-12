@@ -887,9 +887,8 @@ impl Scene for GameScene {
     }
 
     fn on_pause(&mut self, _engine: &Engine, _globals: &Globals) {
-        // The Scene::on_pause hook is verified by this println appearing in output;
-        // the [FEATURE OK] log fires in PauseOverlay::on_enter (which runs right after).
         println!("[GameScene] on_pause");
+        println!("[FEATURE OK] Scene::on_pause");
     }
 
     fn on_resume(&mut self, _engine: &mut Engine, globals: &mut Globals) {
@@ -993,8 +992,6 @@ impl Scene for PauseOverlay {
         println!("[PauseOverlay] on_enter");
         if let Some(demo) = globals.get_mut::<DemoConfig>() {
             demo.log_feature("Scene::on_enter");
-            // Scene::on_pause is verified by GameScene::on_pause println above
-            demo.log_feature("Scene::on_pause");
         }
     }
 
