@@ -2,7 +2,6 @@ use std::collections::HashSet;
 use winit::event::ElementState;
 use winit::keyboard::KeyCode;
 
-
 pub struct InputState {
     keys_down: HashSet<KeyCode>,
     keys_pressed: HashSet<KeyCode>,
@@ -26,31 +25,25 @@ impl InputState {
         }
     }
 
-
     pub fn is_key_down(&self, key: KeyCode) -> bool {
         self.keys_down.contains(&key)
     }
-
 
     pub fn is_key_pressed(&self, key: KeyCode) -> bool {
         self.keys_pressed.contains(&key)
     }
 
-
     pub fn is_key_released(&self, key: KeyCode) -> bool {
         self.keys_released.contains(&key)
     }
-
 
     pub fn mouse_delta(&self) -> (f64, f64) {
         self.mouse_delta
     }
 
-
     pub fn is_mouse_down(&self, button: usize) -> bool {
         self.mouse_buttons.get(button).copied().unwrap_or(false)
     }
-
 
     pub fn is_mouse_pressed(&self, button: usize) -> bool {
         self.mouse_buttons_pressed
@@ -58,7 +51,6 @@ impl InputState {
             .copied()
             .unwrap_or(false)
     }
-
 
     pub fn is_mouse_released(&self, button: usize) -> bool {
         self.mouse_buttons_released
@@ -102,7 +94,6 @@ impl InputState {
             }
         }
     }
-
 
     pub(crate) fn end_frame(&mut self) {
         self.keys_pressed.clear();

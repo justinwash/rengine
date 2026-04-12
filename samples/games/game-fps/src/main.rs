@@ -7,7 +7,6 @@ mod state;
 use rengine::*;
 use state::FpsGame;
 
-
 pub const MOVE_SPEED: f32 = 6.0;
 pub const MOUSE_SENSITIVITY: f32 = 0.002;
 pub const WALL_HEIGHT: f32 = 3.0;
@@ -21,7 +20,6 @@ pub const ENEMY_SIZE: f32 = 0.8;
 pub const DOOR_OPEN_SPEED: f32 = 3.0;
 pub const WORLD_FOV_DEG: f32 = 70.0;
 pub const VIEWMODEL_FOV_DEG: f32 = 52.0;
-
 
 impl Game3D for FpsGame {
     fn new(engine: &mut Engine3D) -> Self {
@@ -42,21 +40,16 @@ impl Game3D for FpsGame {
         let was_on_ground = self.on_ground;
         let score_before = self.score;
 
-
         let (yaw, pitch) = input::mouse_look(engine, self.cam_yaw, self.cam_pitch);
         self.cam_yaw = yaw;
         self.cam_pitch = pitch;
 
-
         let dir = input::move_dir(engine, self.cam_yaw);
         physics::move_player(self, dir, dt);
 
-
         physics::apply_gravity(self, jump_pressed, dt);
 
-
         physics::update_doors(self, dt);
-
 
         if shoot_pressed {
             physics::shoot(self);
@@ -76,7 +69,6 @@ impl Game3D for FpsGame {
         render::draw(self, engine, frame);
     }
 }
-
 
 fn main() {
     rengine::run3d::<FpsGame>(EngineConfig {

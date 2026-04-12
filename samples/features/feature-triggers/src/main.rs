@@ -25,18 +25,14 @@ impl Game for TriggerDemo {
 
         let mut triggers = TriggerSystem::new();
 
-        // Checkpoint zone (green) — detects any body
         let zone_checkpoint =
             triggers.add_zone(TriggerZone::new(Rect::new(-300.0, -50.0, 80.0, 100.0)));
 
-        // Pickup zone (yellow) — one-time collection
         let zone_pickup = triggers.add_zone(TriggerZone::new(Rect::new(100.0, 100.0, 40.0, 40.0)));
 
-        // Damage zone (red) — continuous overlap
         let zone_damage =
             triggers.add_zone(TriggerZone::new(Rect::new(200.0, -150.0, 120.0, 60.0)));
 
-        // Layered zone (purple) — only interacts with PLAYER layer
         let zone_layered = triggers.add_zone(
             TriggerZone::new(Rect::new(-100.0, -200.0, 100.0, 100.0)).with_layer(
                 CollisionLayer::new(CollisionLayer::TRIGGER, CollisionLayer::PLAYER),
@@ -63,7 +59,6 @@ impl Game for TriggerDemo {
         let input = engine.input();
         let dt = engine.dt();
 
-        // Move player
         let mut dir = Vec2::ZERO;
         if input.is_key_down(KeyCode::KeyW) || input.is_key_down(KeyCode::ArrowUp) {
             dir.y += 1.0;
@@ -81,7 +76,6 @@ impl Game for TriggerDemo {
             self.player_pos += dir.normalize() * PLAYER_SPEED * dt;
         }
 
-        // Player body: center the rect on player_pos
         let hs = PLAYER_SIZE / 2.0;
         let player_rect = Rect::new(
             self.player_pos.x - hs,
@@ -94,11 +88,9 @@ impl Game for TriggerDemo {
             CollisionLayer::PLAYER | CollisionLayer::TRIGGER,
         );
 
-        // Tick trigger system
         self.triggers
             .tick(&[(PLAYER_BODY_ID, player_rect, player_layer)]);
 
-        // Process events
         let events: Vec<_> = self.triggers.events().collect();
         for (zone_id, _body_id, event) in events {
             if zone_id == self.zone_checkpoint && event == OverlapEvent::Enter {
@@ -110,7 +102,6 @@ impl Game for TriggerDemo {
             {
                 self.pickup_collected = true;
                 self.score += 50;
-                // Disable the zone after collection
                 self.triggers.zone_mut(self.zone_pickup).enabled = false;
             }
 
@@ -123,7 +114,6 @@ impl Game for TriggerDemo {
             }
         }
 
-        // Decay flashes
         self.checkpoint_flash = (self.checkpoint_flash - dt * 2.0).max(0.0);
         self.damage_flash = (self.damage_flash - dt * 2.0).max(0.0);
     }
@@ -132,7 +122,6 @@ impl Game for TriggerDemo {
         frame.clear_color = Color::new(0.08, 0.08, 0.12, 1.0);
         let white = self.white;
 
-        // Draw trigger zones
         let zones: &[(TriggerZoneId, Color)] = &[
             (self.zone_checkpoint, Color::new(0.1, 0.5, 0.2, 0.4)),
             (self.zone_pickup, Color::new(0.8, 0.7, 0.1, 0.4)),
@@ -147,7 +136,6 @@ impl Game for TriggerDemo {
             }
             let r = &zone.rect;
 
-            // Brighten on overlap
             let color = if self.triggers.overlapping(zone_id, PLAYER_BODY_ID) {
                 Color::new(
                     (base_color.r * 2.0).min(1.0),
@@ -165,7 +153,6 @@ impl Game for TriggerDemo {
             );
         }
 
-        // Draw player
         let hs = PLAYER_SIZE / 2.0;
         let player_color = if self.damage_flash > 0.0 {
             Color::new(1.0, 0.3, 0.3, 1.0)
@@ -185,7 +172,6 @@ impl Game for TriggerDemo {
             .with_z_order(10),
         );
 
-        // HUD
         let (sw, sh) = engine.window_size();
         let hw = sw as f32 / 2.0;
         let hh = sh as f32 / 2.0;
@@ -213,7 +199,6 @@ impl Game for TriggerDemo {
             engine.font_atlas(),
         );
 
-        // Zone labels
         canvas.text(
             -hw + 8.0,
             hh - 24.0 - 9.0,

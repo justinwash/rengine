@@ -2,7 +2,6 @@ use glam::Vec2;
 use crate::assets::Color;
 use crate::renderer::{DrawParams, Frame, TextureId};
 
-
 pub struct TileMap {
     pub width: usize,
     pub height: usize,
@@ -10,7 +9,6 @@ pub struct TileMap {
     cells: Vec<Option<usize>>,
     tiles: Vec<TileDef>,
 }
-
 
 #[derive(Clone)]
 pub struct TileDef {
@@ -55,20 +53,17 @@ impl TileMap {
         }
     }
 
-
     pub fn add_tile(&mut self, def: TileDef) -> usize {
         let id = self.tiles.len();
         self.tiles.push(def);
         id
     }
 
-
     pub fn set(&mut self, col: usize, row: usize, tile: Option<usize>) {
         if col < self.width && row < self.height {
             self.cells[row * self.width + col] = tile;
         }
     }
-
 
     pub fn get(&self, col: usize, row: usize) -> Option<usize> {
         if col < self.width && row < self.height {
@@ -78,21 +73,17 @@ impl TileMap {
         }
     }
 
-
     pub fn cell_position(&self, col: usize, row: usize) -> Vec2 {
         Vec2::new(col as f32 * self.tile_size, row as f32 * self.tile_size)
     }
-
 
     pub fn world_width(&self) -> f32 {
         self.width as f32 * self.tile_size
     }
 
-
     pub fn world_height(&self) -> f32 {
         self.height as f32 * self.tile_size
     }
-
 
     pub fn collide_rect(&self, rect: &crate::math::Rect) -> Option<Vec2> {
         use super::physics::aabb_overlap;
@@ -136,7 +127,6 @@ impl TileMap {
             None
         }
     }
-
 
     pub fn draw(&self, frame: &mut Frame) {
         let cam = &frame.camera;

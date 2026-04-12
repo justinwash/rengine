@@ -3,7 +3,6 @@ use winit::keyboard::KeyCode;
 
 use crate::MOUSE_SENSITIVITY;
 
-
 pub fn mouse_look(engine: &Engine3D, yaw: f32, pitch: f32) -> (f32, f32) {
     if !engine.is_mouse_captured() {
         return (yaw, pitch);
@@ -15,7 +14,6 @@ pub fn mouse_look(engine: &Engine3D, yaw: f32, pitch: f32) -> (f32, f32) {
     new_pitch = new_pitch.clamp(-max_pitch, max_pitch);
     (new_yaw, new_pitch)
 }
-
 
 pub fn move_dir(engine: &Engine3D, yaw: f32) -> Vec3 {
     let input = engine.input();
@@ -34,11 +32,9 @@ pub fn move_dir(engine: &Engine3D, yaw: f32) -> Vec3 {
     dir
 }
 
-
 pub fn jump_pressed(engine: &Engine3D) -> bool {
     engine.input().is_key_pressed(KeyCode::Space)
 }
-
 
 pub fn shoot_pressed(engine: &Engine3D) -> bool {
     engine.input().is_mouse_pressed(0)
