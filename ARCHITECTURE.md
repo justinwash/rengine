@@ -1422,6 +1422,7 @@ let mut child = rng.fork();         // independent sub-stream
 ```
 
 **Accessible on Engine:**
+
 - `engine.rng()` → `RefMut<Rng>` (seeded from system time at startup; uses interior mutability so it works from `&Engine`/`&Engine3D`)
 
 **Core methods:**

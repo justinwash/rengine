@@ -39,7 +39,13 @@ fn make_panel_texture(engine: &mut Engine) -> TextureId {
     // Fill the edge strips (mid-tone)
     let edge_color = Color::from_rgba8(55, 60, 85, 255);
     // Top edge (between corners)
-    canvas.fill_rect(border as i32, 0, (size - border * 2) as i32, border as i32, edge_color);
+    canvas.fill_rect(
+        border as i32,
+        0,
+        (size - border * 2) as i32,
+        border as i32,
+        edge_color,
+    );
     // Bottom edge
     canvas.fill_rect(
         border as i32,
@@ -49,7 +55,13 @@ fn make_panel_texture(engine: &mut Engine) -> TextureId {
         edge_color,
     );
     // Left edge
-    canvas.fill_rect(0, border as i32, border as i32, (size - border * 2) as i32, edge_color);
+    canvas.fill_rect(
+        0,
+        border as i32,
+        border as i32,
+        (size - border * 2) as i32,
+        edge_color,
+    );
     // Right edge
     canvas.fill_rect(
         (size - border) as i32,
@@ -121,35 +133,97 @@ impl Game for NineSliceDemo {
         }
 
         // Tinted panel
-        let tinted = self.panel.clone().with_color(Color::from_rgba8(255, 180, 100, 255));
+        let tinted = self
+            .panel
+            .clone()
+            .with_color(Color::from_rgba8(255, 180, 100, 255));
         frame.draw_nine_slice(&tinted, Vec2::new(650.0, 220.0), Vec2::new(180.0, 150.0));
 
         // Source texture at 1:1 for comparison
-        frame.draw(self.panel.texture, Vec2::new(650.0, 108.0), Vec2::new(32.0, 32.0));
+        frame.draw(
+            self.panel.texture,
+            Vec2::new(650.0, 108.0),
+            Vec2::new(32.0, 32.0),
+        );
 
         // Naive stretch for comparison
-        frame.draw(self.panel.texture, Vec2::new(700.0, 108.0), Vec2::new(120.0, 60.0));
+        frame.draw(
+            self.panel.texture,
+            Vec2::new(700.0, 108.0),
+            Vec2::new(120.0, 60.0),
+        );
 
         // --- Canvas text overlay (drawn on top) ---
+        frame.clear_color = Color::from_rgba8(15, 15, 25, 255);
         let canvas = frame.canvas(0);
 
-        canvas.rect(0.0, 0.0, sw as f32, sh as f32, Color::from_rgba8(15, 15, 25, 255), (sw, sh));
-
-        canvas.text(20.0, 20.0, "NineSlice Feature Demo", 28.0, Color::WHITE, (sw, sh), atlas);
         canvas.text(
-            20.0, 52.0,
+            20.0,
+            20.0,
+            "NineSlice Feature Demo",
+            28.0,
+            Color::WHITE,
+            (sw, sh),
+            atlas,
+        );
+        canvas.text(
+            20.0,
+            52.0,
             "Same 32x32 texture drawn at different sizes - corners stay sharp",
-            16.0, Color::from_rgba8(180, 180, 180, 255), (sw, sh), atlas,
+            16.0,
+            Color::from_rgba8(180, 180, 180, 255),
+            (sw, sh),
+            atlas,
         );
 
         for &(label, x, y, _w, _h) in panels {
-            canvas.text(x, y - 18.0, label, 14.0, Color::from_rgba8(200, 200, 255, 255), (sw, sh), atlas);
+            canvas.text(
+                x,
+                y - 18.0,
+                label,
+                14.0,
+                Color::from_rgba8(200, 200, 255, 255),
+                (sw, sh),
+                atlas,
+            );
         }
 
-        canvas.text(650.0, 202.0, "Tinted (180x150)", 14.0, Color::from_rgba8(255, 200, 150, 255), (sw, sh), atlas);
-        canvas.text(650.0, 90.0, "Source texture (1:1)", 14.0, Color::from_rgba8(200, 200, 255, 255), (sw, sh), atlas);
-        canvas.text(700.0, 90.0, "Naive stretch", 14.0, Color::from_rgba8(200, 200, 255, 255), (sw, sh), atlas);
-        canvas.text(20.0, sh as f32 - 30.0, "ESC to quit", 14.0, Color::from_rgba8(120, 120, 120, 255), (sw, sh), atlas);
+        canvas.text(
+            650.0,
+            202.0,
+            "Tinted (180x150)",
+            14.0,
+            Color::from_rgba8(255, 200, 150, 255),
+            (sw, sh),
+            atlas,
+        );
+        canvas.text(
+            650.0,
+            90.0,
+            "Source texture (1:1)",
+            14.0,
+            Color::from_rgba8(200, 200, 255, 255),
+            (sw, sh),
+            atlas,
+        );
+        canvas.text(
+            700.0,
+            90.0,
+            "Naive stretch",
+            14.0,
+            Color::from_rgba8(200, 200, 255, 255),
+            (sw, sh),
+            atlas,
+        );
+        canvas.text(
+            20.0,
+            sh as f32 - 30.0,
+            "ESC to quit",
+            14.0,
+            Color::from_rgba8(120, 120, 120, 255),
+            (sw, sh),
+            atlas,
+        );
     }
 
     fn should_exit(&self) -> bool {
