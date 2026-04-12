@@ -154,10 +154,12 @@ impl Game for CameraDemo {
         );
 
         let (sw, sh) = engine.window_size();
+        let hw = sw as f32 / 2.0;
+        let hh = sh as f32 / 2.0;
         let canvas = frame.canvas(0);
         canvas.text(
-            8.0,
-            8.0,
+            -hw + 8.0,
+            hh - 8.0 - 11.0,
             "WASD:Move  Space:Shake  R:Rotation",
             11.0,
             Color::WHITE,

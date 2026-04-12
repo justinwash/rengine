@@ -128,11 +128,14 @@ impl Game for AnimationDemo {
     fn render(&mut self, engine: &Engine, frame: &mut Frame) {
         frame.clear_color = Color::new(0.1, 0.1, 0.14, 1.0);
         let screen = engine.window_size();
+        let sw = screen.0 as f32;
+        let hw = sw / 2.0;
+        let hh = screen.1 as f32 / 2.0;
         let atlas = engine.font_atlas();
 
         let hud = frame.canvas(0);
-        hud.rect(0.0, 0.0, screen.0 as f32, 40.0, Color::new(0.08, 0.07, 0.1, 0.95), screen);
-        hud.text(16.0, 10.0, "SpriteSheet + Animation Demo", 18.0, Color::WHITE, screen, atlas);
+        hud.rect(-hw, hh - 40.0, sw, 40.0, Color::new(0.08, 0.07, 0.1, 0.95), screen);
+        hud.text(-hw + 16.0, hh - 10.0 - 18.0, "SpriteSheet + Animation Demo", 18.0, Color::WHITE, screen, atlas);
 
         let animations: [(&str, &Animation); 8] = [
             ("Walk Right (8fps)", &self.walk_right),
@@ -148,14 +151,14 @@ impl Game for AnimationDemo {
         let cols = 4;
         let x_spacing = 160.0;
         let y_spacing = 130.0;
-        let start_x = 60.0;
-        let start_y = 70.0;
+        let start_x = -hw + 60.0;
+        let start_y = hh - 70.0 - DISPLAY_SIZE;
 
         for (i, (label, anim)) in animations.iter().enumerate() {
             let col = i % cols;
             let row = i / cols;
             let x = start_x + col as f32 * x_spacing;
-            let y = start_y + row as f32 * y_spacing;
+            let y = start_y - row as f32 * y_spacing;
 
             let (fc, fr) = anim.current_frame();
             let uv = self.sheet.uv_rect(fc, fr);
@@ -170,14 +173,14 @@ impl Game for AnimationDemo {
             );
 
             let labels = frame.canvas(0);
-            labels.text(x, y + DISPLAY_SIZE + 6.0, label, 12.0, Color::new(0.7, 0.8, 0.9, 1.0), screen, atlas);
+            labels.text(x, y - 6.0 - 12.0, label, 12.0, Color::new(0.7, 0.8, 0.9, 1.0), screen, atlas);
 
             let frame_text = format!("frame: ({},{})", fc, fr);
-            labels.text(x, y + DISPLAY_SIZE + 22.0, &frame_text, 11.0, Color::new(0.5, 0.6, 0.7, 1.0), screen, atlas);
+            labels.text(x, y - 22.0 - 11.0, &frame_text, 11.0, Color::new(0.5, 0.6, 0.7, 1.0), screen, atlas);
         }
 
         let sheet_label = frame.canvas(0);
-        sheet_label.text(start_x, start_y + 2.0 * y_spacing + 10.0, "Sprite sheet (4x4 grid, 16x16 cells):", 13.0, Color::new(0.6, 0.7, 0.8, 1.0), screen, atlas);
+        sheet_label.text(start_x, start_y - y_spacing - 44.0 - 13.0, "Sprite sheet (4x4 grid, 16x16 cells):", 13.0, Color::new(0.6, 0.7, 0.8, 1.0), screen, atlas);
 
         let sheet_y = start_y + 2.0 * y_spacing + 30.0;
         let preview_scale = 4.0;

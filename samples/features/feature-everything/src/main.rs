@@ -121,12 +121,14 @@ impl Scene for TitleScene {
         frame.clear_color = Color::new(0.1, 0.05, 0.2, 1.0);
 
         let (sw, sh) = engine.window_size();
+        let hw = sw as f32 / 2.0;
+        let hh = sh as f32 / 2.0;
         let atlas = engine.font_atlas();
         let canvas = frame.canvas(0);
 
         canvas.text(
-            200.0,
-            100.0,
+            -hw + 200.0,
+            hh - 100.0 - 32.0,
             "RENGINE KITCHEN SINK",
             32.0,
             Color::YELLOW,
@@ -136,8 +138,8 @@ impl Scene for TitleScene {
 
         if (self.blink_timer * 2.0).sin() > 0.0 {
             canvas.text(
-                220.0,
-                250.0,
+                -hw + 220.0,
+                hh - 250.0 - 18.0,
                 "Press ENTER to start",
                 18.0,
                 Color::WHITE,
@@ -148,8 +150,8 @@ impl Scene for TitleScene {
 
         let transitions = globals.get::<TransitionCounter>().map_or(0, |c| c.0);
         canvas.text(
-            10.0,
-            550.0,
+            -hw + 10.0,
+            -hh + 50.0 - 12.0,
             &format!("Scene transitions: {}", transitions),
             12.0,
             Color::GREEN,
@@ -159,8 +161,8 @@ impl Scene for TitleScene {
 
         if engine.gamepads_connected() > 0 {
             canvas.text(
-                220.0,
-                300.0,
+                -hw + 220.0,
+                hh - 300.0 - 14.0,
                 "(Gamepad detected: press A)",
                 14.0,
                 Color::ORANGE,
@@ -812,20 +814,22 @@ impl Scene for GameScene {
         }
 
         let (sw, sh) = engine.window_size();
+        let hw = sw as f32 / 2.0;
+        let hh = sh as f32 / 2.0;
         let atlas = engine.font_atlas();
         let hud = frame.canvas(0);
 
         hud.rect(
-            5.0,
-            30.0,
+            -hw + 5.0,
+            hh - 30.0 - 95.0,
             200.0,
             95.0,
             Color::new(0.0, 0.0, 0.0, 0.5),
             (sw, sh),
         );
         hud.text(
-            10.0,
-            35.0,
+            -hw + 10.0,
+            hh - 35.0 - 18.0,
             &format!("Coins: {}", self.score),
             18.0,
             Color::YELLOW,
@@ -833,8 +837,8 @@ impl Scene for GameScene {
             atlas,
         );
         hud.text(
-            10.0,
-            55.0,
+            -hw + 10.0,
+            hh - 55.0 - 14.0,
             &format!("Height: {:.0}", self.player_pos.y),
             14.0,
             Color::WHITE,
@@ -842,8 +846,8 @@ impl Scene for GameScene {
             atlas,
         );
         hud.text(
-            10.0,
-            72.0,
+            -hw + 10.0,
+            hh - 72.0 - 14.0,
             &format!("Time: {:.1}s", self.play_time),
             14.0,
             Color::WHITE,
@@ -853,8 +857,8 @@ impl Scene for GameScene {
 
         if self.checkpoint_flash > 0.0 {
             hud.text(
-                10.0,
-                105.0,
+                -hw + 10.0,
+                hh - 105.0 - 14.0,
                 &self.checkpoint_msg,
                 14.0,
                 Color::GREEN,
@@ -864,8 +868,8 @@ impl Scene for GameScene {
         }
 
         hud.text(
-            sw as f32 - 380.0,
-            sh as f32 - 20.0,
+            hw - 380.0,
+            -hh + 20.0 - 10.0,
             "WASD: Move | Space: Jump | +/-: Zoom | ESC: Pause/Quit",
             10.0,
             Color::new(1.0, 1.0, 1.0, 0.6),
@@ -875,8 +879,8 @@ impl Scene for GameScene {
 
         if let Some(stats) = globals.get::<PlayerStats>() {
             hud.text(
-                sw as f32 - 200.0,
-                35.0,
+                hw - 200.0,
+                hh - 35.0 - 12.0,
                 &format!("Best height: {:.0}", stats.best_height),
                 12.0,
                 Color::GREEN,
@@ -951,8 +955,8 @@ impl Scene for CountdownScene {
         };
 
         canvas.text(
-            sw as f32 / 2.0 - 40.0,
-            sh as f32 / 2.0 - 50.0,
+            -40.0,
+            50.0 - 80.0,
             &label,
             80.0,
             Color::WHITE,
@@ -961,8 +965,8 @@ impl Scene for CountdownScene {
         );
 
         canvas.text(
-            sw as f32 / 2.0 - 140.0,
-            sh as f32 / 2.0 + 50.0,
+            -140.0,
+            -50.0 - 16.0,
             "Demo starting... start recording!",
             16.0,
             Color::new(0.7, 0.7, 0.7, 1.0),
@@ -1024,20 +1028,22 @@ impl Scene for PauseOverlay {
 
     fn render(&self, engine: &Engine, globals: &Globals, frame: &mut Frame) {
         let (sw, sh) = engine.window_size();
+        let hw = sw as f32 / 2.0;
+        let hh = sh as f32 / 2.0;
         let atlas = engine.font_atlas();
         let overlay = frame.canvas(1);
 
         overlay.rect(
-            0.0,
-            0.0,
+            -hw,
+            -hh,
             sw as f32,
             sh as f32,
             Color::new(0.0, 0.0, 0.0, 0.65),
             (sw, sh),
         );
         overlay.text(
-            sw as f32 / 2.0 - 80.0,
-            sh as f32 / 2.0 - 30.0,
+            -80.0,
+            30.0 - 40.0,
             "PAUSED",
             40.0,
             Color::WHITE,
@@ -1045,8 +1051,8 @@ impl Scene for PauseOverlay {
             atlas,
         );
         overlay.text(
-            sw as f32 / 2.0 - 130.0,
-            sh as f32 / 2.0 + 20.0,
+            -130.0,
+            -20.0 - 16.0,
             "Press ESC/P to resume | Q to quit",
             16.0,
             Color::new(0.8, 0.8, 0.8, 1.0),
@@ -1056,8 +1062,8 @@ impl Scene for PauseOverlay {
 
         if let Some(stats) = globals.get::<PlayerStats>() {
             overlay.text(
-                sw as f32 / 2.0 - 100.0,
-                sh as f32 / 2.0 + 60.0,
+                -100.0,
+                -60.0 - 14.0,
                 &format!(
                     "Coins: {} | Best Height: {:.0}",
                     stats.coins, stats.best_height

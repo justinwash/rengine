@@ -18,37 +18,39 @@ impl Game for CanvasDemo {
     fn render(&mut self, engine: &Engine, frame: &mut Frame) {
         frame.clear_color = Color::new(0.08, 0.08, 0.12, 1.0);
         let screen = engine.window_size();
+        let sw = screen.0 as f32;
+        let sh = screen.1 as f32;
+        let hw = sw / 2.0;
+        let hh = sh / 2.0;
         let atlas = engine.font_atlas();
 
         let hud = frame.canvas(0);
 
-        hud.rect(20.0, 20.0, 200.0, 120.0, Color::new(0.15, 0.15, 0.22, 0.9), screen);
-        hud.text(30.0, 30.0, "Canvas Demo", 20.0, Color::WHITE, screen, atlas);
-        hud.text(30.0, 56.0, "Rectangles, text,", 14.0, Color::new(0.7, 0.7, 0.7, 1.0), screen, atlas);
-        hud.text(30.0, 74.0, "and custom shapes", 14.0, Color::new(0.7, 0.7, 0.7, 1.0), screen, atlas);
+        hud.rect(-hw + 20.0, hh - 20.0 - 120.0, 200.0, 120.0, Color::new(0.15, 0.15, 0.22, 0.9), screen);
+        hud.text(-hw + 30.0, hh - 30.0 - 20.0, "Canvas Demo", 20.0, Color::WHITE, screen, atlas);
+        hud.text(-hw + 30.0, hh - 56.0 - 14.0, "Rectangles, text,", 14.0, Color::new(0.7, 0.7, 0.7, 1.0), screen, atlas);
+        hud.text(-hw + 30.0, hh - 74.0 - 14.0, "and custom shapes", 14.0, Color::new(0.7, 0.7, 0.7, 1.0), screen, atlas);
 
         let colors = [Color::RED, Color::ORANGE, Color::YELLOW, Color::GREEN, Color::BLUE, Color::INDIGO, Color::VIOLET];
         for (i, color) in colors.iter().enumerate() {
-            let x = 260.0 + i as f32 * 50.0;
-            hud.rect(x, 30.0, 40.0, 40.0, *color, screen);
+            let x = -hw + 260.0 + i as f32 * 50.0;
+            hud.rect(x, hh - 30.0 - 40.0, 40.0, 40.0, *color, screen);
         }
-        hud.text(260.0, 80.0, "Color palette", 14.0, Color::new(0.7, 0.7, 0.7, 1.0), screen, atlas);
+        hud.text(-hw + 260.0, hh - 80.0 - 14.0, "Color palette", 14.0, Color::new(0.7, 0.7, 0.7, 1.0), screen, atlas);
 
         let bar_w = 300.0;
         let bar_h = 24.0;
-        let bar_x = 260.0;
-        let bar_y = 110.0;
+        let bar_x = -hw + 260.0;
+        let bar_y = hh - 110.0 - bar_h;
         hud.rect(bar_x, bar_y, bar_w, bar_h, Color::new(0.2, 0.2, 0.2, 1.0), screen);
         let fill = ((self.time * 0.3).sin() * 0.5 + 0.5) * bar_w;
         hud.rect(bar_x, bar_y, fill, bar_h, Color::new(0.3, 0.8, 0.4, 1.0), screen);
         hud.text(bar_x + 8.0, bar_y + 4.0, "Animated bar", 14.0, Color::WHITE, screen, atlas);
 
         let shapes = frame.canvas(1);
-        let sw = screen.0 as f32;
-        let sh = screen.1 as f32;
 
-        let cx = sw * 0.35;
-        let cy = sh * 0.6;
+        let cx = -0.3 * hw;
+        let cy = -0.2 * hh;
         let r = 60.0;
         let segments = 24;
         for i in 0..segments {
@@ -58,9 +60,9 @@ impl Game for CanvasDemo {
             let color = Color::new(t, 1.0 - t, 0.5 + t * 0.5, 0.8);
             let c = color.to_array();
 
-            let p0 = screen_to_ndc(cx, cy, screen);
-            let p1 = screen_to_ndc(cx + a0.cos() * r, cy + a0.sin() * r, screen);
-            let p2 = screen_to_ndc(cx + a1.cos() * r, cy + a1.sin() * r, screen);
+            let p0 = world_to_ndc(cx, cy, screen);
+            let p1 = world_to_ndc(cx + a0.cos() * r, cy + a0.sin() * r, screen);
+            let p2 = world_to_ndc(cx + a1.cos() * r, cy + a1.sin() * r, screen);
 
             let uv = [0.0, 0.0];
             shapes.shape(&[
@@ -71,10 +73,10 @@ impl Game for CanvasDemo {
         }
 
         let label = frame.canvas(2);
-        label.text(cx - 70.0, cy + r + 10.0, "Custom triangle fan", 14.0, Color::WHITE, screen, atlas);
+        label.text(cx - 70.0, cy - r - 10.0 - 14.0, "Custom triangle fan", 14.0, Color::WHITE, screen, atlas);
 
-        let dx = sw * 0.65;
-        let dy = sh * 0.55;
+        let dx = 0.3 * hw;
+        let dy = -0.1 * hh;
         let spin = self.time * 1.5;
         let size = 90.0;
         let corners: [(f32, f32); 4] = [
@@ -87,7 +89,7 @@ impl Game for CanvasDemo {
         let quad_color = Color::new(0.2, 0.5, 1.0, 0.7).to_array();
         let uv = [0.0, 0.0];
         let verts: Vec<CanvasVertex> = corners.iter().map(|&(x, y)| {
-            let p = screen_to_ndc(x, y, screen);
+            let p = world_to_ndc(x, y, screen);
             CanvasVertex { position: p, color: quad_color, uv }
         }).collect();
 
@@ -95,14 +97,14 @@ impl Game for CanvasDemo {
         shapes2.shape(&[verts[0], verts[1], verts[2], verts[0], verts[2], verts[3]]);
 
         let label2 = frame.canvas(2);
-        label2.text(dx - 60.0, dy + size + 20.0, "Spinning quad", 14.0, Color::WHITE, screen, atlas);
+        label2.text(dx - 60.0, dy - size - 20.0 - 14.0, "Spinning quad", 14.0, Color::WHITE, screen, atlas);
 
         let stats = frame.canvas(3);
         let fps_text = format!("dt: {:.1}ms", engine.dt() * 1000.0);
         let time_text = format!("time: {:.1}s", self.time);
-        stats.rect(20.0, sh - 60.0, 160.0, 50.0, Color::new(0.1, 0.1, 0.15, 0.85), screen);
-        stats.text(30.0, sh - 52.0, &fps_text, 14.0, Color::YELLOW, screen, atlas);
-        stats.text(30.0, sh - 34.0, &time_text, 14.0, Color::new(0.6, 0.8, 1.0, 1.0), screen, atlas);
+        stats.rect(-hw + 20.0, -hh + 10.0, 160.0, 50.0, Color::new(0.1, 0.1, 0.15, 0.85), screen);
+        stats.text(-hw + 30.0, -hh + 10.0 + 22.0, &fps_text, 14.0, Color::YELLOW, screen, atlas);
+        stats.text(-hw + 30.0, -hh + 10.0 + 4.0, &time_text, 14.0, Color::new(0.6, 0.8, 1.0, 1.0), screen, atlas);
     }
 }
 
