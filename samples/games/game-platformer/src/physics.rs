@@ -3,14 +3,11 @@ use rengine::{aabb_overlap, Rect, Vec2};
 use crate::state::{Platform, Player};
 use crate::{GRAVITY, PLAYER_H, PLAYER_W};
 
-
 pub fn update(player: &mut Player, platforms: &[Platform], dt: f32) {
 
     player.vel.y += GRAVITY * dt;
 
-
     player.pos += player.vel * dt;
-
 
     player.on_ground = false;
     let player_rect = Rect::from_pos_size(player.pos, Vec2::new(PLAYER_W, PLAYER_H));

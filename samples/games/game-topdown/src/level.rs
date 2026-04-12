@@ -6,7 +6,6 @@ use rengine::{Engine, Vec2};
 use crate::state::{Enemy, Gem, Player, TopDown};
 use crate::{ENEMY_SPEED, MAP_H, MAP_W, TILE_SIZE};
 
-
 pub fn build(engine: &mut Engine) -> TopDown {
     engine.set_asset_root(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets"));
 
@@ -29,20 +28,17 @@ pub fn build(engine: &mut Engine) -> TopDown {
         .load_scene2d(&assets, "world.scene.json")
         .expect("failed to load topdown scene");
 
-
     let mut tilemap = TileMap::new(MAP_W, MAP_H, TILE_SIZE);
     let grass_id = tilemap.add_tile(TileDef::solid(world_sheet.texture).with_uv(grass_uv));
     let dirt_id = tilemap.add_tile(TileDef::solid(world_sheet.texture).with_uv(dirt_uv));
     let stone_id = tilemap.add_tile(TileDef::solid(world_sheet.texture).with_uv(stone_uv));
     let water_id = tilemap.add_tile(TileDef::solid(world_sheet.texture).with_uv(water_uv));
 
-
     for row in 0..MAP_H {
         for col in 0..MAP_W {
             tilemap.set(col, row, Some(grass_id));
         }
     }
-
 
     for col in 0..MAP_W {
         tilemap.set(col, 0, Some(stone_id));
@@ -53,17 +49,14 @@ pub fn build(engine: &mut Engine) -> TopDown {
         tilemap.set(MAP_W - 1, row, Some(stone_id));
     }
 
-
     for col in 1..MAP_W - 1 {
         tilemap.set(col, 9, Some(dirt_id));
         tilemap.set(col, 10, Some(dirt_id));
     }
 
-
     for row in 5..15 {
         tilemap.set(15, row, Some(dirt_id));
     }
-
 
     for row in 3..6 {
         for col in 5..9 {
@@ -71,14 +64,12 @@ pub fn build(engine: &mut Engine) -> TopDown {
         }
     }
 
-
     for col in 20..25 {
         tilemap.set(col, 14, Some(stone_id));
     }
     for row in 14..18 {
         tilemap.set(20, row, Some(stone_id));
     }
-
 
     for col in 23..28 {
         tilemap.set(col, 3, Some(stone_id));
@@ -90,7 +81,6 @@ pub fn build(engine: &mut Engine) -> TopDown {
     }
 
     tilemap.set(25, 3, Some(dirt_id));
-
 
     let enemy_directions = [
         Vec2::new(ENEMY_SPEED, 0.0),

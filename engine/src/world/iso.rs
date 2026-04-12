@@ -1,12 +1,10 @@
 use glam::Vec2;
 
-
 pub fn iso_to_screen(col: i32, row: i32, tile_width: f32, tile_height: f32) -> Vec2 {
     let x = (col - row) as f32 * (tile_width / 2.0);
     let y = (col + row) as f32 * (tile_height / 2.0);
     Vec2::new(x, -y)
 }
-
 
 pub fn screen_to_iso(screen: Vec2, tile_width: f32, tile_height: f32) -> (i32, i32) {
     let sx = screen.x;

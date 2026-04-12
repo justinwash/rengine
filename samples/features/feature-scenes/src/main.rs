@@ -1,11 +1,9 @@
 use rengine::*;
 use std::collections::HashMap;
 
-
 struct SwitchCounter(u32);
 
 struct SceneCounters(HashMap<&'static str, u32>);
-
 
 fn draw_label(frame: &mut Frame, engine: &Engine, y: f32, size: f32, color: Color, text: &str) {
     let screen = engine.window_size();
@@ -14,7 +12,6 @@ fn draw_label(frame: &mut Frame, engine: &Engine, y: f32, size: f32, color: Colo
     let canvas = frame.canvas(0);
     canvas.text(-hw + 20.0, hh - y - size, text, size, color, screen, engine.font_atlas());
 }
-
 
 struct ColorScene {
     name: &'static str,
@@ -120,7 +117,6 @@ impl Scene for ColorScene {
     }
 }
 
-
 struct PauseOverlay;
 
 impl Scene for PauseOverlay {
@@ -165,7 +161,6 @@ impl Scene for PauseOverlay {
         println!("[Pause] on_exit");
     }
 }
-
 
 fn main() {
     rengine::run_with_scenes(
