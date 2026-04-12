@@ -128,7 +128,7 @@ impl Scene for TitleScene {
 
         canvas.text(
             -hw + 200.0,
-            hh - 100.0 - 32.0,
+            hh - 100.0,
             "RENGINE KITCHEN SINK",
             32.0,
             Color::YELLOW,
@@ -139,7 +139,7 @@ impl Scene for TitleScene {
         if (self.blink_timer * 2.0).sin() > 0.0 {
             canvas.text(
                 -hw + 220.0,
-                hh - 250.0 - 18.0,
+                hh - 250.0,
                 "Press ENTER to start",
                 18.0,
                 Color::WHITE,
@@ -151,7 +151,7 @@ impl Scene for TitleScene {
         let transitions = globals.get::<TransitionCounter>().map_or(0, |c| c.0);
         canvas.text(
             -hw + 10.0,
-            -hh + 50.0 - 12.0,
+            -hh + 50.0,
             &format!("Scene transitions: {}", transitions),
             12.0,
             Color::GREEN,
@@ -162,7 +162,7 @@ impl Scene for TitleScene {
         if engine.gamepads_connected() > 0 {
             canvas.text(
                 -hw + 220.0,
-                hh - 300.0 - 14.0,
+                hh - 300.0,
                 "(Gamepad detected: press A)",
                 14.0,
                 Color::ORANGE,
@@ -829,7 +829,7 @@ impl Scene for GameScene {
         );
         hud.text(
             -hw + 10.0,
-            hh - 35.0 - 18.0,
+            hh - 35.0,
             &format!("Coins: {}", self.score),
             18.0,
             Color::YELLOW,
@@ -838,7 +838,7 @@ impl Scene for GameScene {
         );
         hud.text(
             -hw + 10.0,
-            hh - 55.0 - 14.0,
+            hh - 55.0,
             &format!("Height: {:.0}", self.player_pos.y),
             14.0,
             Color::WHITE,
@@ -847,7 +847,7 @@ impl Scene for GameScene {
         );
         hud.text(
             -hw + 10.0,
-            hh - 72.0 - 14.0,
+            hh - 72.0,
             &format!("Time: {:.1}s", self.play_time),
             14.0,
             Color::WHITE,
@@ -858,7 +858,7 @@ impl Scene for GameScene {
         if self.checkpoint_flash > 0.0 {
             hud.text(
                 -hw + 10.0,
-                hh - 105.0 - 14.0,
+                hh - 105.0,
                 &self.checkpoint_msg,
                 14.0,
                 Color::GREEN,
@@ -869,7 +869,7 @@ impl Scene for GameScene {
 
         hud.text(
             hw - 380.0,
-            -hh + 20.0 - 10.0,
+            -hh + 20.0,
             "WASD: Move | Space: Jump | +/-: Zoom | ESC: Pause/Quit",
             10.0,
             Color::new(1.0, 1.0, 1.0, 0.6),
@@ -880,7 +880,7 @@ impl Scene for GameScene {
         if let Some(stats) = globals.get::<PlayerStats>() {
             hud.text(
                 hw - 200.0,
-                hh - 35.0 - 12.0,
+                hh - 35.0,
                 &format!("Best height: {:.0}", stats.best_height),
                 12.0,
                 Color::GREEN,
@@ -956,7 +956,7 @@ impl Scene for CountdownScene {
 
         canvas.text(
             -40.0,
-            50.0 - 80.0,
+            50.0,
             &label,
             80.0,
             Color::WHITE,
@@ -966,7 +966,7 @@ impl Scene for CountdownScene {
 
         canvas.text(
             -140.0,
-            -50.0 - 16.0,
+            -50.0,
             "Demo starting... start recording!",
             16.0,
             Color::new(0.7, 0.7, 0.7, 1.0),
@@ -1043,7 +1043,7 @@ impl Scene for PauseOverlay {
         );
         overlay.text(
             -80.0,
-            30.0 - 40.0,
+            30.0,
             "PAUSED",
             40.0,
             Color::WHITE,
@@ -1052,7 +1052,7 @@ impl Scene for PauseOverlay {
         );
         overlay.text(
             -130.0,
-            -20.0 - 16.0,
+            -20.0,
             "Press ESC/P to resume | Q to quit",
             16.0,
             Color::new(0.8, 0.8, 0.8, 1.0),
@@ -1063,7 +1063,7 @@ impl Scene for PauseOverlay {
         if let Some(stats) = globals.get::<PlayerStats>() {
             overlay.text(
                 -100.0,
-                -60.0 - 14.0,
+                -60.0,
                 &format!(
                     "Coins: {} | Best Height: {:.0}",
                     stats.coins, stats.best_height

@@ -159,7 +159,7 @@ impl Game for CameraDemo {
         let canvas = frame.canvas(0);
         canvas.text(
             -hw + 8.0,
-            hh - 8.0 - 11.0,
+            hh - 8.0,
             "WASD:Move  Space:Shake  R:Rotation",
             11.0,
             Color::WHITE,

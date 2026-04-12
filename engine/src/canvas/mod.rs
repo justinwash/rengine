@@ -107,7 +107,7 @@ impl Canvas {
 
             if entry.width_px > 0.0 {
                 let gx = cursor_x + entry.x_offset * scale;
-                let gy = y + (atlas.line_height - entry.y_offset - entry.height_px) * scale;
+                let gy = y - (atlas.line_height - entry.y_offset) * scale;
                 let gw = entry.width_px * scale;
                 let gh = entry.height_px * scale;
 
@@ -175,7 +175,7 @@ pub(crate) fn draw_fps(canvas: &mut Canvas, fps: f32, screen_size: (u32, u32), a
     );
     canvas.text(
         -hw + 8.0,
-        hh - 8.0 - size,
+        hh - 8.0,
         &text,
         size,
         Color::from_rgba8(0, 255, 0, 255),
