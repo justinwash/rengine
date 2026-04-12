@@ -187,10 +187,12 @@ impl Game for TriggerDemo {
 
         // HUD
         let (sw, sh) = engine.window_size();
+        let hw = sw as f32 / 2.0;
+        let hh = sh as f32 / 2.0;
         let canvas = frame.canvas(0);
         canvas.text(
-            8.0,
-            8.0,
+            -hw + 8.0,
+            hh - 8.0 - 11.0,
             &format!(
                 "WASD:Move  Score:{}  {}  {}",
                 self.score,
@@ -213,8 +215,8 @@ impl Game for TriggerDemo {
 
         // Zone labels
         canvas.text(
-            8.0,
-            24.0,
+            -hw + 8.0,
+            hh - 24.0 - 9.0,
             "Green=Checkpoint  Yellow=Pickup  Red=Damage  Purple=Layered(PLAYER only)",
             9.0,
             Color::new(0.7, 0.7, 0.7, 1.0),

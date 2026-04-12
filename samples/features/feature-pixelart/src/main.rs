@@ -104,23 +104,25 @@ impl Game for PixelArtDemo {
     fn render(&mut self, engine: &Engine, frame: &mut Frame) {
         frame.clear_color = Color::new(0.12, 0.1, 0.15, 1.0);
         let screen = engine.window_size();
+        let sw = screen.0 as f32;
+        let hw = sw / 2.0;
+        let hh = screen.1 as f32 / 2.0;
         let atlas = engine.font_atlas();
 
         let hud = frame.canvas(0);
-        hud.rect(0.0, 0.0, screen.0 as f32, 40.0, Color::new(0.08, 0.07, 0.1, 0.95), screen);
-        hud.text(16.0, 10.0, "PixelCanvas Procedural Textures", 18.0, Color::WHITE, screen, atlas);
+        hud.rect(-hw, hh - 40.0, sw, 40.0, Color::new(0.08, 0.07, 0.1, 0.95), screen);
+        hud.text(-hw + 16.0, hh - 10.0 - 18.0, "PixelCanvas Procedural Textures", 18.0, Color::WHITE, screen, atlas);
 
         let cols = 3;
         let spacing = 180.0;
         let scale = 6.0;
-        let start_x = 80.0;
-        let start_y = 80.0;
+        let start_x = -hw + 80.0;
+        let start_y = hh - 80.0;
 
         for (i, (tex, label)) in self.textures.iter().enumerate() {
             let col = i % cols;
             let row = i / cols;
             let x = start_x + col as f32 * spacing;
-            let y = start_y + row as f32 * 220.0;
 
             let size = if i == 1 {
                 Vec2::new(16.0 * scale, 24.0 * scale)
@@ -130,10 +132,12 @@ impl Game for PixelArtDemo {
                 Vec2::new(16.0 * scale, 16.0 * scale)
             };
 
+            let y = start_y - row as f32 * 220.0 - size.y;
+
             frame.draw(*tex, Vec2::new(x, y), size);
 
             let labels = frame.canvas(0);
-            labels.text(x, y + size.y + 8.0, label, 13.0, Color::new(0.7, 0.8, 0.9, 1.0), screen, atlas);
+            labels.text(x, y - 8.0 - 13.0, label, 13.0, Color::new(0.7, 0.8, 0.9, 1.0), screen, atlas);
         }
     }
 }
