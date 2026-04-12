@@ -25,7 +25,7 @@ pub use input::{ActionMap, AxisMapping, Binding, GamepadAxis};
 pub use math::Rect;
 pub use math::Rng;
 pub use math::TimeState;
-pub use renderer::{Camera2D, CameraBounds, DrawParams, Frame, TextureId};
+pub use renderer::{Camera2D, CameraBounds, DrawParams, Frame, NineSlice, TextureId};
 
 pub use world::tilemap;
 pub use world::{

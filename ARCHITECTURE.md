@@ -97,7 +97,7 @@ rengine/
 │       ├── canvas/        # Canvas overlay: mod.rs + canvas.wgsl
 │       ├── input/         # keyboard.rs, gamepad.rs, action.rs, mod.rs
 │       ├── math/          # Rect, TimeState, Rng
-│       ├── renderer/      # 2D sprite renderer: camera, sprite, texture, mod.rs, sprite.wgsl
+│       ├── renderer/      # 2D sprite renderer: camera, sprite, nineslice, texture, mod.rs, sprite.wgsl
 │       ├── renderer3d/    # 3D mesh renderer: camera, mesh, mod.rs, mesh3d.wgsl
 │       ├── scene/         # Scene trait, Globals, 2D scene data (prefabs/instances)
 │       ├── world/         # TileMap, AABB physics, isometric helpers
@@ -563,6 +563,22 @@ The vertex shader transforms 2D world positions by the orthographic projection. 
 - **Textured sprites** — When using a real texture with white tint
 - **Color tinting** — When using a white texture with a colored tint
 - **Semi-transparent overlays** — By setting `color.a < 1.0`
+
+---
+
+### 4.7 [`NineSlice`](https://github.com/justinwash/rengine/blob/master/engine/src/renderer/nineslice.rs) — Resizable UI Panels
+
+A nine-slice divides a texture into 9 regions using left/right/top/bottom border sizes (in pixels). When drawn at any size, corners stay fixed, edges stretch in one axis, and the center fills the remaining area.
+
+```rust
+let panel = NineSlice::uniform(texture_id, 32, 32, 8); // 8px borders all sides
+let panel = NineSlice::new(tex, 64, 64, 10, 12, 8, 6);  // asymmetric borders
+frame.draw_nine_slice(&panel, position, size);
+```
+
+**How it works:** `patches()` computes 9 `DrawParams` with correct position rects and UV sub-rects. These are pushed into the sprite batch like normal sprites — no shader changes needed. Patches with zero area (when the draw size is smaller than borders) are skipped.
+
+Supports `.with_color()` for tinting and `.with_z_order()` for draw order.
 
 ---
 
