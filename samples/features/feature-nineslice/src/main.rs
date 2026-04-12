@@ -148,10 +148,8 @@ impl Game for NineSliceDemo {
         frame.clear_color = Color::from_rgba8(15, 15, 25, 255);
         let canvas = frame.canvas(0);
 
-        let w = world;
-        let p = |sx: f32, sy: f32, size: f32| -> (f32, f32) {
-            let v = w(sx, sy, size);
-            (v.x, v.y)
+        let p = |sx: f32, sy: f32, _size: f32| -> (f32, f32) {
+            (sx - hw, hh - sy)
         };
 
         let (tx, ty) = p(20.0, 10.0, 28.0);

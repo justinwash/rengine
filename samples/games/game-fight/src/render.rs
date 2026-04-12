@@ -240,7 +240,7 @@ fn draw_hud(game: &FightGame, hud: &mut Canvas, screen: (u32, u32), atlas: &Font
 
     hud.text(
         p1_bar_x,
-        bar_y - 6.0 - 16.0,
+        bar_y - 6.0,
         "1",
         16.0,
         Color::from_rgba8(80, 120, 255, 255),
@@ -249,7 +249,7 @@ fn draw_hud(game: &FightGame, hud: &mut Canvas, screen: (u32, u32), atlas: &Font
     );
     hud.text(
         p2_bar_x + bar_w - 10.0,
-        bar_y - 6.0 - 16.0,
+        bar_y - 6.0,
         "2",
         16.0,
         Color::from_rgba8(255, 80, 80, 255),
@@ -282,7 +282,7 @@ fn draw_hud(game: &FightGame, hud: &mut Canvas, screen: (u32, u32), atlas: &Font
     let round_x = -15.0;
     hud.text(
         round_x,
-        bar_y,
+        bar_y + 20.0,
         &game.sim.round_number.to_string(),
         20.0,
         Color::WHITE,
@@ -304,7 +304,7 @@ fn draw_hud(game: &FightGame, hud: &mut Canvas, screen: (u32, u32), atlas: &Font
         );
         hud.text(
             ko_x,
-            ko_y,
+            ko_y + 36.0,
             &winner.to_string(),
             36.0,
             Color::YELLOW,
@@ -335,7 +335,7 @@ fn draw_demo_overlay(game: &FightGame, hud: &mut Canvas, screen: (u32, u32), atl
 
     hud.text(
         -hw + 8.0,
-        banner_y + banner_h - 4.0 - 14.0,
+        banner_y + banner_h - 4.0,
         &game.demo_frame.to_string(),
         14.0,
         Color::from_rgba8(100, 255, 100, 255),
@@ -344,7 +344,7 @@ fn draw_demo_overlay(game: &FightGame, hud: &mut Canvas, screen: (u32, u32), atl
     );
     hud.text(
         -hw + 200.0,
-        banner_y + banner_h - 4.0 - 14.0,
+        banner_y + banner_h - 4.0,
         &elapsed_mins.to_string(),
         14.0,
         Color::WHITE,
@@ -353,7 +353,7 @@ fn draw_demo_overlay(game: &FightGame, hud: &mut Canvas, screen: (u32, u32), atl
     );
     hud.text(
         -hw + 240.0,
-        banner_y + banner_h - 4.0 - 14.0,
+        banner_y + banner_h - 4.0,
         &elapsed_rem.to_string(),
         14.0,
         Color::WHITE,
@@ -362,7 +362,7 @@ fn draw_demo_overlay(game: &FightGame, hud: &mut Canvas, screen: (u32, u32), atl
     );
     hud.text(
         hw - 40.0,
-        banner_y + banner_h - 4.0 - 14.0,
+        banner_y + banner_h - 4.0,
         "7",
         14.0,
         Color::from_rgba8(255, 200, 50, 255),
@@ -370,7 +370,7 @@ fn draw_demo_overlay(game: &FightGame, hud: &mut Canvas, screen: (u32, u32), atl
         atlas,
     );
 
-    let state_y = banner_y + 2.0;
+    let state_y = banner_y + 2.0 + 12.0;
     hud.text(
         -hw + 8.0,
         state_y,

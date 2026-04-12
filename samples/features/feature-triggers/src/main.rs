@@ -201,7 +201,7 @@ impl Game for TriggerDemo {
 
         canvas.text(
             -hw + 8.0,
-            hh - 24.0 - 9.0,
+            hh - 24.0,
             "Green=Checkpoint  Yellow=Pickup  Red=Damage  Purple=Layered(PLAYER only)",
             9.0,
             Color::new(0.7, 0.7, 0.7, 1.0),
