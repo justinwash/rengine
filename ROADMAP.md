@@ -57,6 +57,7 @@ Recently completed or partially completed:
 - Completed: trigger volumes and overlap sensors — `TriggerSystem` with `TriggerZone` (Rect + CollisionLayer), enter/stay/exit events via `OverlapEvent`, per-zone enable/disable, `feature-triggers` sample
 - Partial: 3D transforms still only support position-based translation; rotation and scale per draw are not yet supported (caused the recurring door visibility issue)
 - Completed: seeded RNG — `Rng` struct (xoshiro256**) with deterministic seeding, `engine.rng()` accessor on Engine and Engine3D, game-dev convenience methods (range, weighted, shuffle, pick, normal distribution, Vec2 helpers, fork), `feature-rng` sample
+- Completed: nine-slice rendering — `NineSlice` struct with uniform/asymmetric borders, `frame.draw_nine_slice()`, color tinting, z-order, `feature-nineslice` sample
 
 ---
 
