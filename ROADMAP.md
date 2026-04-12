@@ -56,7 +56,7 @@ Recently completed or partially completed:
 - Completed: collision layers and masks — `CollisionLayer` bitmask struct with named constants (WORLD, PLAYER, ENEMY, PROJECTILE, TRIGGER, UI), `interacts_with()` check, `aabb_overlap_layered()` for filtered AABB tests
 - Completed: trigger volumes and overlap sensors — `TriggerSystem` with `TriggerZone` (Rect + CollisionLayer), enter/stay/exit events via `OverlapEvent`, per-zone enable/disable, `feature-triggers` sample
 - Partial: 3D transforms still only support position-based translation; rotation and scale per draw are not yet supported (caused the recurring door visibility issue)
-- Completed: seeded RNG — `Rng` struct (xoshiro256**) with deterministic seeding, `engine.rng()` accessor on Engine and Engine3D, game-dev convenience methods (range, weighted, shuffle, pick, normal distribution, Vec2 helpers, fork), `feature-rng` sample
+- Completed: seeded RNG — `Rng` struct (xoshiro256\*\*) with deterministic seeding, `engine.rng()` accessor on Engine and Engine3D, game-dev convenience methods (range, weighted, shuffle, pick, normal distribution, Vec2 helpers, fork), `feature-rng` sample
 
 ---
 

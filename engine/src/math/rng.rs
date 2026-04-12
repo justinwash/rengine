@@ -55,7 +55,9 @@ impl Rng {
 
     /// Raw u64 in the full range.
     pub fn next_u64(&mut self) -> u64 {
-        let result = (self.state[1].wrapping_mul(5)).rotate_left(7).wrapping_mul(9);
+        let result = (self.state[1].wrapping_mul(5))
+            .rotate_left(7)
+            .wrapping_mul(9);
         let t = self.state[1] << 17;
 
         self.state[2] ^= self.state[0];
