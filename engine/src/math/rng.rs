@@ -10,7 +10,7 @@
 /// use rengine::Rng;
 ///
 /// let mut rng = Rng::new(42);
-/// let roll = rng.range(1, 7);        // 1..=6 (dice roll)
+/// let roll = rng.range(1, 6);        // 1..=6 (dice roll)
 /// let pct = rng.f32();               // 0.0..1.0
 /// let coin = rng.chance(0.5);        // true/false
 /// let pick = rng.pick(&["a", "b", "c"]);
@@ -80,7 +80,11 @@ impl Rng {
     }
 
     /// Random `f32` in `[min, max)`.
+    /// Returns `min` if `min >= max`.
     pub fn f32_range(&mut self, min: f32, max: f32) -> f32 {
+        if min >= max {
+            return min;
+        }
         min + self.f32() * (max - min)
     }
 
@@ -91,7 +95,25 @@ impl Rng {
 
     /// Returns `true` with probability `p` (0.0 = never, 1.0 = always).
     pub fn chance(&mut self, p: f32) -> bool {
+        debug_assert!(
+            p.is_finite() && (0.0..=1.0).contains(&p),
+            "chance(p) requires p to be finite and within [0.0, 1.0], got {p}"
+        );
         self.f32() < p
+    }
+
+    /// Unbiased random `u64` in `[0, n)` using rejection sampling.
+    fn below(&mut self, n: u64) -> u64 {
+        if n <= 1 {
+            return 0;
+        }
+        let threshold = n.wrapping_neg() % n; // (2^64 - n) % n
+        loop {
+            let r = self.next_u64();
+            if r >= threshold {
+                return r % n;
+            }
+        }
     }
 
     /// Random integer in `[min, max]` (inclusive on both ends).
@@ -100,7 +122,7 @@ impl Rng {
             return min;
         }
         let span = (max - min + 1) as u64;
-        min + (self.next_u64() % span) as i32
+        min + self.below(span) as i32
     }
 
     /// Random `u32` in `[0, n)`.
@@ -108,7 +130,7 @@ impl Rng {
         if n == 0 {
             return 0;
         }
-        (self.next_u64() % n as u64) as u32
+        self.below(n as u64) as u32
     }
 
     /// Random `usize` in `[0, n)`.
@@ -116,7 +138,7 @@ impl Rng {
         if n == 0 {
             return 0;
         }
-        (self.next_u64() % n as u64) as usize
+        self.below(n as u64) as usize
     }
 
     /// Pick a random element from a slice. Panics if empty.
@@ -147,19 +169,29 @@ impl Rng {
     }
 
     /// Roll a weighted index. `weights` are relative (don't need to sum to 1).
-    /// Returns the index of the chosen weight. Panics if `weights` is empty.
+    /// Returns the index of the chosen weight. Panics if `weights` is empty
+    /// or contains a negative or non-finite weight.
     pub fn weighted(&mut self, weights: &[f32]) -> usize {
         assert!(!weights.is_empty(), "weighted() called with empty weights");
+        for &w in weights {
+            assert!(
+                w.is_finite() && w >= 0.0,
+                "weighted() called with negative or non-finite weight"
+            );
+        }
         let total: f32 = weights.iter().sum();
         if total <= 0.0 {
             return self.usize(weights.len());
         }
         let mut roll = self.f32() * total;
         for (i, &w) in weights.iter().enumerate() {
-            roll -= w;
-            if roll <= 0.0 {
+            if w == 0.0 {
+                continue;
+            }
+            if roll < w {
                 return i;
             }
+            roll -= w;
         }
         weights.len() - 1
     }

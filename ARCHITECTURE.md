@@ -1397,7 +1397,7 @@ pub struct TimeState {
 
 ### 13.3 [`Rng`](https://github.com/justinwash/rengine/blob/master/engine/src/math/rng.rs) — Seeded Random Number Generator
 
-Zero-dependency seeded PRNG based on **xoshiro256**** — fast, high-quality, deterministic for a given seed.
+Zero-dependency seeded PRNG based on **xoshiro256\*\*** — fast, high-quality, deterministic for a given seed.
 
 ```rust
 let mut rng = Rng::new(42);         // deterministic seed
@@ -1406,7 +1406,7 @@ let mut child = rng.fork();         // independent sub-stream
 ```
 
 **Accessible on Engine:**
-- `engine.rng()` → `&mut Rng` (seeded from system time at startup)
+- `engine.rng()` → `RefMut<Rng>` (seeded from system time at startup; uses interior mutability so it works from `&Engine`/`&Engine3D`)
 
 **Core methods:**
 | Method | Returns | Description |
