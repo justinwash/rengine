@@ -60,12 +60,16 @@ impl NineSlice {
         debug_assert!(
             left + right <= texture_width,
             "NineSlice left + right ({} + {}) exceeds texture_width ({})",
-            left, right, texture_width
+            left,
+            right,
+            texture_width
         );
         debug_assert!(
             top + bottom <= texture_height,
             "NineSlice top + bottom ({} + {}) exceeds texture_height ({})",
-            top, bottom, texture_height
+            top,
+            bottom,
+            texture_height
         );
         Self {
             texture,
@@ -166,17 +170,17 @@ impl NineSlice {
         // UV: top of texture (v=0) maps to top of sprite (high Y)
         let cells: [(f32, f32, f32, f32, f32, f32, f32, f32); 9] = [
             // Bottom row (low Y = bottom of texture)
-            (x0, y0, x1 - x0, y1 - y0, 0.0, vb, ul, 1.0 - vb),       // BL corner
-            (x1, y0, x2 - x1, y1 - y0, ul, vb, ur - ul, 1.0 - vb),   // Bottom edge
-            (x2, y0, x3 - x2, y1 - y0, ur, vb, 1.0 - ur, 1.0 - vb),  // BR corner
+            (x0, y0, x1 - x0, y1 - y0, 0.0, vb, ul, 1.0 - vb), // BL corner
+            (x1, y0, x2 - x1, y1 - y0, ul, vb, ur - ul, 1.0 - vb), // Bottom edge
+            (x2, y0, x3 - x2, y1 - y0, ur, vb, 1.0 - ur, 1.0 - vb), // BR corner
             // Middle row
-            (x0, y1, x1 - x0, y2 - y1, 0.0, vt, ul, vb - vt),        // Left edge
-            (x1, y1, x2 - x1, y2 - y1, ul, vt, ur - ul, vb - vt),    // Center
-            (x2, y1, x3 - x2, y2 - y1, ur, vt, 1.0 - ur, vb - vt),   // Right edge
+            (x0, y1, x1 - x0, y2 - y1, 0.0, vt, ul, vb - vt), // Left edge
+            (x1, y1, x2 - x1, y2 - y1, ul, vt, ur - ul, vb - vt), // Center
+            (x2, y1, x3 - x2, y2 - y1, ur, vt, 1.0 - ur, vb - vt), // Right edge
             // Top row (high Y = top of texture)
-            (x0, y2, x1 - x0, y3 - y2, 0.0, 0.0, ul, vt),            // TL corner
-            (x1, y2, x2 - x1, y3 - y2, ul, 0.0, ur - ul, vt),        // Top edge
-            (x2, y2, x3 - x2, y3 - y2, ur, 0.0, 1.0 - ur, vt),       // TR corner
+            (x0, y2, x1 - x0, y3 - y2, 0.0, 0.0, ul, vt), // TL corner
+            (x1, y2, x2 - x1, y3 - y2, ul, 0.0, ur - ul, vt), // Top edge
+            (x2, y2, x3 - x2, y3 - y2, ur, 0.0, 1.0 - ur, vt), // TR corner
         ];
 
         let mut out = Vec::with_capacity(9);
