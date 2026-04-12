@@ -1,0 +1,6 @@
+{
+  "gravity": -980.0,
+  "jump_force": 500.0,
+  "move_speed": 250.0,
+  "coin_anim_fps": 8.0
+}
