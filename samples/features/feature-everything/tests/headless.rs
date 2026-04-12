@@ -1,6 +1,13 @@
 use std::process::Command;
+use std::time::{Duration, Instant};
 
 fn game_binary() -> String {
+    // Prefer Cargo's injected env var (set for integration tests when
+    // the crate defines a [[bin]] target). Fall back to walking from
+    // the test exe for older Cargo versions or unusual layouts.
+    if let Ok(path) = std::env::var("CARGO_BIN_EXE_rengine-feature-everything") {
+        return path;
+    }
     let test_exe = std::env::current_exe().expect("current_exe");
     let target_dir = test_exe
         .parent()
@@ -21,15 +28,36 @@ fn game_binary() -> String {
 fn headless_demo() {
     let bin = game_binary();
     let frames = "600";
+    let timeout = Duration::from_secs(60);
 
-    let output = Command::new(&bin)
+    let mut child = Command::new(&bin)
         .args(["--headless", "--demo", "--frames", frames])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
-        .expect("failed to spawn kitchen-sink binary")
-        .wait_with_output()
-        .expect("failed to wait for output");
+        .expect("failed to spawn kitchen-sink binary");
+
+    let start = Instant::now();
+    let output = loop {
+        match child.try_wait() {
+            Ok(Some(_status)) => break child.wait_with_output().expect("failed to collect output"),
+            Ok(None) => {
+                if start.elapsed() > timeout {
+                    let _ = child.kill();
+                    let out = child.wait_with_output().unwrap_or_else(|_| {
+                        panic!("headless demo timed out after {timeout:?} and failed to collect output");
+                    });
+                    let stdout = String::from_utf8_lossy(&out.stdout);
+                    let stderr = String::from_utf8_lossy(&out.stderr);
+                    panic!(
+                        "headless demo timed out after {timeout:?}\nstdout:\n{stdout}\nstderr:\n{stderr}"
+                    );
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            Err(e) => panic!("error waiting for child process: {e}"),
+        }
+    };
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
