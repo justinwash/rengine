@@ -105,33 +105,35 @@ impl Game for RngDemo {
 
     fn render(&mut self, engine: &Engine, frame: &mut Frame) {
         let (sw, sh) = engine.window_size();
+        let hw = sw as f32 / 2.0;
+        let hh = sh as f32 / 2.0;
         let atlas = engine.font_atlas();
         let canvas = frame.canvas(0);
 
         canvas.rect(
-            0.0, 0.0,
+            -hw, -hh,
             sw as f32, sh as f32,
             Color::from_rgba8(20, 20, 30, 255),
             (sw, sh),
         );
 
 
-        canvas.text(20.0, 20.0, "Rng Feature Demo", 28.0, Color::WHITE, (sw, sh), atlas);
+        canvas.text(-hw + 20.0, hh - 20.0 - 28.0, "Rng Feature Demo", 28.0, Color::WHITE, (sw, sh), atlas);
         canvas.text(
-            20.0, 52.0,
+            -hw + 20.0, hh - 52.0 - 18.0,
             &format!("Seed: {}", self.seed),
             18.0,
             Color::from_rgba8(180, 180, 180, 255),
             (sw, sh), atlas,
         );
 
-        let mut y = 90.0;
+        let mut y = hh - 90.0 - 16.0;
         for line in &self.results {
-            canvas.text(20.0, y, line, 16.0, Color::from_rgba8(200, 220, 255, 255), (sw, sh), atlas);
-            y += 22.0;
+            canvas.text(-hw + 20.0, y, line, 16.0, Color::from_rgba8(200, 220, 255, 255), (sw, sh), atlas);
+            y -= 22.0;
         }
 
-        canvas.text(20.0, y + 20.0, "ESC to quit", 14.0, Color::from_rgba8(120, 120, 120, 255), (sw, sh), atlas);
+        canvas.text(-hw + 20.0, y - 20.0 - 14.0, "ESC to quit", 14.0, Color::from_rgba8(120, 120, 120, 255), (sw, sh), atlas);
     }
 
     fn should_exit(&self) -> bool {

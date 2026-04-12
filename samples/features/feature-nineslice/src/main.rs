@@ -129,175 +129,107 @@ impl Game for NineSliceDemo {
         let (sw, sh) = engine.window_size();
         let atlas = engine.font_atlas();
         let t = self.time;
+        let hw = sw as f32 / 2.0;
+        let hh = sh as f32 / 2.0;
 
-        // Animated sizes — smooth ping-pong using sin
-        let anim_w1 = lerp(60.0, 200.0, (t * 0.8).sin() * 0.5 + 0.5);
-        let anim_h1 = lerp(40.0, 150.0, (t * 1.2).sin() * 0.5 + 0.5);
-        let anim_w2 = lerp(100.0, 400.0, (t * 0.6).sin() * 0.5 + 0.5);
-
-        // Layout: two rows with generous spacing
-        // Row 1 (y=90): static panels — Small, Medium, Wide
-        // Row 2 (y=320): Tall, Tinted, comparison textures
-        // Row 3 (y=530): animated panels
+        // Convert screen-layout coords (Y-down, top-left origin) to world
+        // coords (Y-up, center origin). Works for both sprites and canvas now
+        // that they share the same coordinate system.
+        let world = |sx: f32, sy: f32, h: f32| -> Vec2 {
+            Vec2::new(sx - hw, hh - sy - h)
+        };
 
         let label_color = Color::from_rgba8(200, 200, 255, 255);
-        let label_size = 14.0;
-        let row1_y = 90.0;
-        let row2_y = 310.0;
-        let row3_y = 540.0;
+        let anim_label_color = Color::from_rgba8(150, 255, 220, 255);
+        let ls = 14.0;
 
-        // --- Static panels ---
-        let static_panels: &[(&str, f32, f32, f32, f32)] = &[
-            ("Small (60x40)", 30.0, row1_y, 60.0, 40.0),
-            ("Medium (200x120)", 130.0, row1_y, 200.0, 120.0),
-            ("Wide (400x50)", 370.0, row1_y, 400.0, 50.0),
-            ("Tall (80x250)", 30.0, row2_y, 80.0, 250.0),
-            ("Large (500x200)", 150.0, row2_y, 500.0, 200.0),
+        // ---- Layout in screen-space (Y-down, top-left origin, 800x600) ----
+
+        // Row 1: short static panels
+        let r1_lbl_y = 66.0;
+        let r1_top = 82.0;
+        let panels1: &[(&str, f32, f32, f32)] = &[
+            ("Small (60x40)", 20.0, 60.0, 40.0),
+            ("Medium (150x100)", 100.0, 150.0, 100.0),
+            ("Wide (300x40)", 280.0, 300.0, 40.0),
         ];
-
-        for &(_label, x, y, w, h) in static_panels {
-            frame.draw_nine_slice(&self.panel, Vec2::new(x, y), Vec2::new(w, h));
+        for &(_, sx, w, h) in panels1 {
+            frame.draw_nine_slice(&self.panel, world(sx, r1_top, h), Vec2::new(w, h));
         }
+        // Source texture 1:1 and naive stretch
+        frame.draw(self.panel.texture, world(620.0, r1_top, 32.0), Vec2::new(32.0, 32.0));
+        frame.draw(self.panel.texture, world(680.0, r1_top, 50.0), Vec2::new(100.0, 50.0));
 
-        // Tinted panel
-        let tinted = self
-            .panel
-            .clone()
-            .with_color(Color::from_rgba8(255, 180, 100, 255));
-        frame.draw_nine_slice(&tinted, Vec2::new(700.0, row2_y), Vec2::new(180.0, 150.0));
+        // Row 2: taller panels + tinted
+        let r2_lbl_y = 200.0;
+        let r2_top = 216.0;
+        let panels2: &[(&str, f32, f32, f32)] = &[
+            ("Tall (60x160)", 20.0, 60.0, 160.0),
+            ("Large (300x140)", 100.0, 300.0, 140.0),
+        ];
+        for &(_, sx, w, h) in panels2 {
+            frame.draw_nine_slice(&self.panel, world(sx, r2_top, h), Vec2::new(w, h));
+        }
+        let tinted = self.panel.clone().with_color(Color::from_rgba8(255, 180, 100, 255));
+        frame.draw_nine_slice(&tinted, world(440.0, r2_top, 130.0), Vec2::new(160.0, 130.0));
 
-        // Source texture at 1:1 for comparison
-        frame.draw(
-            self.panel.texture,
-            Vec2::new(700.0, row1_y),
-            Vec2::new(32.0, 32.0),
-        );
+        // Row 3: animated panels
+        let r3_lbl_y = 400.0;
+        let r3_top = 416.0;
+        let anim_w1 = lerp(50.0, 150.0, (t * 0.8).sin() * 0.5 + 0.5);
+        let anim_h1 = lerp(40.0, 120.0, (t * 1.2).sin() * 0.5 + 0.5);
+        let anim_w2 = lerp(80.0, 280.0, (t * 0.6).sin() * 0.5 + 0.5);
+        let breath = lerp(50.0, 120.0, (t * 1.5).sin() * 0.5 + 0.5);
 
-        // Naive stretch for comparison
-        frame.draw(
-            self.panel.texture,
-            Vec2::new(760.0, row1_y),
-            Vec2::new(120.0, 60.0),
-        );
+        let anim_panel = self.panel.clone().with_color(Color::from_rgba8(100, 220, 180, 200));
+        frame.draw_nine_slice(&anim_panel, world(20.0, r3_top, anim_h1), Vec2::new(anim_w1, anim_h1));
+        frame.draw_nine_slice(&anim_panel, world(210.0, r3_top, 60.0), Vec2::new(anim_w2, 60.0));
+        frame.draw_nine_slice(&anim_panel, world(550.0, r3_top, breath), Vec2::new(breath, breath));
 
-        // --- Animated panels ---
-        let anim_color = Color::from_rgba8(100, 220, 180, 200);
-        let anim_panel = self.panel.clone().with_color(anim_color);
-        frame.draw_nine_slice(
-            &anim_panel,
-            Vec2::new(30.0, row3_y),
-            Vec2::new(anim_w1, anim_h1),
-        );
-        frame.draw_nine_slice(
-            &anim_panel,
-            Vec2::new(280.0, row3_y),
-            Vec2::new(anim_w2, 80.0),
-        );
-        // Breathing square
-        let breath = lerp(60.0, 160.0, (t * 1.5).sin() * 0.5 + 0.5);
-        frame.draw_nine_slice(
-            &anim_panel,
-            Vec2::new(730.0, row3_y),
-            Vec2::new(breath, breath),
-        );
-
-        // --- Canvas text overlay ---
+        // ---- Canvas text (same world coords as sprites) ----
         frame.clear_color = Color::from_rgba8(15, 15, 25, 255);
         let canvas = frame.canvas(0);
 
+        let w = world; // shorthand
+        let p = |sx: f32, sy: f32, size: f32| -> (f32, f32) {
+            let v = w(sx, sy, size);
+            (v.x, v.y)
+        };
+
+        let (tx, ty) = p(20.0, 10.0, 28.0);
+        canvas.text(tx, ty, "NineSlice Feature Demo", 28.0, Color::WHITE, (sw, sh), atlas);
+        let (tx, ty) = p(20.0, 42.0, 14.0);
         canvas.text(
-            20.0,
-            20.0,
-            "NineSlice Feature Demo",
-            28.0,
-            Color::WHITE,
-            (sw, sh),
-            atlas,
-        );
-        canvas.text(
-            20.0,
-            52.0,
+            tx, ty,
             "Same 32x32 texture drawn at different sizes - corners stay sharp",
-            16.0,
-            Color::from_rgba8(180, 180, 180, 255),
-            (sw, sh),
-            atlas,
+            14.0, Color::from_rgba8(180, 180, 180, 255), (sw, sh), atlas,
         );
 
-        // Static panel labels
-        for &(label, x, y, _w, _h) in static_panels {
-            canvas.text(x, y - 18.0, label, label_size, label_color, (sw, sh), atlas);
+        for &(lbl, sx, _, _) in panels1 {
+            let (tx, ty) = p(sx, r1_lbl_y, ls);
+            canvas.text(tx, ty, lbl, ls, label_color, (sw, sh), atlas);
         }
+        let (tx, ty) = p(620.0, r1_lbl_y, ls);
+        canvas.text(tx, ty, "Source (1:1)", ls, label_color, (sw, sh), atlas);
+        let (tx, ty) = p(680.0, r1_lbl_y, ls);
+        canvas.text(tx, ty, "Naive stretch", ls, label_color, (sw, sh), atlas);
 
-        canvas.text(
-            700.0,
-            row2_y - 18.0,
-            "Tinted (180x150)",
-            label_size,
-            Color::from_rgba8(255, 200, 150, 255),
-            (sw, sh),
-            atlas,
-        );
+        for &(lbl, sx, _, _) in panels2 {
+            let (tx, ty) = p(sx, r2_lbl_y, ls);
+            canvas.text(tx, ty, lbl, ls, label_color, (sw, sh), atlas);
+        }
+        let (tx, ty) = p(440.0, r2_lbl_y, ls);
+        canvas.text(tx, ty, "Tinted (160x130)", ls, Color::from_rgba8(255, 200, 150, 255), (sw, sh), atlas);
 
-        // Comparison labels
-        canvas.text(
-            700.0,
-            row1_y - 18.0,
-            "Source (1:1)",
-            label_size,
-            label_color,
-            (sw, sh),
-            atlas,
-        );
-        canvas.text(
-            760.0,
-            row1_y - 18.0,
-            "Naive stretch",
-            label_size,
-            label_color,
-            (sw, sh),
-            atlas,
-        );
+        let (tx, ty) = p(20.0, r3_lbl_y, ls);
+        canvas.text(tx, ty, "Animated (resizing)", ls, anim_label_color, (sw, sh), atlas);
+        let (tx, ty) = p(210.0, r3_lbl_y, ls);
+        canvas.text(tx, ty, "Animated (width)", ls, anim_label_color, (sw, sh), atlas);
+        let (tx, ty) = p(550.0, r3_lbl_y, ls);
+        canvas.text(tx, ty, "Animated (breathing)", ls, anim_label_color, (sw, sh), atlas);
 
-        // Animated panel labels
-        let anim_label_color = Color::from_rgba8(150, 255, 220, 255);
-        canvas.text(
-            30.0,
-            row3_y - 18.0,
-            "Animated (resizing)",
-            label_size,
-            anim_label_color,
-            (sw, sh),
-            atlas,
-        );
-        canvas.text(
-            280.0,
-            row3_y - 18.0,
-            "Animated (width stretch)",
-            label_size,
-            anim_label_color,
-            (sw, sh),
-            atlas,
-        );
-        canvas.text(
-            730.0,
-            row3_y - 18.0,
-            "Animated (breathing)",
-            label_size,
-            anim_label_color,
-            (sw, sh),
-            atlas,
-        );
-
-        canvas.text(
-            20.0,
-            sh as f32 - 30.0,
-            "ESC to quit",
-            14.0,
-            Color::from_rgba8(120, 120, 120, 255),
-            (sw, sh),
-            atlas,
-        );
+        let (tx, ty) = p(20.0, sh as f32 - 24.0, 14.0);
+        canvas.text(tx, ty, "ESC to quit", 14.0, Color::from_rgba8(120, 120, 120, 255), (sw, sh), atlas);
     }
 
     fn should_exit(&self) -> bool {
@@ -308,8 +240,6 @@ impl Game for NineSliceDemo {
 fn main() {
     let config = EngineConfig {
         title: "Feature: Nine-Slice".into(),
-        width: 960,
-        height: 760,
         show_fps: false,
         ..Default::default()
     };

@@ -40,22 +40,22 @@ pub fn draw(game: &FpsMpGame, engine: &Engine3D, frame: &mut Frame3D) {
     }
 
     let screen_size = engine.window_size();
-    let cx = screen_size.0 as f32 / 2.0;
-    let cy = screen_size.1 as f32 / 2.0;
+    let hw = screen_size.0 as f32 / 2.0;
+    let hh = screen_size.1 as f32 / 2.0;
     let size = 10.0_f32;
     let thickness = 2.0_f32;
     let crosshair = frame.canvas(0);
     crosshair.rect(
-        cx - size,
-        cy - thickness / 2.0,
+        -size,
+        -thickness / 2.0,
         size * 2.0,
         thickness,
         Color::WHITE,
         screen_size,
     );
     crosshair.rect(
-        cx - thickness / 2.0,
-        cy - size,
+        -thickness / 2.0,
+        -size,
         thickness,
         size * 2.0,
         Color::WHITE,
@@ -65,8 +65,8 @@ pub fn draw(game: &FpsMpGame, engine: &Engine3D, frame: &mut Frame3D) {
     let hp_frac = player.hp.max(0) as f32 / crate::MAX_HP as f32;
     let bar_w = 200.0_f32;
     let bar_h = 16.0_f32;
-    let bar_x = 20.0_f32;
-    let bar_y = screen_size.1 as f32 - 40.0;
+    let bar_x = -hw + 20.0;
+    let bar_y = -hh + 40.0 - bar_h;
 
     let hud = frame.canvas(1);
     hud.rect(
@@ -86,7 +86,7 @@ pub fn draw(game: &FpsMpGame, engine: &Engine3D, frame: &mut Frame3D) {
     };
     hud.rect(bar_x, bar_y, bar_w * hp_frac, bar_h, hp_color, screen_size);
 
-    let score_y = bar_y - 24.0;
+    let score_y = bar_y + bar_h + 8.0;
     let my_score = player.score;
     let opp_score = game.sim.players[1 - local].score;
     let font = engine.font_atlas();

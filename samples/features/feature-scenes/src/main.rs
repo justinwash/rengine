@@ -9,8 +9,10 @@ struct SceneCounters(HashMap<&'static str, u32>);
 
 fn draw_label(frame: &mut Frame, engine: &Engine, y: f32, size: f32, color: Color, text: &str) {
     let screen = engine.window_size();
+    let hw = screen.0 as f32 / 2.0;
+    let hh = screen.1 as f32 / 2.0;
     let canvas = frame.canvas(0);
-    canvas.text(20.0, y, text, size, color, screen, engine.font_atlas());
+    canvas.text(-hw + 20.0, hh - y - size, text, size, color, screen, engine.font_atlas());
 }
 
 
@@ -137,18 +139,20 @@ impl Scene for PauseOverlay {
 
     fn render(&self, engine: &Engine, _globals: &Globals, frame: &mut Frame) {
         let (w, h) = engine.window_size();
+        let hw = w as f32 / 2.0;
+        let hh = h as f32 / 2.0;
         let canvas = frame.canvas(1);
         canvas.rect(
-            0.0,
-            0.0,
+            -hw,
+            -hh,
             w as f32,
             h as f32,
             Color::new(0.0, 0.0, 0.0, 0.6),
             (w, h),
         );
         canvas.text(
-            20.0,
-            200.0,
+            -hw + 20.0,
+            hh - 200.0 - 28.0,
             "PAUSED  —  press P or Esc to resume",
             28.0,
             Color::WHITE,
