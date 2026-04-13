@@ -182,11 +182,14 @@ fn draw_fighter(game: &FightGame, fighter: &FighterData, tex: &FighterTextures, 
 }
 
 fn draw_hud(game: &FightGame, hud: &mut Canvas, screen: (u32, u32), atlas: &FontAtlas) {
+    let hw = screen.0 as f32 / 2.0;
+    let hh = screen.1 as f32 / 2.0;
+
     let bar_w = 300.0;
     let bar_h = 24.0;
-    let bar_y = 16.0;
+    let bar_y = hh - 16.0 - bar_h;
 
-    let p1_bar_x = 20.0;
+    let p1_bar_x = -hw + 20.0;
     hud.rect(
         p1_bar_x - 2.0,
         bar_y - 2.0,
@@ -207,7 +210,7 @@ fn draw_hud(game: &FightGame, hud: &mut Canvas, screen: (u32, u32), atlas: &Font
     let p1_color = hp_color(game.sim.p1.hp);
     hud.rect(p1_bar_x, bar_y, p1_fill, bar_h, p1_color, screen);
 
-    let p2_bar_x = SCREEN_W as f32 - 20.0 - bar_w;
+    let p2_bar_x = hw - 20.0 - bar_w;
     hud.rect(
         p2_bar_x - 2.0,
         bar_y - 2.0,
@@ -237,7 +240,7 @@ fn draw_hud(game: &FightGame, hud: &mut Canvas, screen: (u32, u32), atlas: &Font
 
     hud.text(
         p1_bar_x,
-        bar_y + bar_h + 6.0,
+        bar_y - 6.0,
         "1",
         16.0,
         Color::from_rgba8(80, 120, 255, 255),
@@ -246,7 +249,7 @@ fn draw_hud(game: &FightGame, hud: &mut Canvas, screen: (u32, u32), atlas: &Font
     );
     hud.text(
         p2_bar_x + bar_w - 10.0,
-        bar_y + bar_h + 6.0,
+        bar_y - 6.0,
         "2",
         16.0,
         Color::from_rgba8(255, 80, 80, 255),
@@ -258,7 +261,7 @@ fn draw_hud(game: &FightGame, hud: &mut Canvas, screen: (u32, u32), atlas: &Font
     for i in 0..game.sim.p1.wins {
         hud.rect(
             p1_bar_x + 30.0 + i as f32 * 16.0,
-            bar_y + bar_h + 4.0,
+            bar_y - 4.0 - marker_size,
             marker_size,
             marker_size,
             Color::YELLOW,
@@ -268,7 +271,7 @@ fn draw_hud(game: &FightGame, hud: &mut Canvas, screen: (u32, u32), atlas: &Font
     for i in 0..game.sim.p2.wins {
         hud.rect(
             p2_bar_x + bar_w - 40.0 - i as f32 * 16.0,
-            bar_y + bar_h + 4.0,
+            bar_y - 4.0 - marker_size,
             marker_size,
             marker_size,
             Color::YELLOW,
@@ -276,10 +279,10 @@ fn draw_hud(game: &FightGame, hud: &mut Canvas, screen: (u32, u32), atlas: &Font
         );
     }
 
-    let round_x = SCREEN_W as f32 / 2.0 - 15.0;
+    let round_x = -15.0;
     hud.text(
         round_x,
-        bar_y,
+        bar_y + 20.0,
         &game.sim.round_number.to_string(),
         20.0,
         Color::WHITE,
@@ -289,8 +292,8 @@ fn draw_hud(game: &FightGame, hud: &mut Canvas, screen: (u32, u32), atlas: &Font
 
     if game.sim.round_pause > 0.0 {
         let winner = if game.sim.p1.hp <= 0 { 2u32 } else { 1 };
-        let ko_x = SCREEN_W as f32 / 2.0 - 30.0;
-        let ko_y = SCREEN_H as f32 / 2.0 - 30.0;
+        let ko_x = -30.0;
+        let ko_y = -30.0;
         hud.rect(
             ko_x - 10.0,
             ko_y - 10.0,
@@ -301,7 +304,7 @@ fn draw_hud(game: &FightGame, hud: &mut Canvas, screen: (u32, u32), atlas: &Font
         );
         hud.text(
             ko_x,
-            ko_y,
+            ko_y + 36.0,
             &winner.to_string(),
             36.0,
             Color::YELLOW,
@@ -312,24 +315,27 @@ fn draw_hud(game: &FightGame, hud: &mut Canvas, screen: (u32, u32), atlas: &Font
 }
 
 fn draw_demo_overlay(game: &FightGame, hud: &mut Canvas, screen: (u32, u32), atlas: &FontAtlas) {
+    let hw = screen.0 as f32 / 2.0;
+    let hh = screen.1 as f32 / 2.0;
+
     let elapsed_secs = game.demo_frame / 60;
     let elapsed_mins = elapsed_secs / 60;
     let elapsed_rem = elapsed_secs % 60;
 
     let banner_h = 36.0;
-    let banner_y = SCREEN_H as f32 - banner_h;
+    let banner_y = -hh;
     hud.rect(
-        0.0,
+        -hw,
         banner_y,
-        SCREEN_W as f32,
+        screen.0 as f32,
         banner_h,
         Color::from_rgba8(0, 60, 0, 220),
         screen,
     );
 
     hud.text(
-        8.0,
-        banner_y + 4.0,
+        -hw + 8.0,
+        banner_y + banner_h - 4.0,
         &game.demo_frame.to_string(),
         14.0,
         Color::from_rgba8(100, 255, 100, 255),
@@ -337,8 +343,8 @@ fn draw_demo_overlay(game: &FightGame, hud: &mut Canvas, screen: (u32, u32), atl
         atlas,
     );
     hud.text(
-        200.0,
-        banner_y + 4.0,
+        -hw + 200.0,
+        banner_y + banner_h - 4.0,
         &elapsed_mins.to_string(),
         14.0,
         Color::WHITE,
@@ -346,8 +352,8 @@ fn draw_demo_overlay(game: &FightGame, hud: &mut Canvas, screen: (u32, u32), atl
         atlas,
     );
     hud.text(
-        240.0,
-        banner_y + 4.0,
+        -hw + 240.0,
+        banner_y + banner_h - 4.0,
         &elapsed_rem.to_string(),
         14.0,
         Color::WHITE,
@@ -355,8 +361,8 @@ fn draw_demo_overlay(game: &FightGame, hud: &mut Canvas, screen: (u32, u32), atl
         atlas,
     );
     hud.text(
-        SCREEN_W as f32 - 40.0,
-        banner_y + 4.0,
+        hw - 40.0,
+        banner_y + banner_h - 4.0,
         "7",
         14.0,
         Color::from_rgba8(255, 200, 50, 255),
@@ -364,9 +370,9 @@ fn draw_demo_overlay(game: &FightGame, hud: &mut Canvas, screen: (u32, u32), atl
         atlas,
     );
 
-    let state_y = banner_y + 20.0;
+    let state_y = banner_y + 2.0 + 12.0;
     hud.text(
-        8.0,
+        -hw + 8.0,
         state_y,
         &game.sim.p1.hp.max(0).to_string(),
         12.0,
@@ -375,7 +381,7 @@ fn draw_demo_overlay(game: &FightGame, hud: &mut Canvas, screen: (u32, u32), atl
         atlas,
     );
     hud.text(
-        80.0,
+        -hw + 80.0,
         state_y,
         &game.sim.p2.hp.max(0).to_string(),
         12.0,

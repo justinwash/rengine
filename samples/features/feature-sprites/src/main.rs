@@ -95,10 +95,12 @@ impl Game for SpriteShowcase {
         let checker = self.checker;
 
         let (sw, sh) = engine.window_size();
+        let hw = sw as f32 / 2.0;
+        let hh = sh as f32 / 2.0;
         let canvas = frame.canvas(0);
         canvas.text(
-            8.0,
-            8.0,
+            -hw + 8.0,
+            hh - 8.0,
             "1:Basic  2:Tint  3:UV  4:Flip  5:Rotation  6:Z-Order  |  0/Space:Overview  +/-:Zoom",
             11.0,
             Color::WHITE,

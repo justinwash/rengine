@@ -7,12 +7,10 @@ mod state;
 use rengine::*;
 use state::IsoGame;
 
-
 pub const TILE_W: f32 = 64.0;
 pub const TILE_H: f32 = 32.0;
 pub const MAP_SIZE: i32 = 15;
 pub const PLAYER_SPEED: f32 = 120.0;
-
 
 impl Game for IsoGame {
     fn new(engine: &mut Engine) -> Self {
@@ -59,7 +57,6 @@ impl Game for IsoGame {
         render::draw(self, frame);
     }
 }
-
 
 fn main() {
     rengine::run::<IsoGame>(EngineConfig {

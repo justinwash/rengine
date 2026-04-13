@@ -4,7 +4,6 @@ use rengine::{aabb_overlap, Rect, Vec2};
 use crate::state::{Enemy, TopDown};
 use crate::{MAP_H, MAP_W, PLAYER_SIZE, PLAYER_SPEED, TILE_SIZE};
 
-
 pub fn move_player(game: &mut TopDown, dir: Vec2, dt: f32) {
 
     game.player.pos.x += dir.x * PLAYER_SPEED * dt;
@@ -20,7 +19,6 @@ pub fn move_player(game: &mut TopDown, dir: Vec2, dt: f32) {
     }
 }
 
-
 pub fn collect_gems(game: &mut TopDown) {
     let player_rect = Rect::from_pos_size(game.player.pos, Vec2::splat(PLAYER_SIZE));
     for gem in &mut game.gems {
@@ -34,7 +32,6 @@ pub fn collect_gems(game: &mut TopDown) {
         }
     }
 }
-
 
 pub fn update_enemies(enemies: &mut [Enemy], tilemap: &TileMap, dt: f32) {
     for enemy in enemies.iter_mut() {
@@ -51,7 +48,6 @@ pub fn update_enemies(enemies: &mut [Enemy], tilemap: &TileMap, dt: f32) {
         }
     }
 }
-
 
 pub fn collide_stone(tilemap: &TileMap, rect: &Rect) -> Option<Vec2> {
     let col_min = ((rect.x / TILE_SIZE).floor() as isize).max(0) as usize;

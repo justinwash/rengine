@@ -1,6 +1,5 @@
 use std::time::Instant;
 
-
 pub struct TimeState {
     start_time: Instant,
     last_frame: Instant,
@@ -25,11 +24,9 @@ impl TimeState {
         }
     }
 
-
     pub fn dt(&self) -> f32 {
         self.dt
     }
-
 
     pub fn total_time(&self) -> f32 {
         self.total_time
@@ -70,16 +67,12 @@ impl TimeState {
         self.last_frame = now;
         self.frame_count += 1;
         self.accumulator += self.dt;
-        // Cap accumulator to prevent spiral-of-death with very small fixed_dt
         let max_accumulator = self.fixed_dt * 10.0;
         if self.accumulator > max_accumulator {
             self.accumulator = max_accumulator;
         }
     }
 
-    /// Consume one fixed-step tick from the accumulator. Returns `true` if a
-    /// step was consumed (caller should run fixed_update), `false` when the
-    /// accumulator is drained.
     pub(crate) fn consume_fixed_step(&mut self) -> bool {
         if self.accumulator >= self.fixed_dt {
             self.accumulator -= self.fixed_dt;

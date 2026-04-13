@@ -25,7 +25,7 @@ pub use input::{ActionMap, AxisMapping, Binding, GamepadAxis};
 pub use math::Rect;
 pub use math::Rng;
 pub use math::TimeState;
-pub use renderer::{Camera2D, CameraBounds, DrawParams, Frame, TextureId};
+pub use renderer::{Camera2D, CameraBounds, DrawParams, Frame, NineSlice, TextureId};
 
 pub use world::tilemap;
 pub use world::{
@@ -39,7 +39,7 @@ pub use assets::{
     MeshAsset, SpriteSheet, SpriteSheetAssetDef, TextureAsset,
 };
 
-pub use canvas::{screen_to_ndc, Canvas, CanvasVertex};
+pub use canvas::{world_to_ndc, Canvas, CanvasVertex};
 pub use scene::{
     Globals, Prefab2D, Prefab2DDef, PrefabSprite2D, PrefabSprite2DDef, Scene, Scene2D, Scene2DDef,
     SceneInstance2D, SceneInstance2DDef, SceneOp,

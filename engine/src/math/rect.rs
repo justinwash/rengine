@@ -1,6 +1,5 @@
 use glam::Vec2;
 
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Rect {
     pub x: f32,

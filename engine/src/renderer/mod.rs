@@ -1,8 +1,10 @@
 pub mod camera;
+pub mod nineslice;
 pub mod sprite;
 pub mod texture;
 
 pub use camera::{Camera2D, CameraBounds};
+pub use nineslice::NineSlice;
 pub use sprite::DrawParams;
 pub use texture::TextureId;
 
@@ -53,6 +55,15 @@ impl Frame {
     ) {
         self.sprites
             .push(DrawParams::new(texture, position, size).with_color(color));
+    }
+
+    pub fn draw_nine_slice(
+        &mut self,
+        nine_slice: &NineSlice,
+        position: glam::Vec2,
+        size: glam::Vec2,
+    ) {
+        nine_slice.patches_into(position, size, &mut self.sprites);
     }
 
     pub fn begin(&mut self) {
