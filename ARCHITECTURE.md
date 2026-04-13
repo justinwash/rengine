@@ -1309,20 +1309,20 @@ A CPU-side 2D particle system with pooled allocation and builder-pattern configu
 
 **`EmitterConfig`** — controls particle behaviour:
 
-| Field | Type | Default | Purpose |
-|-------|------|---------|---------|
-| `emit_rate` | `f32` | 10.0 | Particles spawned per second (continuous) |
-| `burst_count` | `u32` | 0 | Particles spawned per `burst()` call |
-| `lifetime` | `RangeF32` | 0.5–1.5 | How long each particle lives (seconds) |
-| `speed` | `RangeF32` | 20–80 | Initial speed |
-| `angle` | `RangeF32` | 0–TAU | Emission direction (radians) |
-| `spin` | `RangeF32` | 0 | Rotational velocity |
-| `size_start` / `size_end` | `RangeF32` | 4–8 / 1–2 | Size interpolated over lifetime |
-| `color_start` / `color_end` | `Color` | white→transparent | Color interpolated via `Color::lerp` |
-| `gravity` | `Vec2` | ZERO | Constant acceleration |
-| `damping` | `f32` | 0 | Velocity decay factor |
-| `emit_shape` | `EmitShape` | Point | Spawn area: `Point`, `Circle(r)`, `Rect(w,h)` |
-| `max_particles` | `usize` | 512 | Pool capacity |
+| Field                       | Type        | Default           | Purpose                                       |
+| --------------------------- | ----------- | ----------------- | --------------------------------------------- |
+| `emit_rate`                 | `f32`       | 10.0              | Particles spawned per second (continuous)     |
+| `burst_count`               | `u32`       | 0                 | Particles spawned per `burst()` call          |
+| `lifetime`                  | `RangeF32`  | 0.5–1.5           | How long each particle lives (seconds)        |
+| `speed`                     | `RangeF32`  | 20–80             | Initial speed                                 |
+| `angle`                     | `RangeF32`  | 0–TAU             | Emission direction (radians)                  |
+| `spin`                      | `RangeF32`  | 0                 | Rotational velocity                           |
+| `size_start` / `size_end`   | `RangeF32`  | 4–8 / 1–2         | Size interpolated over lifetime               |
+| `color_start` / `color_end` | `Color`     | white→transparent | Color interpolated via `Color::lerp`          |
+| `gravity`                   | `Vec2`      | ZERO              | Constant acceleration                         |
+| `damping`                   | `f32`       | 0                 | Velocity decay factor                         |
+| `emit_shape`                | `EmitShape` | Point             | Spawn area: `Point`, `Circle(r)`, `Rect(w,h)` |
+| `max_particles`             | `usize`     | 512               | Pool capacity                                 |
 
 All range fields accept `f32` (constant) or `(f32, f32)` (random range) via `Into<RangeF32>`.
 

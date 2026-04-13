@@ -22,46 +22,44 @@ impl Game for ParticleDemo {
 
         let white_tex = engine.white_texture();
 
+        let up = -std::f32::consts::FRAC_PI_2;
+        let spread = std::f32::consts::FRAC_PI_4;
+
         let fire = ParticleEmitter::new(
             EmitterConfig::default()
                 .with_emit_rate(80.0)
                 .with_lifetime((0.3, 0.8))
                 .with_speed((30.0, 80.0))
-                .with_angle((
-                    std::f32::consts::FRAC_PI_4,
-                    std::f32::consts::PI - std::f32::consts::FRAC_PI_4,
-                ))
-                .with_size_start((6.0, 10.0))
-                .with_size_end((1.0, 2.0))
+                .with_angle((up - spread, up + spread))
+                .with_size_start((4.0, 8.0))
+                .with_size_end((1.0, 3.0))
                 .with_color_start(Color::new(1.0, 0.6, 0.1, 1.0))
                 .with_color_end(Color::new(1.0, 0.0, 0.0, 0.0))
-                .with_gravity(Vec2::new(0.0, 50.0))
+                .with_gravity(Vec2::new(0.0, -30.0))
+                .with_emit_shape(EmitShape::Rect(20.0, 2.0))
                 .with_max_particles(256),
         );
 
         let fountain = ParticleEmitter::new(
             EmitterConfig::default()
-                .with_emit_rate(40.0)
-                .with_lifetime((1.0, 2.0))
-                .with_speed((100.0, 160.0))
-                .with_angle((
-                    std::f32::consts::FRAC_PI_4 * 3.0,
-                    std::f32::consts::FRAC_PI_4 * 5.0,
-                ))
+                .with_emit_rate(50.0)
+                .with_lifetime((0.8, 1.6))
+                .with_speed((80.0, 140.0))
+                .with_angle((up - spread * 0.5, up + spread * 0.5))
                 .with_size_start((3.0, 5.0))
                 .with_size_end((1.0, 2.0))
                 .with_color_start(Color::new(0.3, 0.6, 1.0, 1.0))
                 .with_color_end(Color::new(0.1, 0.3, 1.0, 0.0))
-                .with_gravity(Vec2::new(0.0, -200.0))
+                .with_gravity(Vec2::new(0.0, 120.0))
                 .with_max_particles(256),
         );
 
         let sparkle = ParticleEmitter::new(
             EmitterConfig::default()
                 .with_emit_rate(0.0)
-                .with_burst_count(30)
-                .with_lifetime((0.4, 1.0))
-                .with_speed((60.0, 200.0))
+                .with_burst_count(40)
+                .with_lifetime((0.4, 1.2))
+                .with_speed((40.0, 160.0))
                 .with_angle((0.0, std::f32::consts::TAU))
                 .with_spin((-5.0, 5.0))
                 .with_size_start((3.0, 7.0))
@@ -92,8 +90,8 @@ impl Game for ParticleDemo {
         let wf = w as f32;
         let hf = h as f32;
 
-        self.fire.set_position(Vec2::new(wf * 0.2, hf * 0.7));
-        self.fountain.set_position(Vec2::new(wf * 0.5, hf * 0.8));
+        self.fire.set_position(Vec2::new(wf * 0.2, hf * 0.85));
+        self.fountain.set_position(Vec2::new(wf * 0.5, hf * 0.85));
 
         self.fire.update(dt, &mut rng);
         self.fountain.update(dt, &mut rng);
@@ -124,33 +122,21 @@ impl Game for ParticleDemo {
         let screen = engine.game_size();
         let font = engine.font_atlas();
         let canvas = frame.canvas(0);
-        canvas.text(
-            10.0, 10.0, "Fire (continuous)", 16.0, Color::WHITE, screen, &font,
-        );
-        canvas.text(
-            10.0,
-            30.0,
-            &format!("  alive: {}", self.fire.alive_count()),
-            14.0,
-            Color::new(0.7, 0.7, 0.7, 1.0),
-            screen,
-            &font,
-        );
-
         let sx = screen.0 as f32;
+
         canvas.text(
-            sx * 0.35,
-            10.0,
-            "Fountain (gravity)",
+            sx * 0.2 - 40.0,
+            14.0,
+            "Fire",
             16.0,
-            Color::WHITE,
+            Color::new(1.0, 0.6, 0.1, 1.0),
             screen,
             &font,
         );
         canvas.text(
-            sx * 0.35,
-            30.0,
-            &format!("  alive: {}", self.fountain.alive_count()),
+            sx * 0.2 - 40.0,
+            34.0,
+            &format!("alive: {}", self.fire.alive_count()),
             14.0,
             Color::new(0.7, 0.7, 0.7, 1.0),
             screen,
@@ -158,18 +144,37 @@ impl Game for ParticleDemo {
         );
 
         canvas.text(
-            sx * 0.65,
-            10.0,
-            "Sparkle (burst, Space)",
+            sx * 0.5 - 40.0,
+            14.0,
+            "Fountain",
             16.0,
-            Color::WHITE,
+            Color::new(0.3, 0.6, 1.0, 1.0),
             screen,
             &font,
         );
         canvas.text(
-            sx * 0.65,
-            30.0,
-            &format!("  alive: {}", self.sparkle.alive_count()),
+            sx * 0.5 - 40.0,
+            34.0,
+            &format!("alive: {}", self.fountain.alive_count()),
+            14.0,
+            Color::new(0.7, 0.7, 0.7, 1.0),
+            screen,
+            &font,
+        );
+
+        canvas.text(
+            sx * 0.8 - 40.0,
+            14.0,
+            "Sparkle (Space)",
+            16.0,
+            Color::YELLOW,
+            screen,
+            &font,
+        );
+        canvas.text(
+            sx * 0.8 - 40.0,
+            34.0,
+            &format!("alive: {}", self.sparkle.alive_count()),
             14.0,
             Color::new(0.7, 0.7, 0.7, 1.0),
             screen,
@@ -191,6 +196,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         title: "Particles".into(),
         width: 960,
         height: 720,
+        render_width: Some(480),
+        render_height: Some(360),
         ..Default::default()
     })
 }
