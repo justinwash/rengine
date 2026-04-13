@@ -20,11 +20,13 @@ const SLOT: &str = "demo";
 impl Game for SaveLoadDemo {
     fn new(_engine: &mut Engine) -> Self {
         let saves = SaveSystem::new("rengine-feature-saveload").expect("failed to init save system");
-        let data = saves.load::<PlayerData>(SLOT).unwrap_or_default();
-        let status = if saves.exists(SLOT) {
-            format!("Loaded existing save from {}", saves.save_dir().display())
-        } else {
-            "No save found — starting fresh".into()
+        let (data, status) = match saves.load::<PlayerData>(SLOT) {
+            Ok(d) => (d, format!("Loaded existing save from {}", saves.save_dir().display())),
+            Err(_) if saves.exists(SLOT) => (
+                PlayerData::default(),
+                "Save exists but failed to load — starting fresh".into(),
+            ),
+            Err(_) => (PlayerData::default(), "No save found — starting fresh".into()),
         };
         Self {
             saves,

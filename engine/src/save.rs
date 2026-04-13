@@ -7,6 +7,7 @@ pub enum SaveError {
     Io(std::io::Error),
     Json(serde_json::Error),
     NoSaveDir,
+    InvalidSlot,
 }
 
 impl std::fmt::Display for SaveError {
@@ -15,6 +16,7 @@ impl std::fmt::Display for SaveError {
             SaveError::Io(e) => write!(f, "save I/O error: {e}"),
             SaveError::Json(e) => write!(f, "save serialization error: {e}"),
             SaveError::NoSaveDir => write!(f, "could not determine save directory"),
+            SaveError::InvalidSlot => write!(f, "slot name contains invalid characters"),
         }
     }
 }
@@ -54,21 +56,23 @@ impl SaveSystem {
 
     pub fn save<T: Serialize>(&self, slot: &str, data: &T) -> Result<(), SaveError> {
         std::fs::create_dir_all(&self.save_dir)?;
-        let path = self.slot_path(slot);
+        let path = self.slot_path(slot)?;
         let json = serde_json::to_string_pretty(data)?;
-        std::fs::write(&path, json)?;
+        let tmp = path.with_extension("json.tmp");
+        std::fs::write(&tmp, &json)?;
+        std::fs::rename(&tmp, &path)?;
         Ok(())
     }
 
     pub fn load<T: DeserializeOwned>(&self, slot: &str) -> Result<T, SaveError> {
-        let path = self.slot_path(slot);
+        let path = self.slot_path(slot)?;
         let text = std::fs::read_to_string(&path)?;
         let data = serde_json::from_str(&text)?;
         Ok(data)
     }
 
     pub fn delete(&self, slot: &str) -> Result<(), SaveError> {
-        let path = self.slot_path(slot);
+        let path = self.slot_path(slot)?;
         if path.exists() {
             std::fs::remove_file(&path)?;
         }
@@ -76,7 +80,7 @@ impl SaveSystem {
     }
 
     pub fn exists(&self, slot: &str) -> bool {
-        self.slot_path(slot).exists()
+        self.slot_path(slot).map_or(false, |p| p.exists())
     }
 
     pub fn list_slots(&self) -> Vec<String> {
@@ -95,8 +99,16 @@ impl SaveSystem {
         slots
     }
 
-    fn slot_path(&self, slot: &str) -> PathBuf {
-        self.save_dir.join(format!("{slot}.json"))
+    fn slot_path(&self, slot: &str) -> Result<PathBuf, SaveError> {
+        if slot.is_empty()
+            || slot.contains('/')
+            || slot.contains('\\')
+            || slot.contains("..")
+            || slot.contains('\0')
+        {
+            return Err(SaveError::InvalidSlot);
+        }
+        Ok(self.save_dir.join(format!("{slot}.json")))
     }
 }
 
@@ -191,5 +203,17 @@ mod tests {
         assert_eq!(loaded, 20);
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn rejects_path_traversal() {
+        let dir = std::env::temp_dir().join("rengine_test_save_traversal");
+        let sys = SaveSystem::with_dir(dir);
+
+        assert!(sys.save("../escape", &1u32).is_err());
+        assert!(sys.save("sub/dir", &1u32).is_err());
+        assert!(sys.save("back\\slash", &1u32).is_err());
+        assert!(sys.save("", &1u32).is_err());
+        assert!(!sys.exists("../escape"));
     }
 }
