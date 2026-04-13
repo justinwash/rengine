@@ -25,6 +25,24 @@ impl FontAtlas {
     pub fn white_uv(&self) -> [f32; 2] {
         self.white_uv
     }
+
+    pub fn measure_text(&self, text: &str, size: f32) -> (f32, f32) {
+        let scale = size / FONT_SIZE;
+        let mut width: f32 = 0.0;
+        for ch in text.chars() {
+            let idx = ch as usize;
+            if idx < 128 {
+                if let Some(e) = self.glyphs[idx] {
+                    width += e.advance * scale;
+                }
+            }
+        }
+        (width, self.line_height * scale)
+    }
+
+    pub fn line_height(&self, size: f32) -> f32 {
+        self.line_height * (size / FONT_SIZE)
+    }
 }
 
 pub fn font_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {

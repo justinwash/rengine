@@ -59,6 +59,7 @@ Recently completed or partially completed:
 - Completed: seeded RNG — `Rng` struct (xoshiro256\*\*) with deterministic seeding, `engine.rng()` accessor on Engine and Engine3D, game-dev convenience methods (range, weighted, shuffle, pick, normal distribution, Vec2 helpers, fork), `feature-rng` sample
 - Completed: nine-slice rendering — `NineSlice` struct with uniform/asymmetric borders, `frame.draw_nine_slice()`, color tinting, z-order, `feature-nineslice` sample
 - Completed: tweening and easing — `Tween` struct with 25 easing curves, `LoopMode` (Once/Loop/PingPong), `lerp()` and `ease()` helpers, `feature-tween` sample
+- Completed: text layout — `measure_text`, `line_height`, `TextAlign` (Left/Center/Right), `text_aligned`, word wrapping (`wrap_text`), `text_block`, `feature-text` sample
 
 ---
 
@@ -165,9 +166,10 @@ These features make 2D development substantially more practical.
     High leverage for normal 2D workflows.
 
 32. Better text rendering
-    Multiple fonts, wrapping, alignment, outlines, shadows, and bitmap font support.
+    Multiple fonts, outlines, shadows, and bitmap font support.
     Bold, italic, and bold-italic variants via per-style font atlases.
     Fancy text effects: per-letter color shifting, bouncing/wave letters, and rendering text along curves.
+    - Completed: measure_text, line_height, TextAlign (Left/Center/Right), text_aligned, word wrapping (wrap_text), text_block
 
 33. Resolution scaling modes
     Pixel-perfect, stretch, letterbox, integer scaling, and fit or fill policies.
