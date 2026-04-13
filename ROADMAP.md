@@ -112,8 +112,8 @@ These are the features that most directly increase the engine’s usefulness for
 15. Fixed update support [done]
     `EngineConfig::fixed_dt` sets the step size (default 1/60). `TimeState` accumulates frame time and `consume_fixed_step()` drains it. `Game::fixed_update()`, `Game3D::fixed_update()`, `Scene::fixed_update()`, and `Scene3D::fixed_update()` are called N times per frame before the variable `update()`. All four run functions and their headless paths are wired.
 
-16. Save and load support
-    Profiles, settings, progress, keybindings, and serialized game state.
+16. ~~Save and load support~~ ✅
+    `SaveSystem` provides slot-based JSON persistence via `save(slot, &T)` / `load::<T>(slot)` / `delete(slot)` / `exists(slot)` / `list_slots()`. Uses `dirs::data_local_dir()` for platform-appropriate save paths, with `with_dir()` for custom locations. Games derive `Serialize + Deserialize` on save data structs and store `SaveSystem` in `Globals`. Re-exported as `rengine::SaveSystem` and `rengine::SaveError`.
 
 17. Virtual file system or resource path abstraction [partially done]
     Make loading portable across desktop, web, and future mobile targets.
