@@ -26,16 +26,16 @@ impl NineSlice {
         top: u32,
         bottom: u32,
     ) -> Self {
-        debug_assert!(texture_width > 0, "NineSlice texture_width must be > 0");
-        debug_assert!(texture_height > 0, "NineSlice texture_height must be > 0");
-        debug_assert!(
+        assert!(texture_width > 0, "NineSlice texture_width must be > 0");
+        assert!(texture_height > 0, "NineSlice texture_height must be > 0");
+        assert!(
             left + right <= texture_width,
             "NineSlice left + right ({} + {}) exceeds texture_width ({})",
             left,
             right,
             texture_width
         );
-        debug_assert!(
+        assert!(
             top + bottom <= texture_height,
             "NineSlice top + bottom ({} + {}) exceeds texture_height ({})",
             top,
@@ -83,6 +83,12 @@ impl NineSlice {
     }
 
     pub fn patches(&self, position: Vec2, size: Vec2) -> Vec<DrawParams> {
+        let mut out = Vec::with_capacity(9);
+        self.patches_into(position, size, &mut out);
+        out
+    }
+
+    pub fn patches_into(&self, position: Vec2, size: Vec2, out: &mut Vec<DrawParams>) {
         let tw = self.texture_width as f32;
         let th = self.texture_height as f32;
         let l = self.left as f32;
@@ -138,7 +144,6 @@ impl NineSlice {
             (x2, y2, x3 - x2, y3 - y2, ur, 0.0, 1.0 - ur, vt),
         ];
 
-        let mut out = Vec::with_capacity(9);
         for (x, y, w, h, u0, v0, uw, vh) in cells {
             if w > 0.0 && h > 0.0 {
                 out.push(
@@ -149,7 +154,6 @@ impl NineSlice {
                 );
             }
         }
-        out
     }
 }
 
