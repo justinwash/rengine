@@ -1468,7 +1468,7 @@ let v = tw.value(); // eased interpolation from 0 → 100 over 2 seconds
 
 **`Easing` variants:** `Linear`, `InQuad`, `OutQuad`, `InOutQuad`, `InCubic`, `OutCubic`, `InOutCubic`, `InQuart`, `OutQuart`, `InOutQuart`, `InSine`, `OutSine`, `InOutSine`, `InExpo`, `OutExpo`, `InOutExpo`, `InBack`, `OutBack`, `InOutBack`, `InElastic`, `OutElastic`, `InOutElastic`, `InBounce`, `OutBounce`, `InOutBounce`.
 
-All `Easing::apply(t)` functions map `[0, 1] → [0, 1]` (with overshoot for Back/Elastic).
+`Easing::apply(t)` takes `t` in `[0, 1]`; most easing functions return values in `[0, 1]`, while the Back and Elastic variants may overshoot outside that range.
 
 **`LoopMode`:** `Once` (clamps at end), `Loop` (wraps), `PingPong` (reverses at each end).
 

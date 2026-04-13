@@ -14,17 +14,24 @@ const EASINGS: &[(Easing, &str)] = &[
     (Easing::InCubic, "InCubic"),
     (Easing::OutCubic, "OutCubic"),
     (Easing::InOutCubic, "InOutCubic"),
+    (Easing::InQuart, "InQuart"),
+    (Easing::OutQuart, "OutQuart"),
+    (Easing::InOutQuart, "InOutQuart"),
     (Easing::InSine, "InSine"),
     (Easing::OutSine, "OutSine"),
     (Easing::InOutSine, "InOutSine"),
     (Easing::InExpo, "InExpo"),
     (Easing::OutExpo, "OutExpo"),
+    (Easing::InOutExpo, "InOutExpo"),
     (Easing::InBack, "InBack"),
     (Easing::OutBack, "OutBack"),
+    (Easing::InOutBack, "InOutBack"),
     (Easing::InElastic, "InElastic"),
     (Easing::OutElastic, "OutElastic"),
+    (Easing::InOutElastic, "InOutElastic"),
     (Easing::InBounce, "InBounce"),
     (Easing::OutBounce, "OutBounce"),
+    (Easing::InOutBounce, "InOutBounce"),
 ];
 
 const DURATION: f32 = 2.0;
@@ -108,7 +115,7 @@ fn main() {
     let config = EngineConfig {
         title: "Feature: Tweening / Easing".into(),
         width: 700,
-        height: 620,
+        height: 860,
         show_fps: false,
         ..Default::default()
     };

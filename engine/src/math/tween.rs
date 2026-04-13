@@ -223,11 +223,16 @@ impl Tween {
                 }
             }
             LoopMode::Loop => {
-                while self.elapsed >= self.duration {
-                    self.elapsed -= self.duration;
+                if self.elapsed >= self.duration {
+                    self.elapsed = self.elapsed.rem_euclid(self.duration);
                 }
             }
-            LoopMode::PingPong => {}
+            LoopMode::PingPong => {
+                let cycle = 2.0 * self.duration;
+                if self.elapsed >= cycle {
+                    self.elapsed = self.elapsed.rem_euclid(cycle);
+                }
+            }
         }
     }
 
