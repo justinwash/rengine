@@ -16,7 +16,8 @@
 // aabb_overlap, CollisionLayer, aabb_overlap_layered, TriggerSystem, TriggerZone,
 // OverlapEvent, ActionMap, Binding, AxisMapping, GamepadAxis,
 // load_resource (serializable resources via serde), fixed_update (fixed timestep),
-// Rect, Canvas (rect, text), FontAtlas, Color, pixelart::PixelCanvas,
+// Rect, Canvas (rect, text, text_aligned, text_block), FontAtlas (measure_text, line_height),
+// TextAlign, wrap_text, Color, pixelart::PixelCanvas,
 // NineSlice (uniform, draw_nine_slice, with_color, with_z_order),
 // Tween (Easing, LoopMode, score popup animation),
 // InputState, GamepadState, TimeState, hot reload, Vec2.
@@ -678,6 +679,8 @@ impl Scene for GameScene {
                 demo.log_feature("Camera2D::shake (via coin)");
                 demo.log_feature("Camera2D::rotation");
                 demo.log_feature("Tween + Easing (score popup)");
+                demo.log_feature("TextAlign::Center (text_aligned)");
+                demo.log_feature("text_block (word wrapping)");
             }
         }
 
@@ -916,6 +919,29 @@ impl Scene for GameScene {
             "WASD: Move | Space: Jump | +/-: Zoom | ESC: Pause/Quit",
             10.0,
             Color::new(1.0, 1.0, 1.0, 0.6),
+            (sw, sh),
+            atlas,
+        );
+
+        hud.text_aligned(
+            0.0,
+            -hh + 50.0,
+            "Kitchen Sink Demo",
+            12.0,
+            Color::new(0.7, 0.8, 1.0, 0.8),
+            TextAlign::Center,
+            (sw, sh),
+            atlas,
+        );
+
+        hud.text_block(
+            hw - 200.0,
+            hh - 75.0,
+            "Collect coins to earn points. Reach checkpoints to save progress.",
+            10.0,
+            Color::new(1.0, 1.0, 1.0, 0.5),
+            190.0,
+            TextAlign::Left,
             (sw, sh),
             atlas,
         );
