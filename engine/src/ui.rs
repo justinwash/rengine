@@ -68,13 +68,7 @@ pub struct Ui<'a> {
 }
 
 impl<'a> Ui<'a> {
-    pub fn new(
-        x: f32,
-        y: f32,
-        width: f32,
-        screen_size: (u32, u32),
-        atlas: &'a FontAtlas,
-    ) -> Self {
+    pub fn new(x: f32, y: f32, width: f32, screen_size: (u32, u32), atlas: &'a FontAtlas) -> Self {
         Self {
             x,
             y,
