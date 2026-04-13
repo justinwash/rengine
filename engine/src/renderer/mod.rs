@@ -812,6 +812,9 @@ pub(crate) fn blit_viewport(
     win_w: u32,
     win_h: u32,
 ) -> (f32, f32, f32, f32) {
+    if game_w == 0 || game_h == 0 || win_w == 0 || win_h == 0 {
+        return (0.0, 0.0, win_w as f32, win_h as f32);
+    }
     let (gw, gh, ww, wh) = (game_w as f32, game_h as f32, win_w as f32, win_h as f32);
     match scale_mode {
         ScaleMode::Stretch => (0.0, 0.0, ww, wh),

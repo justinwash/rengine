@@ -453,9 +453,16 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
     let headless = config.headless;
     let show_fps = config.show_fps;
     let fixed_dt = config.fixed_dt;
+    assert!(
+        config.render_width.is_some() == config.render_height.is_some(),
+        "render_width and render_height must both be set or both be None"
+    );
     let render_res = config
         .render_width
         .and_then(|w| config.render_height.map(|h| (w, h)));
+    if let Some((rw, rh)) = render_res {
+        assert!(rw >= 1 && rh >= 1, "render_width and render_height must both be >= 1");
+    }
     let scale_mode = config.scale_mode;
 
     let event_loop = EventLoop::new()?;
@@ -1096,9 +1103,16 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
     let headless = config.headless;
     let show_fps = config.show_fps;
     let fixed_dt = config.fixed_dt;
+    assert!(
+        config.render_width.is_some() == config.render_height.is_some(),
+        "render_width and render_height must both be set or both be None"
+    );
     let render_res = config
         .render_width
         .and_then(|w| config.render_height.map(|h| (w, h)));
+    if let Some((rw, rh)) = render_res {
+        assert!(rw >= 1 && rh >= 1, "render_width and render_height must both be >= 1");
+    }
     let scale_mode = config.scale_mode;
 
     let event_loop = EventLoop::new()?;
@@ -1292,9 +1306,16 @@ where
     let headless = config.headless;
     let show_fps = config.show_fps;
     let fixed_dt = config.fixed_dt;
+    assert!(
+        config.render_width.is_some() == config.render_height.is_some(),
+        "render_width and render_height must both be set or both be None"
+    );
     let render_res = config
         .render_width
         .and_then(|w| config.render_height.map(|h| (w, h)));
+    if let Some((rw, rh)) = render_res {
+        assert!(rw >= 1 && rh >= 1, "render_width and render_height must both be >= 1");
+    }
     let scale_mode = config.scale_mode;
 
     let event_loop = EventLoop::new()?;
