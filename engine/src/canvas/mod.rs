@@ -159,15 +159,14 @@ impl Canvas {
         screen_size: (u32, u32),
         atlas: &FontAtlas,
     ) {
-        let offset = match align {
-            TextAlign::Left => 0.0,
-            TextAlign::Center => {
-                let (w, _) = atlas.measure_text(text, size);
-                -w / 2.0
-            }
-            TextAlign::Right => {
-                let (w, _) = atlas.measure_text(text, size);
-                -w
+        let offset = if align == TextAlign::Left {
+            0.0
+        } else {
+            let (w, _) = atlas.measure_text(text, size);
+            match align {
+                TextAlign::Center => -w / 2.0,
+                TextAlign::Right => -w,
+                TextAlign::Left => unreachable!(),
             }
         };
         self.text(x + offset, y, text, size, color, screen_size, atlas);
@@ -209,6 +208,7 @@ pub fn wrap_text(text: &str, size: f32, max_width: f32, atlas: &FontAtlas) -> Ve
         }
         let words: Vec<&str> = raw_line.split(' ').collect();
         let mut current = String::new();
+        let mut current_w: f32 = 0.0;
         let space_w = atlas.measure_text(" ", size).0;
         for word in &words {
             let word_w = atlas.measure_text(word, size).0;
@@ -217,15 +217,21 @@ pub fn wrap_text(text: &str, size: f32, max_width: f32, atlas: &FontAtlas) -> Ve
                     lines.push((*word).to_string());
                 } else {
                     current = (*word).to_string();
+                    current_w = word_w;
                 }
+            } else if current_w + space_w + word_w <= max_width {
+                current.push(' ');
+                current.push_str(word);
+                current_w += space_w + word_w;
             } else {
-                let cur_w = atlas.measure_text(&current, size).0;
-                if cur_w + space_w + word_w <= max_width {
-                    current.push(' ');
-                    current.push_str(word);
+                lines.push(current);
+                if word_w > max_width {
+                    lines.push((*word).to_string());
+                    current = String::new();
+                    current_w = 0.0;
                 } else {
-                    lines.push(current);
                     current = (*word).to_string();
+                    current_w = word_w;
                 }
             }
         }
