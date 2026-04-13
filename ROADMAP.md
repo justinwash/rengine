@@ -173,8 +173,9 @@ These features make 2D development substantially more practical.
     - Completed: measure_text, line_height, TextAlign (Left/Center/Right), text_aligned, word wrapping (wrap_text), text_block
     - Completed: immediate-mode widget system — Ui, UiStyle, UiResponse; label, label_centered, button, separator; focus navigation and activation
 
-33. Resolution scaling modes
+33. Resolution scaling modes [done]
     Pixel-perfect, stretch, letterbox, integer scaling, and fit or fill policies.
+    - Completed: ScaleMode enum (Stretch, Letterbox, PixelPerfect), EngineConfig render_width/render_height, offscreen render target + blit pass for 2D and 3D, runtime mode switching via set_scale_mode, Canvas/HUD always at window resolution
 
 34. Screen-space debug rendering
     Collision bounds, path nodes, raycasts, contact normals, velocity vectors, and AI state overlays.

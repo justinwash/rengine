@@ -20,7 +20,7 @@ pub mod netcode;
 
 pub use app::run;
 pub use app::run_with_scenes;
-pub use app::{Engine, EngineConfig, Game};
+pub use app::{Engine, EngineConfig, Game, ScaleMode};
 pub use assets::Color;
 pub use input::InputState;
 pub use input::{ActionMap, AxisMapping, Binding, GamepadAxis};

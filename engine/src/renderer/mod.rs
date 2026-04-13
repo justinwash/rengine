@@ -8,11 +8,13 @@ pub use nineslice::NineSlice;
 pub use sprite::DrawParams;
 pub use texture::TextureId;
 
+use crate::app::ScaleMode;
 use crate::assets::Color;
 use crate::canvas::{self, Canvas};
 use crate::text;
 use sprite::Vertex;
 
+use std::cell::Cell;
 use std::sync::Arc;
 use winit::window::Window;
 
@@ -86,6 +88,16 @@ struct GpuTexture {
     bind_group: wgpu::BindGroup,
 }
 
+struct OffscreenTarget {
+    _texture: wgpu::Texture,
+    view: wgpu::TextureView,
+    bind_group: wgpu::BindGroup,
+    blit_pipeline: wgpu::RenderPipeline,
+    width: u32,
+    height: u32,
+    scale_mode: Cell<ScaleMode>,
+}
+
 pub(crate) struct Renderer {
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
@@ -104,6 +116,8 @@ pub(crate) struct Renderer {
     canvas_pipeline: wgpu::RenderPipeline,
     canvas_vb: wgpu::Buffer,
     pub(crate) font_atlas: text::FontAtlas,
+
+    offscreen: Option<OffscreenTarget>,
 }
 
 impl Renderer {
@@ -313,6 +327,7 @@ impl Renderer {
             canvas_pipeline,
             canvas_vb,
             font_atlas,
+            offscreen: None,
         };
 
         let white = renderer.create_texture(1, 1, &[255, 255, 255, 255]);
@@ -470,14 +485,20 @@ impl Renderer {
                 return;
             }
         };
-        let view = output
+        let swap_view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        let projection = frame.camera.projection(
-            self.surface_config.width as f32,
-            self.surface_config.height as f32,
-        );
+        let (sprite_target, proj_w, proj_h) = match self.offscreen {
+            Some(ref ofs) => (&ofs.view, ofs.width as f32, ofs.height as f32),
+            None => (
+                &swap_view,
+                self.surface_config.width as f32,
+                self.surface_config.height as f32,
+            ),
+        };
+
+        let projection = frame.camera.projection(proj_w, proj_h);
         self.queue.write_buffer(
             &self.projection_buffer,
             0,
@@ -570,7 +591,7 @@ impl Renderer {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("sprite_pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
+                    view: sprite_target,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(frame.clear_color.to_wgpu()),
@@ -601,9 +622,39 @@ impl Renderer {
             }
         }
 
+        if let Some(ref ofs) = self.offscreen {
+            let (vx, vy, vw, vh) = blit_viewport(
+                ofs.scale_mode.get(),
+                ofs.width,
+                ofs.height,
+                self.surface_config.width,
+                self.surface_config.height,
+            );
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("blit_pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &swap_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&ofs.blit_pipeline);
+            pass.set_bind_group(0, &ofs.bind_group, &[]);
+            pass.set_viewport(vx, vy, vw, vh, 0.0, 1.0);
+            pass.draw(0..3, 0..1);
+        }
+
         canvas::render_pass(
             &mut encoder,
-            &view,
+            &swap_view,
             &self.canvas_pipeline,
             &self.canvas_vb,
             &self.queue,
@@ -623,5 +674,167 @@ impl Renderer {
     #[allow(dead_code)]
     pub fn surface_height(&self) -> u32 {
         self.surface_config.height
+    }
+
+    pub fn init_offscreen(&mut self, width: u32, height: u32, scale_mode: ScaleMode) {
+        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("offscreen_target"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: self.surface_config.format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        let blit_shader = self.device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("blit_shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("blit.wgsl").into()),
+        });
+
+        let blit_bgl = self
+            .device
+            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("blit_bgl"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
+
+        let blit_sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("blit_sampler"),
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("blit_bg"),
+            layout: &blit_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&blit_sampler),
+                },
+            ],
+        });
+
+        let blit_layout = self
+            .device
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("blit_pipeline_layout"),
+                bind_group_layouts: &[&blit_bgl],
+                immediate_size: 0,
+            });
+
+        let blit_pipeline = self
+            .device
+            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("blit_pipeline"),
+                layout: Some(&blit_layout),
+                vertex: wgpu::VertexState {
+                    module: &blit_shader,
+                    entry_point: Some("vs_main"),
+                    buffers: &[],
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &blit_shader,
+                    entry_point: Some("fs_main"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: self.surface_config.format,
+                        blend: None,
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: Default::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    ..Default::default()
+                },
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState {
+                    count: 1,
+                    mask: !0,
+                    alpha_to_coverage_enabled: false,
+                },
+                multiview_mask: None,
+                cache: None,
+            });
+
+        self.offscreen = Some(OffscreenTarget {
+            _texture: texture,
+            view,
+            bind_group,
+            blit_pipeline,
+            width,
+            height,
+            scale_mode: Cell::new(scale_mode),
+        });
+    }
+
+    pub fn set_scale_mode(&self, mode: ScaleMode) {
+        if let Some(ref ofs) = self.offscreen {
+            ofs.scale_mode.set(mode);
+        }
+    }
+}
+
+pub(crate) fn blit_viewport(
+    scale_mode: ScaleMode,
+    game_w: u32,
+    game_h: u32,
+    win_w: u32,
+    win_h: u32,
+) -> (f32, f32, f32, f32) {
+    let (gw, gh, ww, wh) = (game_w as f32, game_h as f32, win_w as f32, win_h as f32);
+    match scale_mode {
+        ScaleMode::Stretch => (0.0, 0.0, ww, wh),
+        ScaleMode::Letterbox => {
+            let scale = (ww / gw).min(wh / gh);
+            let w = (gw * scale).round();
+            let h = (gh * scale).round();
+            (((ww - w) / 2.0).round(), ((wh - h) / 2.0).round(), w, h)
+        }
+        ScaleMode::PixelPerfect => {
+            let scale = (win_w / game_w).min(win_h / game_h);
+            if scale == 0 {
+                let s = (ww / gw).min(wh / gh);
+                let w = (gw * s).round();
+                let h = (gh * s).round();
+                (((ww - w) / 2.0).round(), ((wh - h) / 2.0).round(), w, h)
+            } else {
+                let w = game_w * scale;
+                let h = game_h * scale;
+                let x = (win_w - w) / 2;
+                let y = (win_h - h) / 2;
+                (x as f32, y as f32, w as f32, h as f32)
+            }
+        }
     }
 }

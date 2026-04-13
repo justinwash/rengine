@@ -62,6 +62,7 @@
     - [`Color`](#color)
     - [`PixelCanvas` (Procedural Texture Generation)](#pixelcanvas-procedural-texture-generation)
   - [10.5 Save / Load System (`save.rs`)](#105-save--load-system-savers)
+  - [10.6 Resolution Scaling](#106-resolution-scaling)
   - [11. Scene System (`scene/`)](#11-scene-system-scene)
     - [11.1 `Scene` Trait and `SceneOp`](#111-scene-trait-and-sceneop)
     - [11.2 `Globals` — Typed Key-Value Store](#112-globals--typed-key-value-store)
@@ -1264,6 +1265,39 @@ saves.delete("slot1")?;
 ```
 
 Games typically store `SaveSystem` in `Globals` and derive `Serialize` + `Deserialize` on their save data structs.
+
+---
+
+## 10.6 Resolution Scaling
+
+The engine supports rendering at a fixed "game resolution" that is independent of the window size. When `render_width` and `render_height` are set on `EngineConfig`, an offscreen render target is created at that resolution. Sprites render to the offscreen target, then a blit pass scales it to fit the window according to the chosen `ScaleMode`.
+
+**`ScaleMode`** — controls how the game image maps to the window:
+
+| Mode | Behaviour |
+|------|----------|
+| `Stretch` | Fills the entire window; may distort aspect ratio |
+| `Letterbox` | Scales to fit while preserving aspect ratio; black bars on shorter axis |
+| `PixelPerfect` | Scales by the largest integer multiplier that fits; crisp nearest-neighbour pixels |
+
+Canvas / HUD overlays always render at **window resolution** so text stays sharp regardless of the game resolution.
+
+```rust
+EngineConfig {
+    width: 960, height: 720,           // window size
+    render_width: Some(320),            // game resolution
+    render_height: Some(240),
+    scale_mode: ScaleMode::PixelPerfect,
+    ..Default::default()
+}
+```
+
+Key API:
+- `engine.game_size()` — returns `(render_width, render_height)` when set, else `window_size()`
+- `engine.window_size()` — always returns the OS window dimensions
+- `engine.set_scale_mode(mode)` — change the scaling policy at runtime
+
+Both `Renderer` (2D) and `Renderer3D` support offscreen targets.
 
 ---
 
