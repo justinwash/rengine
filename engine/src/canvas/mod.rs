@@ -53,8 +53,8 @@ impl Canvas {
     }
 
     pub fn rect(&mut self, x: f32, y: f32, w: f32, h: f32, color: Color, screen_size: (u32, u32)) {
-        let [x0, y0] = world_to_ndc(x, y, screen_size);
-        let [x1, y1] = world_to_ndc(x + w, y + h, screen_size);
+        let [x0, y0] = screen_to_ndc(x, y, screen_size);
+        let [x1, y1] = screen_to_ndc(x + w, y + h, screen_size);
 
         let c = color.to_array();
         let uv = WHITE_UV;
@@ -111,8 +111,8 @@ impl Canvas {
                 let gw = entry.width_px * scale;
                 let gh = entry.height_px * scale;
 
-                let [x0, y0] = world_to_ndc(gx, gy, screen_size);
-                let [x1, y1] = world_to_ndc(gx + gw, gy + gh, screen_size);
+                let [x0, y0] = screen_to_ndc(gx, gy, screen_size);
+                let [x1, y1] = screen_to_ndc(gx + gw, gy + gh, screen_size);
 
                 let v0 = CanvasVertex {
                     position: [x0, y0],
@@ -142,7 +142,7 @@ impl Canvas {
     }
 }
 
-pub fn world_to_ndc(x: f32, y: f32, screen_size: (u32, u32)) -> [f32; 2] {
+pub fn screen_to_ndc(x: f32, y: f32, screen_size: (u32, u32)) -> [f32; 2] {
     let hw = screen_size.0 as f32 / 2.0;
     let hh = screen_size.1 as f32 / 2.0;
     [x / hw, y / hh]

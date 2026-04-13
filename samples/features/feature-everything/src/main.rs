@@ -17,6 +17,7 @@
 // OverlapEvent, ActionMap, Binding, AxisMapping, GamepadAxis,
 // load_resource (serializable resources via serde), fixed_update (fixed timestep),
 // Rect, Canvas (rect, text), FontAtlas, Color, pixelart::PixelCanvas,
+// NineSlice (uniform, draw_nine_slice, with_color, with_z_order),
 // InputState, GamepadState, TimeState, hot reload, Vec2.
 
 use rengine::*;
@@ -76,17 +77,37 @@ const PLAYER_BODY_ID: BodyId = 0;
 
 struct TitleScene {
     blink_timer: f32,
+    panel: Option<NineSlice>,
 }
 
 impl Scene for TitleScene {
-    fn on_enter(&mut self, _engine: &mut Engine, globals: &mut Globals) {
+    fn on_enter(&mut self, engine: &mut Engine, globals: &mut Globals) {
         println!("[TitleScene] on_enter");
         if let Some(counter) = globals.get_mut::<TransitionCounter>() {
             counter.0 += 1;
         }
+
+        let sz = 16u32;
+        let bd = 3u32;
+        let mut pc = pixelart::PixelCanvas::new(sz, sz);
+        pc.fill(Color::new(0.12, 0.08, 0.25, 0.85));
+        let edge = Color::new(0.5, 0.35, 0.9, 1.0);
+        for i in 0..sz as i32 {
+            pc.set(i, 0, edge);
+            pc.set(i, (sz - 1) as i32, edge);
+            pc.set(0, i, edge);
+            pc.set((sz - 1) as i32, i, edge);
+        }
+        let tex = engine.create_texture(sz, sz, &pc.into_bytes());
+        self.panel = Some(NineSlice::uniform(tex, sz, sz, bd).with_z_order(-1));
+        println!("[FEATURE OK] NineSlice::uniform + with_z_order — title card panel");
+
         if let Some(demo) = globals.get_mut::<DemoConfig>() {
             demo.log_feature("Scene::on_enter");
             demo.log_feature("Globals::get_mut");
+            demo.log_feature("NineSlice::uniform");
+            demo.log_feature("NineSlice::with_z_order");
+            demo.log_feature("frame.draw_nine_slice");
         }
     }
 
@@ -124,6 +145,13 @@ impl Scene for TitleScene {
         let hw = sw as f32 / 2.0;
         let hh = sh as f32 / 2.0;
         let atlas = engine.font_atlas();
+
+        if let Some(panel) = &self.panel {
+            frame.draw_nine_slice(panel, Vec2::new(-320.0, 40.0), Vec2::new(640.0, 280.0));
+            let tinted = panel.clone().with_color(Color::new(0.3, 1.0, 0.5, 0.8));
+            frame.draw_nine_slice(&tinted, Vec2::new(-hw + 5.0, -hh + 5.0), Vec2::new(260.0, 40.0));
+        }
+
         let canvas = frame.canvas(0);
 
         canvas.text(
@@ -1196,7 +1224,7 @@ fn main() {
                     Box::new(CountdownScene::new()) as Box<dyn Scene>
                 }
             } else {
-                Box::new(TitleScene { blink_timer: 0.0 }) as Box<dyn Scene>
+                Box::new(TitleScene { blink_timer: 0.0, panel: None }) as Box<dyn Scene>
             }
         },
     )

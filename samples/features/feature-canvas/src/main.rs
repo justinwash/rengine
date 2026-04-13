@@ -60,9 +60,9 @@ impl Game for CanvasDemo {
             let color = Color::new(t, 1.0 - t, 0.5 + t * 0.5, 0.8);
             let c = color.to_array();
 
-            let p0 = world_to_ndc(cx, cy, screen);
-            let p1 = world_to_ndc(cx + a0.cos() * r, cy + a0.sin() * r, screen);
-            let p2 = world_to_ndc(cx + a1.cos() * r, cy + a1.sin() * r, screen);
+            let p0 = screen_to_ndc(cx, cy, screen);
+            let p1 = screen_to_ndc(cx + a0.cos() * r, cy + a0.sin() * r, screen);
+            let p2 = screen_to_ndc(cx + a1.cos() * r, cy + a1.sin() * r, screen);
 
             let uv = [0.0, 0.0];
             shapes.shape(&[
@@ -89,7 +89,7 @@ impl Game for CanvasDemo {
         let quad_color = Color::new(0.2, 0.5, 1.0, 0.7).to_array();
         let uv = [0.0, 0.0];
         let verts: Vec<CanvasVertex> = corners.iter().map(|&(x, y)| {
-            let p = world_to_ndc(x, y, screen);
+            let p = screen_to_ndc(x, y, screen);
             CanvasVertex { position: p, color: quad_color, uv }
         }).collect();
 
