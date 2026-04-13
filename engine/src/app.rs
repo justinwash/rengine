@@ -21,6 +21,19 @@ use crate::renderer3d::{Frame3D, MeshId, Renderer3D, Vertex3D};
 use crate::scene::{Globals, Scene, Scene2D, Scene3D, SceneOp, SceneOp3D};
 use crate::text;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ScaleMode {
+    Stretch,
+    Letterbox,
+    PixelPerfect,
+}
+
+impl Default for ScaleMode {
+    fn default() -> Self {
+        Self::Letterbox
+    }
+}
+
 pub struct EngineConfig {
     pub title: String,
     pub width: u32,
@@ -31,6 +44,10 @@ pub struct EngineConfig {
     pub hot_reload: bool,
     pub show_fps: bool,
     pub fixed_dt: f32,
+
+    pub render_width: Option<u32>,
+    pub render_height: Option<u32>,
+    pub scale_mode: ScaleMode,
 }
 
 impl Default for EngineConfig {
@@ -44,6 +61,9 @@ impl Default for EngineConfig {
             hot_reload: true,
             show_fps: true,
             fixed_dt: 1.0 / 60.0,
+            render_width: None,
+            render_height: None,
+            scale_mode: ScaleMode::default(),
         }
     }
 }
@@ -56,6 +76,7 @@ pub struct Engine {
     pub(crate) time: TimeState,
     pub(crate) window_width: u32,
     pub(crate) window_height: u32,
+    pub(crate) render_resolution: Option<(u32, u32)>,
     pub(crate) gamepads: GamepadSystem,
     pub(crate) hot_reload_enabled: bool,
     pub(crate) actions: ActionMap,
@@ -75,6 +96,15 @@ impl Engine {
     }
     pub fn window_size(&self) -> (u32, u32) {
         (self.window_width, self.window_height)
+    }
+
+    pub fn game_size(&self) -> (u32, u32) {
+        self.render_resolution
+            .unwrap_or((self.window_width, self.window_height))
+    }
+
+    pub fn set_scale_mode(&self, mode: ScaleMode) {
+        self.renderer.set_scale_mode(mode);
     }
 
     pub fn gamepad(&self, player: usize) -> &crate::input::GamepadState {
@@ -423,6 +453,17 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
     let headless = config.headless;
     let show_fps = config.show_fps;
     let fixed_dt = config.fixed_dt;
+    assert!(
+        config.render_width.is_some() == config.render_height.is_some(),
+        "render_width and render_height must both be set or both be None"
+    );
+    let render_res = config
+        .render_width
+        .and_then(|w| config.render_height.map(|h| (w, h)));
+    if let Some((rw, rh)) = render_res {
+        assert!(rw >= 1 && rh >= 1, "render_width and render_height must both be >= 1");
+    }
+    let scale_mode = config.scale_mode;
 
     let event_loop = EventLoop::new()?;
     let window = Arc::new(
@@ -448,12 +489,16 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
         time: TimeState::new(),
         window_width: config.width,
         window_height: config.height,
+        render_resolution: render_res,
         gamepads: GamepadSystem::new(),
         hot_reload_enabled: config.hot_reload,
         actions: ActionMap::new(),
         rng: RefCell::new(Rng::from_time()),
     };
     engine.time.set_fixed_dt(fixed_dt);
+    if let Some((rw, rh)) = render_res {
+        engine.renderer.init_offscreen(rw, rh, scale_mode);
+    }
 
     let mut game = G::new(&mut engine);
     let mut frame = Frame::new();
@@ -555,6 +600,10 @@ where
     let headless = config.headless;
     let show_fps = config.show_fps;
     let fixed_dt = config.fixed_dt;
+    let render_res = config
+        .render_width
+        .and_then(|w| config.render_height.map(|h| (w, h)));
+    let scale_mode = config.scale_mode;
 
     let event_loop = EventLoop::new()?;
     let window = Arc::new(
@@ -580,12 +629,16 @@ where
         time: TimeState::new(),
         window_width: config.width,
         window_height: config.height,
+        render_resolution: render_res,
         gamepads: GamepadSystem::new(),
         hot_reload_enabled: config.hot_reload,
         actions: ActionMap::new(),
         rng: RefCell::new(Rng::from_time()),
     };
     engine.time.set_fixed_dt(fixed_dt);
+    if let Some((rw, rh)) = render_res {
+        engine.renderer.init_offscreen(rw, rh, scale_mode);
+    }
 
     let mut globals = Globals::new();
     let mut stack: Vec<Box<dyn Scene>> = Vec::new();
@@ -753,6 +806,7 @@ pub struct Engine3D {
     time: TimeState,
     window_width: u32,
     window_height: u32,
+    render_resolution: Option<(u32, u32)>,
     mouse_captured: bool,
     hot_reload_enabled: bool,
     actions: ActionMap,
@@ -773,6 +827,16 @@ impl Engine3D {
     pub fn window_size(&self) -> (u32, u32) {
         (self.window_width, self.window_height)
     }
+
+    pub fn game_size(&self) -> (u32, u32) {
+        self.render_resolution
+            .unwrap_or((self.window_width, self.window_height))
+    }
+
+    pub fn set_scale_mode(&self, mode: ScaleMode) {
+        self.renderer.set_scale_mode(mode);
+    }
+
     pub fn is_mouse_captured(&self) -> bool {
         self.mouse_captured
     }
@@ -1039,6 +1103,17 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
     let headless = config.headless;
     let show_fps = config.show_fps;
     let fixed_dt = config.fixed_dt;
+    assert!(
+        config.render_width.is_some() == config.render_height.is_some(),
+        "render_width and render_height must both be set or both be None"
+    );
+    let render_res = config
+        .render_width
+        .and_then(|w| config.render_height.map(|h| (w, h)));
+    if let Some((rw, rh)) = render_res {
+        assert!(rw >= 1 && rh >= 1, "render_width and render_height must both be >= 1");
+    }
+    let scale_mode = config.scale_mode;
 
     let event_loop = EventLoop::new()?;
     let window = Arc::new(
@@ -1064,6 +1139,7 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
         time: TimeState::new(),
         window_width: config.width,
         window_height: config.height,
+        render_resolution: render_res,
         mouse_captured: false,
         hot_reload_enabled: config.hot_reload,
         actions: ActionMap::new(),
@@ -1071,6 +1147,9 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
         rng: RefCell::new(Rng::from_time()),
     };
     engine.time.set_fixed_dt(fixed_dt);
+    if let Some((rw, rh)) = render_res {
+        engine.renderer.init_offscreen(rw, rh, scale_mode);
+    }
 
     let mut game = G::new(&mut engine);
 
@@ -1227,6 +1306,17 @@ where
     let headless = config.headless;
     let show_fps = config.show_fps;
     let fixed_dt = config.fixed_dt;
+    assert!(
+        config.render_width.is_some() == config.render_height.is_some(),
+        "render_width and render_height must both be set or both be None"
+    );
+    let render_res = config
+        .render_width
+        .and_then(|w| config.render_height.map(|h| (w, h)));
+    if let Some((rw, rh)) = render_res {
+        assert!(rw >= 1 && rh >= 1, "render_width and render_height must both be >= 1");
+    }
+    let scale_mode = config.scale_mode;
 
     let event_loop = EventLoop::new()?;
     let window = Arc::new(
@@ -1252,6 +1342,7 @@ where
         time: TimeState::new(),
         window_width: config.width,
         window_height: config.height,
+        render_resolution: render_res,
         mouse_captured: false,
         hot_reload_enabled: config.hot_reload,
         actions: ActionMap::new(),
@@ -1259,6 +1350,9 @@ where
         rng: RefCell::new(Rng::from_time()),
     };
     engine.time.set_fixed_dt(fixed_dt);
+    if let Some((rw, rh)) = render_res {
+        engine.renderer.init_offscreen(rw, rh, scale_mode);
+    }
 
     let mut globals = Globals::new();
     let mut stack: Vec<Box<dyn Scene3D>> = Vec::new();
