@@ -1230,28 +1230,28 @@ pub struct SaveSystem { save_dir: PathBuf }
 
 Construction:
 
-| Constructor | Description |
-|---|---|
-| [`SaveSystem::new(app_name)`](https://github.com/justinwash/rengine/blob/master/engine/src/save.rs#L42) | Platform directory: `{data_local_dir}/{app_name}/saves/` |
-| [`SaveSystem::with_dir(path)`](https://github.com/justinwash/rengine/blob/master/engine/src/save.rs#L48) | Custom directory for tests or portable builds |
+| Constructor                                                                                              | Description                                              |
+| -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| [`SaveSystem::new(app_name)`](https://github.com/justinwash/rengine/blob/master/engine/src/save.rs#L42)  | Platform directory: `{data_local_dir}/{app_name}/saves/` |
+| [`SaveSystem::with_dir(path)`](https://github.com/justinwash/rengine/blob/master/engine/src/save.rs#L48) | Custom directory for tests or portable builds            |
 
 Methods:
 
-| Method | Description |
-|---|---|
-| [`save(slot, &T)`](https://github.com/justinwash/rengine/blob/master/engine/src/save.rs#L56) | Serialize `T: Serialize` to `{slot}.json` (pretty-printed) |
-| [`load::<T>(slot)`](https://github.com/justinwash/rengine/blob/master/engine/src/save.rs#L63) | Deserialize `T: DeserializeOwned` from `{slot}.json` |
-| [`delete(slot)`](https://github.com/justinwash/rengine/blob/master/engine/src/save.rs#L69) | Remove a save file (no-op if missing) |
-| [`exists(slot)`](https://github.com/justinwash/rengine/blob/master/engine/src/save.rs#L76) | Check whether a slot file exists |
-| [`list_slots()`](https://github.com/justinwash/rengine/blob/master/engine/src/save.rs#L80) | Sorted list of all save slot names |
-| [`save_dir()`](https://github.com/justinwash/rengine/blob/master/engine/src/save.rs#L52) | Returns the resolved save directory path |
+| Method                                                                                        | Description                                                |
+| --------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| [`save(slot, &T)`](https://github.com/justinwash/rengine/blob/master/engine/src/save.rs#L56)  | Serialize `T: Serialize` to `{slot}.json` (pretty-printed) |
+| [`load::<T>(slot)`](https://github.com/justinwash/rengine/blob/master/engine/src/save.rs#L63) | Deserialize `T: DeserializeOwned` from `{slot}.json`       |
+| [`delete(slot)`](https://github.com/justinwash/rengine/blob/master/engine/src/save.rs#L69)    | Remove a save file (no-op if missing)                      |
+| [`exists(slot)`](https://github.com/justinwash/rengine/blob/master/engine/src/save.rs#L76)    | Check whether a slot file exists                           |
+| [`list_slots()`](https://github.com/justinwash/rengine/blob/master/engine/src/save.rs#L80)    | Sorted list of all save slot names                         |
+| [`save_dir()`](https://github.com/justinwash/rengine/blob/master/engine/src/save.rs#L52)      | Returns the resolved save directory path                   |
 
 ### [`SaveError`](https://github.com/justinwash/rengine/blob/master/engine/src/save.rs#L8)
 
-| Variant | Source |
-|---|---|
-| `Io` | File system errors (missing dir, permissions) |
-| `Json` | Serialization / deserialization failures |
+| Variant     | Source                                          |
+| ----------- | ----------------------------------------------- |
+| `Io`        | File system errors (missing dir, permissions)   |
+| `Json`      | Serialization / deserialization failures        |
 | `NoSaveDir` | Platform data directory could not be determined |
 
 ### Usage Pattern
