@@ -4,12 +4,14 @@ pub mod mesh;
 pub use camera::Camera3D;
 pub use mesh::{cube_mesh, floor_quad, wall_quad, MeshId, Vertex3D};
 
+use crate::app::ScaleMode;
 use crate::assets::Color;
 use crate::canvas::{self, Canvas};
 use crate::text;
 use glam::{Mat4, Quat, Vec3};
 use mesh::Vertex3D as V3;
 
+use std::cell::Cell;
 use std::sync::Arc;
 use winit::window::Window;
 
@@ -156,6 +158,16 @@ struct GpuMesh {
     indices: Vec<u32>,
 }
 
+struct OffscreenTarget {
+    _texture: wgpu::Texture,
+    view: wgpu::TextureView,
+    bind_group: wgpu::BindGroup,
+    blit_pipeline: wgpu::RenderPipeline,
+    width: u32,
+    height: u32,
+    scale_mode: Cell<ScaleMode>,
+}
+
 pub(crate) struct Renderer3D {
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
@@ -172,6 +184,8 @@ pub(crate) struct Renderer3D {
     canvas_pipeline: wgpu::RenderPipeline,
     canvas_vb: wgpu::Buffer,
     pub(crate) font_atlas: text::FontAtlas,
+
+    offscreen: Option<OffscreenTarget>,
 }
 
 impl Renderer3D {
@@ -347,6 +361,7 @@ impl Renderer3D {
             canvas_pipeline,
             canvas_vb,
             font_atlas,
+            offscreen: None,
         }
     }
 
@@ -383,7 +398,9 @@ impl Renderer3D {
             self.surface_config.width = width;
             self.surface_config.height = height;
             self.surface.configure(&self.device, &self.surface_config);
-            self.depth_view = Self::create_depth_texture(&self.device, width, height);
+            if self.offscreen.is_none() {
+                self.depth_view = Self::create_depth_texture(&self.device, width, height);
+            }
         }
     }
 
@@ -399,11 +416,17 @@ impl Renderer3D {
                 return;
             }
         };
-        let view = output
+        let swap_view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        let aspect = self.surface_config.width as f32 / self.surface_config.height as f32;
+        let (mesh_target, aspect) = match self.offscreen {
+            Some(ref ofs) => (&ofs.view, ofs.width as f32 / ofs.height as f32),
+            None => (
+                &swap_view,
+                self.surface_config.width as f32 / self.surface_config.height as f32,
+            ),
+        };
         let vp = frame.camera.view_projection(aspect);
 
         let uniforms = Uniforms {
@@ -440,7 +463,7 @@ impl Renderer3D {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("mesh3d_pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
+                    view: mesh_target,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(frame.clear_color.to_wgpu()),
@@ -509,7 +532,7 @@ impl Renderer3D {
                 let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("mesh3d_viewmodel_pass"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &view,
+                        view: mesh_target,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Load,
@@ -541,9 +564,39 @@ impl Renderer3D {
                 .write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[uniforms]));
         }
 
+        if let Some(ref ofs) = self.offscreen {
+            let (vx, vy, vw, vh) = crate::renderer::blit_viewport(
+                ofs.scale_mode.get(),
+                ofs.width,
+                ofs.height,
+                self.surface_config.width,
+                self.surface_config.height,
+            );
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("blit_pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &swap_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&ofs.blit_pipeline);
+            pass.set_bind_group(0, &ofs.bind_group, &[]);
+            pass.set_viewport(vx, vy, vw, vh, 0.0, 1.0);
+            pass.draw(0..3, 0..1);
+        }
+
         canvas::render_pass(
             &mut encoder,
-            &view,
+            &swap_view,
             &self.canvas_pipeline,
             &self.canvas_vb,
             &self.queue,
@@ -563,6 +616,136 @@ impl Renderer3D {
     #[allow(dead_code)]
     pub fn surface_height(&self) -> u32 {
         self.surface_config.height
+    }
+
+    pub fn init_offscreen(&mut self, width: u32, height: u32, scale_mode: ScaleMode) {
+        self.depth_view = Self::create_depth_texture(&self.device, width, height);
+
+        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("offscreen_target_3d"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: self.surface_config.format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        let blit_shader = self.device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("blit_shader_3d"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../renderer/blit.wgsl").into()),
+        });
+
+        let blit_bgl = self
+            .device
+            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("blit_bgl_3d"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
+
+        let blit_sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("blit_sampler_3d"),
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("blit_bg_3d"),
+            layout: &blit_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&blit_sampler),
+                },
+            ],
+        });
+
+        let blit_layout = self
+            .device
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("blit_pipeline_layout_3d"),
+                bind_group_layouts: &[&blit_bgl],
+                immediate_size: 0,
+            });
+
+        let blit_pipeline = self
+            .device
+            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("blit_pipeline_3d"),
+                layout: Some(&blit_layout),
+                vertex: wgpu::VertexState {
+                    module: &blit_shader,
+                    entry_point: Some("vs_main"),
+                    buffers: &[],
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &blit_shader,
+                    entry_point: Some("fs_main"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: self.surface_config.format,
+                        blend: None,
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: Default::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    ..Default::default()
+                },
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState {
+                    count: 1,
+                    mask: !0,
+                    alpha_to_coverage_enabled: false,
+                },
+                multiview_mask: None,
+                cache: None,
+            });
+
+        self.offscreen = Some(OffscreenTarget {
+            _texture: texture,
+            view,
+            bind_group,
+            blit_pipeline,
+            width,
+            height,
+            scale_mode: Cell::new(scale_mode),
+        });
+    }
+
+    pub fn set_scale_mode(&self, mode: ScaleMode) {
+        if let Some(ref ofs) = self.offscreen {
+            ofs.scale_mode.set(mode);
+        }
     }
 
     fn build_draw_geometry(

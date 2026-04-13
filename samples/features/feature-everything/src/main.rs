@@ -22,6 +22,7 @@
 // Tween (Easing, LoopMode, score popup animation),
 // Ui (widget system: label, button, separator, focus navigation, UiStyle),
 // SaveSystem (save, load, delete, exists, list_slots — checkpoint auto-save),
+// ScaleMode (resolution scaling — game renders at 480×360, scaled to window),
 // InputState, GamepadState, TimeState, hot reload, Vec2.
 
 use rengine::*;
@@ -1263,12 +1264,20 @@ fn main() {
             hot_reload: !headless,
             show_fps: !headless,
             fixed_dt: 1.0 / 60.0,
+            render_width: Some(480),
+            render_height: Some(360),
+            scale_mode: ScaleMode::Letterbox,
             ..Default::default()
         },
         move |engine, globals| {
             // ── Asset root ──
             engine.set_asset_root(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets"));
             println!("[FEATURE OK] Engine::set_asset_root — assets resolve from crate directory");
+            println!(
+                "[FEATURE OK] ScaleMode — game renders at {:?}, window {:?}",
+                engine.game_size(),
+                engine.window_size()
+            );
 
             // ── Action mapping setup ──
             let actions = engine.actions_mut();
