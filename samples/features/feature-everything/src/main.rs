@@ -724,7 +724,10 @@ impl Scene for GameScene {
                         self.demo_did_pause = true;
                         demo.log_feature("SceneOp::Push (Pause)");
                         println!("[GameScene] demo: pushing PauseOverlay at frame {f}");
-                        return SceneOp::Push(Box::new(PauseOverlay { demo_frames: 0, focus: 0 }));
+                        return SceneOp::Push(Box::new(PauseOverlay {
+                            demo_frames: 0,
+                            focus: 0,
+                        }));
                     }
                 }
 
@@ -760,7 +763,10 @@ impl Scene for GameScene {
 
         if !is_demo {
             if engine.action_pressed("pause") {
-                return SceneOp::Push(Box::new(PauseOverlay { demo_frames: 0, focus: 0 }));
+                return SceneOp::Push(Box::new(PauseOverlay {
+                    demo_frames: 0,
+                    focus: 0,
+                }));
             }
         }
 
@@ -1103,8 +1109,7 @@ impl Scene for PauseOverlay {
         let hh = sh as f32 / 2.0;
         let atlas = engine.font_atlas();
 
-        let mut ui = Ui::new(-100.0, hh - 40.0, 200.0, (sw, sh), atlas)
-            .with_focus(self.focus);
+        let mut ui = Ui::new(-100.0, hh - 40.0, 200.0, (sw, sh), atlas).with_focus(self.focus);
         ui.button(0, "Resume");
         ui.button(1, "Quit");
         let resp = ui.update(engine.input());
@@ -1143,8 +1148,7 @@ impl Scene for PauseOverlay {
             (sw, sh),
         );
 
-        let mut ui = Ui::new(-100.0, hh - 40.0, 200.0, (sw, sh), atlas)
-            .with_focus(self.focus);
+        let mut ui = Ui::new(-100.0, hh - 40.0, 200.0, (sw, sh), atlas).with_focus(self.focus);
         ui.label_centered("PAUSED", 40.0, Color::WHITE);
         ui.separator(12.0);
         ui.button(0, "Resume");
