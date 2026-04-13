@@ -19,14 +19,21 @@ const SLOT: &str = "demo";
 
 impl Game for SaveLoadDemo {
     fn new(_engine: &mut Engine) -> Self {
-        let saves = SaveSystem::new("rengine-feature-saveload").expect("failed to init save system");
+        let saves =
+            SaveSystem::new("rengine-feature-saveload").expect("failed to init save system");
         let (data, status) = match saves.load::<PlayerData>(SLOT) {
-            Ok(d) => (d, format!("Loaded existing save from {}", saves.save_dir().display())),
+            Ok(d) => (
+                d,
+                format!("Loaded existing save from {}", saves.save_dir().display()),
+            ),
             Err(_) if saves.exists(SLOT) => (
                 PlayerData::default(),
                 "Save exists but failed to load — starting fresh".into(),
             ),
-            Err(_) => (PlayerData::default(), "No save found — starting fresh".into()),
+            Err(_) => (
+                PlayerData::default(),
+                "No save found — starting fresh".into(),
+            ),
         };
         Self {
             saves,
@@ -88,12 +95,23 @@ impl Game for SaveLoadDemo {
         let atlas = engine.font_atlas();
         let canvas = frame.canvas(0);
 
-        canvas.rect(-hw, -hh, sw as f32, sh as f32, Color::from_rgba8(20, 20, 30, 255), (sw, sh));
+        canvas.rect(
+            -hw,
+            -hh,
+            sw as f32,
+            sh as f32,
+            Color::from_rgba8(20, 20, 30, 255),
+            (sw, sh),
+        );
 
         canvas.text(
-            -hw + 20.0, hh - 30.0,
+            -hw + 20.0,
+            hh - 30.0,
             "Save / Load Demo",
-            24.0, Color::WHITE, (sw, sh), atlas,
+            24.0,
+            Color::WHITE,
+            (sw, sh),
+            atlas,
         );
 
         let x = -hw + 30.0;
@@ -101,18 +119,45 @@ impl Game for SaveLoadDemo {
         let label_col = Color::from_rgba8(180, 180, 180, 255);
         let val_col = Color::from_rgba8(100, 200, 255, 255);
 
-        let line = |canvas: &mut Canvas, y: &mut f32, label: &str, value: &str, atlas: &FontAtlas| {
-            canvas.text(x, *y, label, 16.0, label_col, (sw, sh), atlas);
-            canvas.text(x + 160.0, *y, value, 16.0, val_col, (sw, sh), atlas);
-            *y -= 28.0;
-        };
+        let line =
+            |canvas: &mut Canvas, y: &mut f32, label: &str, value: &str, atlas: &FontAtlas| {
+                canvas.text(x, *y, label, 16.0, label_col, (sw, sh), atlas);
+                canvas.text(x + 160.0, *y, value, 16.0, val_col, (sw, sh), atlas);
+                *y -= 28.0;
+            };
 
-        line(canvas, &mut y, "High Score:", &self.data.high_score.to_string(), atlas);
-        line(canvas, &mut y, "Coins:", &self.data.coins.to_string(), atlas);
-        line(canvas, &mut y, "Times Played:", &self.data.times_played.to_string(), atlas);
+        line(
+            canvas,
+            &mut y,
+            "High Score:",
+            &self.data.high_score.to_string(),
+            atlas,
+        );
+        line(
+            canvas,
+            &mut y,
+            "Coins:",
+            &self.data.coins.to_string(),
+            atlas,
+        );
+        line(
+            canvas,
+            &mut y,
+            "Times Played:",
+            &self.data.times_played.to_string(),
+            atlas,
+        );
 
         y -= 20.0;
-        canvas.text(x, y, &self.status, 14.0, Color::from_rgba8(255, 220, 80, 255), (sw, sh), atlas);
+        canvas.text(
+            x,
+            y,
+            &self.status,
+            14.0,
+            Color::from_rgba8(255, 220, 80, 255),
+            (sw, sh),
+            atlas,
+        );
 
         y -= 40.0;
         let slots = self.saves.list_slots();
@@ -125,7 +170,15 @@ impl Game for SaveLoadDemo {
 
         y -= 20.0;
         let hint_col = Color::from_rgba8(100, 100, 100, 255);
-        canvas.text(x, y, "SPACE = earn coins | S = save | L = load | D = delete | R = reset | ESC = quit", 12.0, hint_col, (sw, sh), atlas);
+        canvas.text(
+            x,
+            y,
+            "SPACE = earn coins | S = save | L = load | D = delete | R = reset | ESC = quit",
+            12.0,
+            hint_col,
+            (sw, sh),
+            atlas,
+        );
     }
 
     fn should_exit(&self) -> bool {
