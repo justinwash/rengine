@@ -100,92 +100,170 @@ impl Game for NineSliceDemo {
         let hw = sw as f32 / 2.0;
         let hh = sh as f32 / 2.0;
 
-        let world = |sx: f32, sy: f32, h: f32| -> Vec2 {
-            Vec2::new(sx - hw, hh - sy - h)
-        };
+        let world = |sx: f32, sy: f32, h: f32| -> Vec2 { Vec2::new(sx - hw, hh - sy - h) };
 
         let label_color = Color::from_rgba8(200, 200, 255, 255);
         let anim_label_color = Color::from_rgba8(150, 255, 220, 255);
-        let ls = 14.0;
+        let ls = 11.0;
 
         let r1_lbl_y = 66.0;
         let r1_top = 82.0;
         let panels1: &[(&str, f32, f32, f32)] = &[
             ("Small (60x40)", 20.0, 60.0, 40.0),
-            ("Medium (150x100)", 100.0, 150.0, 100.0),
-            ("Wide (300x40)", 280.0, 300.0, 40.0),
+            ("Medium (150x100)", 120.0, 150.0, 100.0),
+            ("Wide (300x40)", 310.0, 300.0, 40.0),
         ];
         for &(_, sx, w, h) in panels1 {
             frame.draw_nine_slice(&self.panel, world(sx, r1_top, h), Vec2::new(w, h));
         }
-        frame.draw(self.panel.texture, world(620.0, r1_top, 32.0), Vec2::new(32.0, 32.0));
-        frame.draw(self.panel.texture, world(680.0, r1_top, 50.0), Vec2::new(100.0, 50.0));
+        frame.draw(
+            self.panel.texture,
+            world(660.0, r1_top, 32.0),
+            Vec2::new(32.0, 32.0),
+        );
+        frame.draw(
+            self.panel.texture,
+            world(740.0, r1_top, 50.0),
+            Vec2::new(100.0, 50.0),
+        );
 
-        let r2_lbl_y = 200.0;
-        let r2_top = 216.0;
+        let r2_lbl_y = 210.0;
+        let r2_top = 226.0;
         let panels2: &[(&str, f32, f32, f32)] = &[
             ("Tall (60x160)", 20.0, 60.0, 160.0),
-            ("Large (300x140)", 100.0, 300.0, 140.0),
+            ("Large (300x140)", 120.0, 300.0, 140.0),
         ];
         for &(_, sx, w, h) in panels2 {
             frame.draw_nine_slice(&self.panel, world(sx, r2_top, h), Vec2::new(w, h));
         }
-        let tinted = self.panel.clone().with_color(Color::from_rgba8(255, 180, 100, 255));
-        frame.draw_nine_slice(&tinted, world(440.0, r2_top, 130.0), Vec2::new(160.0, 130.0));
+        let tinted = self
+            .panel
+            .clone()
+            .with_color(Color::from_rgba8(255, 180, 100, 255));
+        frame.draw_nine_slice(
+            &tinted,
+            world(480.0, r2_top, 130.0),
+            Vec2::new(160.0, 130.0),
+        );
 
-        let r3_lbl_y = 400.0;
-        let r3_top = 416.0;
+        let r3_lbl_y = 420.0;
+        let r3_top = 436.0;
         let anim_w1 = lerp(50.0, 150.0, (t * 0.8).sin() * 0.5 + 0.5);
         let anim_h1 = lerp(40.0, 120.0, (t * 1.2).sin() * 0.5 + 0.5);
         let anim_w2 = lerp(80.0, 280.0, (t * 0.6).sin() * 0.5 + 0.5);
         let breath = lerp(50.0, 120.0, (t * 1.5).sin() * 0.5 + 0.5);
 
-        let anim_panel = self.panel.clone().with_color(Color::from_rgba8(100, 220, 180, 200));
-        frame.draw_nine_slice(&anim_panel, world(20.0, r3_top, anim_h1), Vec2::new(anim_w1, anim_h1));
-        frame.draw_nine_slice(&anim_panel, world(210.0, r3_top, 60.0), Vec2::new(anim_w2, 60.0));
-        frame.draw_nine_slice(&anim_panel, world(550.0, r3_top, breath), Vec2::new(breath, breath));
+        let anim_panel = self
+            .panel
+            .clone()
+            .with_color(Color::from_rgba8(100, 220, 180, 200));
+        frame.draw_nine_slice(
+            &anim_panel,
+            world(20.0, r3_top, anim_h1),
+            Vec2::new(anim_w1, anim_h1),
+        );
+        frame.draw_nine_slice(
+            &anim_panel,
+            world(220.0, r3_top, 60.0),
+            Vec2::new(anim_w2, 60.0),
+        );
+        frame.draw_nine_slice(
+            &anim_panel,
+            world(600.0, r3_top, breath),
+            Vec2::new(breath, breath),
+        );
 
         frame.clear_color = Color::from_rgba8(15, 15, 25, 255);
         let canvas = frame.canvas(0);
 
-        let p = |sx: f32, sy: f32, _size: f32| -> (f32, f32) {
-            (sx - hw, hh - sy)
-        };
+        let p = |sx: f32, sy: f32, _size: f32| -> (f32, f32) { (sx - hw, hh - sy) };
 
         let (tx, ty) = p(20.0, 10.0, 28.0);
-        canvas.text(tx, ty, "NineSlice Feature Demo", 28.0, Color::WHITE, (sw, sh), atlas);
+        canvas.text(
+            tx,
+            ty,
+            "NineSlice Feature Demo",
+            28.0,
+            Color::WHITE,
+            (sw, sh),
+            atlas,
+        );
         let (tx, ty) = p(20.0, 42.0, 14.0);
         canvas.text(
-            tx, ty,
+            tx,
+            ty,
             "Same 32x32 texture drawn at different sizes - corners stay sharp",
-            14.0, Color::from_rgba8(180, 180, 180, 255), (sw, sh), atlas,
+            14.0,
+            Color::from_rgba8(180, 180, 180, 255),
+            (sw, sh),
+            atlas,
         );
 
         for &(lbl, sx, _, _) in panels1 {
             let (tx, ty) = p(sx, r1_lbl_y, ls);
             canvas.text(tx, ty, lbl, ls, label_color, (sw, sh), atlas);
         }
-        let (tx, ty) = p(620.0, r1_lbl_y, ls);
+        let (tx, ty) = p(660.0, r1_lbl_y, ls);
         canvas.text(tx, ty, "Source (1:1)", ls, label_color, (sw, sh), atlas);
-        let (tx, ty) = p(680.0, r1_lbl_y, ls);
+        let (tx, ty) = p(740.0, r1_lbl_y, ls);
         canvas.text(tx, ty, "Naive stretch", ls, label_color, (sw, sh), atlas);
 
         for &(lbl, sx, _, _) in panels2 {
             let (tx, ty) = p(sx, r2_lbl_y, ls);
             canvas.text(tx, ty, lbl, ls, label_color, (sw, sh), atlas);
         }
-        let (tx, ty) = p(440.0, r2_lbl_y, ls);
-        canvas.text(tx, ty, "Tinted (160x130)", ls, Color::from_rgba8(255, 200, 150, 255), (sw, sh), atlas);
+        let (tx, ty) = p(480.0, r2_lbl_y, ls);
+        canvas.text(
+            tx,
+            ty,
+            "Tinted (160x130)",
+            ls,
+            Color::from_rgba8(255, 200, 150, 255),
+            (sw, sh),
+            atlas,
+        );
 
         let (tx, ty) = p(20.0, r3_lbl_y, ls);
-        canvas.text(tx, ty, "Animated (resizing)", ls, anim_label_color, (sw, sh), atlas);
-        let (tx, ty) = p(210.0, r3_lbl_y, ls);
-        canvas.text(tx, ty, "Animated (width)", ls, anim_label_color, (sw, sh), atlas);
-        let (tx, ty) = p(550.0, r3_lbl_y, ls);
-        canvas.text(tx, ty, "Animated (breathing)", ls, anim_label_color, (sw, sh), atlas);
+        canvas.text(
+            tx,
+            ty,
+            "Animated (resizing)",
+            ls,
+            anim_label_color,
+            (sw, sh),
+            atlas,
+        );
+        let (tx, ty) = p(220.0, r3_lbl_y, ls);
+        canvas.text(
+            tx,
+            ty,
+            "Animated (width)",
+            ls,
+            anim_label_color,
+            (sw, sh),
+            atlas,
+        );
+        let (tx, ty) = p(600.0, r3_lbl_y, ls);
+        canvas.text(
+            tx,
+            ty,
+            "Animated (breathing)",
+            ls,
+            anim_label_color,
+            (sw, sh),
+            atlas,
+        );
 
         let (tx, ty) = p(20.0, sh as f32 - 24.0, 14.0);
-        canvas.text(tx, ty, "ESC to quit", 14.0, Color::from_rgba8(120, 120, 120, 255), (sw, sh), atlas);
+        canvas.text(
+            tx,
+            ty,
+            "ESC to quit",
+            14.0,
+            Color::from_rgba8(120, 120, 120, 255),
+            (sw, sh),
+            atlas,
+        );
     }
 
     fn should_exit(&self) -> bool {
@@ -196,8 +274,10 @@ impl Game for NineSliceDemo {
 fn main() {
     let config = EngineConfig {
         title: "Feature: Nine-Slice".into(),
+        width: 960,
+        height: 700,
         show_fps: false,
         ..Default::default()
     };
-    let _ = run::<NineSliceDemo>(config);
+    run::<NineSliceDemo>(config).unwrap();
 }
