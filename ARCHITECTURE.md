@@ -74,6 +74,7 @@
     - [13.1 `Rect`](#131-rect)
     - [13.2 `TimeState`](#132-timestate)
     - [13.3 `Rng` — Seeded Random Number Generator](#133-rng--seeded-random-number-generator)
+    - [13.4 `Tween` and `Easing` — Tweening / Interpolation](#134-tween-and-easing--tweening--interpolation)
   - [14. Rollback Netcode (`netcode/`, feature-gated)](#14-rollback-netcode-netcode-feature-gated)
     - [14.1 Architecture Overview (`Rollbackable`)](#141-architecture-overview-rollbackable)
     - [14.2 `RollbackSession`](#142-rollbacksession)
@@ -98,7 +99,7 @@ rengine/
 │       ├── text.rs        # FontAtlas — glyph rasterization + GPU atlas
 │       ├── canvas/        # Canvas overlay: mod.rs + canvas.wgsl
 │       ├── input/         # keyboard.rs, gamepad.rs, action.rs, mod.rs
-│       ├── math/          # Rect, TimeState, Rng
+│       ├── math/          # Rect, TimeState, Rng, Tween/Easing
 │       ├── renderer/      # 2D sprite renderer: camera, sprite, nineslice, texture, mod.rs, sprite.wgsl
 │       ├── renderer3d/    # 3D mesh renderer: camera, mesh, mod.rs, mesh3d.wgsl
 │       ├── scene/         # Scene trait, Globals, 2D scene data (prefabs/instances)
@@ -182,7 +183,7 @@ Then selective re-exports:
 - **World:** [`tilemap`](https://github.com/justinwash/rengine/blob/master/engine/src/world/tilemap.rs), [`aabb_overlap`](https://github.com/justinwash/rengine/blob/master/engine/src/world/physics.rs), [`aabb_overlap_layered`](https://github.com/justinwash/rengine/blob/master/engine/src/world/physics.rs), [`CollisionLayer`](https://github.com/justinwash/rengine/blob/master/engine/src/world/physics.rs), [`BodyId`](https://github.com/justinwash/rengine/blob/master/engine/src/world/trigger.rs), [`TriggerSystem`](https://github.com/justinwash/rengine/blob/master/engine/src/world/trigger.rs), [`TriggerZone`](https://github.com/justinwash/rengine/blob/master/engine/src/world/trigger.rs), [`TriggerZoneId`](https://github.com/justinwash/rengine/blob/master/engine/src/world/trigger.rs), [`OverlapEvent`](https://github.com/justinwash/rengine/blob/master/engine/src/world/trigger.rs), [`iso_to_screen`](https://github.com/justinwash/rengine/blob/master/engine/src/world/iso.rs#L4), [`screen_to_iso`](https://github.com/justinwash/rengine/blob/master/engine/src/world/iso.rs#L11), [`TileDef`](https://github.com/justinwash/rengine/blob/master/engine/src/world/tilemap.rs#L16), [`TileMap`](https://github.com/justinwash/rengine/blob/master/engine/src/world/tilemap.rs#L6)
 - **Canvas/Text:** [`screen_to_ndc`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs#L145), [`Canvas`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs#L42), [`CanvasVertex`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs#L6), [`FontAtlas`](https://github.com/justinwash/rengine/blob/master/engine/src/text.rs#L17)
 - **Pixel art:** [`pixelart`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pixelart.rs) (module-level re-export of [`PixelCanvas`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pixelart.rs#L3), [`darken`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pixelart.rs#L106), [`lighten`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pixelart.rs#L110))
-- **Math:** [`Rect`](https://github.com/justinwash/rengine/blob/master/engine/src/math/rect.rs#L5), [`TimeState`](https://github.com/justinwash/rengine/blob/master/engine/src/math/time.rs#L4), [`Rng`](https://github.com/justinwash/rengine/blob/master/engine/src/math/rng.rs), `Vec2`, `Vec3`, `Quat` (from glam)
+- **Math:** [`Rect`](https://github.com/justinwash/rengine/blob/master/engine/src/math/rect.rs#L5), [`TimeState`](https://github.com/justinwash/rengine/blob/master/engine/src/math/time.rs#L4), [`Rng`](https://github.com/justinwash/rengine/blob/master/engine/src/math/rng.rs), [`Tween`](https://github.com/justinwash/rengine/blob/master/engine/src/math/tween.rs), [`Easing`](https://github.com/justinwash/rengine/blob/master/engine/src/math/tween.rs), [`LoopMode`](https://github.com/justinwash/rengine/blob/master/engine/src/math/tween.rs), [`ease`](https://github.com/justinwash/rengine/blob/master/engine/src/math/tween.rs), [`lerp`](https://github.com/justinwash/rengine/blob/master/engine/src/math/tween.rs), `Vec2`, `Vec3`, `Quat` (from glam)
 
 The guiding design philosophy: **a game crate writes `use rengine::*;` and gets everything it needs.**
 
@@ -1454,6 +1455,47 @@ let mut child = rng.fork();         // independent sub-stream
 | `in_circle(r)` | `Vec2` | Uniform inside circle |
 | `direction()` | `Vec2` | Random unit vector |
 | `fork()` | `Rng` | Independent child stream |
+
+### 13.4 `Tween` and `Easing` — Tweening / Interpolation
+
+Smooth value interpolation over time with 25 easing functions and configurable loop modes.
+
+```rust
+let mut tw = Tween::new(0.0, 100.0, 2.0, Easing::OutElastic);
+tw.update(dt);
+let v = tw.value(); // eased interpolation from 0 → 100 over 2 seconds
+```
+
+**`Easing` variants:** `Linear`, `InQuad`, `OutQuad`, `InOutQuad`, `InCubic`, `OutCubic`, `InOutCubic`, `InQuart`, `OutQuart`, `InOutQuart`, `InSine`, `OutSine`, `InOutSine`, `InExpo`, `OutExpo`, `InOutExpo`, `InBack`, `OutBack`, `InOutBack`, `InElastic`, `OutElastic`, `InOutElastic`, `InBounce`, `OutBounce`, `InOutBounce`.
+
+`Easing::apply(t)` takes `t` in `[0, 1]`; most easing functions return values in `[0, 1]`, while the Back and Elastic variants may overshoot outside that range.
+
+**`LoopMode`:** `Once` (clamps at end), `Loop` (wraps), `PingPong` (reverses at each end).
+
+```rust
+// Looping tween that ping-pongs forever
+let mut tw = Tween::new(0.0, 1.0, 1.5, Easing::InOutSine).looping(LoopMode::PingPong);
+```
+
+**`Tween` methods:**
+| Method | Description |
+|--------|-------------|
+| `new(from, to, duration, easing)` | Create a tween |
+| `looping(mode)` | Set loop mode (builder) |
+| `update(dt)` | Advance by delta time |
+| `value()` | Current interpolated value |
+| `is_finished()` | `true` when `Once` completes |
+| `progress()` | Raw `elapsed / duration` clamped `[0, 1]` |
+| `reset()` | Restart from the beginning |
+
+**Standalone helpers:**
+- `lerp(a, b, t)` — Linear interpolation.
+- `ease(from, to, t, easing)` — One-shot eased interpolation without a `Tween` struct.
+
+```rust
+// One-shot ease without creating a Tween
+let v = ease(10.0, 50.0, 0.5, Easing::OutBounce);
+```
 
 ---
 
