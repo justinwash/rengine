@@ -63,7 +63,7 @@ impl Frame {
         position: glam::Vec2,
         size: glam::Vec2,
     ) {
-        self.sprites.extend(nine_slice.patches(position, size));
+        nine_slice.patches_into(position, size, &mut self.sprites);
     }
 
     pub fn begin(&mut self) {
