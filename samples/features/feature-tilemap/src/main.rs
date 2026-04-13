@@ -152,17 +152,20 @@ impl Game for TileMapDemo {
         );
 
         let screen = engine.window_size();
+        let sw = screen.0 as f32;
+        let hw = sw / 2.0;
+        let hh = screen.1 as f32 / 2.0;
         let atlas = engine.font_atlas();
         let hud = frame.canvas(0);
-        hud.rect(0.0, 0.0, screen.0 as f32, 36.0, Color::new(0.08, 0.07, 0.1, 0.85), screen);
-        hud.text(12.0, 8.0, "TileMap Demo - WASD/Arrows to move", 16.0, Color::WHITE, screen, atlas);
+        hud.rect(-hw, hh - 36.0, sw, 36.0, Color::new(0.08, 0.07, 0.1, 0.85), screen);
+        hud.text(-hw + 12.0, hh - 8.0, "TileMap Demo - WASD/Arrows to move", 16.0, Color::WHITE, screen, atlas);
 
         let pos_text = format!("pos: ({:.0}, {:.0})", self.player_pos.x, self.player_pos.y);
         let col = (self.player_pos.x / TILE_SIZE) as usize;
         let row = (self.player_pos.y / TILE_SIZE) as usize;
         let cell_text = format!("cell: ({}, {})", col, row);
-        hud.text(12.0, screen.1 as f32 - 40.0, &pos_text, 13.0, Color::YELLOW, screen, atlas);
-        hud.text(12.0, screen.1 as f32 - 22.0, &cell_text, 13.0, Color::new(0.6, 0.8, 1.0, 1.0), screen, atlas);
+        hud.text(-hw + 12.0, -hh + 40.0, &pos_text, 13.0, Color::YELLOW, screen, atlas);
+        hud.text(-hw + 12.0, -hh + 22.0, &cell_text, 13.0, Color::new(0.6, 0.8, 1.0, 1.0), screen, atlas);
     }
 }
 

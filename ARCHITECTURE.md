@@ -97,7 +97,7 @@ rengine/
 │       ├── canvas/        # Canvas overlay: mod.rs + canvas.wgsl
 │       ├── input/         # keyboard.rs, gamepad.rs, action.rs, mod.rs
 │       ├── math/          # Rect, TimeState, Rng
-│       ├── renderer/      # 2D sprite renderer: camera, sprite, texture, mod.rs, sprite.wgsl
+│       ├── renderer/      # 2D sprite renderer: camera, sprite, nineslice, texture, mod.rs, sprite.wgsl
 │       ├── renderer3d/    # 3D mesh renderer: camera, mesh, mod.rs, mesh3d.wgsl
 │       ├── scene/         # Scene trait, Globals, 2D scene data (prefabs/instances)
 │       ├── world/         # TileMap, AABB physics, isometric helpers
@@ -178,7 +178,7 @@ Then selective re-exports:
 - **Assets:** [`Color`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/color.rs#L2), [`Animation`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/spritesheet.rs#L56), [`AssetError`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pipeline.rs#L15), [`AssetManifest`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pipeline.rs#L158), [`AssetPack`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pipeline.rs#L174), [`AssetSummary`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pipeline.rs#L206), [`AudioBus`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/audio.rs#L14), [`AudioClip`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/audio.rs#L25), [`AudioId`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/audio.rs#L22), [`MeshAsset`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pipeline.rs#L137), [`SpriteSheet`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/spritesheet.rs#L5), [`SpriteSheetAssetDef`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pipeline.rs#L151), [`TextureAsset`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pipeline.rs#L119)
 - **Scene:** [`Globals`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/globals.rs#L4), [`Prefab2D`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/data2d.rs#L61)/[`Prefab2DDef`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/data2d.rs#L26), [`PrefabSprite2D`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/data2d.rs#L50)/[`PrefabSprite2DDef`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/data2d.rs#L11), [`Scene`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/mod.rs#L24), [`Scene2D`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/data2d.rs#L98)/[`Scene2DDef`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/data2d.rs#L42), [`SceneInstance2D`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/data2d.rs#L67)/[`SceneInstance2DDef`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/data2d.rs#L32), [`SceneOp`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/mod.rs#L16), [`Scene3D`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/mod.rs#L47), [`SceneOp3D`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/mod.rs#L39)
 - **World:** [`tilemap`](https://github.com/justinwash/rengine/blob/master/engine/src/world/tilemap.rs), [`aabb_overlap`](https://github.com/justinwash/rengine/blob/master/engine/src/world/physics.rs), [`aabb_overlap_layered`](https://github.com/justinwash/rengine/blob/master/engine/src/world/physics.rs), [`CollisionLayer`](https://github.com/justinwash/rengine/blob/master/engine/src/world/physics.rs), [`BodyId`](https://github.com/justinwash/rengine/blob/master/engine/src/world/trigger.rs), [`TriggerSystem`](https://github.com/justinwash/rengine/blob/master/engine/src/world/trigger.rs), [`TriggerZone`](https://github.com/justinwash/rengine/blob/master/engine/src/world/trigger.rs), [`TriggerZoneId`](https://github.com/justinwash/rengine/blob/master/engine/src/world/trigger.rs), [`OverlapEvent`](https://github.com/justinwash/rengine/blob/master/engine/src/world/trigger.rs), [`iso_to_screen`](https://github.com/justinwash/rengine/blob/master/engine/src/world/iso.rs#L4), [`screen_to_iso`](https://github.com/justinwash/rengine/blob/master/engine/src/world/iso.rs#L11), [`TileDef`](https://github.com/justinwash/rengine/blob/master/engine/src/world/tilemap.rs#L16), [`TileMap`](https://github.com/justinwash/rengine/blob/master/engine/src/world/tilemap.rs#L6)
-- **Canvas/Text:** [`screen_to_ndc`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs#L145), [`Canvas`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs#L42), [`CanvasVertex`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs#L6), [`FontAtlas`](https://github.com/justinwash/rengine/blob/master/engine/src/text.rs#L17)
+- **Canvas/Text:** [`world_to_ndc`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs#L145), [`Canvas`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs#L42), [`CanvasVertex`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs#L6), [`FontAtlas`](https://github.com/justinwash/rengine/blob/master/engine/src/text.rs#L17)
 - **Pixel art:** [`pixelart`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pixelart.rs) (module-level re-export of [`PixelCanvas`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pixelart.rs#L3), [`darken`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pixelart.rs#L106), [`lighten`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pixelart.rs#L110))
 - **Math:** [`Rect`](https://github.com/justinwash/rengine/blob/master/engine/src/math/rect.rs#L5), [`TimeState`](https://github.com/justinwash/rengine/blob/master/engine/src/math/time.rs#L4), [`Rng`](https://github.com/justinwash/rengine/blob/master/engine/src/math/rng.rs), `Vec2`, `Vec3`, `Quat` (from glam)
 
@@ -566,6 +566,22 @@ The vertex shader transforms 2D world positions by the orthographic projection. 
 
 ---
 
+### 4.7 [`NineSlice`](https://github.com/justinwash/rengine/blob/master/engine/src/renderer/nineslice.rs) — Resizable UI Panels
+
+A nine-slice divides a texture into 9 regions using left/right/top/bottom border sizes (in pixels). When drawn at any size, corners stay fixed, edges stretch in one axis, and the center fills the remaining area.
+
+```rust
+let panel = NineSlice::uniform(texture_id, 32, 32, 8); // 8px borders all sides
+let panel = NineSlice::new(tex, 64, 64, 10, 12, 8, 6);  // asymmetric borders
+frame.draw_nine_slice(&panel, position, size);
+```
+
+**How it works:** `patches()` computes 9 `DrawParams` with correct position rects and UV sub-rects. These are pushed into the sprite batch like normal sprites — no shader changes needed. Patches with zero area (when the draw size is smaller than borders) are skipped.
+
+Supports `.with_color()` for tinting and `.with_z_order()` for draw order.
+
+---
+
 ## 5. The 3D Renderer ([`renderer3d/`](https://github.com/justinwash/rengine/blob/master/engine/src/renderer3d/))
 
 ### 5.1 [`Renderer3D`](https://github.com/justinwash/rengine/blob/master/engine/src/renderer3d/mod.rs#L119) Initialization
@@ -726,7 +742,7 @@ The engine embeds `assets/font.ttf` at compile time via `include_bytes!()`. At i
 
 ### 6.2 [`Canvas`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs#L42) Drawing
 
-`Canvas` is an immediate-mode 2D drawing API that operates in **screen space** (pixel coordinates, origin top-left):
+`Canvas` is an immediate-mode 2D drawing API that operates in **world space** (center-origin, Y-up — matching the sprite coordinate system):
 
 ```rust
 pub struct Canvas {
@@ -736,19 +752,21 @@ pub struct Canvas {
 
 Methods:
 
-- **[`canvas.rect(x, y, w, h, color, screen_size)`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs#L55)** — Draws a solid rectangle. Converts screen coordinates to NDC via `screen_to_ndc()`, uses the `white_uv` from the font atlas so the fragment shader returns a solid color.
+- **[`canvas.rect(x, y, w, h, color, screen_size)`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs#L55)** — Draws a solid rectangle. Converts world coordinates to NDC via `world_to_ndc()`, uses the `white_uv` from the font atlas so the fragment shader returns a solid color.
 - **[`canvas.text(x, y, text, size, color, screen_size, atlas)`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs#L84)** — Renders text by emitting two triangles per visible glyph. Scales glyphs by `size / FONT_SIZE`. Each quad's UV maps to the glyph's region in the font atlas.
 - **[`canvas.shape(triangles)`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs#L51)** — Accepts raw `CanvasVertex` triangles for custom shapes.
 
 **NDC conversion:**
 
 ```rust
-pub fn screen_to_ndc(x: f32, y: f32, screen_size: (u32, u32)) -> [f32; 2] {
-    [(x / sw) * 2.0 - 1.0, 1.0 - (y / sh) * 2.0]
+pub fn world_to_ndc(x: f32, y: f32, screen_size: (u32, u32)) -> [f32; 2] {
+    let hw = screen_size.0 as f32 / 2.0;
+    let hh = screen_size.1 as f32 / 2.0;
+    [x / hw, y / hh]
 }
 ```
 
-Maps screen-space (0,0 = top-left) to NDC (-1,-1 = bottom-left, +1,+1 = top-right).
+Maps world-space (0,0 = center, Y-up) to NDC (-1,-1 = bottom-left, +1,+1 = top-right). This matches the sprite renderer's coordinate system, so canvas overlays and sprites use the same coordinates.
 
 ### 6.3 The canvas.wgsl Shader
 
@@ -1406,6 +1424,7 @@ let mut child = rng.fork();         // independent sub-stream
 ```
 
 **Accessible on Engine:**
+
 - `engine.rng()` → `RefMut<Rng>` (seeded from system time at startup; uses interior mutability so it works from `&Engine`/`&Engine3D`)
 
 **Core methods:**

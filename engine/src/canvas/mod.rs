@@ -53,8 +53,8 @@ impl Canvas {
     }
 
     pub fn rect(&mut self, x: f32, y: f32, w: f32, h: f32, color: Color, screen_size: (u32, u32)) {
-        let [x0, y0] = screen_to_ndc(x, y, screen_size);
-        let [x1, y1] = screen_to_ndc(x + w, y + h, screen_size);
+        let [x0, y0] = world_to_ndc(x, y, screen_size);
+        let [x1, y1] = world_to_ndc(x + w, y + h, screen_size);
 
         let c = color.to_array();
         let uv = WHITE_UV;
@@ -107,32 +107,32 @@ impl Canvas {
 
             if entry.width_px > 0.0 {
                 let gx = cursor_x + entry.x_offset * scale;
-                let gy = y + (atlas.line_height - entry.y_offset - entry.height_px) * scale;
+                let gy = y - (atlas.line_height - entry.y_offset) * scale;
                 let gw = entry.width_px * scale;
                 let gh = entry.height_px * scale;
 
-                let [x0, y0] = screen_to_ndc(gx, gy, screen_size);
-                let [x1, y1] = screen_to_ndc(gx + gw, gy + gh, screen_size);
+                let [x0, y0] = world_to_ndc(gx, gy, screen_size);
+                let [x1, y1] = world_to_ndc(gx + gw, gy + gh, screen_size);
 
                 let v0 = CanvasVertex {
                     position: [x0, y0],
                     color: c,
-                    uv: [entry.u0, entry.v0],
+                    uv: [entry.u0, entry.v1],
                 };
                 let v1 = CanvasVertex {
                     position: [x1, y0],
                     color: c,
-                    uv: [entry.u1, entry.v0],
+                    uv: [entry.u1, entry.v1],
                 };
                 let v2 = CanvasVertex {
                     position: [x1, y1],
                     color: c,
-                    uv: [entry.u1, entry.v1],
+                    uv: [entry.u1, entry.v0],
                 };
                 let v3 = CanvasVertex {
                     position: [x0, y1],
                     color: c,
-                    uv: [entry.u0, entry.v1],
+                    uv: [entry.u0, entry.v0],
                 };
                 self.verts.extend_from_slice(&[v0, v2, v1, v0, v3, v2]);
             }
@@ -142,10 +142,10 @@ impl Canvas {
     }
 }
 
-pub fn screen_to_ndc(x: f32, y: f32, screen_size: (u32, u32)) -> [f32; 2] {
-    let sw = screen_size.0 as f32;
-    let sh = screen_size.1 as f32;
-    [(x / sw) * 2.0 - 1.0, 1.0 - (y / sh) * 2.0]
+pub fn world_to_ndc(x: f32, y: f32, screen_size: (u32, u32)) -> [f32; 2] {
+    let hw = screen_size.0 as f32 / 2.0;
+    let hh = screen_size.1 as f32 / 2.0;
+    [x / hw, y / hh]
 }
 
 pub(crate) fn draw_fps(canvas: &mut Canvas, fps: f32, screen_size: (u32, u32), atlas: &FontAtlas) {
@@ -163,17 +163,19 @@ pub(crate) fn draw_fps(canvas: &mut Canvas, fps: f32, screen_size: (u32, u32), a
     }
     let bg_w = text_w + 8.0;
     let bg_h = size + 8.0;
+    let hw = screen_size.0 as f32 / 2.0;
+    let hh = screen_size.1 as f32 / 2.0;
     canvas.rect(
-        4.0,
-        4.0,
+        -hw + 4.0,
+        hh - 4.0 - bg_h,
         bg_w,
         bg_h,
         Color::from_rgba8(0, 0, 0, 160),
         screen_size,
     );
     canvas.text(
-        8.0,
-        8.0,
+        -hw + 8.0,
+        hh - 8.0,
         &text,
         size,
         Color::from_rgba8(0, 255, 0, 255),

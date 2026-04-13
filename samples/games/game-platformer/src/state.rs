@@ -1,6 +1,5 @@
 use rengine::{Color, TextureId, Vec2};
 
-
 pub struct Player {
     pub pos: Vec2,
     pub vel: Vec2,
@@ -10,13 +9,11 @@ pub struct Player {
     pub eye_tex: TextureId,
 }
 
-
 pub struct Platform {
     pub pos: Vec2,
     pub size: Vec2,
     pub texture: TextureId,
 }
-
 
 pub struct Platformer {
     pub player: Player,
