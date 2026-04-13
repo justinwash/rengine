@@ -58,6 +58,7 @@ Recently completed or partially completed:
 - Partial: 3D transforms still only support position-based translation; rotation and scale per draw are not yet supported (caused the recurring door visibility issue)
 - Completed: seeded RNG — `Rng` struct (xoshiro256\*\*) with deterministic seeding, `engine.rng()` accessor on Engine and Engine3D, game-dev convenience methods (range, weighted, shuffle, pick, normal distribution, Vec2 helpers, fork), `feature-rng` sample
 - Completed: nine-slice rendering — `NineSlice` struct with uniform/asymmetric borders, `frame.draw_nine_slice()`, color tinting, z-order, `feature-nineslice` sample
+- Completed: tweening and easing — `Tween` struct with 25 easing curves, `LoopMode` (Once/Loop/PingPong), `lerp()` and `ease()` helpers, `feature-tween` sample
 
 ---
 
@@ -142,7 +143,7 @@ These features make 2D development substantially more practical.
 24. Particle systems
     Support 2D emitters, bursts, lifetimes, curves, velocity, size-over-time, and color-over-time.
 
-25. Tweening system
+25. Tweening system [done]
     Smoothly animate properties over time with easing functions.
 
 26. Animation state machines
@@ -165,6 +166,8 @@ These features make 2D development substantially more practical.
 
 32. Better text rendering
     Multiple fonts, wrapping, alignment, outlines, shadows, and bitmap font support.
+    Bold, italic, and bold-italic variants via per-style font atlases.
+    Fancy text effects: per-letter color shifting, bouncing/wave letters, and rendering text along curves.
 
 33. Resolution scaling modes
     Pixel-perfect, stretch, letterbox, integer scaling, and fit or fill policies.
