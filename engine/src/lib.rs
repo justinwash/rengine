@@ -8,6 +8,7 @@ pub mod renderer;
 pub mod renderer3d;
 pub mod scene;
 pub mod text;
+pub mod ui;
 
 pub mod world;
 
@@ -40,12 +41,13 @@ pub use assets::{
     MeshAsset, SpriteSheet, SpriteSheetAssetDef, TextureAsset,
 };
 
-pub use canvas::{screen_to_ndc, Canvas, CanvasVertex};
+pub use canvas::{screen_to_ndc, wrap_text, Canvas, CanvasVertex, TextAlign};
 pub use scene::{
     Globals, Prefab2D, Prefab2DDef, PrefabSprite2D, PrefabSprite2DDef, Scene, Scene2D, Scene2DDef,
     SceneInstance2D, SceneInstance2DDef, SceneOp,
 };
 pub use text::FontAtlas;
+pub use ui::{Ui, UiResponse, UiStyle};
 
 pub use gilrs::Button as GamepadButton;
 pub use input::{GamepadState, GamepadSystem};

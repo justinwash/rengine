@@ -2481,6 +2481,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rengine-feature-text"
+version = "0.1.0"
+dependencies = [
+ "rengine",
+]
+
+[[package]]
 name = "rengine-feature-tilemap"
 version = "0.1.0"
 dependencies = [
@@ -2496,6 +2503,13 @@ dependencies = [
 
 [[package]]
 name = "rengine-feature-tween"
+version = "0.1.0"
+dependencies = [
+ "rengine",
+]
+
+[[package]]
+name = "rengine-feature-ui"
 version = "0.1.0"
 dependencies = [
  "rengine",
