@@ -22,7 +22,7 @@ impl Game for ParticleDemo {
 
         let white_tex = engine.white_texture();
 
-        let up = -std::f32::consts::FRAC_PI_2;
+        let up = std::f32::consts::FRAC_PI_2;
         let spread = std::f32::consts::FRAC_PI_4;
 
         let fire = ParticleEmitter::new(
@@ -35,7 +35,7 @@ impl Game for ParticleDemo {
                 .with_size_end((1.0, 3.0))
                 .with_color_start(Color::new(1.0, 0.6, 0.1, 1.0))
                 .with_color_end(Color::new(1.0, 0.0, 0.0, 0.0))
-                .with_gravity(Vec2::new(0.0, -30.0))
+                .with_gravity(Vec2::new(0.0, 30.0))
                 .with_emit_shape(EmitShape::Rect(20.0, 2.0))
                 .with_max_particles(256),
         );
@@ -50,7 +50,7 @@ impl Game for ParticleDemo {
                 .with_size_end((1.0, 2.0))
                 .with_color_start(Color::new(0.3, 0.6, 1.0, 1.0))
                 .with_color_end(Color::new(0.1, 0.3, 1.0, 0.0))
-                .with_gravity(Vec2::new(0.0, 120.0))
+                .with_gravity(Vec2::new(0.0, -120.0))
                 .with_max_particles(256),
         );
 
@@ -86,12 +86,12 @@ impl Game for ParticleDemo {
         self.frame_count += 1;
         let dt = engine.dt();
         let mut rng = engine.rng();
-        let (w, h) = engine.game_size();
-        let wf = w as f32;
-        let hf = h as f32;
+        let (gw, gh) = engine.game_size();
+        let hw = gw as f32 / 2.0;
+        let hh = gh as f32 / 2.0;
 
-        self.fire.set_position(Vec2::new(wf * 0.2, hf * 0.85));
-        self.fountain.set_position(Vec2::new(wf * 0.5, hf * 0.85));
+        self.fire.set_position(Vec2::new(-hw * 0.6, -hh * 0.6));
+        self.fountain.set_position(Vec2::new(0.0, -hh * 0.6));
 
         self.fire.update(dt, &mut rng);
         self.fountain.update(dt, &mut rng);
@@ -100,13 +100,13 @@ impl Game for ParticleDemo {
         if self.demo_mode {
             if self.frame_count % 60 == 0 {
                 self.sparkle = ParticleEmitter::new(self.sparkle.config().clone());
-                self.sparkle.set_position(Vec2::new(wf * 0.8, hf * 0.5));
+                self.sparkle.set_position(Vec2::new(hw * 0.6, 0.0));
                 self.sparkle.burst(&mut rng);
                 self.sparkle.set_active(false);
             }
         } else if engine.input().is_key_pressed(KeyCode::Space) {
             self.sparkle = ParticleEmitter::new(self.sparkle.config().clone());
-            self.sparkle.set_position(Vec2::new(wf * 0.8, hf * 0.5));
+            self.sparkle.set_position(Vec2::new(hw * 0.6, 0.0));
             self.sparkle.burst(&mut rng);
             self.sparkle.set_active(false);
         }
@@ -119,14 +119,15 @@ impl Game for ParticleDemo {
         self.fountain.draw(frame, self.white_tex);
         self.sparkle.draw(frame, self.white_tex);
 
-        let screen = engine.game_size();
+        let screen = engine.window_size();
         let font = engine.font_atlas();
         let canvas = frame.canvas(0);
-        let sx = screen.0 as f32;
+        let hw = screen.0 as f32 / 2.0;
+        let hh = screen.1 as f32 / 2.0;
 
         canvas.text(
-            sx * 0.2 - 40.0,
-            14.0,
+            -hw * 0.6 - 20.0,
+            hh - 20.0,
             "Fire",
             16.0,
             Color::new(1.0, 0.6, 0.1, 1.0),
@@ -134,8 +135,8 @@ impl Game for ParticleDemo {
             &font,
         );
         canvas.text(
-            sx * 0.2 - 40.0,
-            34.0,
+            -hw * 0.6 - 30.0,
+            hh - 40.0,
             &format!("alive: {}", self.fire.alive_count()),
             14.0,
             Color::new(0.7, 0.7, 0.7, 1.0),
@@ -144,8 +145,8 @@ impl Game for ParticleDemo {
         );
 
         canvas.text(
-            sx * 0.5 - 40.0,
-            14.0,
+            -40.0,
+            hh - 20.0,
             "Fountain",
             16.0,
             Color::new(0.3, 0.6, 1.0, 1.0),
@@ -153,8 +154,8 @@ impl Game for ParticleDemo {
             &font,
         );
         canvas.text(
-            sx * 0.5 - 40.0,
-            34.0,
+            -30.0,
+            hh - 40.0,
             &format!("alive: {}", self.fountain.alive_count()),
             14.0,
             Color::new(0.7, 0.7, 0.7, 1.0),
@@ -163,8 +164,8 @@ impl Game for ParticleDemo {
         );
 
         canvas.text(
-            sx * 0.8 - 40.0,
-            14.0,
+            hw * 0.6 - 50.0,
+            hh - 20.0,
             "Sparkle (Space)",
             16.0,
             Color::YELLOW,
@@ -172,8 +173,8 @@ impl Game for ParticleDemo {
             &font,
         );
         canvas.text(
-            sx * 0.8 - 40.0,
-            34.0,
+            hw * 0.6 - 30.0,
+            hh - 40.0,
             &format!("alive: {}", self.sparkle.alive_count()),
             14.0,
             Color::new(0.7, 0.7, 0.7, 1.0),
