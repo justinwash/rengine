@@ -18,6 +18,7 @@
 // load_resource (serializable resources via serde), fixed_update (fixed timestep),
 // Rect, Canvas (rect, text), FontAtlas, Color, pixelart::PixelCanvas,
 // NineSlice (uniform, draw_nine_slice, with_color, with_z_order),
+// Tween (Easing, LoopMode, score popup animation),
 // InputState, GamepadState, TimeState, hot reload, Vec2.
 
 use rengine::*;
@@ -252,6 +253,8 @@ struct GameScene {
 
     play_time: f32,
 
+    score_popup: Tween,
+
     // Demo auto-play state
     demo_step: usize,
     demo_did_pause: bool,
@@ -303,6 +306,8 @@ impl Default for GameScene {
             cam_tilt: 0.0,
             pending_shake: Cell::new(false),
             play_time: 0.0,
+            score_popup: Tween::new(0.0, 1.0, 0.6, Easing::OutElastic),
+
             demo_step: 0,
             demo_did_pause: false,
             demo_did_zoom: false,
@@ -664,6 +669,7 @@ impl Scene for GameScene {
             // Juicy feedback: shake + tilt on coin pickup
             self.pending_shake.set(true);
             self.cam_tilt = 0.07 * if self.facing_right { 1.0 } else { -1.0 };
+            self.score_popup.reset();
             println!(
                 "[FEATURE OK] aabb_overlap — collected coin! score: {}",
                 self.score
@@ -671,6 +677,7 @@ impl Scene for GameScene {
             if let Some(demo) = globals.get_mut::<DemoConfig>() {
                 demo.log_feature("Camera2D::shake (via coin)");
                 demo.log_feature("Camera2D::rotation");
+                demo.log_feature("Tween + Easing (score popup)");
             }
         }
 
@@ -682,6 +689,7 @@ impl Scene for GameScene {
         }
 
         self.coin_anim.update(dt);
+        self.score_popup.update(dt);
 
         self.damage_flash = (self.damage_flash - dt).max(0.0);
         self.checkpoint_flash = (self.checkpoint_flash - dt).max(0.0);
@@ -860,11 +868,13 @@ impl Scene for GameScene {
             Color::new(0.0, 0.0, 0.0, 0.5),
             (sw, sh),
         );
+        // Tween-animated score popup: elastic bounce on coin collection
+        let popup_scale = 18.0 + 10.0 * self.score_popup.value() * if self.score_popup.is_finished() { 0.0 } else { 1.0 };
         hud.text(
             -hw + 10.0,
             hh - 35.0,
             &format!("Coins: {}", self.score),
-            18.0,
+            popup_scale,
             Color::YELLOW,
             (sw, sh),
             atlas,
