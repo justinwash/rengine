@@ -61,6 +61,7 @@
   - [10. Color and Pixel Art](#10-color-and-pixel-art)
     - [`Color`](#color)
     - [`PixelCanvas` (Procedural Texture Generation)](#pixelcanvas-procedural-texture-generation)
+  - [10.5 Save / Load System (`save.rs`)](#105-save--load-system-savers)
   - [11. Scene System (`scene/`)](#11-scene-system-scene)
     - [11.1 `Scene` Trait and `SceneOp`](#111-scene-trait-and-sceneop)
     - [11.2 `Globals` — Typed Key-Value Store](#112-globals--typed-key-value-store)
@@ -1214,6 +1215,55 @@ let tex = engine.create_texture(16, 16, &pixels);
 ```
 
 [`darken(color, factor)`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pixelart.rs#L106) and [`lighten(color, factor)`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pixelart.rs#L110) are color utility functions.
+
+---
+
+## 10.5 Save / Load System ([`save.rs`](https://github.com/justinwash/rengine/blob/master/engine/src/save.rs))
+
+### [`SaveSystem`](https://github.com/justinwash/rengine/blob/master/engine/src/save.rs#L37)
+
+Slot-based JSON persistence for game state, settings, and progress.
+
+```rust
+pub struct SaveSystem { save_dir: PathBuf }
+```
+
+Construction:
+
+| Constructor | Description |
+|---|---|
+| [`SaveSystem::new(app_name)`](https://github.com/justinwash/rengine/blob/master/engine/src/save.rs#L42) | Platform directory: `{data_local_dir}/{app_name}/saves/` |
+| [`SaveSystem::with_dir(path)`](https://github.com/justinwash/rengine/blob/master/engine/src/save.rs#L48) | Custom directory for tests or portable builds |
+
+Methods:
+
+| Method | Description |
+|---|---|
+| [`save(slot, &T)`](https://github.com/justinwash/rengine/blob/master/engine/src/save.rs#L56) | Serialize `T: Serialize` to `{slot}.json` (pretty-printed) |
+| [`load::<T>(slot)`](https://github.com/justinwash/rengine/blob/master/engine/src/save.rs#L63) | Deserialize `T: DeserializeOwned` from `{slot}.json` |
+| [`delete(slot)`](https://github.com/justinwash/rengine/blob/master/engine/src/save.rs#L69) | Remove a save file (no-op if missing) |
+| [`exists(slot)`](https://github.com/justinwash/rengine/blob/master/engine/src/save.rs#L76) | Check whether a slot file exists |
+| [`list_slots()`](https://github.com/justinwash/rengine/blob/master/engine/src/save.rs#L80) | Sorted list of all save slot names |
+| [`save_dir()`](https://github.com/justinwash/rengine/blob/master/engine/src/save.rs#L52) | Returns the resolved save directory path |
+
+### [`SaveError`](https://github.com/justinwash/rengine/blob/master/engine/src/save.rs#L8)
+
+| Variant | Source |
+|---|---|
+| `Io` | File system errors (missing dir, permissions) |
+| `Json` | Serialization / deserialization failures |
+| `NoSaveDir` | Platform data directory could not be determined |
+
+### Usage Pattern
+
+```rust
+let saves = SaveSystem::new("my-game")?;
+saves.save("slot1", &player_data)?;
+let loaded: PlayerData = saves.load("slot1")?;
+saves.delete("slot1")?;
+```
+
+Games typically store `SaveSystem` in `Globals` and derive `Serialize` + `Deserialize` on their save data structs.
 
 ---
 

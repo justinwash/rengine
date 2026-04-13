@@ -21,10 +21,11 @@
 // NineSlice (uniform, draw_nine_slice, with_color, with_z_order),
 // Tween (Easing, LoopMode, score popup animation),
 // Ui (widget system: label, button, separator, focus navigation, UiStyle),
+// SaveSystem (save, load, delete, exists, list_slots — checkpoint auto-save),
 // InputState, GamepadState, TimeState, hot reload, Vec2.
 
 use rengine::*;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::cell::Cell;
 use std::path::PathBuf;
 
@@ -49,6 +50,13 @@ struct TransitionCounter(u32);
 struct PlayerStats {
     coins: u32,
     best_height: f32,
+}
+
+#[derive(Default, Serialize, Deserialize)]
+struct CheckpointSave {
+    coins: u32,
+    best_height: f32,
+    times_saved: u32,
 }
 
 /// Demo mode configuration stored in Globals so all scenes can read it.
@@ -324,6 +332,23 @@ impl Scene for GameScene {
 
         if let Some(counter) = globals.get_mut::<TransitionCounter>() {
             counter.0 += 1;
+        }
+
+        if let Some(saves) = globals.get::<SaveSystem>() {
+            match saves.load::<CheckpointSave>("checkpoint") {
+                Ok(cs) => {
+                    if let Some(stats) = globals.get_mut::<PlayerStats>() {
+                        stats.coins = cs.coins;
+                        stats.best_height = cs.best_height;
+                    }
+                    self.score = cs.coins;
+                    println!(
+                        "[FEATURE OK] SaveSystem::load — restored checkpoint (coins={}, saves={})",
+                        cs.coins, cs.times_saved
+                    );
+                }
+                Err(_) => println!("[SaveSystem] No checkpoint save found, starting fresh"),
+            }
         }
 
         // ── Serializable resource: load game tuning data from JSON ──
@@ -614,8 +639,27 @@ impl Scene for GameScene {
         for (zone_id, _body_id, event) in &events {
             if *zone_id == self.zone_checkpoint && *event == OverlapEvent::Enter {
                 self.checkpoint_flash = 0.5;
-                self.checkpoint_msg = "Checkpoint!".to_string();
+                self.checkpoint_msg = "Checkpoint saved!".to_string();
                 println!("[FEATURE OK] TriggerSystem — checkpoint Enter event");
+
+                if let Some(saves) = globals.get::<SaveSystem>() {
+                    let stats = globals.get::<PlayerStats>();
+                    let cs = CheckpointSave {
+                        coins: stats.map_or(0, |s| s.coins),
+                        best_height: stats.map_or(0.0, |s| s.best_height),
+                        times_saved: saves
+                            .load::<CheckpointSave>("checkpoint")
+                            .map_or(0, |prev| prev.times_saved)
+                            + 1,
+                    };
+                    match saves.save("checkpoint", &cs) {
+                        Ok(()) => println!(
+                            "[FEATURE OK] SaveSystem::save — checkpoint slot (save #{})",
+                            cs.times_saved
+                        ),
+                        Err(e) => eprintln!("Warning: save failed: {e}"),
+                    }
+                }
             }
             if *zone_id == self.zone_damage && *event == OverlapEvent::Stay {
                 self.damage_flash = 0.15;
@@ -1272,6 +1316,15 @@ fn main() {
                 coins: 0,
                 best_height: 0.0,
             });
+
+            match SaveSystem::new("rengine-kitchen-sink") {
+                Ok(saves) => {
+                    println!("[FEATURE OK] SaveSystem::new — save dir at {:?}", saves.save_dir());
+                    globals.set(saves);
+                }
+                Err(e) => eprintln!("Warning: could not init SaveSystem: {e}"),
+            }
+
             globals.set(DemoConfig {
                 enabled: demo,
                 max_frames,
@@ -1279,7 +1332,7 @@ fn main() {
                 features_hit: Vec::new(),
             });
 
-            println!("[FEATURE OK] Globals::set — TransitionCounter, PlayerStats, DemoConfig");
+            println!("[FEATURE OK] Globals::set — TransitionCounter, PlayerStats, SaveSystem, DemoConfig");
             println!("[FEATURE OK] run_with_scenes — scene-stack entry point");
 
             if demo {

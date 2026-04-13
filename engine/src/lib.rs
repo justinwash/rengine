@@ -6,6 +6,7 @@ pub mod input;
 pub mod canvas;
 pub mod renderer;
 pub mod renderer3d;
+pub mod save;
 pub mod scene;
 pub mod text;
 pub mod ui;
@@ -48,6 +49,8 @@ pub use scene::{
 };
 pub use text::FontAtlas;
 pub use ui::{Ui, UiResponse, UiStyle};
+
+pub use save::{SaveError, SaveSystem};
 
 pub use gilrs::Button as GamepadButton;
 pub use input::{GamepadState, GamepadSystem};
