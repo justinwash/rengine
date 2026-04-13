@@ -23,6 +23,7 @@
 // Ui (widget system: label, button, separator, focus navigation, UiStyle),
 // SaveSystem (save, load, delete, exists, list_slots — checkpoint auto-save),
 // ScaleMode (resolution scaling — game renders at 480×360, scaled to window),
+// ParticleEmitter (burst particles on coin pickup, EmitterConfig, Color::lerp),
 // InputState, GamepadState, TimeState, hot reload, Vec2.
 
 use rengine::*;
@@ -266,6 +267,8 @@ struct GameScene {
 
     score_popup: Tween,
 
+    coin_particles: ParticleEmitter,
+
     // Demo auto-play state
     demo_step: usize,
     demo_did_pause: bool,
@@ -318,6 +321,23 @@ impl Default for GameScene {
             pending_shake: Cell::new(false),
             play_time: 0.0,
             score_popup: Tween::new(0.0, 1.0, 0.6, Easing::OutElastic),
+
+            coin_particles: ParticleEmitter::new(
+                EmitterConfig::default()
+                    .with_emit_rate(0.0)
+                    .with_burst_count(12)
+                    .with_lifetime((0.3, 0.6))
+                    .with_speed((40.0, 120.0))
+                    .with_angle((0.0, std::f32::consts::TAU))
+                    .with_size_start((3.0, 6.0))
+                    .with_size_end((0.0, 1.0))
+                    .with_color_start(Color::YELLOW)
+                    .with_color_end(Color::new(1.0, 0.8, 0.0, 0.0))
+                    .with_damping(3.0)
+                    .with_looping(false)
+                    .with_z_order(5)
+                    .with_max_particles(64),
+            ),
 
             demo_step: 0,
             demo_did_pause: false,
@@ -702,10 +722,12 @@ impl Scene for GameScene {
         let player_rect = Rect::new(self.player_pos.x, self.player_pos.y, 28.0, 44.0);
         let prev_score = self.score;
         let mut collected = 0u32;
+        let mut collected_positions = Vec::new();
         self.coins.retain(|coin| {
             let coin_rect = Rect::new(coin.x, coin.y, 16.0, 16.0);
             if aabb_overlap(&player_rect, &coin_rect).is_some() {
                 collected += 1;
+                collected_positions.push(*coin + Vec2::new(8.0, 8.0));
                 false
             } else {
                 true
@@ -713,6 +735,15 @@ impl Scene for GameScene {
         });
         self.score += collected;
         if self.score > prev_score {
+            let mut rng = engine.rng();
+            for pos in &collected_positions {
+                self.coin_particles.set_position(*pos);
+                self.coin_particles.burst(&mut rng);
+            }
+            println!(
+                "[FEATURE OK] ParticleEmitter::burst — coin pickup particles (score: {})",
+                self.score
+            );
             // Juicy feedback: shake + tilt on coin pickup
             self.pending_shake.set(true);
             self.cam_tilt = 0.07 * if self.facing_right { 1.0 } else { -1.0 };
@@ -739,6 +770,10 @@ impl Scene for GameScene {
 
         self.coin_anim.update(dt);
         self.score_popup.update(dt);
+        {
+            let mut rng = engine.rng();
+            self.coin_particles.update(dt, &mut rng);
+        }
 
         self.damage_flash = (self.damage_flash - dt).max(0.0);
         self.checkpoint_flash = (self.checkpoint_flash - dt).max(0.0);
@@ -870,6 +905,8 @@ impl Scene for GameScene {
                 );
             }
         }
+
+        self.coin_particles.draw(frame, engine.white_texture());
 
         let white = engine.white_texture();
 

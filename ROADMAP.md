@@ -142,7 +142,7 @@ These features make 2D development substantially more practical.
 23. Custom 2D materials or shaders
     Allow per-sprite or per-batch custom shader usage without rewriting renderer internals.
 
-24. Particle systems
+24. Particle systems [done]
     Support 2D emitters, bursts, lifetimes, curves, velocity, size-over-time, and color-over-time.
 
 25. Tweening system [done]

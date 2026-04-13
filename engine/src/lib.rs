@@ -4,6 +4,7 @@ pub mod math;
 pub mod input;
 
 pub mod canvas;
+pub mod particle;
 pub mod renderer;
 pub mod renderer3d;
 pub mod save;
@@ -49,6 +50,8 @@ pub use scene::{
 };
 pub use text::FontAtlas;
 pub use ui::{Ui, UiResponse, UiStyle};
+
+pub use particle::{EmitShape, EmitterConfig, ParticleEmitter, RangeF32};
 
 pub use save::{SaveError, SaveSystem};
 
