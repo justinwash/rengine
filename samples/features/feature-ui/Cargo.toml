@@ -1,0 +1,11 @@
+[package]
+name = "rengine-feature-ui"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "rengine-feature-ui"
+path = "src/main.rs"
+
+[dependencies]
+rengine = { path = "../../../engine" }
