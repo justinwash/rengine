@@ -63,6 +63,7 @@
     - [`PixelCanvas` (Procedural Texture Generation)](#pixelcanvas-procedural-texture-generation)
   - [10.5 Save / Load System (`save.rs`)](#105-save--load-system-savers)
   - [10.6 Resolution Scaling](#106-resolution-scaling)
+  - [10.7 Particle System (`particle.rs`)](#107-particle-system-particlers)
   - [11. Scene System (`scene/`)](#11-scene-system-scene)
     - [11.1 `Scene` Trait and `SceneOp`](#111-scene-trait-and-sceneop)
     - [11.2 `Globals` — Typed Key-Value Store](#112-globals--typed-key-value-store)
@@ -1274,10 +1275,10 @@ The engine supports rendering at a fixed "game resolution" that is independent o
 
 **`ScaleMode`** — controls how the game image maps to the window:
 
-| Mode | Behaviour |
-|------|----------|
-| `Stretch` | Fills the entire window; may distort aspect ratio |
-| `Letterbox` | Scales to fit while preserving aspect ratio; black bars on shorter axis |
+| Mode           | Behaviour                                                                          |
+| -------------- | ---------------------------------------------------------------------------------- |
+| `Stretch`      | Fills the entire window; may distort aspect ratio                                  |
+| `Letterbox`    | Scales to fit while preserving aspect ratio; black bars on shorter axis            |
 | `PixelPerfect` | Scales by the largest integer multiplier that fits; crisp nearest-neighbour pixels |
 
 Canvas / HUD overlays always render at **window resolution** so text stays sharp regardless of the game resolution.
@@ -1293,11 +1294,57 @@ EngineConfig {
 ```
 
 Key API:
+
 - `engine.game_size()` — returns `(render_width, render_height)` when set, else `window_size()`
 - `engine.window_size()` — always returns the OS window dimensions
 - `engine.set_scale_mode(mode)` — change the scaling policy at runtime
 
 Both `Renderer` (2D) and `Renderer3D` support offscreen targets.
+
+---
+
+## 10.7 Particle System ([`particle.rs`](https://github.com/justinwash/rengine/blob/master/engine/src/particle.rs))
+
+A CPU-side 2D particle system with pooled allocation and builder-pattern configuration.
+
+**`EmitterConfig`** — controls particle behaviour:
+
+| Field | Type | Default | Purpose |
+|-------|------|---------|---------|
+| `emit_rate` | `f32` | 10.0 | Particles spawned per second (continuous) |
+| `burst_count` | `u32` | 0 | Particles spawned per `burst()` call |
+| `lifetime` | `RangeF32` | 0.5–1.5 | How long each particle lives (seconds) |
+| `speed` | `RangeF32` | 20–80 | Initial speed |
+| `angle` | `RangeF32` | 0–TAU | Emission direction (radians) |
+| `spin` | `RangeF32` | 0 | Rotational velocity |
+| `size_start` / `size_end` | `RangeF32` | 4–8 / 1–2 | Size interpolated over lifetime |
+| `color_start` / `color_end` | `Color` | white→transparent | Color interpolated via `Color::lerp` |
+| `gravity` | `Vec2` | ZERO | Constant acceleration |
+| `damping` | `f32` | 0 | Velocity decay factor |
+| `emit_shape` | `EmitShape` | Point | Spawn area: `Point`, `Circle(r)`, `Rect(w,h)` |
+| `max_particles` | `usize` | 512 | Pool capacity |
+
+All range fields accept `f32` (constant) or `(f32, f32)` (random range) via `Into<RangeF32>`.
+
+```rust
+let mut emitter = ParticleEmitter::new(
+    EmitterConfig::default()
+        .with_emit_rate(0.0)
+        .with_burst_count(20)
+        .with_lifetime((0.3, 0.8))
+        .with_speed((40.0, 120.0))
+        .with_color_start(Color::YELLOW)
+        .with_color_end(Color::new(1.0, 0.5, 0.0, 0.0))
+        .with_damping(3.0),
+);
+
+emitter.set_position(pos);
+emitter.burst(&mut rng);           // one-shot explosion
+emitter.update(dt, &mut rng);      // tick physics + spawn
+emitter.draw(frame, white_texture); // emit DrawParams into Frame
+```
+
+Particles are pooled (pre-allocated `Vec`), recycled via a free-slot scan with a rotating start index. No heap allocation during gameplay.
 
 ---
 

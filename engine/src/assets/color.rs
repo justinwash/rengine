@@ -91,6 +91,16 @@ impl Color {
             a: self.a as f64,
         }
     }
+
+    pub fn lerp(self, other: Color, t: f32) -> Color {
+        let t = t.clamp(0.0, 1.0);
+        Color {
+            r: self.r + (other.r - self.r) * t,
+            g: self.g + (other.g - self.g) * t,
+            b: self.b + (other.b - self.b) * t,
+            a: self.a + (other.a - self.a) * t,
+        }
+    }
 }
 
 impl Default for Color {
