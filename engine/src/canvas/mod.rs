@@ -1,6 +1,13 @@
 use crate::assets::Color;
 use crate::text::{FontAtlas, ATLAS_SIZE, FONT_SIZE};
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TextAlign {
+    Left,
+    Center,
+    Right,
+}
+
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CanvasVertex {
@@ -140,6 +147,50 @@ impl Canvas {
             cursor_x += entry.advance * scale;
         }
     }
+
+    pub fn text_aligned(
+        &mut self,
+        x: f32,
+        y: f32,
+        text: &str,
+        size: f32,
+        color: Color,
+        align: TextAlign,
+        screen_size: (u32, u32),
+        atlas: &FontAtlas,
+    ) {
+        let offset = if align == TextAlign::Left {
+            0.0
+        } else {
+            let (w, _) = atlas.measure_text(text, size);
+            match align {
+                TextAlign::Center => -w / 2.0,
+                TextAlign::Right => -w,
+                TextAlign::Left => unreachable!(),
+            }
+        };
+        self.text(x + offset, y, text, size, color, screen_size, atlas);
+    }
+
+    pub fn text_block(
+        &mut self,
+        x: f32,
+        y: f32,
+        text: &str,
+        size: f32,
+        color: Color,
+        max_width: f32,
+        align: TextAlign,
+        screen_size: (u32, u32),
+        atlas: &FontAtlas,
+    ) {
+        let lines = wrap_text(text, size, max_width, atlas);
+        let lh = atlas.line_height(size);
+        for (i, line) in lines.iter().enumerate() {
+            let ly = y - (i as f32) * lh;
+            self.text_aligned(x, ly, line, size, color, align, screen_size, atlas);
+        }
+    }
 }
 
 pub fn screen_to_ndc(x: f32, y: f32, screen_size: (u32, u32)) -> [f32; 2] {
@@ -148,19 +199,56 @@ pub fn screen_to_ndc(x: f32, y: f32, screen_size: (u32, u32)) -> [f32; 2] {
     [x / hw, y / hh]
 }
 
+pub fn wrap_text(text: &str, size: f32, max_width: f32, atlas: &FontAtlas) -> Vec<String> {
+    let mut lines = Vec::new();
+    for raw_line in text.split('\n') {
+        if raw_line.is_empty() {
+            lines.push(String::new());
+            continue;
+        }
+        let words: Vec<&str> = raw_line.split(' ').collect();
+        let mut current = String::new();
+        let mut current_w: f32 = 0.0;
+        let space_w = atlas.measure_text(" ", size).0;
+        for word in &words {
+            let word_w = atlas.measure_text(word, size).0;
+            if current.is_empty() {
+                if word_w > max_width {
+                    lines.push((*word).to_string());
+                } else {
+                    current = (*word).to_string();
+                    current_w = word_w;
+                }
+            } else if current_w + space_w + word_w <= max_width {
+                current.push(' ');
+                current.push_str(word);
+                current_w += space_w + word_w;
+            } else {
+                lines.push(current);
+                if word_w > max_width {
+                    lines.push((*word).to_string());
+                    current = String::new();
+                    current_w = 0.0;
+                } else {
+                    current = (*word).to_string();
+                    current_w = word_w;
+                }
+            }
+        }
+        if !current.is_empty() {
+            lines.push(current);
+        }
+    }
+    if lines.is_empty() {
+        lines.push(String::new());
+    }
+    lines
+}
+
 pub(crate) fn draw_fps(canvas: &mut Canvas, fps: f32, screen_size: (u32, u32), atlas: &FontAtlas) {
     let text = format!("{}", fps.round() as u32);
     let size = 16.0;
-    let scale = size / FONT_SIZE;
-    let mut text_w: f32 = 0.0;
-    for ch in text.chars() {
-        let idx = ch as usize;
-        if idx < 128 {
-            if let Some(e) = atlas.glyphs[idx] {
-                text_w += e.advance * scale;
-            }
-        }
-    }
+    let (text_w, _) = atlas.measure_text(&text, size);
     let bg_w = text_w + 8.0;
     let bg_h = size + 8.0;
     let hw = screen_size.0 as f32 / 2.0;
