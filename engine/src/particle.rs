@@ -43,10 +43,7 @@ impl RangeF32 {
 
 impl Default for RangeF32 {
     fn default() -> Self {
-        Self {
-            min: 1.0,
-            max: 1.0,
-        }
+        Self { min: 1.0, max: 1.0 }
     }
 }
 
