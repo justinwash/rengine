@@ -10,7 +10,7 @@
 //
 // Demonstrates: EngineConfig (all fields), run_with_scenes(), Scene trait (all hooks
 // including fixed_update), SceneOp (Switch, Push, Pop, Quit), Globals,
-// Engine, Frame, Camera2D (follow, dead zone, bounds, shake, rotation, zoom),
+// Engine, Frame, Camera2D (follow, dead zone, bounds, shake, rotation, zoom, world_to_screen),
 // CameraBounds, DrawParams (position, size, color, uv_rect, flip_x, rotation,
 // origin, z_order), TextureId, SpriteSheet, Animation, TileMap, TileDef,
 // aabb_overlap, CollisionLayer, aabb_overlap_layered, TriggerSystem, TriggerZone,
@@ -149,7 +149,11 @@ impl Scene for TitleScene {
         if let Some(panel) = &self.panel {
             frame.draw_nine_slice(panel, Vec2::new(-320.0, 40.0), Vec2::new(640.0, 280.0));
             let tinted = panel.clone().with_color(Color::new(0.3, 1.0, 0.5, 0.8));
-            frame.draw_nine_slice(&tinted, Vec2::new(-hw + 5.0, -hh + 5.0), Vec2::new(260.0, 40.0));
+            frame.draw_nine_slice(
+                &tinted,
+                Vec2::new(-hw + 5.0, -hh + 5.0),
+                Vec2::new(260.0, 40.0),
+            );
         }
 
         let canvas = frame.canvas(0);
@@ -697,6 +701,7 @@ impl Scene for GameScene {
                         self.demo_did_zoom = true;
                         self.cam_zoom = 1.3;
                         demo.log_feature("Camera2D::zoom");
+                        demo.log_feature("Camera2D::world_to_screen");
                         println!("[GameScene] demo: zoom to 1.3x at frame {f}");
                     }
                     if f >= 300 && self.cam_zoom > 1.0 {
@@ -916,6 +921,20 @@ impl Scene for GameScene {
                 atlas,
             );
         }
+
+        // World-positioned text: label that tracks the player via Camera2D::world_to_screen
+        let player_top = self.player_pos + Vec2::new(14.0, 52.0);
+        let sp = frame.camera.world_to_screen(player_top);
+        let world_labels = frame.canvas(2);
+        world_labels.text(
+            sp.x - 20.0,
+            sp.y,
+            "Player",
+            10.0,
+            Color::new(1.0, 1.0, 1.0, 0.7),
+            (sw, sh),
+            atlas,
+        );
     }
 
     fn on_pause(&mut self, _engine: &Engine, _globals: &Globals) {
@@ -982,15 +1001,7 @@ impl Scene for CountdownScene {
             format!("{secs}")
         };
 
-        canvas.text(
-            -40.0,
-            50.0,
-            &label,
-            80.0,
-            Color::WHITE,
-            (sw, sh),
-            atlas,
-        );
+        canvas.text(-40.0, 50.0, &label, 80.0, Color::WHITE, (sw, sh), atlas);
 
         canvas.text(
             -140.0,
@@ -1069,15 +1080,7 @@ impl Scene for PauseOverlay {
             Color::new(0.0, 0.0, 0.0, 0.65),
             (sw, sh),
         );
-        overlay.text(
-            -80.0,
-            30.0,
-            "PAUSED",
-            40.0,
-            Color::WHITE,
-            (sw, sh),
-            atlas,
-        );
+        overlay.text(-80.0, 30.0, "PAUSED", 40.0, Color::WHITE, (sw, sh), atlas);
         overlay.text(
             -130.0,
             -20.0,
@@ -1224,7 +1227,10 @@ fn main() {
                     Box::new(CountdownScene::new()) as Box<dyn Scene>
                 }
             } else {
-                Box::new(TitleScene { blink_timer: 0.0, panel: None }) as Box<dyn Scene>
+                Box::new(TitleScene {
+                    blink_timer: 0.0,
+                    panel: None,
+                }) as Box<dyn Scene>
             }
         },
     )

@@ -25,6 +25,7 @@
     - [4.4 `Frame` Submission and Batched Rendering](#44-frame-submission-and-batched-rendering)
     - [4.5 `Camera2D` and Projection](#45-camera2d-and-projection)
     - [4.6 The sprite.wgsl Shader](#46-the-spritewgsl-shader)
+    - [4.7 `NineSlice` — Resizable UI Panels](#47-nineslice--resizable-ui-panels)
   - [5. The 3D Renderer (`renderer3d/`)](#5-the-3d-renderer-renderer3d)
     - [5.1 `Renderer3D` Initialization](#51-renderer3d-initialization)
     - [5.2 `Frame3D` and `DrawCmd3D`](#52-frame3d-and-drawcmd3d)
@@ -66,7 +67,9 @@
   - [12. World Systems (`world/`)](#12-world-systems-world)
     - [12.1 `TileMap` and `TileDef`](#121-tilemap-and-tiledef)
     - [12.2 `aabb_overlap` — AABB Physics](#122-aabb_overlap--aabb-physics)
-    - [12.3 `iso_to_screen` / `screen_to_iso` — Isometric Helpers](#123-iso_to_screen--screen_to_iso--isometric-helpers)
+      - [Collision Layers](#collision-layers)
+    - [12.3 `TriggerSystem` — Trigger Volumes \& Overlap Sensors](#123-triggersystem--trigger-volumes--overlap-sensors)
+    - [12.4 `iso_to_screen` / `screen_to_iso` — Isometric Helpers](#124-iso_to_screen--screen_to_iso--isometric-helpers)
   - [13. Math Utilities (`math/`)](#13-math-utilities-math)
     - [13.1 `Rect`](#131-rect)
     - [13.2 `TimeState`](#132-timestate)
@@ -77,8 +80,7 @@
     - [14.3 `UdpNonBlockingSocket` — UDP Transport](#143-udpnonblockingsocket--udp-transport)
   - [15. Complete Frame Lifecycle: Boot to Pixel](#15-complete-frame-lifecycle-boot-to-pixel)
   - [16. Kitchen-Sink Game Example](#16-kitchen-sink-game-example)
-    - [Features Exercised in This Example](#features-exercised-in-this-example)
-    - [What This Example Does NOT Cover (and How You Would)](#what-this-example-does-not-cover-and-how-you-would)
+    - [Features Not Covered by This Sample](#features-not-covered-by-this-sample)
 
 ---
 
@@ -535,6 +537,13 @@ fn projection(&self, viewport_width: f32, viewport_height: f32) -> Mat4 {
 ```
 
 At zoom 1.0, one world unit equals one screen pixel. The camera is centered on `position`. Increasing zoom narrows the view. Rotation is in radians (counter-clockwise). The shader receives the combined matrix unchanged — no shader modifications were needed.
+
+**`world_to_screen`** — converts a world-space position to screen-space (center-origin, Y-up) coordinates suitable for passing directly to `canvas.text()`. Accounts for camera position, shake, zoom, and rotation. Use this for floating labels, name tags, or damage numbers that should track world objects but render as screen-space text:
+
+```rust
+let screen_pos = frame.camera.world_to_screen(world_pos);
+canvas.text(screen_pos.x, screen_pos.y, "label", size, color, screen, atlas);
+```
 
 ### 4.6 The sprite.wgsl Shader
 
@@ -1619,7 +1628,7 @@ It is a 2D platformer with:
 - **AABB collision** — `aabb_overlap()`
 - **Collision layers** — `CollisionLayer` bitmask filtering
 - **Trigger volumes** — `TriggerSystem`, `TriggerZone`, `OverlapEvent`
-- **Camera** — `Camera2D` follow, dead zone, bounds, shake, rotation, zoom
+- **Camera** — `Camera2D` follow, dead zone, bounds, shake, rotation, zoom, `world_to_screen`
 - **Drawing** — `DrawParams` builder (position, size, color, uv_rect, flip_x, rotation, origin, z_order)
 - **Canvas HUD** — `Canvas::rect()`, `Canvas::text()`, `FontAtlas`
 - **Input** — `InputState`, `GamepadState`, `TimeState`
