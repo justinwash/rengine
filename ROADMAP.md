@@ -60,6 +60,7 @@ Recently completed or partially completed:
 - Completed: nine-slice rendering — `NineSlice` struct with uniform/asymmetric borders, `frame.draw_nine_slice()`, color tinting, z-order, `feature-nineslice` sample
 - Completed: tweening and easing — `Tween` struct with 25 easing curves, `LoopMode` (Once/Loop/PingPong), `lerp()` and `ease()` helpers, `feature-tween` sample
 - Completed: text layout — `measure_text`, `line_height`, `TextAlign` (Left/Center/Right), `text_aligned`, word wrapping (`wrap_text`), `text_block`, `feature-text` sample
+- Completed: immediate-mode UI widgets — `Ui` builder with `label`, `label_centered`, `button`, `separator`, focus navigation (arrow keys/WASD), activation (Enter/Space), customizable `UiStyle`, `feature-ui` sample
 
 ---
 
@@ -170,6 +171,7 @@ These features make 2D development substantially more practical.
     Bold, italic, and bold-italic variants via per-style font atlases.
     Fancy text effects: per-letter color shifting, bouncing/wave letters, and rendering text along curves.
     - Completed: measure_text, line_height, TextAlign (Left/Center/Right), text_aligned, word wrapping (wrap_text), text_block
+    - Completed: immediate-mode widget system — Ui, UiStyle, UiResponse; label, label_centered, button, separator; focus navigation and activation
 
 33. Resolution scaling modes
     Pixel-perfect, stretch, letterbox, integer scaling, and fit or fill policies.

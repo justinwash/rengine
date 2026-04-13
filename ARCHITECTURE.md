@@ -39,6 +39,7 @@
     - [6.3 The canvas.wgsl Shader](#63-the-canvaswgsl-shader)
     - [6.4 The FPS Counter](#64-the-fps-counter)
     - [6.5 Text Layout (Measurement, Alignment, Wrapping)](#65-text-layout-measurement-alignment-wrapping)
+    - [6.6 Immediate-Mode Widget System (`ui.rs`)](#66-immediate-mode-widget-system-uirs)
   - [7. Input System (`input/`)](#7-input-system-input)
     - [7.1 `InputState` — Keyboard State](#71-inputstate--keyboard-state)
     - [7.2 Mouse State](#72-mouse-state)
@@ -183,6 +184,7 @@ Then selective re-exports:
 - **Scene:** [`Globals`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/globals.rs#L4), [`Prefab2D`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/data2d.rs#L61)/[`Prefab2DDef`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/data2d.rs#L26), [`PrefabSprite2D`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/data2d.rs#L50)/[`PrefabSprite2DDef`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/data2d.rs#L11), [`Scene`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/mod.rs#L24), [`Scene2D`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/data2d.rs#L98)/[`Scene2DDef`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/data2d.rs#L42), [`SceneInstance2D`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/data2d.rs#L67)/[`SceneInstance2DDef`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/data2d.rs#L32), [`SceneOp`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/mod.rs#L16), [`Scene3D`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/mod.rs#L47), [`SceneOp3D`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/mod.rs#L39)
 - **World:** [`tilemap`](https://github.com/justinwash/rengine/blob/master/engine/src/world/tilemap.rs), [`aabb_overlap`](https://github.com/justinwash/rengine/blob/master/engine/src/world/physics.rs), [`aabb_overlap_layered`](https://github.com/justinwash/rengine/blob/master/engine/src/world/physics.rs), [`CollisionLayer`](https://github.com/justinwash/rengine/blob/master/engine/src/world/physics.rs), [`BodyId`](https://github.com/justinwash/rengine/blob/master/engine/src/world/trigger.rs), [`TriggerSystem`](https://github.com/justinwash/rengine/blob/master/engine/src/world/trigger.rs), [`TriggerZone`](https://github.com/justinwash/rengine/blob/master/engine/src/world/trigger.rs), [`TriggerZoneId`](https://github.com/justinwash/rengine/blob/master/engine/src/world/trigger.rs), [`OverlapEvent`](https://github.com/justinwash/rengine/blob/master/engine/src/world/trigger.rs), [`iso_to_screen`](https://github.com/justinwash/rengine/blob/master/engine/src/world/iso.rs#L4), [`screen_to_iso`](https://github.com/justinwash/rengine/blob/master/engine/src/world/iso.rs#L11), [`TileDef`](https://github.com/justinwash/rengine/blob/master/engine/src/world/tilemap.rs#L16), [`TileMap`](https://github.com/justinwash/rengine/blob/master/engine/src/world/tilemap.rs#L6)
 - **Canvas/Text:** [`screen_to_ndc`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs#L145), [`wrap_text`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs), [`Canvas`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs#L42), [`CanvasVertex`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs#L6), [`TextAlign`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs), [`FontAtlas`](https://github.com/justinwash/rengine/blob/master/engine/src/text.rs#L17)
+- **UI:** [`Ui`](https://github.com/justinwash/rengine/blob/master/engine/src/ui.rs), [`UiResponse`](https://github.com/justinwash/rengine/blob/master/engine/src/ui.rs), [`UiStyle`](https://github.com/justinwash/rengine/blob/master/engine/src/ui.rs)
 - **Pixel art:** [`pixelart`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pixelart.rs) (module-level re-export of [`PixelCanvas`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pixelart.rs#L3), [`darken`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pixelart.rs#L106), [`lighten`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pixelart.rs#L110))
 - **Math:** [`Rect`](https://github.com/justinwash/rengine/blob/master/engine/src/math/rect.rs#L5), [`TimeState`](https://github.com/justinwash/rengine/blob/master/engine/src/math/time.rs#L4), [`Rng`](https://github.com/justinwash/rengine/blob/master/engine/src/math/rng.rs), [`Tween`](https://github.com/justinwash/rengine/blob/master/engine/src/math/tween.rs), [`Easing`](https://github.com/justinwash/rengine/blob/master/engine/src/math/tween.rs), [`LoopMode`](https://github.com/justinwash/rengine/blob/master/engine/src/math/tween.rs), [`ease`](https://github.com/justinwash/rengine/blob/master/engine/src/math/tween.rs), [`lerp`](https://github.com/justinwash/rengine/blob/master/engine/src/math/tween.rs), `Vec2`, `Vec3`, `Quat` (from glam)
 
@@ -812,6 +814,23 @@ Built on top of the existing single-font `FontAtlas` and `Canvas` text renderer:
 - **`Canvas::text_aligned(x, y, text, size, color, align, screen_size, atlas)`** — Like `text()` but offsets the x position based on alignment: `Left` draws from x, `Center` shifts left by half the measured width, `Right` shifts left by the full measured width.
 - **`Canvas::text_block(x, y, text, size, color, max_width, align, screen_size, atlas)`** — Word-wraps text to fit `max_width`, then draws each line with `text_aligned()`. Lines advance downward by `line_height`.
 - **`wrap_text(text, size, max_width, atlas) -> Vec<String>`** — Standalone word-wrapping function. Splits on spaces, respects explicit `\n` line breaks. Returns wrapped lines as a `Vec<String>`.
+
+### 6.6 Immediate-Mode Widget System ([`ui.rs`](https://github.com/justinwash/rengine/blob/master/engine/src/ui.rs))
+
+A lightweight immediate-mode widget builder for menus, pause screens, and HUDs. Each frame you create a `Ui`, add widgets, call `update()` for input handling, and `render()` to draw.
+
+- **`Ui::new(x, y, width, screen_size, atlas)`** — Create a new UI context anchored at `(x, y)` with the given column width.
+- **`Ui::with_style(style) -> Self`** — Apply a custom `UiStyle` (colors, sizes, padding).
+- **`Ui::with_focus(index) -> Self`** — Set the initially focused button index.
+- **`Ui::label(text, size, color)`** / **`label_centered(text, size, color)`** — Static text (left-aligned or centered).
+- **`Ui::button(id, text)`** — Interactive button identified by a numeric `id`.
+- **`Ui::separator(height)`** — Vertical gap between widgets.
+- **`Ui::update(input) -> UiResponse`** — Process keyboard/gamepad input:
+  - Arrow Up / W → focus previous button; Arrow Down / S → focus next button (wraps around).
+  - Enter / Space → activate the focused button.
+  - Returns `UiResponse { focused: Option<usize>, activated: Option<usize> }`.
+- **`Ui::render(canvas)`** — Draw all widgets into a `Canvas` layer.
+- **`UiStyle`** — Configurable struct with fields for `text_color`, `text_size`, `button_bg`, `button_focused_bg`, `button_pressed_bg`, `button_text_color`, `button_focused_text_color`, `button_padding`, and `spacing`.
 
 ---
 
@@ -1501,6 +1520,7 @@ let mut tw = Tween::new(0.0, 1.0, 1.5, Easing::InOutSine).looping(LoopMode::Ping
 | `reset()` | Restart from the beginning |
 
 **Standalone helpers:**
+
 - `lerp(a, b, t)` — Linear interpolation.
 - `ease(from, to, t, easing)` — One-shot eased interpolation without a `Tween` struct.
 
@@ -1705,12 +1725,13 @@ It is a 2D platformer with:
 | Rollback netcode                                                                                                                                                                                              | Enable `rollback` feature, implement `Rollbackable`, create `RollbackSession`                                                       |
 | [`iso_to_screen`](https://github.com/justinwash/rengine/blob/master/engine/src/world/iso.rs#L4) / [`screen_to_iso`](https://github.com/justinwash/rengine/blob/master/engine/src/world/iso.rs#L11)            | Use in an isometric game for tile placement                                                                                         |
 | [`Canvas::shape()`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs#L51)                                                                                                           | Pass raw `CanvasVertex` triangles for custom shapes                                                                                 |
-| [`FontAtlas::measure_text()`](https://github.com/justinwash/rengine/blob/master/engine/src/text.rs)                                                                                                           | `let (w, h) = atlas.measure_text("Hello", 24.0);`                                                                                  |
-| [`TextAlign`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs) / `text_aligned`                                                                                                    | `canvas.text_aligned(x, y, "Title", 24.0, color, TextAlign::Center, screen, atlas);`                                               |
-| [`wrap_text`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs) / `text_block`                                                                                                      | `canvas.text_block(x, y, paragraph, 14.0, color, 300.0, TextAlign::Left, screen, atlas);`                                          |
+| [`FontAtlas::measure_text()`](https://github.com/justinwash/rengine/blob/master/engine/src/text.rs)                                                                                                           | `let (w, h) = atlas.measure_text("Hello", 24.0);`                                                                                   |
+| [`TextAlign`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs) / `text_aligned`                                                                                                    | `canvas.text_aligned(x, y, "Title", 24.0, color, TextAlign::Center, screen, atlas);`                                                |
+| [`wrap_text`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs) / `text_block`                                                                                                      | `canvas.text_block(x, y, paragraph, 14.0, color, 300.0, TextAlign::Left, screen, atlas);`                                           |
 | [`create_color_texture`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L256)                                                                                                            | `engine.create_color_texture(32, 32, Color::RED)`                                                                                   |
 | [`white_texture()`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L270)                                                                                                                 | `engine.white_texture()` for solid rectangles without a texture file                                                                |
 | Mouse input                                                                                                                                                                                                   | `engine.input().mouse_delta()`, `is_mouse_down(0)`, `is_mouse_pressed(1)`                                                           |
+| [`Ui`](https://github.com/justinwash/rengine/blob/master/engine/src/ui.rs)                                                                                                                                    | `let mut ui = Ui::new(x, y, w, screen, atlas); ui.button(0, "Play"); let resp = ui.update(input); ui.render(canvas);`               |
 
 ---
 

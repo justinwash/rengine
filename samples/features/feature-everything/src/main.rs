@@ -20,6 +20,7 @@
 // TextAlign, wrap_text, Color, pixelart::PixelCanvas,
 // NineSlice (uniform, draw_nine_slice, with_color, with_z_order),
 // Tween (Easing, LoopMode, score popup animation),
+// Ui (widget system: label, button, separator, focus navigation, UiStyle),
 // InputState, GamepadState, TimeState, hot reload, Vec2.
 
 use rengine::*;
@@ -723,7 +724,7 @@ impl Scene for GameScene {
                         self.demo_did_pause = true;
                         demo.log_feature("SceneOp::Push (Pause)");
                         println!("[GameScene] demo: pushing PauseOverlay at frame {f}");
-                        return SceneOp::Push(Box::new(PauseOverlay { demo_frames: 0 }));
+                        return SceneOp::Push(Box::new(PauseOverlay { demo_frames: 0, focus: 0 }));
                     }
                 }
 
@@ -759,7 +760,7 @@ impl Scene for GameScene {
 
         if !is_demo {
             if engine.action_pressed("pause") {
-                return SceneOp::Push(Box::new(PauseOverlay { demo_frames: 0 }));
+                return SceneOp::Push(Box::new(PauseOverlay { demo_frames: 0, focus: 0 }));
             }
         }
 
@@ -872,7 +873,14 @@ impl Scene for GameScene {
             (sw, sh),
         );
         // Tween-animated score popup: elastic bounce on coin collection
-        let popup_scale = 18.0 + 10.0 * self.score_popup.value() * if self.score_popup.is_finished() { 0.0 } else { 1.0 };
+        let popup_scale = 18.0
+            + 10.0
+                * self.score_popup.value()
+                * if self.score_popup.is_finished() {
+                    0.0
+                } else {
+                    1.0
+                };
         hud.text(
             -hw + 10.0,
             hh - 35.0,
@@ -1061,6 +1069,7 @@ impl Scene for CountdownScene {
 
 struct PauseOverlay {
     demo_frames: u32,
+    focus: usize,
 }
 
 impl Scene for PauseOverlay {
@@ -1071,6 +1080,7 @@ impl Scene for PauseOverlay {
         println!("[PauseOverlay] on_enter");
         if let Some(demo) = globals.get_mut::<DemoConfig>() {
             demo.log_feature("Scene::on_enter");
+            demo.log_feature("Ui (widget system)");
         }
     }
 
@@ -1089,14 +1099,30 @@ impl Scene for PauseOverlay {
             return SceneOp::Continue;
         }
 
+        let (sw, sh) = engine.window_size();
+        let hh = sh as f32 / 2.0;
+        let atlas = engine.font_atlas();
+
+        let mut ui = Ui::new(-100.0, hh - 40.0, 200.0, (sw, sh), atlas)
+            .with_focus(self.focus);
+        ui.button(0, "Resume");
+        ui.button(1, "Quit");
+        let resp = ui.update(engine.input());
+        self.focus = resp.focused.unwrap_or(self.focus);
+
+        if let Some(id) = resp.activated {
+            match id {
+                0 => return SceneOp::Pop,
+                1 => return SceneOp::Quit,
+                _ => {}
+            }
+        }
+
         if engine.action_pressed("pause") {
             return SceneOp::Pop;
         }
         if engine.gamepad(0).is_button_pressed(GamepadButton::Start) {
             return SceneOp::Pop;
-        }
-        if engine.action_pressed("quit") {
-            return SceneOp::Quit;
         }
         SceneOp::Continue
     }
@@ -1116,16 +1142,14 @@ impl Scene for PauseOverlay {
             Color::new(0.0, 0.0, 0.0, 0.65),
             (sw, sh),
         );
-        overlay.text(-80.0, 30.0, "PAUSED", 40.0, Color::WHITE, (sw, sh), atlas);
-        overlay.text(
-            -130.0,
-            -20.0,
-            "Press ESC/P to resume | Q to quit",
-            16.0,
-            Color::new(0.8, 0.8, 0.8, 1.0),
-            (sw, sh),
-            atlas,
-        );
+
+        let mut ui = Ui::new(-100.0, hh - 40.0, 200.0, (sw, sh), atlas)
+            .with_focus(self.focus);
+        ui.label_centered("PAUSED", 40.0, Color::WHITE);
+        ui.separator(12.0);
+        ui.button(0, "Resume");
+        ui.button(1, "Quit");
+        ui.render(overlay);
 
         if let Some(stats) = globals.get::<PlayerStats>() {
             overlay.text(

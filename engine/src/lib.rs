@@ -8,6 +8,7 @@ pub mod renderer;
 pub mod renderer3d;
 pub mod scene;
 pub mod text;
+pub mod ui;
 
 pub mod world;
 
@@ -46,6 +47,7 @@ pub use scene::{
     SceneInstance2D, SceneInstance2DDef, SceneOp,
 };
 pub use text::FontAtlas;
+pub use ui::{Ui, UiResponse, UiStyle};
 
 pub use gilrs::Button as GamepadButton;
 pub use input::{GamepadState, GamepadSystem};
