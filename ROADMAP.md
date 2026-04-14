@@ -64,6 +64,7 @@ Recently completed or partially completed:
 - Completed: save/load — `SaveSystem` with slot-based JSON persistence, platform-appropriate save paths, `feature-saveload` sample
 - Completed: resolution scaling — `ScaleMode` enum (Stretch, Letterbox, PixelPerfect), offscreen render target + blit pass, Canvas/HUD at window resolution, runtime switching, `feature-resolution` sample
 - Completed: particle system — `EmitterConfig` builder (14+ fields), `ParticleEmitter` pool with O(1) alive count, `EmitShape` (Point/Circle/Rect), `RangeF32` for randomized params, `Color::lerp`, burst/continuous modes, `feature-particles` sample, kitchen-sink integration
+- Completed: audio fades — `ActiveFade` with `FadeTarget` (MusicVolume/CrossfadeOut/BusVolume/MasterVolume), fade-in/fade-out/crossfade music, bus and master volume fades, any `Easing` curve, auto-ticked in game loop, `feature-audio` sample, kitchen-sink integration
 
 ---
 
@@ -94,8 +95,8 @@ These are the features that most directly increase the engine’s usefulness for
 8. Improved 2D camera system [done]
    Rotation, smooth follow with dead zones, screen shake (intensity + duration with decay), camera bounds clamping. Projection uses view matrix (translate + rotate) applied to centered orthographic.
 
-9. Audio playback [mostly done]
-   Music, sound effects, looping, pause or resume, bus routing, master and per-bus volume control, and headless silent mode are implemented. Still missing: fades, crossfades, and spatial audio.
+9. Audio playback [done]
+   Music, sound effects, looping, pause or resume, bus routing, master and per-bus volume control, headless silent mode, fades (fade-in, fade-out, bus volume, master volume), and crossfades are implemented. Still missing: spatial audio.
 
 10. Input action mapping [done]
     Named actions (`"jump"`, `"shoot"`) and axes (`"move_x"`, `"move_y"`) bound to keyboard keys, mouse buttons, and gamepad buttons/sticks. Queries via `engine.action_down()`, `action_pressed()`, `action_released()`, `axis()`. Per-player variants for multiplayer.
@@ -400,7 +401,7 @@ A practical development order would be:
 - Asset loading [done, continue expanding]
 - Scene management
 - Prefabs
-- Audio [basic playback done, expand controls and mixing]
+- Audio [done — playback, buses, fades, crossfades]
 - Input maps
 - Better transforms
 - Stronger collision and physics

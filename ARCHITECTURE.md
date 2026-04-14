@@ -58,6 +58,7 @@
     - [9.1 `AudioBus` and Volume](#91-audiobus-and-volume)
     - [9.2 Music Playback](#92-music-playback)
     - [9.3 Headless Mode](#93-headless-mode)
+    - [9.4 Audio Fades and Crossfades](#94-audio-fades-and-crossfades)
   - [10. Color and Pixel Art](#10-color-and-pixel-art)
     - [`Color`](#color)
     - [`PixelCanvas` (Procedural Texture Generation)](#pixelcanvas-procedural-texture-generation)
@@ -1179,6 +1180,35 @@ When `headless` is true:
 - Master volume is set to 0.
 - [`play_on_bus()`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/audio.rs#L110) still decodes the clip (exercises the decode path for testing) but if no audio handle is available, returns early after decoding.
 - [`set_master_volume()`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/audio.rs#L191) forces 0 if `silent` is true.
+
+### 9.4 Audio Fades and Crossfades
+
+`AudioSystem` supports smooth volume transitions via `ActiveFade`. Each fade interpolates between two volume values over a duration using any `Easing` curve from the tween system.
+
+**`FadeTarget`** — what the fade controls:
+- `MusicVolume` — fades the music sink's volume.
+- `CrossfadeOut` — fades the old music sink during a crossfade.
+- `BusVolume(AudioBus)` — fades a specific bus volume.
+- `MasterVolume` — fades the master volume.
+
+**`ActiveFade`** stores `from`, `to`, `elapsed`, `duration`, `easing`, and `stop_on_finish`. Progress is computed as `elapsed / duration` clamped to `[0, 1]`, then passed through the easing function to produce the interpolated value.
+
+**Key methods** (all `&self` via interior mutability):
+
+| Method | Effect |
+|--------|--------|
+| `fade_in_music(clip, duration, easing)` | Starts music at volume 0, fades to 1.0 |
+| `fade_in_music_with_volume(clip, vol, duration, easing)` | Starts at 0, fades to `vol` |
+| `fade_out_music(duration, easing)` | Fades music to 0, stops when done |
+| `crossfade_music(clip, duration, easing)` | Moves current music to crossfade sink, fades it out; starts new music at 0, fades in |
+| `crossfade_music_with_volume(clip, vol, duration, easing)` | Same with custom target volume |
+| `fade_bus_volume(bus, target, duration, easing)` | Smoothly transitions a bus volume |
+| `fade_master_volume(target, duration, easing)` | Smoothly transitions master volume |
+| `is_fading()` | Returns `true` if any fades are active |
+
+**`update(dt)`** is called automatically each frame by the game loop (wired in `app.rs` for all run functions). It ticks every active fade's elapsed time, applies the interpolated volume, and removes finished fades. Fades with `stop_on_finish: true` (fade-out, crossfade-out) stop their sink upon completion.
+
+**Crossfade architecture:** The current music sink is moved to `crossfade_sink`, and a new music sink is created for the incoming track. Two fades run in parallel — `CrossfadeOut` fades the old sink to 0, `MusicVolume` fades the new sink from 0 to the target. When `CrossfadeOut` finishes, the crossfade sink is dropped.
 
 ---
 

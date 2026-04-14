@@ -110,6 +110,10 @@ fn headless_demo() {
         "Scene::on_pause",
         "Scene::on_enter",
         "ParticleEmitter::burst",
+        "fade_in_music",
+        "load_audio",
+        "crossfade_music",
+        "fade_out_music",
     ];
 
     let mut missing = Vec::new();
