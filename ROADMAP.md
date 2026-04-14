@@ -61,6 +61,9 @@ Recently completed or partially completed:
 - Completed: tweening and easing — `Tween` struct with 25 easing curves, `LoopMode` (Once/Loop/PingPong), `lerp()` and `ease()` helpers, `feature-tween` sample
 - Completed: text layout — `measure_text`, `line_height`, `TextAlign` (Left/Center/Right), `text_aligned`, word wrapping (`wrap_text`), `text_block`, `feature-text` sample
 - Completed: immediate-mode UI widgets — `Ui` builder with `label`, `label_centered`, `button`, `separator`, focus navigation (arrow keys/WASD), activation (Enter/Space), customizable `UiStyle`, `feature-ui` sample
+- Completed: save/load — `SaveSystem` with slot-based JSON persistence, platform-appropriate save paths, `feature-saveload` sample
+- Completed: resolution scaling — `ScaleMode` enum (Stretch, Letterbox, PixelPerfect), offscreen render target + blit pass, Canvas/HUD at window resolution, runtime switching, `feature-resolution` sample
+- Completed: particle system — `EmitterConfig` builder (14+ fields), `ParticleEmitter` pool with O(1) alive count, `EmitShape` (Point/Circle/Rect), `RangeF32` for randomized params, `Color::lerp`, burst/continuous modes, `feature-particles` sample, kitchen-sink integration
 
 ---
 
@@ -112,7 +115,7 @@ These are the features that most directly increase the engine’s usefulness for
 15. Fixed update support [done]
     `EngineConfig::fixed_dt` sets the step size (default 1/60). `TimeState` accumulates frame time and `consume_fixed_step()` drains it. `Game::fixed_update()`, `Game3D::fixed_update()`, `Scene::fixed_update()`, and `Scene3D::fixed_update()` are called N times per frame before the variable `update()`. All four run functions and their headless paths are wired.
 
-16. ~~Save and load support~~ ✅
+16. Save and load support [done]
     `SaveSystem` provides slot-based JSON persistence via `save(slot, &T)` / `load::<T>(slot)` / `delete(slot)` / `exists(slot)` / `list_slots()`. Uses `dirs::data_local_dir()` for platform-appropriate save paths, with `with_dir()` for custom locations. Games derive `Serialize + Deserialize` on save data structs and store `SaveSystem` in `Globals`. Re-exported as `rengine::SaveSystem` and `rengine::SaveError`.
 
 17. Virtual file system or resource path abstraction [partially done]
@@ -166,7 +169,7 @@ These features make 2D development substantially more practical.
 31. Tiled map import
     High leverage for normal 2D workflows.
 
-32. Better text rendering
+32. Better text rendering [partially done]
     Multiple fonts, outlines, shadows, and bitmap font support.
     Bold, italic, and bold-italic variants via per-style font atlases.
     Fancy text effects: per-letter color shifting, bouncing/wave letters, and rendering text along curves.
@@ -186,8 +189,8 @@ These features make 2D development substantially more practical.
 36. Hot reload for assets [done]
     Reload textures, shaders, and data files during development.
 
-37. Nine-slice support
-    Important for UI panels, windows, and scalable decorative frames.
+37. Nine-slice support [done]
+    `NineSlice` struct with uniform/asymmetric borders, `frame.draw_nine_slice()`, color tinting, z-order, `feature-nineslice` sample.
 
 38. Masking and clipping
     Essential for UI panels, scroll regions, and some gameplay effects.
@@ -198,7 +201,7 @@ These features make 2D development substantially more practical.
 
 The 3D renderer exists, but these features are required before it becomes practical for general development.
 
-39. Full 3D transforms [not started — needed]
+39. Full 3D transforms [not started]
     Per-draw rotation and scale in addition to position. Lack of rotation caused sample door meshes to be invisible when oriented wrong for the scene.
 
 40. Transform hierarchies
