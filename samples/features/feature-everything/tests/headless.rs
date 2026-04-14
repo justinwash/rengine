@@ -109,6 +109,7 @@ fn headless_demo() {
         "Scene::on_resume",
         "Scene::on_pause",
         "Scene::on_enter",
+        "ParticleEmitter::burst",
     ];
 
     let mut missing = Vec::new();

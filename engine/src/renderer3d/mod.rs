@@ -637,10 +637,12 @@ impl Renderer3D {
         });
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        let blit_shader = self.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("blit_shader_3d"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../renderer/blit.wgsl").into()),
-        });
+        let blit_shader = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("blit_shader_3d"),
+                source: wgpu::ShaderSource::Wgsl(include_str!("../renderer/blit.wgsl").into()),
+            });
 
         let blit_bgl = self
             .device
