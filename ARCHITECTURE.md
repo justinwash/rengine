@@ -1322,6 +1322,8 @@ A CPU-side 2D particle system with pooled allocation and builder-pattern configu
 | `gravity`                   | `Vec2`      | ZERO              | Constant acceleration                         |
 | `damping`                   | `f32`       | 0                 | Velocity decay factor                         |
 | `emit_shape`                | `EmitShape` | Point             | Spawn area: `Point`, `Circle(r)`, `Rect(w,h)` |
+| `z_order`                   | `i32`       | 0                 | Draw ordering depth for emitted particles     |
+| `looping`                   | `bool`      | true              | Whether the emitter stays active after all particles die (non-looping auto-deactivates) |
 | `max_particles`             | `usize`     | 512               | Pool capacity                                 |
 
 All range fields accept `f32` (constant) or `(f32, f32)` (random range) via `Into<RangeF32>`.
