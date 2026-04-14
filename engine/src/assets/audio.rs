@@ -234,7 +234,8 @@ impl AudioSystem {
     }
 
     pub fn set_master_volume(&self, volume: f32) {
-        self.master_volume.set(if self.silent { 0.0 } else { volume.max(0.0) });
+        self.master_volume
+            .set(if self.silent { 0.0 } else { volume.max(0.0) });
         self.refresh_sink_volumes();
     }
 
@@ -251,7 +252,12 @@ impl AudioSystem {
         *self.bus_volumes.borrow().get(&bus).unwrap_or(&1.0)
     }
 
-    pub fn fade_in_music(&self, clip: &AudioClip, duration: f32, easing: Easing) -> Result<(), AssetError> {
+    pub fn fade_in_music(
+        &self,
+        clip: &AudioClip,
+        duration: f32,
+        easing: Easing,
+    ) -> Result<(), AssetError> {
         self.fade_in_music_with_volume(clip, 1.0, duration, easing)
     }
 
@@ -454,7 +460,8 @@ impl AudioSystem {
                     needs_volume_refresh = true;
                 }
                 FadeTarget::MasterVolume => {
-                    self.master_volume.set(if self.silent { 0.0 } else { value });
+                    self.master_volume
+                        .set(if self.silent { 0.0 } else { value });
                     needs_volume_refresh = true;
                 }
             }

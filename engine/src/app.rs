@@ -341,24 +341,48 @@ impl Engine {
         self.audio.bus_volume(bus)
     }
 
-    pub fn fade_in_music(&self, clip: &AudioClip, duration: f32, easing: Easing) -> Result<(), AssetError> {
+    pub fn fade_in_music(
+        &self,
+        clip: &AudioClip,
+        duration: f32,
+        easing: Easing,
+    ) -> Result<(), AssetError> {
         self.audio.fade_in_music(clip, duration, easing)
     }
 
-    pub fn fade_in_music_with_volume(&self, clip: &AudioClip, volume: f32, duration: f32, easing: Easing) -> Result<(), AssetError> {
-        self.audio.fade_in_music_with_volume(clip, volume, duration, easing)
+    pub fn fade_in_music_with_volume(
+        &self,
+        clip: &AudioClip,
+        volume: f32,
+        duration: f32,
+        easing: Easing,
+    ) -> Result<(), AssetError> {
+        self.audio
+            .fade_in_music_with_volume(clip, volume, duration, easing)
     }
 
     pub fn fade_out_music(&self, duration: f32, easing: Easing) {
         self.audio.fade_out_music(duration, easing);
     }
 
-    pub fn crossfade_music(&self, clip: &AudioClip, duration: f32, easing: Easing) -> Result<(), AssetError> {
+    pub fn crossfade_music(
+        &self,
+        clip: &AudioClip,
+        duration: f32,
+        easing: Easing,
+    ) -> Result<(), AssetError> {
         self.audio.crossfade_music(clip, duration, easing)
     }
 
-    pub fn crossfade_music_with_volume(&self, clip: &AudioClip, volume: f32, duration: f32, easing: Easing) -> Result<(), AssetError> {
-        self.audio.crossfade_music_with_volume(clip, volume, duration, easing)
+    pub fn crossfade_music_with_volume(
+        &self,
+        clip: &AudioClip,
+        volume: f32,
+        duration: f32,
+        easing: Easing,
+    ) -> Result<(), AssetError> {
+        self.audio
+            .crossfade_music_with_volume(clip, volume, duration, easing)
     }
 
     pub fn fade_bus_volume(&self, bus: AudioBus, target: f32, duration: f32, easing: Easing) {
@@ -1068,24 +1092,48 @@ impl Engine3D {
         self.audio.bus_volume(bus)
     }
 
-    pub fn fade_in_music(&self, clip: &AudioClip, duration: f32, easing: Easing) -> Result<(), AssetError> {
+    pub fn fade_in_music(
+        &self,
+        clip: &AudioClip,
+        duration: f32,
+        easing: Easing,
+    ) -> Result<(), AssetError> {
         self.audio.fade_in_music(clip, duration, easing)
     }
 
-    pub fn fade_in_music_with_volume(&self, clip: &AudioClip, volume: f32, duration: f32, easing: Easing) -> Result<(), AssetError> {
-        self.audio.fade_in_music_with_volume(clip, volume, duration, easing)
+    pub fn fade_in_music_with_volume(
+        &self,
+        clip: &AudioClip,
+        volume: f32,
+        duration: f32,
+        easing: Easing,
+    ) -> Result<(), AssetError> {
+        self.audio
+            .fade_in_music_with_volume(clip, volume, duration, easing)
     }
 
     pub fn fade_out_music(&self, duration: f32, easing: Easing) {
         self.audio.fade_out_music(duration, easing);
     }
 
-    pub fn crossfade_music(&self, clip: &AudioClip, duration: f32, easing: Easing) -> Result<(), AssetError> {
+    pub fn crossfade_music(
+        &self,
+        clip: &AudioClip,
+        duration: f32,
+        easing: Easing,
+    ) -> Result<(), AssetError> {
         self.audio.crossfade_music(clip, duration, easing)
     }
 
-    pub fn crossfade_music_with_volume(&self, clip: &AudioClip, volume: f32, duration: f32, easing: Easing) -> Result<(), AssetError> {
-        self.audio.crossfade_music_with_volume(clip, volume, duration, easing)
+    pub fn crossfade_music_with_volume(
+        &self,
+        clip: &AudioClip,
+        volume: f32,
+        duration: f32,
+        easing: Easing,
+    ) -> Result<(), AssetError> {
+        self.audio
+            .crossfade_music_with_volume(clip, volume, duration, easing)
     }
 
     pub fn fade_bus_volume(&self, bus: AudioBus, target: f32, duration: f32, easing: Easing) {
