@@ -461,7 +461,10 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
         .render_width
         .and_then(|w| config.render_height.map(|h| (w, h)));
     if let Some((rw, rh)) = render_res {
-        assert!(rw >= 1 && rh >= 1, "render_width and render_height must both be >= 1");
+        assert!(
+            rw >= 1 && rh >= 1,
+            "render_width and render_height must both be >= 1"
+        );
     }
     let scale_mode = config.scale_mode;
 
@@ -1111,7 +1114,10 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
         .render_width
         .and_then(|w| config.render_height.map(|h| (w, h)));
     if let Some((rw, rh)) = render_res {
-        assert!(rw >= 1 && rh >= 1, "render_width and render_height must both be >= 1");
+        assert!(
+            rw >= 1 && rh >= 1,
+            "render_width and render_height must both be >= 1"
+        );
     }
     let scale_mode = config.scale_mode;
 
@@ -1314,7 +1320,10 @@ where
         .render_width
         .and_then(|w| config.render_height.map(|h| (w, h)));
     if let Some((rw, rh)) = render_res {
-        assert!(rw >= 1 && rh >= 1, "render_width and render_height must both be >= 1");
+        assert!(
+            rw >= 1 && rh >= 1,
+            "render_width and render_height must both be >= 1"
+        );
     }
     let scale_mode = config.scale_mode;
 
