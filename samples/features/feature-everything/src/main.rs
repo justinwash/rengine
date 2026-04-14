@@ -24,6 +24,7 @@
 // SaveSystem (save, load, delete, exists, list_slots — checkpoint auto-save),
 // ScaleMode (resolution scaling — game renders at 480×360, scaled to window),
 // ParticleEmitter (burst particles on coin pickup, EmitterConfig, Color::lerp),
+// Audio fades (load_audio, fade_in_music, crossfade_music, fade_out_music, play_sound_on_bus),
 // InputState, GamepadState, TimeState, hot reload, Vec2.
 
 use rengine::*;
@@ -269,6 +270,12 @@ struct GameScene {
 
     coin_particles: ParticleEmitter,
 
+    // Audio
+    music_a: Option<AudioClip>,
+    music_b: Option<AudioClip>,
+    coin_sfx: Option<AudioClip>,
+    did_crossfade: bool,
+
     // Demo auto-play state
     demo_step: usize,
     demo_did_pause: bool,
@@ -338,6 +345,11 @@ impl Default for GameScene {
                     .with_z_order(5)
                     .with_max_particles(64),
             ),
+
+            music_a: None,
+            music_b: None,
+            coin_sfx: None,
+            did_crossfade: false,
 
             demo_step: 0,
             demo_did_pause: false,
@@ -520,6 +532,17 @@ impl Scene for GameScene {
             "[FEATURE OK] CollisionLayer — player mask PLAYER|TRIGGER, \
              damage zone TRIGGER->PLAYER"
         );
+
+        self.music_a = engine.load_audio("music_a.wav").ok();
+        self.music_b = engine.load_audio("music_b.wav").ok();
+        self.coin_sfx = engine.load_audio("coin_sfx.wav").ok();
+        if let Some(ref clip) = self.music_a {
+            let _ = engine.fade_in_music(clip, 2.0, Easing::OutQuad);
+            if let Some(demo) = globals.get_mut::<DemoConfig>() {
+                demo.log_feature("fade_in_music");
+                demo.log_feature("load_audio");
+            }
+        }
     }
 
     fn fixed_update(&mut self, engine: &Engine, globals: &mut Globals) {
@@ -748,6 +771,9 @@ impl Scene for GameScene {
             self.pending_shake.set(true);
             self.cam_tilt = 0.07 * if self.facing_right { 1.0 } else { -1.0 };
             self.score_popup.reset();
+            if let Some(ref clip) = self.coin_sfx {
+                let _ = engine.play_sound_on_bus(AudioBus::Effects, clip, 0.7);
+            }
             println!(
                 "[FEATURE OK] aabb_overlap — collected coin! score: {}",
                 self.score
@@ -788,6 +814,14 @@ impl Scene for GameScene {
                 self.demo_last_frame = f;
 
                 if f != prev {
+                    // Crossfade to track B to demonstrate crossfade_music
+                    if f >= 250 && !self.did_crossfade {
+                        self.did_crossfade = true;
+                        if let Some(ref clip) = self.music_b {
+                            let _ = engine.crossfade_music(clip, 2.0, Easing::InOutSine);
+                            demo.log_feature("crossfade_music");
+                        }
+                    }
                     // Zoom in briefly to demonstrate Camera2D::zoom
                     if f >= 150 && !self.demo_did_zoom {
                         self.demo_did_zoom = true;
@@ -808,6 +842,14 @@ impl Scene for GameScene {
                             demo_frames: 0,
                             focus: 0,
                         }));
+                    }
+                    // Fade out as demo nears end
+                    if f >= 500 {
+                        engine.fade_out_music(1.5, Easing::InQuad);
+                        demo.log_feature("fade_out_music");
+                    }
+                    if self.score > 0 {
+                        demo.log_feature("play_sound_on_bus (coin sfx)");
                     }
                 }
 

@@ -15,6 +15,7 @@ use crate::assets::{
 };
 use crate::canvas;
 use crate::input::{ActionMap, GamepadSystem, InputState};
+use crate::math::tween::Easing;
 use crate::math::{Rng, TimeState};
 use crate::renderer::{Frame, Renderer, TextureId};
 use crate::renderer3d::{Frame3D, MeshId, Renderer3D, Vertex3D};
@@ -340,6 +341,38 @@ impl Engine {
         self.audio.bus_volume(bus)
     }
 
+    pub fn fade_in_music(&self, clip: &AudioClip, duration: f32, easing: Easing) -> Result<(), AssetError> {
+        self.audio.fade_in_music(clip, duration, easing)
+    }
+
+    pub fn fade_in_music_with_volume(&self, clip: &AudioClip, volume: f32, duration: f32, easing: Easing) -> Result<(), AssetError> {
+        self.audio.fade_in_music_with_volume(clip, volume, duration, easing)
+    }
+
+    pub fn fade_out_music(&self, duration: f32, easing: Easing) {
+        self.audio.fade_out_music(duration, easing);
+    }
+
+    pub fn crossfade_music(&self, clip: &AudioClip, duration: f32, easing: Easing) -> Result<(), AssetError> {
+        self.audio.crossfade_music(clip, duration, easing)
+    }
+
+    pub fn crossfade_music_with_volume(&self, clip: &AudioClip, volume: f32, duration: f32, easing: Easing) -> Result<(), AssetError> {
+        self.audio.crossfade_music_with_volume(clip, volume, duration, easing)
+    }
+
+    pub fn fade_bus_volume(&self, bus: AudioBus, target: f32, duration: f32, easing: Easing) {
+        self.audio.fade_bus_volume(bus, target, duration, easing);
+    }
+
+    pub fn fade_master_volume(&self, target: f32, duration: f32, easing: Easing) {
+        self.audio.fade_master_volume(target, duration, easing);
+    }
+
+    pub fn is_audio_fading(&self) -> bool {
+        self.audio.is_fading()
+    }
+
     pub fn load_scene2d<P: AsRef<Path>>(
         &mut self,
         assets: &AssetPack,
@@ -511,6 +544,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
             engine.time.tick();
             engine.gamepads.update();
             engine.reload_assets_if_changed();
+            engine.audio.update(engine.time.dt());
             while engine.time.consume_fixed_step() {
                 game.fixed_update(&engine);
             }
@@ -550,6 +584,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
                     engine.time.tick();
                     engine.gamepads.update();
                     engine.reload_assets_if_changed();
+                    engine.audio.update(engine.time.dt());
 
                     while engine.time.consume_fixed_step() {
                         game.fixed_update(&engine);
@@ -656,6 +691,7 @@ where
             engine.time.tick();
             engine.gamepads.update();
             engine.reload_assets_if_changed();
+            engine.audio.update(engine.time.dt());
 
             while engine.time.consume_fixed_step() {
                 if let Some(scene) = stack.last_mut() {
@@ -707,6 +743,7 @@ where
                     engine.time.tick();
                     engine.gamepads.update();
                     engine.reload_assets_if_changed();
+                    engine.audio.update(engine.time.dt());
 
                     while engine.time.consume_fixed_step() {
                         if let Some(scene) = stack.last_mut() {
@@ -1027,6 +1064,42 @@ impl Engine3D {
         self.audio.set_bus_volume(bus, volume);
     }
 
+    pub fn audio_bus_volume(&self, bus: AudioBus) -> f32 {
+        self.audio.bus_volume(bus)
+    }
+
+    pub fn fade_in_music(&self, clip: &AudioClip, duration: f32, easing: Easing) -> Result<(), AssetError> {
+        self.audio.fade_in_music(clip, duration, easing)
+    }
+
+    pub fn fade_in_music_with_volume(&self, clip: &AudioClip, volume: f32, duration: f32, easing: Easing) -> Result<(), AssetError> {
+        self.audio.fade_in_music_with_volume(clip, volume, duration, easing)
+    }
+
+    pub fn fade_out_music(&self, duration: f32, easing: Easing) {
+        self.audio.fade_out_music(duration, easing);
+    }
+
+    pub fn crossfade_music(&self, clip: &AudioClip, duration: f32, easing: Easing) -> Result<(), AssetError> {
+        self.audio.crossfade_music(clip, duration, easing)
+    }
+
+    pub fn crossfade_music_with_volume(&self, clip: &AudioClip, volume: f32, duration: f32, easing: Easing) -> Result<(), AssetError> {
+        self.audio.crossfade_music_with_volume(clip, volume, duration, easing)
+    }
+
+    pub fn fade_bus_volume(&self, bus: AudioBus, target: f32, duration: f32, easing: Easing) {
+        self.audio.fade_bus_volume(bus, target, duration, easing);
+    }
+
+    pub fn fade_master_volume(&self, target: f32, duration: f32, easing: Easing) {
+        self.audio.fade_master_volume(target, duration, easing);
+    }
+
+    pub fn is_audio_fading(&self) -> bool {
+        self.audio.is_fading()
+    }
+
     pub fn reload_assets_if_changed(&mut self) {
         if !self.hot_reload_enabled {
             return;
@@ -1163,6 +1236,7 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
         loop {
             engine.time.tick();
             engine.reload_assets_if_changed();
+            engine.audio.update(engine.time.dt());
             while engine.time.consume_fixed_step() {
                 game.fixed_update(&engine);
             }
@@ -1259,6 +1333,7 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
                 WindowEvent::RedrawRequested => {
                     engine.time.tick();
                     engine.reload_assets_if_changed();
+                    engine.audio.update(engine.time.dt());
 
                     while engine.time.consume_fixed_step() {
                         game.fixed_update(&engine);
@@ -1374,6 +1449,7 @@ where
         loop {
             engine.time.tick();
             engine.reload_assets_if_changed();
+            engine.audio.update(engine.time.dt());
 
             while engine.time.consume_fixed_step() {
                 if let Some(scene) = stack.last_mut() {
@@ -1482,6 +1558,7 @@ where
                 WindowEvent::RedrawRequested => {
                     engine.time.tick();
                     engine.reload_assets_if_changed();
+                    engine.audio.update(engine.time.dt());
 
                     while engine.time.consume_fixed_step() {
                         if let Some(scene) = stack.last_mut() {
