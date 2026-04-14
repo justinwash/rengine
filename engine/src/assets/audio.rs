@@ -197,7 +197,11 @@ impl AudioSystem {
 
     pub fn stop_music(&self) {
         self.cancel_fades_for(FadeTarget::MusicVolume);
+        self.cancel_fades_for(FadeTarget::CrossfadeOut);
         if let Some(active) = self.music_sink.borrow_mut().take() {
+            active.sink.stop();
+        }
+        if let Some(active) = self.crossfade_sink.borrow_mut().take() {
             active.sink.stop();
         }
     }
@@ -329,6 +333,7 @@ impl AudioSystem {
         easing: Easing,
     ) -> Result<(), AssetError> {
         self.cancel_fades_for(FadeTarget::MusicVolume);
+        self.cancel_fades_for(FadeTarget::CrossfadeOut);
 
         let old_volume = self
             .music_sink
@@ -338,11 +343,15 @@ impl AudioSystem {
             .unwrap_or(0.0);
 
         {
-            let old = self.music_sink.borrow_mut().take();
             if let Some(prev) = self.crossfade_sink.borrow_mut().take() {
                 prev.sink.stop();
             }
-            *self.crossfade_sink.borrow_mut() = old;
+            let old = self.music_sink.borrow_mut().take();
+            if old_volume > 0.0 {
+                *self.crossfade_sink.borrow_mut() = old;
+            } else if let Some(silent) = old {
+                silent.sink.stop();
+            }
         }
 
         if old_volume > 0.0 {

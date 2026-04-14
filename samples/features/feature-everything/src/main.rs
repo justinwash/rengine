@@ -843,8 +843,8 @@ impl Scene for GameScene {
                             focus: 0,
                         }));
                     }
-                    // Fade out as demo nears end
-                    if f >= 500 {
+                    // Fade out as demo nears end (one-shot at frame 500)
+                    if prev < 500 && f >= 500 {
                         engine.fade_out_music(1.5, Easing::InQuad);
                         demo.log_feature("fade_out_music");
                     }

@@ -1,4 +1,5 @@
 use rengine::*;
+use std::path::PathBuf;
 
 struct AudioDemo {
     track_a: AudioClip,
@@ -8,6 +9,7 @@ struct AudioDemo {
     demo_mode: bool,
     max_frames: Option<u32>,
     frame_count: u32,
+    finished: bool,
     status: String,
 }
 
@@ -21,9 +23,11 @@ impl Game for AudioDemo {
             .and_then(|i| args.get(i + 1))
             .and_then(|s| s.parse().ok());
 
-        let track_a = engine.load_audio("samples/features/feature-audio/assets/track_a.wav").expect("track_a.wav");
-        let track_b = engine.load_audio("samples/features/feature-audio/assets/track_b.wav").expect("track_b.wav");
-        let sfx_blip = engine.load_audio("samples/features/feature-audio/assets/sfx_blip.wav").expect("sfx_blip.wav");
+        engine.set_asset_root(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets"));
+
+        let track_a = engine.load_audio("track_a.wav").expect("track_a.wav");
+        let track_b = engine.load_audio("track_b.wav").expect("track_b.wav");
+        let sfx_blip = engine.load_audio("sfx_blip.wav").expect("sfx_blip.wav");
 
         engine.set_audio_bus_volume(AudioBus::Effects, 0.8);
 
@@ -41,6 +45,7 @@ impl Game for AudioDemo {
             demo_mode,
             max_frames,
             frame_count: 0,
+            finished: false,
             status: "Fade in: track A (2s)".into(),
         }
     }
@@ -51,7 +56,8 @@ impl Game for AudioDemo {
         if let Some(max) = self.max_frames {
             if self.frame_count >= max {
                 println!("OK {max}");
-                std::process::exit(0);
+                self.finished = true;
+                return;
             }
         }
 
@@ -152,7 +158,7 @@ impl Game for AudioDemo {
     }
 
     fn should_exit(&self) -> bool {
-        false
+        self.finished
     }
 }
 
