@@ -99,16 +99,14 @@ impl Game for ParticleDemo {
 
         if self.demo_mode {
             if self.frame_count % 60 == 0 {
-                self.sparkle = ParticleEmitter::new(self.sparkle.config().clone());
+                self.sparkle.clear();
                 self.sparkle.set_position(Vec2::new(hw * 0.6, 0.0));
                 self.sparkle.burst(&mut rng);
-                self.sparkle.set_active(false);
             }
         } else if engine.input().is_key_pressed(KeyCode::Space) {
-            self.sparkle = ParticleEmitter::new(self.sparkle.config().clone());
+            self.sparkle.clear();
             self.sparkle.set_position(Vec2::new(hw * 0.6, 0.0));
             self.sparkle.burst(&mut rng);
-            self.sparkle.set_active(false);
         }
     }
 

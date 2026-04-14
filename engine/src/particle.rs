@@ -203,6 +203,7 @@ pub struct ParticleEmitter {
     emit_accum: f32,
     active: bool,
     first_free: usize,
+    alive: usize,
 }
 
 impl ParticleEmitter {
@@ -229,6 +230,7 @@ impl ParticleEmitter {
             emit_accum: 0.0,
             active: true,
             first_free: 0,
+            alive: 0,
         }
     }
 
@@ -252,16 +254,21 @@ impl ParticleEmitter {
         &self.config
     }
 
-    pub fn config_mut(&mut self) -> &mut EmitterConfig {
-        &mut self.config
-    }
-
     pub fn alive_count(&self) -> usize {
-        self.particles.iter().filter(|p| p.alive).count()
+        self.alive
     }
 
     pub fn is_finished(&self) -> bool {
-        !self.active && self.alive_count() == 0
+        !self.active && self.alive == 0
+    }
+
+    pub fn clear(&mut self) {
+        for p in self.particles.iter_mut() {
+            p.alive = false;
+        }
+        self.alive = 0;
+        self.emit_accum = 0.0;
+        self.first_free = 0;
     }
 
     pub fn burst(&mut self, rng: &mut Rng) {
@@ -279,6 +286,7 @@ impl ParticleEmitter {
             p.age += dt;
             if p.age >= p.lifetime {
                 p.alive = false;
+                self.alive -= 1;
                 continue;
             }
             p.vel += self.config.gravity * dt;
@@ -297,6 +305,10 @@ impl ParticleEmitter {
                 self.spawn_one(rng);
             }
         }
+
+        if !self.config.looping && self.active && self.config.emit_rate <= 0.0 && self.alive == 0 {
+            self.active = false;
+        }
     }
 
     pub fn draw(&self, frame: &mut Frame, texture: TextureId) {
@@ -305,15 +317,19 @@ impl ParticleEmitter {
             if !p.alive {
                 continue;
             }
-            let t = p.age / p.lifetime;
+            let t = if p.lifetime > 0.0 {
+                (p.age / p.lifetime).min(1.0)
+            } else {
+                1.0
+            };
             let size = p.size_start + (p.size_end - p.size_start) * t;
             let color = cfg.color_start.lerp(cfg.color_end, t);
-            let half = size * 0.5;
+            let half = Vec2::splat(size * 0.5);
             frame.draw_sprite(
-                DrawParams::new(texture, p.pos - Vec2::new(half, half), Vec2::splat(size))
+                DrawParams::new(texture, p.pos - half, Vec2::splat(size))
                     .with_color(color)
                     .with_rotation(p.rotation)
-                    .with_origin(Vec2::splat(half))
+                    .with_origin(half)
                     .with_z_order(cfg.z_order),
             );
         }
@@ -344,10 +360,11 @@ impl ParticleEmitter {
         p.rotation = 0.0;
         p.spin = cfg.spin.sample(rng);
         p.age = 0.0;
-        p.lifetime = cfg.lifetime.sample(rng);
+        p.lifetime = cfg.lifetime.sample(rng).max(0.001);
         p.size_start = cfg.size_start.sample(rng);
         p.size_end = cfg.size_end.sample(rng);
         p.alive = true;
+        self.alive += 1;
     }
 
     fn find_free_slot(&mut self) -> Option<usize> {
@@ -374,6 +391,7 @@ mod tests {
             burst_count: 5,
             lifetime: RangeF32::constant(0.5),
             speed: RangeF32::constant(10.0),
+            looping: false,
             ..Default::default()
         };
         let mut emitter = ParticleEmitter::new(config);
@@ -381,7 +399,6 @@ mod tests {
 
         assert_eq!(emitter.alive_count(), 0);
         emitter.burst(&mut rng);
-        emitter.set_active(false);
         assert_eq!(emitter.alive_count(), 5);
 
         for _ in 0..60 {
