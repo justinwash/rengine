@@ -127,6 +127,7 @@ pub(crate) struct PostFxPipeline {
     pub(crate) texture_bgl: wgpu::BindGroupLayout,
     uniform_bgl: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
+    source_bind_group: Option<wgpu::BindGroup>,
     pub(crate) width: u32,
     pub(crate) height: u32,
     format: wgpu::TextureFormat,
@@ -281,10 +282,32 @@ impl PostFxPipeline {
             texture_bgl,
             uniform_bgl,
             sampler,
+            source_bind_group: None,
             width,
             height,
             format,
         }
+    }
+
+    pub(crate) fn set_source_view(
+        &mut self,
+        device: &wgpu::Device,
+        view: &wgpu::TextureView,
+    ) {
+        self.source_bind_group = Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("postfx_source_bg"),
+            layout: &self.texture_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+            ],
+        }));
     }
 
     fn create_target(
@@ -421,17 +444,21 @@ impl PostFxPipeline {
         &self,
         encoder: &mut wgpu::CommandEncoder,
         queue: &wgpu::Queue,
-        source_bind_group: &wgpu::BindGroup,
         effects: &[PostEffect],
     ) -> Option<&wgpu::TextureView> {
         if self.passes.is_empty() || effects.is_empty() {
             return None;
         }
 
+        let source_bg = match self.source_bind_group {
+            Some(ref bg) => bg,
+            None => return None,
+        };
+
         let views = [&self.view_a, &self.view_b];
         let bind_groups = [&self.bind_group_a, &self.bind_group_b];
 
-        let mut read_bg = source_bind_group;
+        let mut read_bg = source_bg;
 
         for (i, (pass, effect)) in self.passes.iter().zip(effects.iter()).enumerate() {
             let write_idx = i % 2;

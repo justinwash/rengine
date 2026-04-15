@@ -494,19 +494,28 @@ impl Renderer {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        let pfx_effects = postfx_chain.effects.borrow().clone();
-        if !pfx_effects.is_empty() {
-            if self.offscreen.is_some() {
+        {
+            let effects = postfx_chain.effects.borrow();
+            let is_dirty = *postfx_chain.dirty.borrow();
+            if effects.is_empty() {
+                if is_dirty {
+                    self.postfx = None;
+                    *postfx_chain.dirty.borrow_mut() = false;
+                }
+            } else if self.offscreen.is_some() {
                 let ofs = self.offscreen.as_ref().unwrap();
                 let (w, h) = (ofs.width, ofs.height);
                 if self.postfx.is_none() {
-                    self.postfx =
-                        Some(PostFxPipeline::new(&self.device, w, h, self.surface_config.format));
+                    let mut pfx =
+                        PostFxPipeline::new(&self.device, w, h, self.surface_config.format);
+                    pfx.set_source_view(&self.device, &ofs.view);
+                    self.postfx = Some(pfx);
                 }
                 let pfx = self.postfx.as_mut().unwrap();
                 pfx.resize(&self.device, w, h);
-                if *postfx_chain.dirty.borrow() {
-                    pfx.rebuild(&self.device, &pfx_effects);
+                if is_dirty {
+                    pfx.set_source_view(&self.device, &ofs.view);
+                    pfx.rebuild(&self.device, &effects);
                     *postfx_chain.dirty.borrow_mut() = false;
                 }
             }
@@ -648,7 +657,8 @@ impl Renderer {
         if let Some(ref ofs) = self.offscreen {
             let blit_source_bg = if let Some(ref pfx) = self.postfx {
                 if pfx.pass_count() > 0 {
-                    pfx.run(&mut encoder, &self.queue, &ofs.bind_group, &pfx_effects);
+                    let effects = postfx_chain.effects.borrow();
+                    pfx.run(&mut encoder, &self.queue, &effects);
                     pfx.last_output_bind_group(pfx.pass_count())
                 } else {
                     &ofs.bind_group
