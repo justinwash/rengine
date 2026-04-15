@@ -1,10 +1,10 @@
 [package]
-name = "rengine-feature-everything"
+name = "rengine-everything"
 version = "0.1.0"
 edition = "2021"
 
 [[bin]]
-name = "rengine-feature-everything"
+name = "rengine-everything"
 path = "src/main.rs"
 
 [dependencies]

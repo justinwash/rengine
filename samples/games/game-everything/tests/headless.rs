@@ -2,10 +2,7 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 
 fn game_binary() -> String {
-    // Prefer Cargo's injected env var (set for integration tests when
-    // the crate defines a [[bin]] target). Fall back to walking from
-    // the test exe for older Cargo versions or unusual layouts.
-    if let Ok(path) = std::env::var("CARGO_BIN_EXE_rengine-feature-everything") {
+    if let Ok(path) = std::env::var("CARGO_BIN_EXE_rengine-everything") {
         return path;
     }
     let test_exe = std::env::current_exe().expect("current_exe");
@@ -14,16 +11,13 @@ fn game_binary() -> String {
         .and_then(|p| p.parent())
         .expect("could not find target/debug");
     let name = if cfg!(windows) {
-        "rengine-feature-everything.exe"
+        "rengine-everything.exe"
     } else {
-        "rengine-feature-everything"
+        "rengine-everything"
     };
     target_dir.join(name).to_string_lossy().into_owned()
 }
 
-/// Run the kitchen-sink sample in headless demo mode for 600 frames,
-/// then verify that all key features were successfully demonstrated
-/// by checking the `[FEATURE OK]` log lines in stdout.
 #[test]
 fn headless_demo() {
     let bin = game_binary();
@@ -68,19 +62,12 @@ fn headless_demo() {
         output.status,
     );
 
-    // Look for "OK <frame_count>" line anywhere in output (on_exit prints after it)
     let ok_line = stdout.lines().find(|l| l.starts_with("OK "));
     assert!(
         ok_line.is_some(),
         "Expected 'OK <n>' line in stdout.\nFull stdout:\n{stdout}"
     );
 
-    // Verify key features were logged.
-    //
-    // NOTE: Camera2D features (shake, rotation, zoom) are *configured* in
-    // update/fixed_update and the feature-log fires there. In headless mode
-    // render() is never called, so the actual Camera2D methods are not
-    // exercised. The visual_demo test (run with --ignored) covers rendering.
     let required_features = [
         "Engine::set_asset_root",
         "ActionMap",
@@ -132,8 +119,6 @@ fn headless_demo() {
     println!("All {} features verified!", required_features.len());
 }
 
-/// Visual demo — runs with a window, ignored in CI.
-/// Run manually: cargo test -p rengine-feature-everything -- --ignored visual_demo
 #[test]
 #[ignore]
 fn visual_demo() {

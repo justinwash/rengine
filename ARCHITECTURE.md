@@ -1975,10 +1975,10 @@ main()
 ## 16. Kitchen-Sink Game Example
 
 A **runnable sample** that exercises every major engine feature lives at
-[`samples/features/feature-everything/`](samples/features/feature-everything/).
+[`samples/games/game-everything/`](samples/games/game-everything/).
 
 ```sh
-cargo run -p rengine-feature-everything
+cargo run -p rengine-everything
 ```
 
 It is a 2D platformer with:
