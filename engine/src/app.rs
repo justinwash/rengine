@@ -14,7 +14,7 @@ use crate::assets::{
     SpriteSheet, TextureAsset,
 };
 use crate::canvas;
-use crate::input::{ActionMap, GamepadSystem, InputState};
+use crate::input::{ActionMap, GamepadAssignMode, GamepadSystem, InputState};
 use crate::math::tween::Easing;
 use crate::math::{Rng, TimeState};
 use crate::renderer::postfx::PostFxChain;
@@ -50,6 +50,7 @@ pub struct EngineConfig {
     pub render_width: Option<u32>,
     pub render_height: Option<u32>,
     pub scale_mode: ScaleMode,
+    pub gamepad_assign: GamepadAssignMode,
 }
 
 impl Default for EngineConfig {
@@ -66,6 +67,7 @@ impl Default for EngineConfig {
             render_width: None,
             render_height: None,
             scale_mode: ScaleMode::default(),
+            gamepad_assign: GamepadAssignMode::default(),
         }
     }
 }
@@ -125,6 +127,14 @@ impl Engine {
 
     pub fn gamepads_connected(&self) -> usize {
         self.gamepads.connected_count()
+    }
+
+    pub fn gamepads_unassigned(&self) -> usize {
+        self.gamepads.unassigned_count()
+    }
+
+    pub fn set_gamepad_assign_mode(&mut self, mode: GamepadAssignMode) {
+        self.gamepads.set_assign_mode(mode);
     }
 
     pub fn actions(&self) -> &ActionMap {
@@ -521,6 +531,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
     let headless = config.headless;
     let show_fps = config.show_fps;
     let fixed_dt = config.fixed_dt;
+    let gamepad_assign = config.gamepad_assign;
     assert!(
         config.render_width.is_some() == config.render_height.is_some(),
         "render_width and render_height must both be set or both be None"
@@ -561,7 +572,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
         window_width: config.width,
         window_height: config.height,
         render_resolution: render_res,
-        gamepads: GamepadSystem::new(),
+        gamepads: GamepadSystem::new(gamepad_assign),
         hot_reload_enabled: config.hot_reload,
         actions: ActionMap::new(),
         rng: RefCell::new(Rng::from_time()),
@@ -692,6 +703,7 @@ where
     let headless = config.headless;
     let show_fps = config.show_fps;
     let fixed_dt = config.fixed_dt;
+    let gamepad_assign = config.gamepad_assign;
     let render_res = config
         .render_width
         .and_then(|w| config.render_height.map(|h| (w, h)));
@@ -722,7 +734,7 @@ where
         window_width: config.width,
         window_height: config.height,
         render_resolution: render_res,
-        gamepads: GamepadSystem::new(),
+        gamepads: GamepadSystem::new(gamepad_assign),
         hot_reload_enabled: config.hot_reload,
         actions: ActionMap::new(),
         rng: RefCell::new(Rng::from_time()),

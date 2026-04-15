@@ -1,5 +1,5 @@
-use rengine::*;
 use crate::state::*;
+use rengine::*;
 
 pub struct PauseOverlay {
     pub demo_frames: u32,
@@ -60,9 +60,6 @@ impl Scene for PauseOverlay {
         }
 
         if engine.action_pressed("pause") {
-            return SceneOp::Pop;
-        }
-        if engine.gamepad(0).is_button_pressed(GamepadButton::Start) {
             return SceneOp::Pop;
         }
         SceneOp::Continue
