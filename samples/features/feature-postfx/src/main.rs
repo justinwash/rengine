@@ -48,53 +48,58 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 }
 "#;
 
-fn effect_list() -> Vec<(&'static str, PostEffect)> {
-    vec![
-        ("None", PostEffect::Invert),
-        (
-            "Vignette",
-            PostEffect::Vignette {
-                intensity: 0.8,
-                radius: 0.6,
-                softness: 0.4,
-            },
-        ),
-        ("Blur", PostEffect::Blur { radius: 3.0 }),
-        (
-            "Bloom",
-            PostEffect::Bloom {
-                threshold: 0.5,
-                intensity: 0.6,
-            },
-        ),
-        (
-            "Color Grade",
-            PostEffect::ColorGrade {
-                brightness: 1.2,
-                contrast: 1.3,
-                saturation: 0.5,
-            },
-        ),
-        (
-            "CRT",
-            PostEffect::Crt {
-                scanline_intensity: 0.4,
-                curvature: 0.15,
-            },
-        ),
-        ("Pixelate", PostEffect::Pixelate { pixel_size: 4.0 }),
-        (
-            "Chromatic Aberration",
-            PostEffect::ChromaticAberration { offset: 0.01 },
-        ),
-        ("Invert", PostEffect::Invert),
-        (
-            "Custom (Sepia)",
-            PostEffect::Custom {
-                wgsl_source: CUSTOM_SHADER.to_string(),
-            },
-        ),
+fn effect_names() -> &'static [&'static str] {
+    &[
+        "None",
+        "Vignette",
+        "Blur",
+        "Bloom",
+        "Color Grade",
+        "CRT",
+        "Pixelate",
+        "Chromatic Aberration",
+        "Invert",
+        "Custom (Sepia)",
     ]
+}
+
+fn effect_for_index(index: usize) -> Option<PostEffect> {
+    match index {
+        0 => None,
+        1 => Some(PostEffect::Vignette {
+            intensity: 0.8,
+            radius: 0.6,
+            softness: 0.4,
+        }),
+        2 => Some(PostEffect::Blur { radius: 3.0 }),
+        3 => Some(PostEffect::Bloom {
+            threshold: 0.5,
+            intensity: 0.6,
+        }),
+        4 => Some(PostEffect::ColorGrade {
+            brightness: 1.2,
+            contrast: 1.3,
+            saturation: 0.5,
+        }),
+        5 => Some(PostEffect::Crt {
+            scanline_intensity: 0.4,
+            curvature: 0.15,
+        }),
+        6 => Some(PostEffect::Pixelate { pixel_size: 4.0 }),
+        7 => Some(PostEffect::ChromaticAberration { offset: 0.01 }),
+        8 => Some(PostEffect::Invert),
+        9 => Some(PostEffect::Custom {
+            wgsl_source: CUSTOM_SHADER.to_string(),
+        }),
+        _ => None,
+    }
+}
+
+fn apply_effect(engine: &Engine, index: usize) {
+    engine.postfx().clear();
+    if let Some(effect) = effect_for_index(index) {
+        engine.postfx().push(effect);
+    }
 }
 
 impl Game for PostFxDemo {
@@ -119,36 +124,27 @@ impl Game for PostFxDemo {
     fn update(&mut self, engine: &Engine) {
         self.frame_count += 1;
 
-        let effects = effect_list();
+        let count = effect_names().len();
 
         if self.demo {
             let switch_interval = 90;
-            let idx = (self.frame_count / switch_interval) as usize % effects.len();
+            let idx = (self.frame_count / switch_interval) as usize % count;
             if idx != self.effect_index {
                 self.effect_index = idx;
-                engine.postfx().clear();
-                if self.effect_index > 0 {
-                    engine.postfx().push(effects[self.effect_index].1.clone());
-                }
+                apply_effect(engine, self.effect_index);
             }
         } else {
             if engine.input().is_key_pressed(KeyCode::ArrowRight) {
-                self.effect_index = (self.effect_index + 1) % effects.len();
-                engine.postfx().clear();
-                if self.effect_index > 0 {
-                    engine.postfx().push(effects[self.effect_index].1.clone());
-                }
+                self.effect_index = (self.effect_index + 1) % count;
+                apply_effect(engine, self.effect_index);
             }
             if engine.input().is_key_pressed(KeyCode::ArrowLeft) {
                 self.effect_index = if self.effect_index == 0 {
-                    effects.len() - 1
+                    count - 1
                 } else {
                     self.effect_index - 1
                 };
-                engine.postfx().clear();
-                if self.effect_index > 0 {
-                    engine.postfx().push(effects[self.effect_index].1.clone());
-                }
+                apply_effect(engine, self.effect_index);
             }
         }
     }
@@ -184,8 +180,8 @@ impl Game for PostFxDemo {
             Color::from_rgba8(255, 255, 200, 255),
         );
 
-        let effects = effect_list();
-        let name = effects[self.effect_index].0;
+        let names = effect_names();
+        let name = names[self.effect_index];
         let screen_size = engine.window_size();
         let atlas = engine.font_atlas();
         let canvas = frame.canvas(0);
@@ -201,7 +197,7 @@ impl Game for PostFxDemo {
             "PostFx: {} [{}/{}] [Left/Right]",
             name,
             self.effect_index + 1,
-            effects.len()
+            names.len()
         );
         canvas.text(
             -hw + 8.0,
