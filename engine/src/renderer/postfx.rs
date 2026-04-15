@@ -537,7 +537,8 @@ fn vs_main(@builtin(vertex_index) vi: u32) -> VsOut {
 @group(0) @binding(1) var s_source: sampler;
 
 struct PostFxParams {
-    params: array<f32, 8>,
+    params_a: vec4<f32>,
+    params_b: vec4<f32>,
     resolution: vec2<f32>,
     _pad: vec2<f32>,
 };
@@ -549,9 +550,9 @@ const VIGNETTE_FRAG: &str = r#"
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let color = textureSample(t_source, s_source, in.uv);
-    let intensity = u.params[0];
-    let radius = u.params[1];
-    let softness = u.params[2];
+    let intensity = u.params_a.x;
+    let radius = u.params_a.y;
+    let softness = u.params_a.z;
     let center = vec2<f32>(0.5, 0.5);
     let dist = distance(in.uv, center);
     let vignette = smoothstep(radius, radius - softness, dist);
@@ -562,7 +563,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 const BLUR_FRAG: &str = r#"
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    let radius = u.params[0];
+    let radius = u.params_a.x;
     let texel = vec2<f32>(1.0 / u.resolution.x, 1.0 / u.resolution.y);
     var color = vec4<f32>(0.0);
     var total = 0.0;
@@ -581,8 +582,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 const BLOOM_FRAG: &str = r#"
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    let threshold = u.params[0];
-    let intensity = u.params[1];
+    let threshold = u.params_a.x;
+    let intensity = u.params_a.y;
     let texel = vec2<f32>(1.0 / u.resolution.x, 1.0 / u.resolution.y);
     let color = textureSample(t_source, s_source, in.uv);
     let lum = dot(color.rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
@@ -611,9 +612,9 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 const COLOR_GRADE_FRAG: &str = r#"
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    let brightness = u.params[0];
-    let contrast = u.params[1];
-    let saturation = u.params[2];
+    let brightness = u.params_a.x;
+    let contrast = u.params_a.y;
+    let saturation = u.params_a.z;
     var color = textureSample(t_source, s_source, in.uv);
     // brightness
     var rgb = color.rgb * brightness;
@@ -629,8 +630,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 const CRT_FRAG: &str = r#"
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    let scanline_intensity = u.params[0];
-    let curvature = u.params[1];
+    let scanline_intensity = u.params_a.x;
+    let curvature = u.params_a.y;
     // barrel distortion
     var uv = in.uv * 2.0 - 1.0;
     let d = length(uv);
@@ -651,7 +652,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 const PIXELATE_FRAG: &str = r#"
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    let pixel_size = max(u.params[0], 1.0);
+    let pixel_size = max(u.params_a.x, 1.0);
     let dx = pixel_size / u.resolution.x;
     let dy = pixel_size / u.resolution.y;
     let uv = vec2<f32>(
@@ -665,7 +666,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 const CHROMATIC_ABERRATION_FRAG: &str = r#"
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    let offset = u.params[0];
+    let offset = u.params_a.x;
     let dir = in.uv - vec2<f32>(0.5, 0.5);
     let r = textureSample(t_source, s_source, in.uv + dir * offset).r;
     let g = textureSample(t_source, s_source, in.uv).g;
