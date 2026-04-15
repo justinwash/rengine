@@ -289,11 +289,7 @@ impl PostFxPipeline {
         }
     }
 
-    pub(crate) fn set_source_view(
-        &mut self,
-        device: &wgpu::Device,
-        view: &wgpu::TextureView,
-    ) {
+    pub(crate) fn set_source_view(&mut self, device: &wgpu::Device, view: &wgpu::TextureView) {
         self.source_bind_group = Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("postfx_source_bg"),
             layout: &self.texture_bgl,
@@ -351,11 +347,7 @@ impl PostFxPipeline {
         (texture, view, bind_group)
     }
 
-    pub(crate) fn rebuild(
-        &mut self,
-        device: &wgpu::Device,
-        effects: &[PostEffect],
-    ) {
+    pub(crate) fn rebuild(&mut self, device: &wgpu::Device, effects: &[PostEffect]) {
         self.passes.clear();
 
         for (i, effect) in effects.iter().enumerate() {
@@ -471,11 +463,7 @@ impl PostFxPipeline {
                 resolution: [self.width as f32, self.height as f32],
                 _pad: [0.0; 2],
             };
-            queue.write_buffer(
-                &self.uniform_buffer,
-                0,
-                bytemuck::cast_slice(&[uniforms]),
-            );
+            queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[uniforms]));
 
             {
                 let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

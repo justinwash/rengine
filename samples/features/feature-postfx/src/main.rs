@@ -32,7 +32,8 @@ fn vs_main(@builtin(vertex_index) vi: u32) -> VsOut {
 @group(0) @binding(1) var s_source: sampler;
 
 struct PostFxParams {
-    params: array<f32, 8>,
+    params_a: vec4<f32>,
+    params_b: vec4<f32>,
     resolution: vec2<f32>,
     _pad: vec2<f32>,
 };
