@@ -1,6 +1,58 @@
 use super::texture::TextureId;
+use super::Frame;
 use crate::assets::Color;
 use glam::Vec2;
+
+#[derive(Debug, Clone)]
+pub struct Sprite {
+    pub texture: TextureId,
+    pub position: Vec2,
+    pub size: Vec2,
+    pub color: Color,
+    pub uv_rect: [f32; 4],
+    pub flip_x: bool,
+    pub flip_y: bool,
+    pub rotation: f32,
+    pub origin: Vec2,
+    pub z_order: i32,
+    pub visible: bool,
+}
+
+impl Sprite {
+    pub fn new(texture: TextureId, position: Vec2, size: Vec2) -> Self {
+        Self {
+            texture,
+            position,
+            size,
+            color: Color::WHITE,
+            uv_rect: [0.0, 0.0, 1.0, 1.0],
+            flip_x: false,
+            flip_y: false,
+            rotation: 0.0,
+            origin: Vec2::ZERO,
+            z_order: 0,
+            visible: true,
+        }
+    }
+
+    pub fn draw(&self, frame: &mut Frame) {
+        if !self.visible {
+            return;
+        }
+        frame.draw_sprite(DrawParams {
+            texture: self.texture,
+            position: self.position,
+            size: self.size,
+            color: self.color,
+            uv_rect: self.uv_rect,
+            flip_x: self.flip_x,
+            flip_y: self.flip_y,
+            rotation: self.rotation,
+            origin: self.origin,
+            z_order: self.z_order,
+        });
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct DrawParams {

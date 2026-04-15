@@ -50,7 +50,7 @@ impl Game for AudioDemo {
         }
     }
 
-    fn update(&mut self, engine: &Engine) {
+    fn update(&mut self, engine: &Engine, _frame: &mut Frame) {
         self.frame_count += 1;
 
         if let Some(max) = self.max_frames {

@@ -1,6 +1,5 @@
 mod input;
 mod physics;
-mod render;
 mod state;
 
 use std::path::PathBuf;
@@ -61,54 +60,37 @@ impl Game for Platformer {
 
         let platforms = vec![
             Platform {
-                pos: Vec2::new(-400.0, 0.0),
-                size: Vec2::new(2000.0, 40.0),
-                texture: ground_tex,
+                sprite: Sprite::new(ground_tex, Vec2::new(-400.0, 0.0), Vec2::new(2000.0, 40.0)),
             },
             Platform {
-                pos: Vec2::new(120.0, 100.0),
-                size: Vec2::new(140.0, 18.0),
-                texture: plat_tex,
+                sprite: Sprite::new(plat_tex, Vec2::new(120.0, 100.0), Vec2::new(140.0, 18.0)),
             },
             Platform {
-                pos: Vec2::new(320.0, 170.0),
-                size: Vec2::new(120.0, 18.0),
-                texture: plat_tex2,
+                sprite: Sprite::new(plat_tex2, Vec2::new(320.0, 170.0), Vec2::new(120.0, 18.0)),
             },
             Platform {
-                pos: Vec2::new(500.0, 250.0),
-                size: Vec2::new(160.0, 18.0),
-                texture: plat_tex,
+                sprite: Sprite::new(plat_tex, Vec2::new(500.0, 250.0), Vec2::new(160.0, 18.0)),
             },
             Platform {
-                pos: Vec2::new(350.0, 340.0),
-                size: Vec2::new(180.0, 18.0),
-                texture: plat_tex2,
+                sprite: Sprite::new(plat_tex2, Vec2::new(350.0, 340.0), Vec2::new(180.0, 18.0)),
             },
             Platform {
-                pos: Vec2::new(100.0, 420.0),
-                size: Vec2::new(200.0, 18.0),
-                texture: plat_tex,
+                sprite: Sprite::new(plat_tex, Vec2::new(100.0, 420.0), Vec2::new(200.0, 18.0)),
             },
             Platform {
-                pos: Vec2::new(-150.0, 160.0),
-                size: Vec2::new(100.0, 18.0),
-                texture: plat_tex2,
+                sprite: Sprite::new(plat_tex2, Vec2::new(-150.0, 160.0), Vec2::new(100.0, 18.0)),
             },
             Platform {
-                pos: Vec2::new(600.0, 400.0),
-                size: Vec2::new(120.0, 18.0),
-                texture: plat_tex,
+                sprite: Sprite::new(plat_tex, Vec2::new(600.0, 400.0), Vec2::new(120.0, 18.0)),
             },
         ];
 
         let player = Player {
-            pos: Vec2::new(80.0, 200.0),
+            sprite: Sprite::new(player_tex, Vec2::new(80.0, 200.0), Vec2::new(PLAYER_W, PLAYER_H)),
+            eye: Sprite::new(eye_tex, Vec2::ZERO, Vec2::new(6.0, 6.0)),
             vel: Vec2::ZERO,
             on_ground: false,
             facing_right: true,
-            texture: player_tex,
-            eye_tex,
         };
 
         Self {
@@ -118,15 +100,37 @@ impl Game for Platformer {
         }
     }
 
-    fn update(&mut self, engine: &Engine) {
+    fn update(&mut self, engine: &Engine, frame: &mut Frame) {
         let dt = engine.dt();
         input::handle_input(&mut self.player, engine);
         physics::update(&mut self.player, &self.platforms, dt);
+
+        self.player.sprite.flip_x = !self.player.facing_right;
+        let eye_offset_x = if self.player.facing_right {
+            PLAYER_W * 0.55
+        } else {
+            PLAYER_W * 0.15
+        };
+        self.player.eye.position = Vec2::new(
+            self.player.sprite.position.x + eye_offset_x,
+            self.player.sprite.position.y + PLAYER_H * 0.65,
+        );
+
+        frame.clear_color = self.bg_color;
+
+        let (_w, h) = engine.window_size();
+        let pcx = self.player.sprite.position.x + PLAYER_W / 2.0;
+        let pcy = self.player.sprite.position.y + PLAYER_H / 2.0;
+        frame.camera.position = Vec2::new(pcx, pcy.max(h as f32 / 2.0));
+
+        for plat in &self.platforms {
+            plat.sprite.draw(frame);
+        }
+        self.player.sprite.draw(frame);
+        self.player.eye.draw(frame);
     }
 
-    fn render(&mut self, engine: &Engine, frame: &mut Frame) {
-        render::draw(self, engine, frame);
-    }
+    fn render(&mut self, _engine: &Engine, _frame: &mut Frame) {}
 }
 
 fn main() {

@@ -126,7 +126,7 @@ impl Scene for TitleScene {
         }
     }
 
-    fn update(&mut self, engine: &Engine, globals: &mut Globals) -> SceneOp {
+    fn update(&mut self, engine: &Engine, globals: &mut Globals, _frame: &mut Frame) -> SceneOp {
         self.blink_timer += engine.dt();
 
         // In demo mode, skip straight to game after a few frames
@@ -727,7 +727,7 @@ impl Scene for GameScene {
         }
     }
 
-    fn update(&mut self, engine: &Engine, globals: &mut Globals) -> SceneOp {
+    fn update(&mut self, engine: &Engine, globals: &mut Globals, _frame: &mut Frame) -> SceneOp {
         let dt = engine.dt();
         self.play_time += dt;
 
@@ -1178,7 +1178,7 @@ impl Scene for CountdownScene {
         println!("[CountdownScene] on_enter — 3 second countdown");
     }
 
-    fn update(&mut self, engine: &Engine, _globals: &mut Globals) -> SceneOp {
+    fn update(&mut self, engine: &Engine, _globals: &mut Globals, _frame: &mut Frame) -> SceneOp {
         self.timer -= engine.dt();
         if self.timer <= 0.0 {
             return SceneOp::Switch(Box::new(GameScene::default()));
@@ -1248,7 +1248,7 @@ impl Scene for PauseOverlay {
         }
     }
 
-    fn update(&mut self, engine: &Engine, globals: &mut Globals) -> SceneOp {
+    fn update(&mut self, engine: &Engine, globals: &mut Globals, _frame: &mut Frame) -> SceneOp {
         let is_demo = globals.get::<DemoConfig>().map_or(false, |d| d.enabled);
 
         if is_demo {
