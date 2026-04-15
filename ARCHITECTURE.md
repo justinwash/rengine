@@ -1416,16 +1416,16 @@ engine.postfx().set(0, effect);  // replace at index
 
 ### Built-in Effects
 
-| Effect                | Parameters                                      |
-| --------------------- | ----------------------------------------------- |
-| `Vignette`            | `intensity`, `radius`, `softness`               |
-| `Blur`                | `radius`                                        |
-| `Bloom`               | `threshold`, `intensity`                        |
-| `ColorGrade`          | `brightness`, `contrast`, `saturation`          |
-| `Crt`                 | `scanline_intensity`, `curvature`               |
-| `Pixelate`            | `pixel_size`                                    |
-| `ChromaticAberration` | `offset`                                        |
-| `Invert`              | —                                               |
+| Effect                | Parameters                             |
+| --------------------- | -------------------------------------- |
+| `Vignette`            | `intensity`, `radius`, `softness`      |
+| `Blur`                | `radius`                               |
+| `Bloom`               | `threshold`, `intensity`               |
+| `ColorGrade`          | `brightness`, `contrast`, `saturation` |
+| `Crt`                 | `scanline_intensity`, `curvature`      |
+| `Pixelate`            | `pixel_size`                           |
+| `ChromaticAberration` | `offset`                               |
+| `Invert`              | —                                      |
 
 ### Custom Shaders
 
@@ -1438,9 +1438,10 @@ engine.postfx().push(PostEffect::Custom {
 ```
 
 Custom shaders must define `vs_main` and `fs_main` entry points. The bind group layout is:
+
 - `@group(0) @binding(0)` — source texture (`texture_2d<f32>`)
 - `@group(0) @binding(1)` — sampler
-- `@group(1) @binding(0)` — uniform buffer with `params: array<f32, 8>`, `resolution: vec2<f32>`
+- `@group(1) @binding(0)` — uniform buffer with `params_a: vec4<f32>`, `params_b: vec4<f32>`, `resolution: vec2<f32>`
 
 ### Implementation Details
 
