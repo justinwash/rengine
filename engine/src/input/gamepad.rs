@@ -3,6 +3,18 @@ use std::collections::HashMap;
 
 pub const MAX_PLAYERS: usize = 4;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GamepadAssignMode {
+    OnConnect,
+    OnButtonPress,
+}
+
+impl Default for GamepadAssignMode {
+    fn default() -> Self {
+        Self::OnButtonPress
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct GamepadState {
     pub(crate) id: Option<GamepadId>,
@@ -55,15 +67,21 @@ pub struct GamepadSystem {
     pub(crate) slots: Vec<GamepadState>,
 
     id_to_slot: HashMap<GamepadId, usize>,
+
+    unassigned: Vec<GamepadId>,
+
+    assign_mode: GamepadAssignMode,
 }
 
 impl GamepadSystem {
-    pub fn new() -> Self {
+    pub fn new(mode: GamepadAssignMode) -> Self {
         let gilrs = Gilrs::new().expect("Failed to initialise gilrs");
         let mut sys = Self {
             gilrs,
             slots: (0..MAX_PLAYERS).map(|_| GamepadState::new()).collect(),
             id_to_slot: HashMap::new(),
+            unassigned: Vec::new(),
+            assign_mode: mode,
         };
 
         let connected: Vec<GamepadId> = sys
@@ -73,9 +91,27 @@ impl GamepadSystem {
             .map(|(id, _)| id)
             .collect();
         for id in connected {
-            sys.assign_slot(id);
+            sys.track_gamepad(id);
         }
         sys
+    }
+
+    pub fn assign_mode(&self) -> GamepadAssignMode {
+        self.assign_mode
+    }
+
+    pub fn set_assign_mode(&mut self, mode: GamepadAssignMode) {
+        self.assign_mode = mode;
+        if mode == GamepadAssignMode::OnConnect {
+            let pending: Vec<GamepadId> = self.unassigned.drain(..).collect();
+            for id in pending {
+                self.assign_slot(id);
+            }
+        }
+    }
+
+    pub fn unassigned_count(&self) -> usize {
+        self.unassigned.len()
     }
 
     pub fn player(&self, index: usize) -> &GamepadState {
@@ -100,15 +136,20 @@ impl GamepadSystem {
         while let Some(event) = self.gilrs.next_event() {
             match event.event {
                 EventType::Connected => {
-                    self.assign_slot(event.id);
+                    self.track_gamepad(event.id);
                 }
                 EventType::Disconnected => {
+                    self.unassigned.retain(|&id| id != event.id);
                     if let Some(&slot_idx) = self.id_to_slot.get(&event.id) {
                         self.slots[slot_idx].id = None;
                         self.id_to_slot.remove(&event.id);
                     }
                 }
                 EventType::ButtonPressed(button, _) => {
+                    if self.unassigned.contains(&event.id) {
+                        self.unassigned.retain(|&id| id != event.id);
+                        self.assign_slot(event.id);
+                    }
                     if let Some(&slot_idx) = self.id_to_slot.get(&event.id) {
                         let slot = &mut self.slots[slot_idx];
                         if !slot.buttons_down.contains(&button) {
@@ -152,6 +193,22 @@ impl GamepadSystem {
                         slot.left_stick_y = 0.0;
                     }
                 }
+            }
+        }
+    }
+
+    fn track_gamepad(&mut self, id: GamepadId) {
+        if self.id_to_slot.contains_key(&id) || self.unassigned.contains(&id) {
+            return;
+        }
+        match self.assign_mode {
+            GamepadAssignMode::OnConnect => self.assign_slot(id),
+            GamepadAssignMode::OnButtonPress => {
+                log::info!(
+                    "Gamepad {:?} detected, waiting for button press to assign",
+                    id
+                );
+                self.unassigned.push(id);
             }
         }
     }
