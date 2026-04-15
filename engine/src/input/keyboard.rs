@@ -7,6 +7,7 @@ pub struct InputState {
     keys_pressed: HashSet<KeyCode>,
     keys_released: HashSet<KeyCode>,
     mouse_delta: (f64, f64),
+    mouse_position: (f32, f32),
     mouse_buttons: [bool; 3],
     mouse_buttons_pressed: [bool; 3],
     mouse_buttons_released: [bool; 3],
@@ -19,6 +20,7 @@ impl InputState {
             keys_pressed: HashSet::new(),
             keys_released: HashSet::new(),
             mouse_delta: (0.0, 0.0),
+            mouse_position: (0.0, 0.0),
             mouse_buttons: [false; 3],
             mouse_buttons_pressed: [false; 3],
             mouse_buttons_released: [false; 3],
@@ -39,6 +41,10 @@ impl InputState {
 
     pub fn mouse_delta(&self) -> (f64, f64) {
         self.mouse_delta
+    }
+
+    pub fn mouse_position(&self) -> (f32, f32) {
+        self.mouse_position
     }
 
     pub fn is_mouse_down(&self, button: usize) -> bool {
@@ -76,6 +82,10 @@ impl InputState {
     pub(crate) fn handle_mouse_motion(&mut self, dx: f64, dy: f64) {
         self.mouse_delta.0 += dx;
         self.mouse_delta.1 += dy;
+    }
+
+    pub(crate) fn handle_cursor_moved(&mut self, x: f32, y: f32) {
+        self.mouse_position = (x, y);
     }
 
     pub(crate) fn handle_mouse_button(&mut self, button: usize, state: ElementState) {
