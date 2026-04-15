@@ -25,6 +25,7 @@
 // ScaleMode (resolution scaling — game renders at 480×360, scaled to window),
 // ParticleEmitter (burst particles on coin pickup, EmitterConfig, Color::lerp),
 // Audio fades (load_audio, fade_in_music, crossfade_music, fade_out_music, play_sound_on_bus),
+// Post-processing (PostFxChain, PostEffect — Vignette, Crt, clear),
 // InputState, GamepadState, TimeState, hot reload, Vec2.
 
 use rengine::*;
@@ -847,6 +848,30 @@ impl Scene for GameScene {
                     if prev < 500 && f >= 500 {
                         engine.fade_out_music(1.5, Easing::InQuad);
                         demo.log_feature("fade_out_music");
+                    }
+                    // Post-processing: toggle vignette effect mid-demo
+                    if prev < 200 && f >= 200 {
+                        engine.postfx().push(PostEffect::Vignette {
+                            intensity: 0.7,
+                            radius: 0.5,
+                            softness: 0.4,
+                        });
+                        demo.log_feature("PostEffect::Vignette");
+                        println!("[GameScene] demo: postfx vignette enabled at frame {f}");
+                    }
+                    if prev < 350 && f >= 350 {
+                        engine.postfx().clear();
+                        engine.postfx().push(PostEffect::Crt {
+                            scanline_intensity: 0.3,
+                            curvature: 0.1,
+                        });
+                        demo.log_feature("PostEffect::Crt");
+                        println!("[GameScene] demo: postfx switched to CRT at frame {f}");
+                    }
+                    if prev < 450 && f >= 450 {
+                        engine.postfx().clear();
+                        demo.log_feature("PostFxChain::clear");
+                        println!("[GameScene] demo: postfx cleared at frame {f}");
                     }
                     if self.score > 0 {
                         demo.log_feature("play_sound_on_bus (coin sfx)");

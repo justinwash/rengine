@@ -29,7 +29,7 @@ pub use math::Rect;
 pub use math::Rng;
 pub use math::TimeState;
 pub use math::{ease, lerp, Easing, LoopMode, Tween};
-pub use renderer::{Camera2D, CameraBounds, DrawParams, Frame, NineSlice, TextureId};
+pub use renderer::{Camera2D, CameraBounds, DrawParams, Frame, NineSlice, PostEffect, PostFxChain, TextureId};
 
 pub use world::tilemap;
 pub use world::{
