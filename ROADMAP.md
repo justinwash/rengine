@@ -65,6 +65,7 @@ Recently completed or partially completed:
 - Completed: resolution scaling — `ScaleMode` enum (Stretch, Letterbox, PixelPerfect), offscreen render target + blit pass, Canvas/HUD at window resolution, runtime switching, `feature-resolution` sample
 - Completed: particle system — `EmitterConfig` builder (14+ fields), `ParticleEmitter` pool with O(1) alive count, `EmitShape` (Point/Circle/Rect), `RangeF32` for randomized params, `Color::lerp`, burst/continuous modes, `feature-particles` sample, kitchen-sink integration
 - Completed: audio fades — `ActiveFade` with `FadeTarget` (MusicVolume/CrossfadeOut/BusVolume/MasterVolume), fade-in/fade-out/crossfade music, bus and master volume fades, any `Easing` curve, auto-ticked in game loop, `feature-audio` sample, kitchen-sink integration
+- Completed: post-processing pipeline — `PostFxChain` with `PostEffect` enum, 8 built-in effects (Vignette, Blur, Bloom, ColorGrade, Crt, Pixelate, ChromaticAberration, Invert), custom WGSL shader support via `PostEffect::Custom`, ping-pong texture chain, lazy pipeline rebuild, `feature-postfx` sample, kitchen-sink integration
 
 ---
 
@@ -140,8 +141,9 @@ These features make 2D development substantially more practical.
 21. Render targets and offscreen textures
     Enable minimaps, lighting buffers, portals, masks, compositing, and post-processing pipelines.
 
-22. Post-processing pipeline
+22. Post-processing pipeline [done]
     Fullscreen effects like bloom, blur, vignette, color grading, CRT, pixelation, outlines, and distortion.
+    Built-in effects with configurable parameters, plus custom user-defined WGSL shaders.
 
 23. Custom 2D materials or shaders
     Allow per-sprite or per-batch custom shader usage without rewriting renderer internals.
@@ -386,7 +388,7 @@ If the goal is to make Rengine a more fully fledged general-purpose indie engine
 5. Collision layers, masks, triggers, and stronger 2D physics
 6. Tweening and animation state support
 7. Tilemap pipeline improvements plus Tiled import
-8. Render targets and post-processing
+8. Render targets and post-processing [done]
 9. Expanded 3D asset import beyond OBJ, starting with glTF
 10. Sample and content migration onto the asset pipeline across the repo
 
@@ -412,7 +414,7 @@ A practical development order would be:
 ### Phase 2: Strengthen rendering and tooling
 
 - Render targets
-- Post-processing
+- Post-processing [done]
 - Particles
 - Debug overlays
 - Hot reload
