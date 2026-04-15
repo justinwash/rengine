@@ -47,7 +47,7 @@ impl Game for IsoGame {
         level::build(engine)
     }
 
-    fn update(&mut self, engine: &Engine) {
+    fn update(&mut self, engine: &Engine, _frame: &mut Frame) {
         let dt = engine.dt();
         let (dc, dr) = input::movement_dir(engine);
         physics::move_player(self, dc, dr, dt);

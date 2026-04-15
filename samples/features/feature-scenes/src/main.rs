@@ -43,7 +43,7 @@ impl Scene for ColorScene {
         }
     }
 
-    fn update(&mut self, engine: &Engine, globals: &mut Globals) -> SceneOp {
+    fn update(&mut self, engine: &Engine, globals: &mut Globals, _frame: &mut Frame) -> SceneOp {
         let input = engine.input();
 
         if input.is_key_pressed(KeyCode::Digit1) {
@@ -132,7 +132,7 @@ impl Scene for PauseOverlay {
         println!("[Pause] on_enter");
     }
 
-    fn update(&mut self, engine: &Engine, _globals: &mut Globals) -> SceneOp {
+    fn update(&mut self, engine: &Engine, _globals: &mut Globals, _frame: &mut Frame) -> SceneOp {
         if engine.input().is_key_pressed(KeyCode::Escape)
             || engine.input().is_key_pressed(KeyCode::KeyP)
         {

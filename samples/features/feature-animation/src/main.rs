@@ -113,7 +113,7 @@ impl Game for AnimationDemo {
         }
     }
 
-    fn update(&mut self, engine: &Engine) {
+    fn update(&mut self, engine: &Engine, _frame: &mut Frame) {
         let dt = engine.dt();
         self.walk_right.update(dt);
         self.walk_down.update(dt);

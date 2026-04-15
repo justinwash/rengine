@@ -99,7 +99,7 @@ impl Game for PixelArtDemo {
         }
     }
 
-    fn update(&mut self, _engine: &Engine) {}
+    fn update(&mut self, _engine: &Engine, _frame: &mut Frame) {}
 
     fn render(&mut self, engine: &Engine, frame: &mut Frame) {
         frame.clear_color = Color::new(0.12, 0.1, 0.15, 1.0);
