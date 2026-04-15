@@ -82,7 +82,7 @@ impl Game for ParticleDemo {
         }
     }
 
-    fn update(&mut self, engine: &Engine) {
+    fn update(&mut self, engine: &Engine, _frame: &mut Frame) {
         self.frame_count += 1;
         let dt = engine.dt();
         let mut rng = engine.rng();

@@ -36,7 +36,7 @@ impl Game for ResolutionDemo {
         }
     }
 
-    fn update(&mut self, engine: &Engine) {
+    fn update(&mut self, engine: &Engine, _frame: &mut Frame) {
         self.frame_count += 1;
 
         if self.demo {

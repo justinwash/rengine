@@ -102,7 +102,7 @@ impl Game for TileMapDemo {
         }
     }
 
-    fn update(&mut self, engine: &Engine) {
+    fn update(&mut self, engine: &Engine, _frame: &mut Frame) {
         let dt = engine.dt();
         let input = engine.input();
 

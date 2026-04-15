@@ -49,7 +49,7 @@ impl Game for TopDown {
         level::build(engine)
     }
 
-    fn update(&mut self, engine: &Engine) {
+    fn update(&mut self, engine: &Engine, _frame: &mut Frame) {
         let dt = engine.dt();
         let dir = input::movement_dir(engine);
 

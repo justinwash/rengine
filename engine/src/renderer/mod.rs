@@ -7,7 +7,7 @@ pub mod texture;
 pub use camera::{Camera2D, CameraBounds};
 pub use nineslice::NineSlice;
 pub use postfx::{PostEffect, PostFxChain};
-pub use sprite::DrawParams;
+pub use sprite::{DrawParams, Sprite};
 pub use texture::TextureId;
 
 use crate::app::ScaleMode;

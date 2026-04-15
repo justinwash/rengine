@@ -122,7 +122,7 @@ impl Game for PostFxDemo {
         }
     }
 
-    fn update(&mut self, engine: &Engine) {
+    fn update(&mut self, engine: &Engine, _frame: &mut Frame) {
         self.frame_count += 1;
 
         let count = effect_names().len();

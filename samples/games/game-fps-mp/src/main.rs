@@ -83,7 +83,7 @@ impl Game3D for FpsMpGame {
         }
     }
 
-    fn update(&mut self, engine: &Engine3D) {
+    fn update(&mut self, engine: &Engine3D, _frame: &mut Frame3D) {
         let num = self.session.num_players();
         let frame = self.demo_frame;
 

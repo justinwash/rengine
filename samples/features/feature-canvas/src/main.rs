@@ -9,7 +9,7 @@ impl Game for CanvasDemo {
         Self { time: 0.0 }
     }
 
-    fn update(&mut self, engine: &Engine) {
+    fn update(&mut self, engine: &Engine, _frame: &mut Frame) {
         self.time += engine.dt();
     }
 

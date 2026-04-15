@@ -39,7 +39,7 @@ impl Game for CameraDemo {
         }
     }
 
-    fn update(&mut self, engine: &Engine) {
+    fn update(&mut self, engine: &Engine, _frame: &mut Frame) {
         let input = engine.input();
         let dt = engine.dt();
 
