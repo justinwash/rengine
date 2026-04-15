@@ -66,6 +66,12 @@ Recently completed or partially completed:
 - Completed: particle system — `EmitterConfig` builder (14+ fields), `ParticleEmitter` pool with O(1) alive count, `EmitShape` (Point/Circle/Rect), `RangeF32` for randomized params, `Color::lerp`, burst/continuous modes, `feature-particles` sample, kitchen-sink integration
 - Completed: audio fades — `ActiveFade` with `FadeTarget` (MusicVolume/CrossfadeOut/BusVolume/MasterVolume), fade-in/fade-out/crossfade music, bus and master volume fades, any `Easing` curve, auto-ticked in game loop, `feature-audio` sample, kitchen-sink integration
 - Completed: post-processing pipeline — `PostFxChain` with `PostEffect` enum, 8 built-in effects (Vignette, Blur, Bloom, ColorGrade, Crt, Pixelate, ChromaticAberration, Invert), custom WGSL shader support via `PostEffect::Custom`, ping-pong texture chain, lazy pipeline rebuild, `feature-postfx` sample, kitchen-sink integration
+- Completed: mouse position tracking — `InputState::mouse_position` in screen-space center-origin coords, `handle_cursor_moved()`, `mouse_position()` accessor, `engine.mouse_screen_pos()` on Engine and Engine3D, `Camera2D::screen_to_world()` for world-space conversion, `MouseInput` handling in 2D event loops
+- Completed: canvas drawing primitives — `line()`, `polyline()`, `circle()` (outline), `circle_filled()` on Canvas for immediate-mode shape drawing
+- Completed: colored text spans — `text_spans()` and `text_spans_aligned()` on Canvas, accepting `&[(&str, Color)]` for per-substring coloring
+- Completed: UI overhaul — mouse hover/click support for all focusable widgets, Panel widget (background rect with padding), ProgressBar widget, Checkbox widget (toggle on Enter/Space/click), Slider widget (arrow keys adjust by 5%, mouse drag), expanded `UiResponse` with `hovered`, `toggled`, `changed_values` fields and `was_activated()`, `was_toggled()`, `value_for()` convenience methods, updated `feature-ui` sample with DemoScene
+- Completed: scene transitions — `Transition` struct with `fade()`, `fade_color()`, `fade_white()` constructors, `SceneOp::FadePush`, `FadeSwitch`, `FadePop` variants, transition state machine in `run_with_scenes` (fade out → apply at midpoint → fade in, scene frozen during transition), updated `feature-scenes` sample
+- Completed: timer and event queue — `Timer` struct with `once()` and `repeating()` constructors, `tick(dt) -> bool`, `fraction()` progress; `EventQueue<E>` generic delayed event scheduler with `schedule(delay, event)` and `tick(dt) -> Vec<E>`
 
 ---
 
