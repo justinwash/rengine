@@ -106,6 +106,11 @@ impl Engine {
             .unwrap_or((self.window_width, self.window_height))
     }
 
+    pub fn mouse_screen_pos(&self) -> glam::Vec2 {
+        let (x, y) = self.input.mouse_position();
+        glam::Vec2::new(x, y)
+    }
+
     pub fn set_scale_mode(&self, mode: ScaleMode) {
         self.renderer.set_scale_mode(mode);
     }
@@ -611,6 +616,22 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
                     engine.input.handle_key_event(key, state);
                 }
 
+                WindowEvent::CursorMoved { position, .. } => {
+                    let x = position.x as f32 - engine.window_width as f32 / 2.0;
+                    let y = -(position.y as f32 - engine.window_height as f32 / 2.0);
+                    engine.input.handle_cursor_moved(x, y);
+                }
+
+                WindowEvent::MouseInput { button, state, .. } => {
+                    let idx = match button {
+                        MouseButton::Left => 0,
+                        MouseButton::Right => 1,
+                        MouseButton::Middle => 2,
+                        _ => return,
+                    };
+                    engine.input.handle_mouse_button(idx, state);
+                }
+
                 WindowEvent::RedrawRequested => {
                     engine.time.tick();
                     engine.gamepads.update();
@@ -747,6 +768,8 @@ where
         }
     }
 
+    let mut transition: Option<crate::scene::ActiveTransition> = None;
+
     event_loop.run(move |event, target| {
         target.set_control_flow(winit::event_loop::ControlFlow::Poll);
         match event {
@@ -771,6 +794,22 @@ where
                     engine.input.handle_key_event(key, state);
                 }
 
+                WindowEvent::CursorMoved { position, .. } => {
+                    let x = position.x as f32 - engine.window_width as f32 / 2.0;
+                    let y = -(position.y as f32 - engine.window_height as f32 / 2.0);
+                    engine.input.handle_cursor_moved(x, y);
+                }
+
+                WindowEvent::MouseInput { button, state, .. } => {
+                    let idx = match button {
+                        MouseButton::Left => 0,
+                        MouseButton::Right => 1,
+                        MouseButton::Middle => 2,
+                        _ => return,
+                    };
+                    engine.input.handle_mouse_button(idx, state);
+                }
+
                 WindowEvent::RedrawRequested => {
                     engine.time.tick();
                     engine.gamepads.update();
@@ -783,14 +822,47 @@ where
                         }
                     }
 
-                    let op = if let Some(scene) = stack.last_mut() {
-                        scene.update(&engine, &mut globals)
-                    } else {
-                        target.exit();
-                        return;
-                    };
+                    if transition.is_none() {
+                        let op = if let Some(scene) = stack.last_mut() {
+                            scene.update(&engine, &mut globals)
+                        } else {
+                            target.exit();
+                            return;
+                        };
 
-                    apply_scene_op(&mut stack, op, &mut engine, &mut globals);
+                        match op {
+                            SceneOp::FadePush(new_scene, t) => {
+                                transition = Some(crate::scene::ActiveTransition::new(
+                                    t,
+                                    SceneOp::Push(new_scene),
+                                ));
+                            }
+                            SceneOp::FadeSwitch(new_scene, t) => {
+                                transition = Some(crate::scene::ActiveTransition::new(
+                                    t,
+                                    SceneOp::Switch(new_scene),
+                                ));
+                            }
+                            SceneOp::FadePop(t) => {
+                                transition = Some(crate::scene::ActiveTransition::new(
+                                    t,
+                                    SceneOp::Pop,
+                                ));
+                            }
+                            other => {
+                                apply_scene_op(&mut stack, other, &mut engine, &mut globals);
+                            }
+                        }
+                    }
+
+                    if let Some(ref mut t) = transition {
+                        t.tick(engine.time.dt());
+                        if t.at_midpoint() {
+                            if let Some(pending) = t.pending_op.take() {
+                                apply_scene_op(&mut stack, pending, &mut engine, &mut globals);
+                            }
+                        }
+                    }
 
                     if stack.is_empty() {
                         target.exit();
@@ -800,6 +872,30 @@ where
                     frame.begin();
                     for scene in stack.iter() {
                         scene.render(&engine, &globals, &mut frame);
+                    }
+
+                    if let Some(ref t) = transition {
+                        let alpha = t.alpha();
+                        if alpha > 0.001 {
+                            let screen_size = engine.window_size();
+                            let hw = screen_size.0 as f32 / 2.0;
+                            let hh = screen_size.1 as f32 / 2.0;
+                            let mut overlay = canvas::Canvas::new();
+                            let c = crate::assets::Color::new(
+                                t.color.r,
+                                t.color.g,
+                                t.color.b,
+                                alpha,
+                            );
+                            overlay.rect(-hw, -hh, screen_size.0 as f32, screen_size.1 as f32, c, screen_size);
+                            frame.canvases.push(overlay);
+                        }
+                    }
+
+                    if let Some(ref t) = transition {
+                        if t.is_done() {
+                            transition = None;
+                        }
                     }
 
                     if show_fps {
@@ -867,6 +963,15 @@ fn apply_scene_op(
             new_scene.on_enter(engine, globals);
             stack.push(new_scene);
         }
+        SceneOp::FadePush(new_scene, _) => {
+            apply_scene_op(stack, SceneOp::Push(new_scene), engine, globals);
+        }
+        SceneOp::FadeSwitch(new_scene, _) => {
+            apply_scene_op(stack, SceneOp::Switch(new_scene), engine, globals);
+        }
+        SceneOp::FadePop(_) => {
+            apply_scene_op(stack, SceneOp::Pop, engine, globals);
+        }
     }
 }
 
@@ -903,6 +1008,11 @@ impl Engine3D {
     pub fn game_size(&self) -> (u32, u32) {
         self.render_resolution
             .unwrap_or((self.window_width, self.window_height))
+    }
+
+    pub fn mouse_screen_pos(&self) -> glam::Vec2 {
+        let (x, y) = self.input.mouse_position();
+        glam::Vec2::new(x, y)
     }
 
     pub fn set_scale_mode(&self, mode: ScaleMode) {
@@ -1386,6 +1496,12 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
                     engine.input.handle_mouse_button(idx, state);
                 }
 
+                WindowEvent::CursorMoved { position, .. } => {
+                    let x = position.x as f32 - engine.window_width as f32 / 2.0;
+                    let y = -(position.y as f32 - engine.window_height as f32 / 2.0);
+                    engine.input.handle_cursor_moved(x, y);
+                }
+
                 WindowEvent::RedrawRequested => {
                     engine.time.tick();
                     engine.reload_assets_if_changed();
@@ -1609,6 +1725,12 @@ where
                         engine.mouse_captured = true;
                     }
                     engine.input.handle_mouse_button(idx, state);
+                }
+
+                WindowEvent::CursorMoved { position, .. } => {
+                    let x = position.x as f32 - engine.window_width as f32 / 2.0;
+                    let y = -(position.y as f32 - engine.window_height as f32 / 2.0);
+                    engine.input.handle_cursor_moved(x, y);
                 }
 
                 WindowEvent::RedrawRequested => {
