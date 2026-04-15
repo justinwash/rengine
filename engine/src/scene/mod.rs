@@ -118,7 +118,12 @@ pub enum SceneOp3D {
 
 pub trait Scene3D: 'static {
     fn on_enter(&mut self, engine: &mut Engine3D, globals: &mut Globals);
-    fn update(&mut self, engine: &Engine3D, globals: &mut Globals, frame: &mut Frame3D) -> SceneOp3D;
+    fn update(
+        &mut self,
+        engine: &Engine3D,
+        globals: &mut Globals,
+        frame: &mut Frame3D,
+    ) -> SceneOp3D;
     fn fixed_update(&mut self, _engine: &Engine3D, _globals: &mut Globals) {}
     fn render(&self, _engine: &Engine3D, _globals: &Globals, _frame: &mut Frame3D) {}
     fn on_pause(&mut self, _engine: &Engine3D, _globals: &Globals) {}

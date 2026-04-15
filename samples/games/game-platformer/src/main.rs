@@ -86,7 +86,11 @@ impl Game for Platformer {
         ];
 
         let player = Player {
-            sprite: Sprite::new(player_tex, Vec2::new(80.0, 200.0), Vec2::new(PLAYER_W, PLAYER_H)),
+            sprite: Sprite::new(
+                player_tex,
+                Vec2::new(80.0, 200.0),
+                Vec2::new(PLAYER_W, PLAYER_H),
+            ),
             eye: Sprite::new(eye_tex, Vec2::ZERO, Vec2::new(6.0, 6.0)),
             vel: Vec2::ZERO,
             on_ground: false,
