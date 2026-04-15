@@ -1227,6 +1227,15 @@ struct PauseOverlay {
     focus: usize,
 }
 
+impl PauseOverlay {
+    fn build_pause_ui(ui: &mut Ui) {
+        ui.label_centered("PAUSED", 40.0, Color::WHITE);
+        ui.separator(12.0);
+        ui.button(0, "Resume");
+        ui.button(1, "Quit");
+    }
+}
+
 impl Scene for PauseOverlay {
     fn on_enter(&mut self, _engine: &mut Engine, globals: &mut Globals) {
         if let Some(counter) = globals.get_mut::<TransitionCounter>() {
@@ -1258,10 +1267,9 @@ impl Scene for PauseOverlay {
         let hh = sh as f32 / 2.0;
         let atlas = engine.font_atlas();
 
-        let mut ui = Ui::new(-100.0, hh - 40.0, 200.0, (sw, sh), atlas).with_focus(self.focus);
-        ui.button(0, "Resume");
-        ui.button(1, "Quit");
-        let resp = ui.update(engine.input());
+        let mut ui = Ui::new(-100.0, hh - 40.0, 200.0, (sw, sh)).with_focus(self.focus);
+        Self::build_pause_ui(&mut ui);
+        let resp = ui.update(engine.input(), atlas);
         self.focus = resp.focused.unwrap_or(self.focus);
 
         if let Some(id) = resp.activated {
@@ -1297,12 +1305,9 @@ impl Scene for PauseOverlay {
             (sw, sh),
         );
 
-        let mut ui = Ui::new(-100.0, hh - 40.0, 200.0, (sw, sh), atlas).with_focus(self.focus);
-        ui.label_centered("PAUSED", 40.0, Color::WHITE);
-        ui.separator(12.0);
-        ui.button(0, "Resume");
-        ui.button(1, "Quit");
-        ui.render(overlay);
+        let mut ui = Ui::new(-100.0, hh - 40.0, 200.0, (sw, sh)).with_focus(self.focus);
+        Self::build_pause_ui(&mut ui);
+        ui.render(overlay, atlas);
 
         if let Some(stats) = globals.get::<PlayerStats>() {
             overlay.text(
