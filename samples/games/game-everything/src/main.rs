@@ -6,11 +6,11 @@ mod title;
 
 use std::path::PathBuf;
 
+use countdown::CountdownScene;
+use game::GameScene;
 use rengine::*;
 use state::*;
 use title::TitleScene;
-use game::GameScene;
-use countdown::CountdownScene;
 
 fn has_flag(flag: &str) -> bool {
     std::env::args().any(|a| a == flag)
@@ -74,8 +74,10 @@ fn main() {
 
             actions.bind("pause", Binding::Key(KeyCode::KeyP));
             actions.bind("pause", Binding::Key(KeyCode::Escape));
+            actions.bind("pause", Binding::GamepadButton(GamepadButton::Start));
 
             actions.bind("quit", Binding::Key(KeyCode::KeyQ));
+            actions.bind("quit", Binding::GamepadButton(GamepadButton::Select));
 
             actions.bind_axis(
                 "move_x",

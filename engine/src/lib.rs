@@ -60,7 +60,7 @@ pub use particle::{EmitShape, EmitterConfig, ParticleEmitter, RangeF32};
 pub use save::{SaveError, SaveSystem};
 
 pub use gilrs::Button as GamepadButton;
-pub use input::{GamepadState, GamepadSystem};
+pub use input::{GamepadAssignMode, GamepadState, GamepadSystem};
 
 #[cfg(feature = "rollback")]
 pub use netcode::OnlineConfig;
