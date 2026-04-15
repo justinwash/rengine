@@ -120,6 +120,19 @@ impl Camera2D {
 
         Vec2::new(rx * self.zoom, ry * self.zoom)
     }
+
+    pub fn screen_to_world(&self, screen_pos: Vec2) -> Vec2 {
+        let sx = screen_pos.x / self.zoom;
+        let sy = screen_pos.y / self.zoom;
+
+        let cos = self.rotation.cos();
+        let sin = self.rotation.sin();
+        let wx = sx * cos - sy * sin;
+        let wy = sx * sin + sy * cos;
+
+        let pos = self.position + self.shake_offset;
+        Vec2::new(wx + pos.x, wy + pos.y)
+    }
 }
 
 impl Default for Camera2D {
