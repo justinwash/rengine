@@ -1381,6 +1381,77 @@ Particles are pooled (pre-allocated `Vec`), recycled via a free-slot scan with a
 
 ---
 
+## 10.8 Post-Processing Pipeline ([`renderer/postfx.rs`](https://github.com/justinwash/rengine/blob/master/engine/src/renderer/postfx.rs))
+
+A GPU-based post-processing system that applies fullscreen shader effects to the rendered scene before it is scaled to the window. Requires offscreen rendering (`render_width` / `render_height` set in `EngineConfig`).
+
+### Architecture
+
+Effects are applied **after** the sprite pass and **before** the blit/canvas passes. Internally, a ping-pong pair of textures (A and B) allows chaining multiple effects — each pass reads from one texture and writes to the other.
+
+```
+Sprites → Offscreen → [PostFx Pass 0 → A] → [PostFx Pass 1 → B] → ... → Blit → Canvas → Window
+```
+
+### `PostFxChain`
+
+The public handle for managing active effects. Accessible via `engine.postfx()`. Uses interior mutability (`RefCell`) so effects can be modified from `&Engine` references.
+
+```rust
+engine.postfx().push(PostEffect::Vignette {
+    intensity: 0.8,
+    radius: 0.6,
+    softness: 0.4,
+});
+
+engine.postfx().push(PostEffect::Crt {
+    scanline_intensity: 0.4,
+    curvature: 0.15,
+});
+
+engine.postfx().clear();        // remove all effects
+engine.postfx().remove(0);      // remove by index
+engine.postfx().set(0, effect);  // replace at index
+```
+
+### Built-in Effects
+
+| Effect                | Parameters                                      |
+| --------------------- | ----------------------------------------------- |
+| `Vignette`            | `intensity`, `radius`, `softness`               |
+| `Blur`                | `radius`                                        |
+| `Bloom`               | `threshold`, `intensity`                        |
+| `ColorGrade`          | `brightness`, `contrast`, `saturation`          |
+| `Crt`                 | `scanline_intensity`, `curvature`               |
+| `Pixelate`            | `pixel_size`                                    |
+| `ChromaticAberration` | `offset`                                        |
+| `Invert`              | —                                               |
+
+### Custom Shaders
+
+Supply raw WGSL source to create fully custom effects:
+
+```rust
+engine.postfx().push(PostEffect::Custom {
+    wgsl_source: my_shader_string,
+});
+```
+
+Custom shaders must define `vs_main` and `fs_main` entry points. The bind group layout is:
+- `@group(0) @binding(0)` — source texture (`texture_2d<f32>`)
+- `@group(0) @binding(1)` — sampler
+- `@group(1) @binding(0)` — uniform buffer with `params: array<f32, 8>`, `resolution: vec2<f32>`
+
+### Implementation Details
+
+- Pipelines are rebuilt lazily when the chain is marked dirty (effect added/removed/replaced)
+- Ping-pong textures are resized automatically if the offscreen resolution changes
+- Each effect gets its own compiled `wgpu::RenderPipeline`
+- The uniform buffer carries 8 float params + resolution, uploaded per pass
+- The fullscreen triangle technique (3 vertices, no vertex buffer) is reused from the blit shader
+
+---
+
 ## 11. Scene System ([`scene/`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/))
 
 ### 11.1 [`Scene`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/mod.rs#L24) Trait and [`SceneOp`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/mod.rs#L16)

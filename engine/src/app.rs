@@ -17,6 +17,7 @@ use crate::canvas;
 use crate::input::{ActionMap, GamepadSystem, InputState};
 use crate::math::tween::Easing;
 use crate::math::{Rng, TimeState};
+use crate::renderer::postfx::PostFxChain;
 use crate::renderer::{Frame, Renderer, TextureId};
 use crate::renderer3d::{Frame3D, MeshId, Renderer3D, Vertex3D};
 use crate::scene::{Globals, Scene, Scene2D, Scene3D, SceneOp, SceneOp3D};
@@ -82,6 +83,7 @@ pub struct Engine {
     pub(crate) hot_reload_enabled: bool,
     pub(crate) actions: ActionMap,
     pub(crate) rng: RefCell<Rng>,
+    pub(crate) postfx_chain: PostFxChain,
 }
 
 impl Engine {
@@ -106,6 +108,10 @@ impl Engine {
 
     pub fn set_scale_mode(&self, mode: ScaleMode) {
         self.renderer.set_scale_mode(mode);
+    }
+
+    pub fn postfx(&self) -> &PostFxChain {
+        &self.postfx_chain
     }
 
     pub fn gamepad(&self, player: usize) -> &crate::input::GamepadState {
@@ -554,6 +560,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
         hot_reload_enabled: config.hot_reload,
         actions: ActionMap::new(),
         rng: RefCell::new(Rng::from_time()),
+        postfx_chain: PostFxChain::new(),
     };
     engine.time.set_fixed_dt(fixed_dt);
     if let Some((rw, rh)) = render_res {
@@ -634,7 +641,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
                         );
                         frame.canvases.push(fps_canvas);
                     }
-                    engine.renderer.render_frame(&frame);
+                    engine.renderer.render_frame(&frame, &engine.postfx_chain);
 
                     engine.input.end_frame();
                 }
@@ -696,6 +703,7 @@ where
         hot_reload_enabled: config.hot_reload,
         actions: ActionMap::new(),
         rng: RefCell::new(Rng::from_time()),
+        postfx_chain: PostFxChain::new(),
     };
     engine.time.set_fixed_dt(fixed_dt);
     if let Some((rw, rh)) = render_res {
@@ -805,7 +813,7 @@ where
                         );
                         frame.canvases.push(fps_canvas);
                     }
-                    engine.renderer.render_frame(&frame);
+                    engine.renderer.render_frame(&frame, &engine.postfx_chain);
 
                     engine.input.end_frame();
                 }
