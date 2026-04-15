@@ -29,6 +29,7 @@ pub use math::Rect;
 pub use math::Rng;
 pub use math::TimeState;
 pub use math::{ease, lerp, Easing, LoopMode, Tween};
+pub use math::{EventQueue, Timer};
 pub use renderer::{
     Camera2D, CameraBounds, DrawParams, Frame, NineSlice, PostEffect, PostFxChain, TextureId,
 };
@@ -48,7 +49,7 @@ pub use assets::{
 pub use canvas::{screen_to_ndc, wrap_text, Canvas, CanvasVertex, TextAlign};
 pub use scene::{
     Globals, Prefab2D, Prefab2DDef, PrefabSprite2D, PrefabSprite2DDef, Scene, Scene2D, Scene2DDef,
-    SceneInstance2D, SceneInstance2DDef, SceneOp,
+    SceneInstance2D, SceneInstance2DDef, SceneOp, Transition,
 };
 pub use text::FontAtlas;
 pub use ui::{Ui, UiResponse, UiStyle};

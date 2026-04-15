@@ -770,7 +770,13 @@ pub struct Canvas {
 Methods:
 
 - **[`canvas.rect(x, y, w, h, color, screen_size)`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs#L55)** — Draws a solid rectangle. Converts screen coordinates to NDC via `screen_to_ndc()`, uses the `white_uv` from the font atlas so the fragment shader returns a solid color.
+- **[`canvas.line(x0, y0, x1, y1, thickness, color, screen_size)`]** — Thick line between two points. Computes a perpendicular offset vector and emits a quad (two triangles).
+- **[`canvas.polyline(points, thickness, color, screen_size)`]** — Draws connected line segments through a slice of `(f32, f32)` points.
+- **[`canvas.circle(cx, cy, radius, thickness, segments, color, screen_size)`]** — Circle outline via N line segments.
+- **[`canvas.circle_filled(cx, cy, radius, segments, color, screen_size)`]** — Filled circle via a triangle fan from the center.
 - **[`canvas.text(x, y, text, size, color, screen_size, atlas)`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs#L84)** — Renders text by emitting two triangles per visible glyph. Scales glyphs by `size / FONT_SIZE`. Each quad's UV maps to the glyph's region in the font atlas.
+- **[`canvas.text_spans(x, y, spans, size, screen_size, atlas)`]** — Renders colored text spans. Takes `&[(&str, Color)]` and draws each substring in its own color, advancing the cursor.
+- **[`canvas.text_spans_aligned(x, y, spans, size, align, screen_size, atlas)`]** — Like `text_spans` but measures total width first and applies `TextAlign` offset.
 - **[`canvas.shape(triangles)`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs#L51)** — Accepts raw `CanvasVertex` triangles for custom shapes.
 
 **NDC conversion:**
@@ -828,13 +834,19 @@ A lightweight immediate-mode widget builder for menus, pause screens, and HUDs. 
 - **`Ui::with_focus(index) -> Self`** — Set the initially focused button index.
 - **`Ui::label(text, size, color)`** / **`label_centered(text, size, color)`** — Static text (left-aligned or centered).
 - **`Ui::button(id, text)`** — Interactive button identified by a numeric `id`.
+- **`Ui::panel(color, padding, children)`** — Background panel that wraps the next `children` widgets with a colored rect and inward padding.
+- **`Ui::progress_bar(label, value, color)`** — Horizontal progress bar (`value` in 0.0–1.0) with a text label.
+- **`Ui::checkbox(id, label, checked)`** — Togglable checkbox. Focusable; toggled on Enter/Space or mouse click.
+- **`Ui::slider(id, label, value, min, max)`** — Horizontal slider. Arrow keys adjust by 5% of range; mouse drag maps x position to value.
 - **`Ui::separator(height)`** — Vertical gap between widgets.
-- **`Ui::update(input) -> UiResponse`** — Process keyboard/gamepad input:
-  - Arrow Up / W → focus previous button; Arrow Down / S → focus next button (wraps around).
-  - Enter / Space → activate the focused button.
-  - Returns `UiResponse { focused: Option<usize>, activated: Option<usize> }`.
+- **`Ui::update(input, mouse_pos) -> UiResponse`** — Process keyboard/gamepad/mouse input:
+  - Arrow Up / W → focus previous; Arrow Down / S → focus next (wraps).
+  - Enter / Space → activate focused button, toggle checkbox, or confirm slider.
+  - Mouse hover sets focus; mouse click activates.
+  - Returns `UiResponse { focused, activated, hovered, toggled, changed_values }`.
+  - Convenience: `response.was_activated(id)`, `was_toggled(id)`, `value_for(id) -> Option<f32>`.
 - **`Ui::render(canvas)`** — Draw all widgets into a `Canvas` layer.
-- **`UiStyle`** — Configurable struct with fields for `text_color`, `text_size`, `button_bg`, `button_focused_bg`, `button_pressed_bg`, `button_text_color`, `button_focused_text_color`, `button_padding`, and `spacing`.
+- **`UiStyle`** — Configurable struct with fields for text, button, panel, progress bar, checkbox, and slider colors/sizes/padding.
 
 ---
 
@@ -848,6 +860,7 @@ pub struct InputState {
     keys_pressed: HashSet<KeyCode>,    // Keys pressed THIS frame
     keys_released: HashSet<KeyCode>,   // Keys released THIS frame
     mouse_delta: (f64, f64),           // Accumulated mouse motion this frame
+    mouse_position: (f32, f32),        // Screen-space cursor position (center-origin, Y-up)
     mouse_buttons: [bool; 3],          // Held: [Left, Right, Middle]
     mouse_buttons_pressed: [bool; 3],  // Pressed this frame
     mouse_buttons_released: [bool; 3], // Released this frame
@@ -877,6 +890,8 @@ self.mouse_delta.1 += dy;
 ```
 
 Multiple motion events per frame are summed. The game reads [`input.mouse_delta()`](https://github.com/justinwash/rengine/blob/master/engine/src/input/keyboard.rs#L45) and the total is reset at [`end_frame()`](https://github.com/justinwash/rengine/blob/master/engine/src/input/keyboard.rs#L107).
+
+**Mouse position** is tracked via `handle_cursor_moved(x, y)`, which stores the screen-space cursor position in center-origin Y-up coordinates (matching the sprite/canvas coordinate system). Accessible via `input.mouse_position() -> (f32, f32)` or `engine.mouse_screen_pos() -> Vec2`. For world-space conversion, use `Camera2D::screen_to_world(screen_pos)` which reverses zoom and rotation and adds the camera offset.
 
 Mouse buttons use the same pressed/down/released model as keys, mapped by index: 0=Left, 1=Right, 2=Middle.
 
@@ -1473,13 +1488,25 @@ pub trait Scene: 'static {
 
 ```rust
 pub enum SceneOp {
-    Continue,                   // Do nothing
-    Push(Box<dyn Scene>),       // Push new scene (current paused)
-    Switch(Box<dyn Scene>),     // Replace current scene
-    Pop,                        // Remove current scene (previous resumed)
-    Quit,                       // Exit the game
+    Continue,                                   // Do nothing
+    Push(Box<dyn Scene>),                       // Push new scene (current paused)
+    Switch(Box<dyn Scene>),                     // Replace current scene
+    Pop,                                        // Remove current scene (previous resumed)
+    Quit,                                       // Exit the game
+    FadePush(Box<dyn Scene>, Transition),        // Push with fade transition
+    FadeSwitch(Box<dyn Scene>, Transition),      // Switch with fade transition
+    FadePop(Transition),                         // Pop with fade transition
 }
 ```
+
+**Transition** specifies a fade effect:
+
+```rust
+pub struct Transition { pub color: Color, pub duration: f32 }
+// Constructors: Transition::fade(duration), fade_color(color, duration), fade_white(duration)
+```
+
+When a `Fade*` variant is returned, the engine enters a transition state machine: fade out (overlay alpha 0→1), apply the scene change at midpoint, fade in (alpha 1→0). During the transition, `scene.update()` is not called (the scene is frozen). All scenes still render bottom-to-top, with the transition overlay drawn last.
 
 Lifecycle:
 
@@ -1764,6 +1791,36 @@ let mut tw = Tween::new(0.0, 1.0, 1.5, Easing::InOutSine).looping(LoopMode::Ping
 // One-shot ease without creating a Tween
 let v = ease(10.0, 50.0, 0.5, Easing::OutBounce);
 ```
+
+### 13.5 `Timer` and `EventQueue` — Scheduling
+
+**`Timer`** — Tracks countdown timers. `tick(dt)` returns `true` the frame it fires.
+
+```rust
+let mut cooldown = Timer::once(2.0);       // fires once after 2 seconds
+let mut heartbeat = Timer::repeating(0.5); // fires every 0.5 seconds
+
+// In update:
+if cooldown.tick(dt) { /* cooldown expired */ }
+if heartbeat.tick(dt) { /* periodic tick */ }
+```
+
+Methods: `once(duration)`, `repeating(interval)`, `tick(dt) -> bool`, `reset()`, `is_finished()`, `remaining()`, `fraction()` (0.0 at start → 1.0 at fire).
+
+**`EventQueue<E>`** — Schedule arbitrary events with delays, then drain them each frame.
+
+```rust
+let mut queue: EventQueue<&str> = EventQueue::new();
+queue.schedule(1.0, "spawn_wave");
+queue.schedule(3.0, "boss_intro");
+
+// In update:
+for event in queue.tick(dt) {
+    match event { /* handle */ }
+}
+```
+
+Methods: `new()`, `schedule(delay, event)`, `tick(dt) -> Vec<E>`, `is_empty()`, `len()`, `clear()`.
 
 ---
 

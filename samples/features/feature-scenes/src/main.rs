@@ -47,26 +47,26 @@ impl Scene for ColorScene {
         let input = engine.input();
 
         if input.is_key_pressed(KeyCode::Digit1) {
-            return SceneOp::Switch(Box::new(ColorScene::new(
-                "Red",
-                Color::new(0.8, 0.2, 0.2, 1.0),
-            )));
+            return SceneOp::FadeSwitch(
+                Box::new(ColorScene::new("Red", Color::new(0.8, 0.2, 0.2, 1.0))),
+                Transition::fade(0.5),
+            );
         }
         if input.is_key_pressed(KeyCode::Digit2) {
-            return SceneOp::Switch(Box::new(ColorScene::new(
-                "Green",
-                Color::new(0.2, 0.7, 0.2, 1.0),
-            )));
+            return SceneOp::FadeSwitch(
+                Box::new(ColorScene::new("Green", Color::new(0.2, 0.7, 0.2, 1.0))),
+                Transition::fade(0.5),
+            );
         }
         if input.is_key_pressed(KeyCode::Digit3) {
-            return SceneOp::Switch(Box::new(ColorScene::new(
-                "Blue",
-                Color::new(0.2, 0.3, 0.9, 1.0),
-            )));
+            return SceneOp::FadeSwitch(
+                Box::new(ColorScene::new("Blue", Color::new(0.2, 0.3, 0.9, 1.0))),
+                Transition::fade_white(0.8),
+            );
         }
 
         if input.is_key_pressed(KeyCode::KeyP) {
-            return SceneOp::Push(Box::new(PauseOverlay));
+            return SceneOp::FadePush(Box::new(PauseOverlay), Transition::fade(0.3));
         }
 
         if input.is_key_pressed(KeyCode::Space) {
@@ -108,7 +108,7 @@ impl Scene for ColorScene {
             28.0,
             12.0,
             Color::WHITE,
-            "[1] Red  [2] Green  [3] Blue  [P] Pause  [Space] +1  [Esc] Quit",
+            "[1] Red  [2] Green  [3] Blue (white fade)  [P] Pause  [Esc] Quit",
         );
     }
 
@@ -136,7 +136,7 @@ impl Scene for PauseOverlay {
         if engine.input().is_key_pressed(KeyCode::Escape)
             || engine.input().is_key_pressed(KeyCode::KeyP)
         {
-            return SceneOp::Pop;
+            return SceneOp::FadePop(Transition::fade(0.3));
         }
         SceneOp::Continue
     }
