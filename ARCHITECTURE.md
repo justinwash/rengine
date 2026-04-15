@@ -210,10 +210,11 @@ pub struct EngineConfig {
     pub hot_reload: bool,   // File-watching for assets at runtime
     pub show_fps: bool,     // Render FPS counter overlay on canvas
     pub fixed_dt: f32,      // Fixed-timestep interval (default 1/60)
+    pub gamepad_assign: GamepadAssignMode, // OnButtonPress (default) or OnConnect
 }
 ```
 
-Default: 800×600, no vsync, not headless, hot reload on, FPS shown, fixed_dt 1/60.
+Default: 800×600, no vsync, not headless, hot reload on, FPS shown, fixed_dt 1/60, gamepad assign on button press.
 
 The `headless` flag is critical for testing:
 
@@ -297,7 +298,7 @@ pub trait Game: 'static + Sized {
    - `AudioSystem::new(config.headless)` — opens rodio output stream (or silences on headless)
    - `InputState::new()` — empty HashSets
    - `TimeState::new()` — starts the clock
-   - `GamepadSystem::new()` — initializes gilrs + scans connected gamepads
+   - `GamepadSystem::new(mode)` — initializes gilrs + scans connected gamepads (mode from `config.gamepad_assign`)
 
 7. **`G::new(&mut engine)`** — The game's constructor runs. The game gets `&mut Engine` so it can load textures, create meshes, load manifests, etc.
 
@@ -904,15 +905,23 @@ pub struct GamepadSystem {
     gilrs: Gilrs,
     slots: Vec<GamepadState>,              // 4 player slots
     id_to_slot: HashMap<GamepadId, usize>, // Maps physical gamepad → slot
+    unassigned: Vec<GamepadId>,            // Gamepads waiting for a button press
+    assign_mode: GamepadAssignMode,
 }
 ```
 
-**Auto-assignment:** When a gamepad connects, it's assigned to the first empty slot. When it disconnects, its slot is cleared.
+**Assignment modes** (`GamepadAssignMode`):
+
+- **`OnButtonPress`** (default) — Connected gamepads go into a pending pool. When any pending gamepad presses a button, it claims the next free player slot. This makes "Press A to join" natural: player 1 is whoever presses first, not whichever USB port the OS enumerates first.
+- **`OnConnect`** — Legacy behavior. Gamepads are assigned to slots immediately on connection.
+
+Set via `EngineConfig::gamepad_assign` or at runtime with `engine.set_gamepad_assign_mode(mode)`. Switching from `OnButtonPress` to `OnConnect` immediately assigns all pending gamepads.
 
 **Per-frame update:**
 
 1. Clear `buttons_pressed` and `buttons_released` for all slots.
 2. Drain gilrs events: handle `Connected`, `Disconnected`, `ButtonPressed`, `ButtonReleased`.
+   - On `ButtonPressed` from an unassigned gamepad, assign it to the next free slot and relay the press event.
 3. Read analog axes: `left_stick_x/y` from `Axis::LeftStickX/Y`.
 4. **D-pad override:** If D-pad is pressed, override the stick axis to ±1.0.
 5. **Dead zone:** Values below 0.15 are clamped to 0.
@@ -922,6 +931,8 @@ pub struct GamepadSystem {
 - [`is_button_down(button)`](https://github.com/justinwash/rengine/blob/master/engine/src/input/gamepad.rs#L37), [`is_button_pressed(button)`](https://github.com/justinwash/rengine/blob/master/engine/src/input/gamepad.rs#L42), [`is_button_released(button)`](https://github.com/justinwash/rengine/blob/master/engine/src/input/gamepad.rs#L47)
 - `left_stick_x`, `left_stick_y` (public fields)
 - [`is_connected()`](https://github.com/justinwash/rengine/blob/master/engine/src/input/gamepad.rs#L52)
+
+Engine helpers: `engine.gamepads_connected()` (assigned count), `engine.gamepads_unassigned()` (pending count).
 
 ---
 
