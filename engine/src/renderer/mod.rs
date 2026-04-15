@@ -1,10 +1,12 @@
 pub mod camera;
 pub mod nineslice;
+pub mod postfx;
 pub mod sprite;
 pub mod texture;
 
 pub use camera::{Camera2D, CameraBounds};
 pub use nineslice::NineSlice;
+pub use postfx::{PostEffect, PostFxChain};
 pub use sprite::DrawParams;
 pub use texture::TextureId;
 
@@ -12,6 +14,7 @@ use crate::app::ScaleMode;
 use crate::assets::Color;
 use crate::canvas::{self, Canvas};
 use crate::text;
+use postfx::PostFxPipeline;
 use sprite::Vertex;
 
 use std::cell::Cell;
@@ -118,6 +121,7 @@ pub(crate) struct Renderer {
     pub(crate) font_atlas: text::FontAtlas,
 
     offscreen: Option<OffscreenTarget>,
+    postfx: Option<PostFxPipeline>,
 }
 
 impl Renderer {
@@ -328,6 +332,7 @@ impl Renderer {
             canvas_vb,
             font_atlas,
             offscreen: None,
+            postfx: None,
         };
 
         let white = renderer.create_texture(1, 1, &[255, 255, 255, 255]);
@@ -473,7 +478,7 @@ impl Renderer {
         }
     }
 
-    pub fn render_frame(&mut self, frame: &Frame) {
+    pub fn render_frame(&mut self, frame: &Frame, postfx_chain: &PostFxChain) {
         let output = match self.surface.get_current_texture() {
             Ok(t) => t,
             Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
@@ -488,6 +493,33 @@ impl Renderer {
         let swap_view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
+
+        {
+            let effects = postfx_chain.effects.borrow();
+            let is_dirty = *postfx_chain.dirty.borrow();
+            if effects.is_empty() {
+                if is_dirty {
+                    self.postfx = None;
+                    *postfx_chain.dirty.borrow_mut() = false;
+                }
+            } else if self.offscreen.is_some() {
+                let ofs = self.offscreen.as_ref().unwrap();
+                let (w, h) = (ofs.width, ofs.height);
+                if self.postfx.is_none() {
+                    let mut pfx =
+                        PostFxPipeline::new(&self.device, w, h, self.surface_config.format);
+                    pfx.set_source_view(&self.device, &ofs.view);
+                    self.postfx = Some(pfx);
+                }
+                let pfx = self.postfx.as_mut().unwrap();
+                pfx.resize(&self.device, w, h);
+                if is_dirty {
+                    pfx.set_source_view(&self.device, &ofs.view);
+                    pfx.rebuild(&self.device, &effects);
+                    *postfx_chain.dirty.borrow_mut() = false;
+                }
+            }
+        }
 
         let (sprite_target, proj_w, proj_h) = match self.offscreen {
             Some(ref ofs) => (&ofs.view, ofs.width as f32, ofs.height as f32),
@@ -623,6 +655,18 @@ impl Renderer {
         }
 
         if let Some(ref ofs) = self.offscreen {
+            let blit_source_bg = if let Some(ref pfx) = self.postfx {
+                if pfx.pass_count() > 0 {
+                    let effects = postfx_chain.effects.borrow();
+                    pfx.run(&mut encoder, &self.queue, &effects);
+                    pfx.last_output_bind_group(pfx.pass_count())
+                } else {
+                    &ofs.bind_group
+                }
+            } else {
+                &ofs.bind_group
+            };
+
             let (vx, vy, vw, vh) = blit_viewport(
                 ofs.scale_mode.get(),
                 ofs.width,
@@ -647,7 +691,7 @@ impl Renderer {
                 multiview_mask: None,
             });
             pass.set_pipeline(&ofs.blit_pipeline);
-            pass.set_bind_group(0, &ofs.bind_group, &[]);
+            pass.set_bind_group(0, blit_source_bg, &[]);
             pass.set_viewport(vx, vy, vw, vh, 0.0, 1.0);
             pass.draw(0..3, 0..1);
         }
