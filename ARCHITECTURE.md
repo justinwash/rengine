@@ -829,7 +829,7 @@ Built on top of the existing single-font `FontAtlas` and `Canvas` text renderer:
 
 A lightweight immediate-mode widget builder for menus, pause screens, and HUDs. Each frame you create a `Ui`, add widgets, call `update()` for input handling, and `render()` to draw.
 
-- **`Ui::new(x, y, width, screen_size, atlas)`** — Create a new UI context anchored at `(x, y)` with the given column width.
+- **`Ui::new(x, y, width, screen_size)`** — Create a new UI context anchored at `(x, y)` with the given column width.
 - **`Ui::with_style(style) -> Self`** — Apply a custom `UiStyle` (colors, sizes, padding).
 - **`Ui::with_focus(index) -> Self`** — Set the initially focused button index.
 - **`Ui::label(text, size, color)`** / **`label_centered(text, size, color)`** — Static text (left-aligned or centered).
@@ -2024,7 +2024,7 @@ It is a 2D platformer with:
 | [`create_color_texture`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L256)                                                                                                            | `engine.create_color_texture(32, 32, Color::RED)`                                                                                   |
 | [`white_texture()`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L270)                                                                                                                 | `engine.white_texture()` for solid rectangles without a texture file                                                                |
 | Mouse input                                                                                                                                                                                                   | `engine.input().mouse_delta()`, `is_mouse_down(0)`, `is_mouse_pressed(1)`                                                           |
-| [`Ui`](https://github.com/justinwash/rengine/blob/master/engine/src/ui.rs)                                                                                                                                    | `let mut ui = Ui::new(x, y, w, screen, atlas); ui.button(0, "Play"); let resp = ui.update(input); ui.render(canvas);`               |
+| [`Ui`](https://github.com/justinwash/rengine/blob/master/engine/src/ui.rs)                                                                                                                                    | `let mut ui = Ui::new(x, y, w, screen); ui.button(0, "Play"); let resp = ui.update(input, atlas); ui.render(canvas, atlas);`        |
 
 ---
 

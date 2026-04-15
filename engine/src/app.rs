@@ -844,10 +844,8 @@ where
                                 ));
                             }
                             SceneOp::FadePop(t) => {
-                                transition = Some(crate::scene::ActiveTransition::new(
-                                    t,
-                                    SceneOp::Pop,
-                                ));
+                                transition =
+                                    Some(crate::scene::ActiveTransition::new(t, SceneOp::Pop));
                             }
                             other => {
                                 apply_scene_op(&mut stack, other, &mut engine, &mut globals);
@@ -881,13 +879,16 @@ where
                             let hw = screen_size.0 as f32 / 2.0;
                             let hh = screen_size.1 as f32 / 2.0;
                             let mut overlay = canvas::Canvas::new();
-                            let c = crate::assets::Color::new(
-                                t.color.r,
-                                t.color.g,
-                                t.color.b,
-                                alpha,
+                            let c =
+                                crate::assets::Color::new(t.color.r, t.color.g, t.color.b, alpha);
+                            overlay.rect(
+                                -hw,
+                                -hh,
+                                screen_size.0 as f32,
+                                screen_size.1 as f32,
+                                c,
+                                screen_size,
                             );
-                            overlay.rect(-hw, -hh, screen_size.0 as f32, screen_size.1 as f32, c, screen_size);
                             frame.canvases.push(overlay);
                         }
                     }

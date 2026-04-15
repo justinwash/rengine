@@ -101,6 +101,7 @@ pub struct UiResponse {
     pub hovered: Option<usize>,
     pub toggled: Vec<usize>,
     pub changed_values: Vec<(usize, f32)>,
+    pub dragging: Option<usize>,
 }
 
 impl UiResponse {
@@ -120,34 +121,34 @@ impl UiResponse {
     }
 }
 
-pub struct Ui<'a> {
+pub struct Ui {
     x: f32,
     y: f32,
     width: f32,
     screen_size: (u32, u32),
-    atlas: &'a FontAtlas,
     style: UiStyle,
     widgets: Vec<Widget>,
     focusable_ids: Vec<usize>,
     focus_index: usize,
     activated: Option<usize>,
     mouse_focus: bool,
+    dragging_slider: Option<usize>,
 }
 
-impl<'a> Ui<'a> {
-    pub fn new(x: f32, y: f32, width: f32, screen_size: (u32, u32), atlas: &'a FontAtlas) -> Self {
+impl Ui {
+    pub fn new(x: f32, y: f32, width: f32, screen_size: (u32, u32)) -> Self {
         Self {
             x,
             y,
             width,
             screen_size,
-            atlas,
             style: UiStyle::default(),
             widgets: Vec::new(),
             focusable_ids: Vec::new(),
             focus_index: 0,
             activated: None,
             mouse_focus: false,
+            dragging_slider: None,
         }
     }
 
@@ -158,6 +159,11 @@ impl<'a> Ui<'a> {
 
     pub fn with_focus(mut self, focus: usize) -> Self {
         self.focus_index = focus;
+        self
+    }
+
+    pub fn with_dragging(mut self, dragging: Option<usize>) -> Self {
+        self.dragging_slider = dragging;
         self
     }
 
@@ -239,57 +245,68 @@ impl<'a> Ui<'a> {
         });
     }
 
-    fn compute_widget_height(&self, widget: &Widget, remaining: &[Widget]) -> f32 {
+    fn compute_widget_height(
+        &self,
+        widget: &Widget,
+        remaining: &[Widget],
+        atlas: &FontAtlas,
+    ) -> f32 {
         match widget {
-            Widget::Label { size, .. } => self.atlas.line_height(*size) + self.style.spacing,
+            Widget::Label { size, .. } => atlas.line_height(*size) + self.style.spacing,
             Widget::Button { .. } => {
-                let lh = self.atlas.line_height(self.style.text_size);
+                let lh = atlas.line_height(self.style.text_size);
                 lh + self.style.button_padding * 2.0 + self.style.spacing
             }
             Widget::Separator { height } => *height,
-            Widget::Panel { padding, children, .. } => {
+            Widget::Panel {
+                padding, children, ..
+            } => {
                 let mut h = padding * 2.0;
                 let n = (*children).min(remaining.len());
                 let child_slice = &remaining[..n];
                 let mut i = 0;
                 while i < child_slice.len() {
-                    h += self.compute_widget_height(&child_slice[i], &child_slice[i + 1..]);
+                    h += self.compute_widget_height(&child_slice[i], &child_slice[i + 1..], atlas);
                     i += 1;
                 }
                 h + self.style.spacing
             }
             Widget::ProgressBar { .. } => {
-                let lh = self.atlas.line_height(self.style.text_size);
+                let lh = atlas.line_height(self.style.text_size);
                 lh + self.style.progress_height + self.style.spacing * 2.0
             }
             Widget::Checkbox { .. } => {
-                let lh = self.atlas.line_height(self.style.text_size);
+                let lh = atlas.line_height(self.style.text_size);
                 lh.max(self.style.checkbox_size) + self.style.spacing
             }
             Widget::Slider { label, .. } => {
                 let mut h = self.style.slider_height + self.style.spacing;
                 if !label.is_empty() {
-                    h += self.atlas.line_height(self.style.text_size) + self.style.spacing;
+                    h += atlas.line_height(self.style.text_size) + self.style.spacing;
                 }
                 h
             }
         }
     }
 
-    fn compute_focusable_rects(&self) -> Vec<(usize, f32, f32, f32, f32)> {
+    fn compute_focusable_rects(&self, atlas: &FontAtlas) -> Vec<(usize, f32, f32, f32, f32)> {
         let mut rects = Vec::new();
         let mut cursor_y = self.y;
         let mut base_x = self.x;
         let mut current_width = self.width;
+        let mut panel_stack: Vec<(f32, f32, f32)> = Vec::new();
+        let mut panel_counters: Vec<usize> = Vec::new();
 
         let mut i = 0;
         while i < self.widgets.len() {
+            let mut pending_panel: Option<(f32, usize)> = None;
+
             match &self.widgets[i] {
                 Widget::Label { size, .. } => {
-                    cursor_y -= self.atlas.line_height(*size) + self.style.spacing;
+                    cursor_y -= atlas.line_height(*size) + self.style.spacing;
                 }
                 Widget::Button { id, .. } => {
-                    let lh = self.atlas.line_height(self.style.text_size);
+                    let lh = atlas.line_height(self.style.text_size);
                     let pad = self.style.button_padding;
                     let btn_h = lh + pad * 2.0;
                     let btn_y = cursor_y - btn_h + pad;
@@ -299,19 +316,17 @@ impl<'a> Ui<'a> {
                 Widget::Separator { height } => {
                     cursor_y -= *height;
                 }
-                Widget::Panel { padding, children, .. } => {
-                    cursor_y -= *padding;
-                    base_x += *padding;
-                    current_width -= *padding * 2.0;
-                    let end = (i + 1 + *children).min(self.widgets.len());
-                    let _ = end; // panel children processed inline
+                Widget::Panel {
+                    padding, children, ..
+                } => {
+                    pending_panel = Some((*padding, *children));
                 }
                 Widget::ProgressBar { .. } => {
-                    let lh = self.atlas.line_height(self.style.text_size);
+                    let lh = atlas.line_height(self.style.text_size);
                     cursor_y -= lh + self.style.progress_height + self.style.spacing * 2.0;
                 }
                 Widget::Checkbox { id, .. } => {
-                    let lh = self.atlas.line_height(self.style.text_size);
+                    let lh = atlas.line_height(self.style.text_size);
                     let row_h = lh.max(self.style.checkbox_size);
                     rects.push((*id, base_x, cursor_y - row_h, current_width, row_h));
                     cursor_y -= row_h + self.style.spacing;
@@ -319,19 +334,44 @@ impl<'a> Ui<'a> {
                 Widget::Slider { id, label, .. } => {
                     let h = self.style.slider_height;
                     if !label.is_empty() {
-                        let lh = self.atlas.line_height(self.style.text_size);
+                        let lh = atlas.line_height(self.style.text_size);
                         cursor_y -= lh + self.style.spacing;
                     }
                     rects.push((*id, base_x, cursor_y - h, current_width, h));
                     cursor_y -= h + self.style.spacing;
                 }
             }
+
+            for counter in panel_counters.iter_mut().rev() {
+                if *counter > 0 {
+                    *counter -= 1;
+                    if *counter == 0 {
+                        if let Some((old_x, old_w, padding)) = panel_stack.pop() {
+                            cursor_y -= padding;
+                            base_x = old_x;
+                            current_width = old_w;
+                            cursor_y -= self.style.spacing;
+                        }
+                    }
+                    break;
+                }
+            }
+            panel_counters.retain(|c| *c > 0);
+
+            if let Some((padding, children)) = pending_panel {
+                cursor_y -= padding;
+                panel_stack.push((base_x, current_width, padding));
+                base_x += padding;
+                current_width -= padding * 2.0;
+                panel_counters.push(children);
+            }
+
             i += 1;
         }
         rects
     }
 
-    pub fn update(&mut self, input: &InputState) -> UiResponse {
+    pub fn update(&mut self, input: &InputState, atlas: &FontAtlas) -> UiResponse {
         let mut toggled = Vec::new();
         let mut changed_values = Vec::new();
         let mut hovered = None;
@@ -343,6 +383,7 @@ impl<'a> Ui<'a> {
                 hovered: None,
                 toggled,
                 changed_values,
+                dragging: None,
             };
         }
 
@@ -351,7 +392,7 @@ impl<'a> Ui<'a> {
             self.focus_index = 0;
         }
 
-        let rects = self.compute_focusable_rects();
+        let rects = self.compute_focusable_rects(atlas);
         let (mx, my) = input.mouse_position();
 
         for (rect_idx, &(_, rx, ry, rw, rh)) in rects.iter().enumerate() {
@@ -421,23 +462,34 @@ impl<'a> Ui<'a> {
             }
         }
 
-        if input.is_mouse_down(0) {
+        if !input.is_mouse_down(0) {
+            self.dragging_slider = None;
+        }
+
+        if input.is_mouse_pressed(0) {
             for (rect_idx, &(_, rx, ry, rw, rh)) in rects.iter().enumerate() {
                 let wid = self.focusable_ids[rect_idx];
                 if mx >= rx && mx <= rx + rw && my >= ry && my <= ry + rh {
                     for widget in &self.widgets {
-                        if let Widget::Slider {
-                            id,
-                            min,
-                            max,
-                            ..
-                        } = widget
-                        {
+                        if let Widget::Slider { id, .. } = widget {
                             if *id == wid {
-                                let t = ((mx - rx) / rw).clamp(0.0, 1.0);
-                                let new_val = *min + t * (*max - *min);
-                                changed_values.push((*id, new_val));
+                                self.dragging_slider = Some(*id);
                             }
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Some(drag_id) = self.dragging_slider {
+            if let Some(&(_, rx, _, rw, _)) = rects.iter().find(|(rid, _, _, _, _)| *rid == drag_id)
+            {
+                for widget in &self.widgets {
+                    if let Widget::Slider { id, min, max, .. } = widget {
+                        if *id == drag_id {
+                            let t = ((mx - rx) / rw).clamp(0.0, 1.0);
+                            let new_val = *min + t * (*max - *min);
+                            changed_values.push((*id, new_val));
                         }
                     }
                 }
@@ -450,26 +502,28 @@ impl<'a> Ui<'a> {
             hovered,
             toggled,
             changed_values,
+            dragging: self.dragging_slider,
         }
     }
 
-    pub fn render(&self, canvas: &mut Canvas) {
+    pub fn render(&self, canvas: &mut Canvas, atlas: &FontAtlas) {
         let mut cursor_y = self.y;
         let mut base_x = self.x;
         let mut current_width = self.width;
-        let focused_id = if !self.focusable_ids.is_empty()
-            && self.focus_index < self.focusable_ids.len()
-        {
-            Some(self.focusable_ids[self.focus_index])
-        } else {
-            None
-        };
+        let focused_id =
+            if !self.focusable_ids.is_empty() && self.focus_index < self.focusable_ids.len() {
+                Some(self.focusable_ids[self.focus_index])
+            } else {
+                None
+            };
 
         let mut panel_stack: Vec<(f32, f32, f32)> = Vec::new();
         let mut panel_counters: Vec<usize> = Vec::new();
 
         let mut i = 0;
         while i < self.widgets.len() {
+            let mut pending_panel: Option<(f32, usize)> = None;
+
             match &self.widgets[i] {
                 Widget::Label {
                     text,
@@ -477,7 +531,7 @@ impl<'a> Ui<'a> {
                     color,
                     align,
                 } => {
-                    let lh = self.atlas.line_height(*size);
+                    let lh = atlas.line_height(*size);
                     let ax = match align {
                         TextAlign::Left => base_x,
                         TextAlign::Center => base_x + current_width / 2.0,
@@ -491,7 +545,7 @@ impl<'a> Ui<'a> {
                         *color,
                         *align,
                         self.screen_size,
-                        self.atlas,
+                        atlas,
                     );
                     cursor_y -= lh + self.style.spacing;
                 }
@@ -514,7 +568,7 @@ impl<'a> Ui<'a> {
 
                     let text_size = self.style.text_size;
                     let pad = self.style.button_padding;
-                    let lh = self.atlas.line_height(text_size);
+                    let lh = atlas.line_height(text_size);
                     let btn_h = lh + pad * 2.0;
 
                     canvas.rect(
@@ -538,7 +592,7 @@ impl<'a> Ui<'a> {
                         text_size,
                         fg,
                         self.screen_size,
-                        self.atlas,
+                        atlas,
                     );
 
                     cursor_y -= btn_h + self.style.spacing;
@@ -560,6 +614,7 @@ impl<'a> Ui<'a> {
                             h += self.compute_widget_height(
                                 &child_slice[ci],
                                 &child_slice[ci + 1..],
+                                atlas,
                             );
                             ci += 1;
                         }
@@ -576,17 +631,15 @@ impl<'a> Ui<'a> {
                         self.screen_size,
                     );
 
-                    cursor_y -= *padding;
-                    panel_stack.push((base_x, current_width, *padding));
-                    base_x += *padding;
-                    current_width -= *padding * 2.0;
-                    panel_counters.push(*children);
+                    pending_panel = Some((*padding, *children));
                 }
                 Widget::ProgressBar {
-                    label, value, color,
+                    label,
+                    value,
+                    color,
                 } => {
                     let text_size = self.style.text_size;
-                    let lh = self.atlas.line_height(text_size);
+                    let lh = atlas.line_height(text_size);
                     let bar_h = self.style.progress_height;
                     let fill_color = color.unwrap_or(self.style.progress_fill);
 
@@ -599,7 +652,7 @@ impl<'a> Ui<'a> {
                             text_size,
                             self.style.text_color,
                             self.screen_size,
-                            self.atlas,
+                            atlas,
                         );
                         cursor_y -= lh + self.style.spacing;
                     }
@@ -628,7 +681,7 @@ impl<'a> Ui<'a> {
                     let is_focused = focused_id == Some(*id);
                     let text_size = self.style.text_size;
                     let box_size = self.style.checkbox_size;
-                    let lh = self.atlas.line_height(text_size);
+                    let lh = atlas.line_height(text_size);
                     let row_h = lh.max(box_size);
 
                     let box_bg = if *checked {
@@ -660,10 +713,31 @@ impl<'a> Ui<'a> {
                         } else {
                             Color::WHITE
                         };
-                        canvas.rect(bx - border, by - border, box_size + border * 2.0, border, outline, self.screen_size);
-                        canvas.rect(bx - border, by + box_size, box_size + border * 2.0, border, outline, self.screen_size);
+                        canvas.rect(
+                            bx - border,
+                            by - border,
+                            box_size + border * 2.0,
+                            border,
+                            outline,
+                            self.screen_size,
+                        );
+                        canvas.rect(
+                            bx - border,
+                            by + box_size,
+                            box_size + border * 2.0,
+                            border,
+                            outline,
+                            self.screen_size,
+                        );
                         canvas.rect(bx - border, by, border, box_size, outline, self.screen_size);
-                        canvas.rect(bx + box_size, by, border, box_size, outline, self.screen_size);
+                        canvas.rect(
+                            bx + box_size,
+                            by,
+                            border,
+                            box_size,
+                            outline,
+                            self.screen_size,
+                        );
                     }
 
                     let text_x = base_x + box_size + 8.0;
@@ -680,7 +754,7 @@ impl<'a> Ui<'a> {
                         text_size,
                         fg,
                         self.screen_size,
-                        self.atlas,
+                        atlas,
                     );
 
                     cursor_y -= row_h + self.style.spacing;
@@ -705,9 +779,9 @@ impl<'a> Ui<'a> {
                             text_size,
                             self.style.text_color,
                             self.screen_size,
-                            self.atlas,
+                            atlas,
                         );
-                        cursor_y -= self.atlas.line_height(text_size) + self.style.spacing;
+                        cursor_y -= atlas.line_height(text_size) + self.style.spacing;
                     }
 
                     canvas.rect(
@@ -750,10 +824,38 @@ impl<'a> Ui<'a> {
                     if is_focused {
                         let border = 2.0;
                         let outline = self.style.button_focused_bg;
-                        canvas.rect(base_x - border, cursor_y - bar_h - border, current_width + border * 2.0, border, outline, self.screen_size);
-                        canvas.rect(base_x - border, cursor_y, current_width + border * 2.0, border, outline, self.screen_size);
-                        canvas.rect(base_x - border, cursor_y - bar_h, border, bar_h, outline, self.screen_size);
-                        canvas.rect(base_x + current_width, cursor_y - bar_h, border, bar_h, outline, self.screen_size);
+                        canvas.rect(
+                            base_x - border,
+                            cursor_y - bar_h - border,
+                            current_width + border * 2.0,
+                            border,
+                            outline,
+                            self.screen_size,
+                        );
+                        canvas.rect(
+                            base_x - border,
+                            cursor_y,
+                            current_width + border * 2.0,
+                            border,
+                            outline,
+                            self.screen_size,
+                        );
+                        canvas.rect(
+                            base_x - border,
+                            cursor_y - bar_h,
+                            border,
+                            bar_h,
+                            outline,
+                            self.screen_size,
+                        );
+                        canvas.rect(
+                            base_x + current_width,
+                            cursor_y - bar_h,
+                            border,
+                            bar_h,
+                            outline,
+                            self.screen_size,
+                        );
                     }
 
                     cursor_y -= bar_h + self.style.spacing;
@@ -776,6 +878,14 @@ impl<'a> Ui<'a> {
             }
 
             panel_counters.retain(|c| *c > 0);
+
+            if let Some((padding, children)) = pending_panel {
+                cursor_y -= padding;
+                panel_stack.push((base_x, current_width, padding));
+                base_x += padding;
+                current_width -= padding * 2.0;
+                panel_counters.push(children);
+            }
 
             i += 1;
         }
