@@ -24,7 +24,6 @@ impl Scene for CountdownScene {
 
         frame.clear_color = Color::new(0.05, 0.05, 0.15, 1.0);
 
-        let (_sw, _sh) = engine.window_size();
         let atlas = engine.font_atlas();
         let canvas = frame.canvas(0);
 

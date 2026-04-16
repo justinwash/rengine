@@ -125,8 +125,6 @@ pub struct Ui {
     x: f32,
     y: f32,
     width: f32,
-    #[allow(dead_code)]
-    screen_size: (u32, u32),
     style: UiStyle,
     widgets: Vec<Widget>,
     focusable_ids: Vec<usize>,
@@ -137,12 +135,11 @@ pub struct Ui {
 }
 
 impl Ui {
-    pub fn new(x: f32, y: f32, width: f32, screen_size: (u32, u32)) -> Self {
+    pub fn new(x: f32, y: f32, width: f32, _screen_size: (u32, u32)) -> Self {
         Self {
             x,
             y,
             width,
-            screen_size,
             style: UiStyle::default(),
             widgets: Vec::new(),
             focusable_ids: Vec::new(),

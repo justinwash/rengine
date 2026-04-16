@@ -326,7 +326,6 @@ impl Scene for GameScene {
     }
 
     fn render(&self, engine: &Engine, _globals: &Globals, frame: &mut Frame) {
-        let (_sw, _sh) = engine.window_size();
         let atlas = engine.font_atlas();
         frame.clear_color = Color::from_rgba8(20, 30, 50, 255);
 

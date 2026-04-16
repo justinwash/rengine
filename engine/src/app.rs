@@ -596,7 +596,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
             while engine.time.consume_fixed_step() {
                 game.fixed_update(&engine);
             }
-            headless_frame.begin(engine.game_size());
+            headless_frame.begin(engine.window_size());
             game.update(&engine, &mut headless_frame);
             if game.should_exit() {
                 return Ok(());
@@ -654,7 +654,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
                     while engine.time.consume_fixed_step() {
                         game.fixed_update(&engine);
                     }
-                    frame.begin(engine.game_size());
+                    frame.begin(engine.window_size());
                     game.update(&engine, &mut frame);
 
                     if game.should_exit() {
@@ -765,7 +765,7 @@ where
                 }
             }
 
-            frame.begin(engine.game_size());
+            frame.begin(engine.window_size());
             let op = if let Some(scene) = stack.last_mut() {
                 scene.update(&engine, &mut globals, &mut frame)
             } else {
@@ -836,7 +836,7 @@ where
                         }
                     }
 
-                    frame.begin(engine.game_size());
+                    frame.begin(engine.window_size());
 
                     if transition.is_none() {
                         let op = if let Some(scene) = stack.last_mut() {
@@ -1420,7 +1420,7 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
             while engine.time.consume_fixed_step() {
                 game.fixed_update(&engine);
             }
-            let mut headless_frame = Frame3D::new(engine.game_size());
+            let mut headless_frame = Frame3D::new(engine.window_size());
             game.update(&engine, &mut headless_frame);
             if game.should_exit() {
                 return Ok(());
@@ -1525,7 +1525,7 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
                     while engine.time.consume_fixed_step() {
                         game.fixed_update(&engine);
                     }
-                    let mut frame = Frame3D::new(engine.game_size());
+                    let mut frame = Frame3D::new(engine.window_size());
                     game.update(&engine, &mut frame);
 
                     if game.should_exit() {
@@ -1643,7 +1643,7 @@ where
                 }
             }
 
-            let mut headless_frame = Frame3D::new(engine.game_size());
+            let mut headless_frame = Frame3D::new(engine.window_size());
             let op = if let Some(scene) = stack.last_mut() {
                 scene.update(&engine, &mut globals, &mut headless_frame)
             } else {
@@ -1759,7 +1759,7 @@ where
                         }
                     }
 
-                    let mut frame = Frame3D::new(engine.game_size());
+                    let mut frame = Frame3D::new(engine.window_size());
 
                     let op = if let Some(scene) = stack.last_mut() {
                         scene.update(&engine, &mut globals, &mut frame)
