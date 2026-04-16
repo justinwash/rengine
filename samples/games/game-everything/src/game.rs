@@ -1,234 +1,8 @@
-// feature-everything — Kitchen-Sink Rengine Demo
-//
-// A single cohesive game that exercises every major engine feature.
-// See inline comments for which feature each section demonstrates.
-//
-// Run modes:
-//   cargo run -p rengine-feature-everything                     # interactive
-//   cargo run -p rengine-feature-everything -- --demo           # visible auto-play
-//   cargo run -p rengine-feature-everything -- --demo --headless --frames 600  # CI test
-//
-// Demonstrates: EngineConfig (all fields), run_with_scenes(), Scene trait (all hooks
-// including fixed_update), SceneOp (Switch, Push, Pop, Quit), Globals,
-// Engine, Frame, Camera2D (follow, dead zone, bounds, shake, rotation, zoom, world_to_screen),
-// CameraBounds, DrawParams (position, size, color, uv_rect, flip_x, rotation,
-// origin, z_order), TextureId, SpriteSheet, Animation, TileMap, TileDef,
-// aabb_overlap, CollisionLayer, aabb_overlap_layered, TriggerSystem, TriggerZone,
-// OverlapEvent, ActionMap, Binding, AxisMapping, GamepadAxis,
-// load_resource (serializable resources via serde), fixed_update (fixed timestep),
-// Rect, Canvas (rect, text, text_aligned, text_block), FontAtlas (measure_text, line_height),
-// TextAlign, wrap_text, Color, pixelart::PixelCanvas,
-// NineSlice (uniform, draw_nine_slice, with_color, with_z_order),
-// Tween (Easing, LoopMode, score popup animation),
-// Ui (widget system: label, button, separator, focus navigation, UiStyle),
-// SaveSystem (save, load, delete, exists, list_slots — checkpoint auto-save),
-// ScaleMode (resolution scaling — game renders at 480×360, scaled to window),
-// ParticleEmitter (burst particles on coin pickup, EmitterConfig, Color::lerp),
-// Audio fades (load_audio, fade_in_music, crossfade_music, fade_out_music, play_sound_on_bus),
-// Post-processing (PostFxChain, PostEffect — Vignette, Crt, clear),
-// InputState, GamepadState, TimeState, hot reload, Vec2.
-
 use rengine::*;
-use serde::{Deserialize, Serialize};
-use std::cell::Cell;
-use std::path::PathBuf;
+use crate::pause::PauseOverlay;
+use crate::state::*;
 
-// ──────────────────────────────────────────────────────────────
-// Serializable resource — loaded from JSON via load_resource()
-// ──────────────────────────────────────────────────────────────
-
-#[derive(Deserialize)]
-struct GameConfig {
-    gravity: f32,
-    jump_force: f32,
-    move_speed: f32,
-    coin_anim_fps: f32,
-}
-
-// ──────────────────────────────────────────────────────────────
-// Globals — typed key-value store shared across the scene stack
-// ──────────────────────────────────────────────────────────────
-
-struct TransitionCounter(u32);
-
-struct PlayerStats {
-    coins: u32,
-    best_height: f32,
-}
-
-#[derive(Default, Serialize, Deserialize)]
-struct CheckpointSave {
-    coins: u32,
-    best_height: f32,
-    times_saved: u32,
-}
-
-/// Demo mode configuration stored in Globals so all scenes can read it.
-struct DemoConfig {
-    enabled: bool,
-    max_frames: u32,
-    frame: u32,
-    features_hit: Vec<&'static str>,
-}
-
-impl DemoConfig {
-    fn log_feature(&mut self, name: &'static str) {
-        if !self.features_hit.contains(&name) {
-            self.features_hit.push(name);
-            println!("[FEATURE OK] {name}");
-        }
-    }
-}
-
-// ──────────────────────────────────────────────────────────────
-// Constants
-// ──────────────────────────────────────────────────────────────
-
-const PLAYER_BODY_ID: BodyId = 0;
-
-// ──────────────────────────────────────────────────────────────
-// Title Scene — Switch, canvas text, gamepad, action mapping
-// ──────────────────────────────────────────────────────────────
-
-struct TitleScene {
-    blink_timer: f32,
-    panel: Option<NineSlice>,
-}
-
-impl Scene for TitleScene {
-    fn on_enter(&mut self, engine: &mut Engine, globals: &mut Globals) {
-        println!("[TitleScene] on_enter");
-        if let Some(counter) = globals.get_mut::<TransitionCounter>() {
-            counter.0 += 1;
-        }
-
-        let sz = 16u32;
-        let bd = 3u32;
-        let mut pc = pixelart::PixelCanvas::new(sz, sz);
-        pc.fill(Color::new(0.12, 0.08, 0.25, 0.85));
-        let edge = Color::new(0.5, 0.35, 0.9, 1.0);
-        for i in 0..sz as i32 {
-            pc.set(i, 0, edge);
-            pc.set(i, (sz - 1) as i32, edge);
-            pc.set(0, i, edge);
-            pc.set((sz - 1) as i32, i, edge);
-        }
-        let tex = engine.create_texture(sz, sz, &pc.into_bytes());
-        self.panel = Some(NineSlice::uniform(tex, sz, sz, bd).with_z_order(-1));
-        println!("[FEATURE OK] NineSlice::uniform + with_z_order — title card panel");
-
-        if let Some(demo) = globals.get_mut::<DemoConfig>() {
-            demo.log_feature("Scene::on_enter");
-            demo.log_feature("Globals::get_mut");
-            demo.log_feature("NineSlice::uniform");
-            demo.log_feature("NineSlice::with_z_order");
-            demo.log_feature("frame.draw_nine_slice");
-        }
-    }
-
-    fn update(&mut self, engine: &Engine, globals: &mut Globals) -> SceneOp {
-        self.blink_timer += engine.dt();
-
-        // In demo mode, skip straight to game after a few frames
-        if let Some(demo) = globals.get_mut::<DemoConfig>() {
-            if demo.enabled {
-                demo.frame += 1;
-                demo.log_feature("TimeState::dt");
-                if demo.frame > 5 {
-                    println!("[TitleScene] demo: auto-switching to GameScene");
-                    demo.log_feature("SceneOp::Switch (Title->Game)");
-                    return SceneOp::Switch(Box::new(GameScene::default()));
-                }
-            }
-        }
-
-        // Action mapping — "confirm" bound to Enter, Space, and gamepad South
-        if engine.action_pressed("confirm") {
-            return SceneOp::Switch(Box::new(GameScene::default()));
-        }
-        if engine.action_pressed("quit") {
-            return SceneOp::Quit;
-        }
-
-        SceneOp::Continue
-    }
-
-    fn render(&self, engine: &Engine, globals: &Globals, frame: &mut Frame) {
-        frame.clear_color = Color::new(0.1, 0.05, 0.2, 1.0);
-
-        let (sw, sh) = engine.window_size();
-        let hw = sw as f32 / 2.0;
-        let hh = sh as f32 / 2.0;
-        let atlas = engine.font_atlas();
-
-        if let Some(panel) = &self.panel {
-            frame.draw_nine_slice(panel, Vec2::new(-320.0, 40.0), Vec2::new(640.0, 280.0));
-            let tinted = panel.clone().with_color(Color::new(0.3, 1.0, 0.5, 0.8));
-            frame.draw_nine_slice(
-                &tinted,
-                Vec2::new(-hw + 5.0, -hh + 5.0),
-                Vec2::new(260.0, 40.0),
-            );
-        }
-
-        let canvas = frame.canvas(0);
-
-        canvas.text(
-            -hw + 200.0,
-            hh - 100.0,
-            "RENGINE KITCHEN SINK",
-            32.0,
-            Color::YELLOW,
-            (sw, sh),
-            atlas,
-        );
-
-        if (self.blink_timer * 2.0).sin() > 0.0 {
-            canvas.text(
-                -hw + 220.0,
-                hh - 250.0,
-                "Press ENTER to start",
-                18.0,
-                Color::WHITE,
-                (sw, sh),
-                atlas,
-            );
-        }
-
-        let transitions = globals.get::<TransitionCounter>().map_or(0, |c| c.0);
-        canvas.text(
-            -hw + 10.0,
-            -hh + 50.0,
-            &format!("Scene transitions: {}", transitions),
-            12.0,
-            Color::GREEN,
-            (sw, sh),
-            atlas,
-        );
-
-        if engine.gamepads_connected() > 0 {
-            canvas.text(
-                -hw + 220.0,
-                hh - 300.0,
-                "(Gamepad detected: press A)",
-                14.0,
-                Color::ORANGE,
-                (sw, sh),
-                atlas,
-            );
-        }
-    }
-
-    fn on_exit(&mut self, _engine: &Engine, _globals: &Globals) {
-        println!("[TitleScene] on_exit");
-    }
-}
-
-// ──────────────────────────────────────────────────────────────
-// Game Scene — main gameplay exercising nearly every feature
-// ──────────────────────────────────────────────────────────────
-
-struct GameScene {
+pub struct GameScene {
     config: Option<GameConfig>,
 
     player_tex: Option<TextureId>,
@@ -259,11 +33,8 @@ struct GameScene {
     checkpoint_msg: String,
 
     cam_zoom: f32,
-    // Small camera tilt applied on each jump-shake, decays back to zero.
     cam_tilt: f32,
-    // Cell allows mutation from &self in render() — fixes the
-    // fixed_update→update→render ordering so shake actually fires.
-    pending_shake: Cell<bool>,
+    pending_shake: bool,
 
     play_time: f32,
 
@@ -271,13 +42,11 @@ struct GameScene {
 
     coin_particles: ParticleEmitter,
 
-    // Audio
     music_a: Option<AudioClip>,
     music_b: Option<AudioClip>,
     coin_sfx: Option<AudioClip>,
     did_crossfade: bool,
 
-    // Demo auto-play state
     demo_step: usize,
     demo_did_pause: bool,
     demo_did_zoom: bool,
@@ -326,7 +95,7 @@ impl Default for GameScene {
             checkpoint_msg: String::new(),
             cam_zoom: 1.0,
             cam_tilt: 0.0,
-            pending_shake: Cell::new(false),
+            pending_shake: false,
             play_time: 0.0,
             score_popup: Tween::new(0.0, 1.0, 0.6, Easing::OutElastic),
 
@@ -385,7 +154,6 @@ impl Scene for GameScene {
             }
         }
 
-        // ── Serializable resource: load game tuning data from JSON ──
         match engine.load_resource::<GameConfig>("game_config.json") {
             Ok(cfg) => {
                 println!(
@@ -399,8 +167,6 @@ impl Scene for GameScene {
             }
             Err(e) => eprintln!("Warning: could not load game_config.json: {e}"),
         }
-
-        // ── Procedural textures via PixelCanvas ──
 
         let mut pc = pixelart::PixelCanvas::new(16, 16);
         pc.fill(Color::new(0.0, 0.0, 0.0, 0.0));
@@ -464,37 +230,29 @@ impl Scene for GameScene {
         println!("[FEATURE OK] Engine::create_texture — 4 procedural textures uploaded");
         println!("[FEATURE OK] Color::rgb — gradient background");
 
-        // ── Build tilemap — platformer arena ──
         let ground = self.ground_tex.unwrap();
         let mut tilemap = TileMap::new(50, 20, 32.0);
         let ground_tile = tilemap.add_tile(TileDef::solid(ground));
-        // Floor (rows 0-1)
         for col in 0..50 {
             tilemap.set(col, 0, Some(ground_tile));
             tilemap.set(col, 1, Some(ground_tile));
         }
-        // Side walls
         for row in 2..20 {
             tilemap.set(0, row, Some(ground_tile));
             tilemap.set(49, row, Some(ground_tile));
         }
-        // Platform P1: cols 5-9, row 4 (top=160, reachable from floor)
         for col in 5..10 {
             tilemap.set(col, 4, Some(ground_tile));
         }
-        // Platform P2: cols 14-19, row 4
         for col in 14..20 {
             tilemap.set(col, 4, Some(ground_tile));
         }
-        // Platform P5: cols 20-26, row 7 (top=256, reachable from P2)
         for col in 20..27 {
             tilemap.set(col, 7, Some(ground_tile));
         }
-        // Platform P3: cols 28-33, row 4
         for col in 28..34 {
             tilemap.set(col, 4, Some(ground_tile));
         }
-        // Platform P4: cols 35-42, row 4 (1-tile gap from P3)
         for col in 35..43 {
             tilemap.set(col, 4, Some(ground_tile));
         }
@@ -502,14 +260,14 @@ impl Scene for GameScene {
         println!("[FEATURE OK] TileMap — 50x20 platformer arena with platforms");
 
         self.coins = vec![
-            Vec2::new(70.0, 72.0),    // floor near start
-            Vec2::new(220.0, 168.0),  // on P1
-            Vec2::new(360.0, 72.0),   // floor between P1 and P2
-            Vec2::new(540.0, 168.0),  // on P2
-            Vec2::new(750.0, 264.0),  // on P5 (high platform)
-            Vec2::new(980.0, 168.0),  // on P3
-            Vec2::new(1250.0, 168.0), // on P4
-            Vec2::new(1420.0, 72.0),  // floor after P4
+            Vec2::new(70.0, 72.0),
+            Vec2::new(220.0, 168.0),
+            Vec2::new(360.0, 72.0),
+            Vec2::new(540.0, 168.0),
+            Vec2::new(750.0, 264.0),
+            Vec2::new(980.0, 168.0),
+            Vec2::new(1250.0, 168.0),
+            Vec2::new(1420.0, 72.0),
         ];
 
         self.player_pos = Vec2::new(100.0, 100.0);
@@ -552,27 +310,23 @@ impl Scene for GameScene {
         let cfg_speed = self.config.as_ref().map_or(250.0, |c| c.move_speed);
         let cfg_jump = self.config.as_ref().map_or(500.0, |c| c.jump_force);
 
-        // ── Demo auto-play: scripted waypoints ──
-        // Each waypoint is (target_x, jump_on_arrival). The AI walks toward
-        // target_x and optionally jumps when it arrives, giving a natural-
-        // looking run through the level.
         const DEMO_STEPS: &[(f32, bool)] = &[
-            (70.0, false),   // walk to floor coin
-            (85.0, true),    // jump to arc onto P1
-            (220.0, false),  // walk to coin on P1
-            (330.0, false),  // walk off P1 edge
-            (360.0, false),  // walk to floor coin
-            (380.0, true),   // jump to arc onto P2
-            (540.0, false),  // walk to coin on P2
-            (560.0, true),   // jump from P2 up to P5
-            (750.0, false),  // walk to coin on P5
-            (930.0, false),  // walk off P5, fall onto P3
-            (980.0, false),  // walk to coin on P3
-            (1080.0, true),  // jump across gap to P4
-            (1250.0, false), // walk to coin on P4
-            (1400.0, false), // walk off P4 to floor
-            (1420.0, false), // walk to floor coin
-            (1500.0, false), // run to end of level
+            (70.0, false),
+            (85.0, true),
+            (220.0, false),
+            (330.0, false),
+            (360.0, false),
+            (380.0, true),
+            (540.0, false),
+            (560.0, true),
+            (750.0, false),
+            (930.0, false),
+            (980.0, false),
+            (1080.0, true),
+            (1250.0, false),
+            (1400.0, false),
+            (1420.0, false),
+            (1500.0, false),
         ];
 
         let is_demo = globals.get::<DemoConfig>().map_or(false, |d| d.enabled);
@@ -599,7 +353,7 @@ impl Scene for GameScene {
                             demo_jump = true;
                             self.demo_step += 1;
                         } else {
-                            demo_jump = false; // wait for landing
+                            demo_jump = false;
                         }
                     } else {
                         demo_jump = false;
@@ -609,7 +363,6 @@ impl Scene for GameScene {
                     demo_jump = false;
                 }
             } else {
-                // All waypoints done — run right
                 demo_move_x = 1.0;
                 demo_jump = false;
             }
@@ -624,11 +377,9 @@ impl Scene for GameScene {
             engine.axis("move_x")
         };
 
-        // ── Horizontal movement ──
         if self.player_on_ground {
             self.player_vel.x = move_x * cfg_speed;
         } else {
-            // Gentle air control
             self.player_vel.x += (move_x * cfg_speed - self.player_vel.x) * (5.0 * fixed_dt);
         }
 
@@ -638,7 +389,6 @@ impl Scene for GameScene {
             self.facing_right = false;
         }
 
-        // ── Jump ──
         let should_jump = demo_jump || (self.jump_buffered && self.player_on_ground);
         self.jump_buffered = false;
         if should_jump && self.player_on_ground {
@@ -646,21 +396,17 @@ impl Scene for GameScene {
             self.player_on_ground = false;
         }
 
-        // ── Gravity (always downward) ──
         self.player_vel.y += cfg_gravity * fixed_dt;
         self.player_pos += self.player_vel * fixed_dt;
 
-        // ── Tilemap collision ──
         self.player_on_ground = false;
         if let Some(tilemap) = &self.tilemap {
             let player_rect = Rect::new(self.player_pos.x, self.player_pos.y, 28.0, 44.0);
             if let Some(mtv) = tilemap.collide_rect(&player_rect) {
                 self.player_pos += mtv;
-                // MTV pushing upward = standing on ground
                 if mtv.y > 0.1 {
                     self.player_on_ground = true;
                 }
-                // Zero out velocity into the surface
                 let mtv_len = mtv.length();
                 if mtv_len > 0.001 {
                     let mtv_norm = mtv / mtv_len;
@@ -675,7 +421,6 @@ impl Scene for GameScene {
             }
         }
 
-        // ── Trigger system tick ──
         let player_rect = Rect::new(self.player_pos.x, self.player_pos.y, 28.0, 44.0);
         self.triggers
             .tick(&[(PLAYER_BODY_ID, player_rect, self.player_layer)]);
@@ -727,22 +472,19 @@ impl Scene for GameScene {
         }
     }
 
-    fn update(&mut self, engine: &Engine, globals: &mut Globals) -> SceneOp {
+    fn update(&mut self, engine: &Engine, globals: &mut Globals, frame: &mut Frame) -> SceneOp {
         let dt = engine.dt();
         self.play_time += dt;
 
-        // Buffer jump input so fixed_update never misses it
         if engine.action_pressed("jump") {
             self.jump_buffered = true;
         }
 
-        // Decay camera tilt back to zero
         self.cam_tilt *= (1.0 - dt * 8.0).max(0.0);
         if self.cam_tilt.abs() < 0.005 {
             self.cam_tilt = 0.0;
         }
 
-        // ── Coin collection (aabb_overlap) ──
         let player_rect = Rect::new(self.player_pos.x, self.player_pos.y, 28.0, 44.0);
         let prev_score = self.score;
         let mut collected = 0u32;
@@ -768,8 +510,7 @@ impl Scene for GameScene {
                 "[FEATURE OK] ParticleEmitter::burst — coin pickup particles (score: {})",
                 self.score
             );
-            // Juicy feedback: shake + tilt on coin pickup
-            self.pending_shake.set(true);
+            self.pending_shake = true;
             self.cam_tilt = 0.07 * if self.facing_right { 1.0 } else { -1.0 };
             self.score_popup.reset();
             if let Some(ref clip) = self.coin_sfx {
@@ -805,7 +546,6 @@ impl Scene for GameScene {
         self.damage_flash = (self.damage_flash - dt).max(0.0);
         self.checkpoint_flash = (self.checkpoint_flash - dt).max(0.0);
 
-        // ── Demo mode: drive features and eventually quit ──
         let is_demo = globals.get::<DemoConfig>().map_or(false, |d| d.enabled);
 
         if is_demo {
@@ -815,7 +555,6 @@ impl Scene for GameScene {
                 self.demo_last_frame = f;
 
                 if f != prev {
-                    // Crossfade to track B to demonstrate crossfade_music
                     if f >= 250 && !self.did_crossfade {
                         self.did_crossfade = true;
                         if let Some(ref clip) = self.music_b {
@@ -823,7 +562,6 @@ impl Scene for GameScene {
                             demo.log_feature("crossfade_music");
                         }
                     }
-                    // Zoom in briefly to demonstrate Camera2D::zoom
                     if f >= 150 && !self.demo_did_zoom {
                         self.demo_did_zoom = true;
                         self.cam_zoom = 1.3;
@@ -844,12 +582,10 @@ impl Scene for GameScene {
                             focus: 0,
                         }));
                     }
-                    // Fade out as demo nears end (one-shot at frame 500)
                     if prev < 500 && f >= 500 {
                         engine.fade_out_music(1.5, Easing::InQuad);
                         demo.log_feature("fade_out_music");
                     }
-                    // Post-processing: toggle vignette effect mid-demo
                     if prev < 200 && f >= 200 {
                         engine.postfx().push(PostEffect::Vignette {
                             intensity: 0.7,
@@ -917,17 +653,13 @@ impl Scene for GameScene {
             }
         }
 
-        SceneOp::Continue
-    }
-
-    fn render(&self, engine: &Engine, globals: &Globals, frame: &mut Frame) {
+        // Camera setup — game logic that belongs in update(), not render()
         frame.clear_color = if self.damage_flash > 0.0 {
             Color::new(0.8, 0.2, 0.2, 1.0)
         } else {
             Color::new(0.4, 0.6, 1.0, 1.0)
         };
 
-        // ── Camera: follow, dead zone, bounds, shake, rotation, zoom ──
         let cam = &mut frame.camera;
         let player_center = self.player_pos + Vec2::new(14.0, 22.0);
         cam.follow(player_center, 6.0);
@@ -937,15 +669,17 @@ impl Scene for GameScene {
             max: Vec2::new(1600.0, 640.0),
         });
         cam.zoom = self.cam_zoom;
-        // Small tilt on jump shakes — purely cosmetic
         cam.rotation = self.cam_tilt;
-        // Cell<bool> lets render() consume the flag despite &self
-        if self.pending_shake.get() {
-            self.pending_shake.set(false);
+        if self.pending_shake {
+            self.pending_shake = false;
             cam.shake(4.0, 0.15);
         }
         cam.update(engine.dt());
 
+        SceneOp::Continue
+    }
+
+    fn render(&self, engine: &Engine, globals: &Globals, frame: &mut Frame) {
         if let Some(bg_tex) = self.bg_tex {
             frame.draw_sprite(
                 DrawParams::new(
@@ -1027,7 +761,6 @@ impl Scene for GameScene {
             Color::new(0.0, 0.0, 0.0, 0.5),
             (sw, sh),
         );
-        // Tween-animated score popup: elastic bounce on coin collection
         let popup_scale = 18.0
             + 10.0
                 * self.score_popup.value()
@@ -1121,7 +854,6 @@ impl Scene for GameScene {
             );
         }
 
-        // World-positioned text: label that tracks the player via Camera2D::world_to_screen
         let player_top = self.player_pos + Vec2::new(14.0, 52.0);
         let sp = frame.camera.world_to_screen(player_top);
         let world_labels = frame.canvas(2);
@@ -1157,317 +889,4 @@ impl Scene for GameScene {
             );
         }
     }
-}
-
-// ──────────────────────────────────────────────────────────────
-// Countdown Scene — gives time to start screen capture before demo
-// ──────────────────────────────────────────────────────────────
-
-struct CountdownScene {
-    timer: f32,
-}
-
-impl CountdownScene {
-    fn new() -> Self {
-        Self { timer: 3.5 }
-    }
-}
-
-impl Scene for CountdownScene {
-    fn on_enter(&mut self, _engine: &mut Engine, _globals: &mut Globals) {
-        println!("[CountdownScene] on_enter — 3 second countdown");
-    }
-
-    fn update(&mut self, engine: &Engine, _globals: &mut Globals) -> SceneOp {
-        self.timer -= engine.dt();
-        if self.timer <= 0.0 {
-            return SceneOp::Switch(Box::new(GameScene::default()));
-        }
-        SceneOp::Continue
-    }
-
-    fn render(&self, engine: &Engine, _globals: &Globals, frame: &mut Frame) {
-        frame.clear_color = Color::new(0.05, 0.05, 0.15, 1.0);
-
-        let (sw, sh) = engine.window_size();
-        let atlas = engine.font_atlas();
-        let canvas = frame.canvas(0);
-
-        let secs = self.timer.ceil() as i32;
-        let label = if secs <= 0 {
-            "GO!".to_string()
-        } else {
-            format!("{secs}")
-        };
-
-        canvas.text(-40.0, 50.0, &label, 80.0, Color::WHITE, (sw, sh), atlas);
-
-        canvas.text(
-            -140.0,
-            -50.0,
-            "Demo starting... start recording!",
-            16.0,
-            Color::new(0.7, 0.7, 0.7, 1.0),
-            (sw, sh),
-            atlas,
-        );
-    }
-
-    fn on_exit(&mut self, _engine: &Engine, _globals: &Globals) {
-        println!("[CountdownScene] on_exit — starting demo");
-    }
-}
-
-// ──────────────────────────────────────────────────────────────
-// Pause Overlay — Push/Pop, transparent overlay, stack rendering
-// ──────────────────────────────────────────────────────────────
-
-struct PauseOverlay {
-    demo_frames: u32,
-    focus: usize,
-}
-
-impl PauseOverlay {
-    fn build_pause_ui(ui: &mut Ui) {
-        ui.label_centered("PAUSED", 40.0, Color::WHITE);
-        ui.separator(12.0);
-        ui.button(0, "Resume");
-        ui.button(1, "Quit");
-    }
-}
-
-impl Scene for PauseOverlay {
-    fn on_enter(&mut self, _engine: &mut Engine, globals: &mut Globals) {
-        if let Some(counter) = globals.get_mut::<TransitionCounter>() {
-            counter.0 += 1;
-        }
-        println!("[PauseOverlay] on_enter");
-        if let Some(demo) = globals.get_mut::<DemoConfig>() {
-            demo.log_feature("Scene::on_enter");
-            demo.log_feature("Ui (widget system)");
-        }
-    }
-
-    fn update(&mut self, engine: &Engine, globals: &mut Globals) -> SceneOp {
-        let is_demo = globals.get::<DemoConfig>().map_or(false, |d| d.enabled);
-
-        if is_demo {
-            self.demo_frames += 1;
-            if self.demo_frames >= 10 {
-                println!("[PauseOverlay] demo: auto-popping after 10 frames");
-                if let Some(demo) = globals.get_mut::<DemoConfig>() {
-                    demo.log_feature("SceneOp::Pop (Unpause)");
-                }
-                return SceneOp::Pop;
-            }
-            return SceneOp::Continue;
-        }
-
-        let (sw, sh) = engine.window_size();
-        let hh = sh as f32 / 2.0;
-        let atlas = engine.font_atlas();
-
-        let mut ui = Ui::new(-100.0, hh - 40.0, 200.0, (sw, sh)).with_focus(self.focus);
-        Self::build_pause_ui(&mut ui);
-        let resp = ui.update(engine.input(), atlas);
-        self.focus = resp.focused.unwrap_or(self.focus);
-
-        if let Some(id) = resp.activated {
-            match id {
-                0 => return SceneOp::Pop,
-                1 => return SceneOp::Quit,
-                _ => {}
-            }
-        }
-
-        if engine.action_pressed("pause") {
-            return SceneOp::Pop;
-        }
-        if engine.gamepad(0).is_button_pressed(GamepadButton::Start) {
-            return SceneOp::Pop;
-        }
-        SceneOp::Continue
-    }
-
-    fn render(&self, engine: &Engine, globals: &Globals, frame: &mut Frame) {
-        let (sw, sh) = engine.window_size();
-        let hw = sw as f32 / 2.0;
-        let hh = sh as f32 / 2.0;
-        let atlas = engine.font_atlas();
-        let overlay = frame.canvas(1);
-
-        overlay.rect(
-            -hw,
-            -hh,
-            sw as f32,
-            sh as f32,
-            Color::new(0.0, 0.0, 0.0, 0.65),
-            (sw, sh),
-        );
-
-        let mut ui = Ui::new(-100.0, hh - 40.0, 200.0, (sw, sh)).with_focus(self.focus);
-        Self::build_pause_ui(&mut ui);
-        ui.render(overlay, atlas);
-
-        if let Some(stats) = globals.get::<PlayerStats>() {
-            overlay.text(
-                -100.0,
-                -60.0,
-                &format!(
-                    "Coins: {} | Best Height: {:.0}",
-                    stats.coins, stats.best_height
-                ),
-                14.0,
-                Color::YELLOW,
-                (sw, sh),
-                atlas,
-            );
-        }
-    }
-
-    fn on_exit(&mut self, _engine: &Engine, _globals: &Globals) {
-        println!("[PauseOverlay] on_exit");
-    }
-}
-
-// ──────────────────────────────────────────────────────────────
-// CLI helpers
-// ──────────────────────────────────────────────────────────────
-
-fn has_flag(flag: &str) -> bool {
-    std::env::args().any(|a| a == flag)
-}
-
-fn arg_value(name: &str) -> Option<String> {
-    let args: Vec<String> = std::env::args().collect();
-    args.iter()
-        .position(|a| a == name)
-        .and_then(|i| args.get(i + 1).cloned())
-}
-
-// ──────────────────────────────────────────────────────────────
-// Entry Point
-// ──────────────────────────────────────────────────────────────
-
-fn main() {
-    let headless = has_flag("--headless");
-    let demo = has_flag("--demo");
-    let max_frames: u32 = arg_value("--frames")
-        .and_then(|f| f.parse().ok())
-        .unwrap_or(600);
-
-    if demo {
-        println!("==============================================");
-        println!("  RENGINE KITCHEN SINK - DEMO MODE");
-        println!("  headless: {}  frames: {}", headless, max_frames);
-        println!("==============================================");
-    }
-
-    rengine::run_with_scenes(
-        EngineConfig {
-            title: "Rengine Kitchen Sink".into(),
-            width: 960,
-            height: 720,
-            vsync: false,
-            headless,
-            hot_reload: !headless,
-            show_fps: !headless,
-            fixed_dt: 1.0 / 60.0,
-            render_width: Some(480),
-            render_height: Some(360),
-            scale_mode: ScaleMode::Letterbox,
-            ..Default::default()
-        },
-        move |engine, globals| {
-            // ── Asset root ──
-            engine.set_asset_root(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets"));
-            println!("[FEATURE OK] Engine::set_asset_root — assets resolve from crate directory");
-            println!(
-                "[FEATURE OK] ScaleMode — game renders at {:?}, window {:?}",
-                engine.game_size(),
-                engine.window_size()
-            );
-
-            // ── Action mapping setup ──
-            let actions = engine.actions_mut();
-
-            actions.bind("confirm", Binding::Key(KeyCode::Enter));
-            actions.bind("confirm", Binding::Key(KeyCode::Space));
-            actions.bind("confirm", Binding::GamepadButton(GamepadButton::South));
-
-            actions.bind("jump", Binding::Key(KeyCode::Space));
-            actions.bind("jump", Binding::Key(KeyCode::ArrowUp));
-            actions.bind("jump", Binding::Key(KeyCode::KeyW));
-            actions.bind("jump", Binding::GamepadButton(GamepadButton::South));
-
-            actions.bind("pause", Binding::Key(KeyCode::KeyP));
-            actions.bind("pause", Binding::Key(KeyCode::Escape));
-
-            actions.bind("quit", Binding::Key(KeyCode::KeyQ));
-            // Quit is only used from menus/pause overlay — not during gameplay
-
-            actions.bind_axis(
-                "move_x",
-                AxisMapping {
-                    positive: vec![
-                        Binding::Key(KeyCode::KeyD),
-                        Binding::Key(KeyCode::ArrowRight),
-                    ],
-                    negative: vec![
-                        Binding::Key(KeyCode::KeyA),
-                        Binding::Key(KeyCode::ArrowLeft),
-                    ],
-                    gamepad_axis: Some(GamepadAxis::LeftStickX),
-                },
-            );
-
-            println!("[FEATURE OK] ActionMap — bound confirm, jump, pause, quit, move_x axis");
-            println!("[FEATURE OK] Binding::Key + Binding::GamepadButton");
-            println!("[FEATURE OK] AxisMapping — move_x with keyboard + GamepadAxis::LeftStickX");
-            println!(
-                "[FEATURE OK] EngineConfig — title, width, height, vsync, headless, \
-                 hot_reload, show_fps, fixed_dt"
-            );
-
-            globals.set(TransitionCounter(0));
-            globals.set(PlayerStats {
-                coins: 0,
-                best_height: 0.0,
-            });
-
-            match SaveSystem::new("rengine-kitchen-sink") {
-                Ok(saves) => {
-                    println!("[FEATURE OK] SaveSystem::new — save dir at {:?}", saves.save_dir());
-                    globals.set(saves);
-                }
-                Err(e) => eprintln!("Warning: could not init SaveSystem: {e}"),
-            }
-
-            globals.set(DemoConfig {
-                enabled: demo,
-                max_frames,
-                frame: 0,
-                features_hit: Vec::new(),
-            });
-
-            println!("[FEATURE OK] Globals::set — TransitionCounter, PlayerStats, SaveSystem, DemoConfig");
-            println!("[FEATURE OK] run_with_scenes — scene-stack entry point");
-
-            if demo {
-                if headless {
-                    println!("[Demo] Headless: skipping countdown, starting GameScene directly");
-                    Box::new(GameScene::default()) as Box<dyn Scene>
-                } else {
-                    println!("[Demo] 3-second countdown before demo starts");
-                    Box::new(CountdownScene::new()) as Box<dyn Scene>
-                }
-            } else {
-                Box::new(TitleScene {
-                    blink_timer: 0.0,
-                    panel: None,
-                }) as Box<dyn Scene>
-            }
-        },
-    )
-    .unwrap();
 }

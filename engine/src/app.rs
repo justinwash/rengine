@@ -504,11 +504,11 @@ impl Engine {
 pub trait Game: 'static + Sized {
     fn new(engine: &mut Engine) -> Self;
 
-    fn update(&mut self, engine: &Engine);
+    fn update(&mut self, engine: &Engine, frame: &mut Frame);
 
     fn fixed_update(&mut self, _engine: &Engine) {}
 
-    fn render(&mut self, engine: &Engine, frame: &mut Frame);
+    fn render(&mut self, _engine: &Engine, _frame: &mut Frame) {}
 
     fn should_exit(&self) -> bool {
         false
@@ -576,6 +576,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
     let mut frame = Frame::new();
 
     if headless {
+        let mut headless_frame = Frame::new();
         loop {
             engine.time.tick();
             engine.gamepads.update();
@@ -584,7 +585,8 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
             while engine.time.consume_fixed_step() {
                 game.fixed_update(&engine);
             }
-            game.update(&engine);
+            headless_frame.begin();
+            game.update(&engine, &mut headless_frame);
             if game.should_exit() {
                 return Ok(());
             }
@@ -641,14 +643,14 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
                     while engine.time.consume_fixed_step() {
                         game.fixed_update(&engine);
                     }
-                    game.update(&engine);
+                    frame.begin();
+                    game.update(&engine, &mut frame);
 
                     if game.should_exit() {
                         target.exit();
                         return;
                     }
 
-                    frame.begin();
                     game.render(&engine, &mut frame);
 
                     if show_fps {
@@ -752,8 +754,9 @@ where
                 }
             }
 
+            frame.begin();
             let op = if let Some(scene) = stack.last_mut() {
-                scene.update(&engine, &mut globals)
+                scene.update(&engine, &mut globals, &mut frame)
             } else {
                 return Ok(());
             };
@@ -822,9 +825,11 @@ where
                         }
                     }
 
+                    frame.begin();
+
                     if transition.is_none() {
                         let op = if let Some(scene) = stack.last_mut() {
-                            scene.update(&engine, &mut globals)
+                            scene.update(&engine, &mut globals, &mut frame)
                         } else {
                             target.exit();
                             return;
@@ -867,7 +872,6 @@ where
                         return;
                     }
 
-                    frame.begin();
                     for scene in stack.iter() {
                         scene.render(&engine, &globals, &mut frame);
                     }
@@ -1332,9 +1336,9 @@ impl Engine3D {
 
 pub trait Game3D: 'static + Sized {
     fn new(engine: &mut Engine3D) -> Self;
-    fn update(&mut self, engine: &Engine3D);
+    fn update(&mut self, engine: &Engine3D, frame: &mut Frame3D);
     fn fixed_update(&mut self, _engine: &Engine3D) {}
-    fn render(&mut self, engine: &Engine3D, frame: &mut Frame3D);
+    fn render(&mut self, _engine: &Engine3D, _frame: &mut Frame3D) {}
     fn should_exit(&self) -> bool {
         false
     }
@@ -1407,7 +1411,8 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
             while engine.time.consume_fixed_step() {
                 game.fixed_update(&engine);
             }
-            game.update(&engine);
+            let mut headless_frame = Frame3D::new();
+            game.update(&engine, &mut headless_frame);
             if game.should_exit() {
                 return Ok(());
             }
@@ -1511,14 +1516,14 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
                     while engine.time.consume_fixed_step() {
                         game.fixed_update(&engine);
                     }
-                    game.update(&engine);
+                    let mut frame = Frame3D::new();
+                    game.update(&engine, &mut frame);
 
                     if game.should_exit() {
                         target.exit();
                         return;
                     }
 
-                    let mut frame = Frame3D::new();
                     game.render(&engine, &mut frame);
 
                     if show_fps {
@@ -1630,8 +1635,9 @@ where
                 }
             }
 
+            let mut headless_frame = Frame3D::new();
             let op = if let Some(scene) = stack.last_mut() {
-                scene.update(&engine, &mut globals)
+                scene.update(&engine, &mut globals, &mut headless_frame)
             } else {
                 return Ok(());
             };
@@ -1745,8 +1751,10 @@ where
                         }
                     }
 
+                    let mut frame = Frame3D::new();
+
                     let op = if let Some(scene) = stack.last_mut() {
-                        scene.update(&engine, &mut globals)
+                        scene.update(&engine, &mut globals, &mut frame)
                     } else {
                         target.exit();
                         return;
@@ -1759,7 +1767,6 @@ where
                         return;
                     }
 
-                    let mut frame = Frame3D::new();
                     for scene in stack.iter() {
                         scene.render(&engine, &globals, &mut frame);
                     }

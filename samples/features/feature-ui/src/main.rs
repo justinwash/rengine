@@ -19,7 +19,7 @@ impl MenuScene {
 impl Scene for MenuScene {
     fn on_enter(&mut self, _engine: &mut Engine, _globals: &mut Globals) {}
 
-    fn update(&mut self, engine: &Engine, _globals: &mut Globals) -> SceneOp {
+    fn update(&mut self, engine: &Engine, _globals: &mut Globals, _frame: &mut Frame) -> SceneOp {
         let (sw, sh) = engine.window_size();
         let atlas = engine.font_atlas();
         let hh = sh as f32 / 2.0;
@@ -115,7 +115,7 @@ impl OptionsScene {
 impl Scene for OptionsScene {
     fn on_enter(&mut self, _engine: &mut Engine, _globals: &mut Globals) {}
 
-    fn update(&mut self, engine: &Engine, _globals: &mut Globals) -> SceneOp {
+    fn update(&mut self, engine: &Engine, _globals: &mut Globals, _frame: &mut Frame) -> SceneOp {
         let (sw, sh) = engine.window_size();
         let atlas = engine.font_atlas();
         let hh = sh as f32 / 2.0;
@@ -228,7 +228,7 @@ impl DemoScene {
 impl Scene for DemoScene {
     fn on_enter(&mut self, _engine: &mut Engine, _globals: &mut Globals) {}
 
-    fn update(&mut self, engine: &Engine, _globals: &mut Globals) -> SceneOp {
+    fn update(&mut self, engine: &Engine, _globals: &mut Globals, _frame: &mut Frame) -> SceneOp {
         let (sw, sh) = engine.window_size();
         let atlas = engine.font_atlas();
         let hh = sh as f32 / 2.0;
@@ -320,7 +320,7 @@ impl GameScene {
 impl Scene for GameScene {
     fn on_enter(&mut self, _engine: &mut Engine, _globals: &mut Globals) {}
 
-    fn update(&mut self, engine: &Engine, _globals: &mut Globals) -> SceneOp {
+    fn update(&mut self, engine: &Engine, _globals: &mut Globals, _frame: &mut Frame) -> SceneOp {
         self.time += engine.dt();
         if engine.input().is_key_pressed(KeyCode::Escape) {
             return SceneOp::Switch(Box::new(MenuScene {

@@ -53,7 +53,7 @@ impl Game for TweenDemo {
         }
     }
 
-    fn update(&mut self, engine: &Engine) {
+    fn update(&mut self, engine: &Engine, _frame: &mut Frame) {
         if engine.input().is_key_pressed(KeyCode::Escape) {
             self.quit = true;
         }

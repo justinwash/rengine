@@ -33,7 +33,7 @@ impl Game3D for FpsGame {
         game
     }
 
-    fn update(&mut self, engine: &Engine3D) {
+    fn update(&mut self, engine: &Engine3D, _frame: &mut Frame3D) {
         let dt = engine.dt();
         let jump_pressed = input::jump_pressed(engine);
         let shoot_pressed = input::shoot_pressed(engine);

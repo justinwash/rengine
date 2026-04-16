@@ -167,7 +167,7 @@ impl Game for FightGame {
         }
     }
 
-    fn update(&mut self, engine: &Engine) {
+    fn update(&mut self, engine: &Engine, _frame: &mut Frame) {
         let prev_p1_hp = self.sim.p1.hp;
         let prev_p2_hp = self.sim.p2.hp;
         let prev_round_pause = self.sim.round_pause;

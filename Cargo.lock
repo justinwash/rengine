@@ -2449,6 +2449,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "rengine-everything"
+version = "0.1.0"
+dependencies = [
+ "rengine",
+ "serde",
+]
+
+[[package]]
 name = "rengine-feature-animation"
 version = "0.1.0"
 dependencies = [
@@ -2474,14 +2482,6 @@ name = "rengine-feature-canvas"
 version = "0.1.0"
 dependencies = [
  "rengine",
-]
-
-[[package]]
-name = "rengine-feature-everything"
-version = "0.1.0"
-dependencies = [
- "rengine",
- "serde",
 ]
 
 [[package]]
