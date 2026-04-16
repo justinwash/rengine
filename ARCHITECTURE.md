@@ -247,6 +247,7 @@ All fields are `pub(crate)` — the game only interacts through accessor methods
 - [`engine.time()`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L63) / [`engine.dt()`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L67) → `&TimeState` / `f32`
 - [`engine.rng()`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs) → `&mut Rng`
 - [`engine.window_size()`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L70) → `(u32, u32)`
+- [`engine.half_size()`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs) → `(f32, f32)` — half of window dimensions, handy for screen-edge positioning
 - [`engine.gamepad(player)`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L74) → `&GamepadState`
 - [`engine.gamepads_connected()`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L78) → `usize`
 - [`engine.asset_root()`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L82) / [`engine.set_asset_root()`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L86)
@@ -845,29 +846,32 @@ A lightweight immediate-mode widget builder for menus, pause screens, and HUDs.
 
 **Single-build pattern:** Store a `Ui` as a field on your scene struct (implements `Default`). Each frame, call `begin()` to reset widgets, add widgets, then call `update()` in `update()` and `render()` in `render()`. Focus and slider-drag state persist automatically across frames — no manual tracking needed. When using `run_with_scenes()`, also prime the widget list in `on_enter()`: a newly pushed or switched scene is rendered before its first `update()`, so building only in `update()` would produce a one-frame blank UI.
 
+`begin()` takes `&Engine` so the Ui can resolve screen-relative positioning internally — game code never needs to call `window_size()` for UI layout. The `top` parameter is an offset from the top of the screen (0 = flush with top edge). Similarly, `update()` and `render()` take `&Engine` to access input and the font atlas, so game code doesn't pass those around.
+
 ```rust
 struct MyScene { ui: Ui }
 
 impl Scene for MyScene {
     fn on_enter(&mut self, engine: &mut Engine, ..) {
-        self.ui.begin(x, y, width);   // prime widgets for the first render
+        self.ui.begin(engine, -120.0, 80.0, 240.0); // x, top-offset, width
         self.ui.button(0, "Play");
     }
     fn update(&mut self, engine: &Engine, ..) -> SceneOp {
-        self.ui.begin(x, y, width);   // clears widgets, keeps focus/drag state
+        self.ui.begin(engine, -120.0, 80.0, 240.0);
         self.ui.button(0, "Play");
-        let resp = self.ui.update(engine.input(), atlas);
+        let resp = self.ui.update(engine);   // input + atlas handled internally
         ..
     }
-    fn render(&self, ..) {
-        self.ui.render(canvas, atlas); // just draws the last-built widget list
+    fn render(&self, engine: &Engine, .., frame: &mut Frame) {
+        let canvas = frame.canvas(0);
+        self.ui.render(canvas, engine);      // atlas handled internally
     }
 }
 ```
 
 - **`Ui::default()`** — Create a default UI context (position 0,0, width 200).
-- **`Ui::new(x, y, width, screen_size)`** — Create a UI context with explicit position and width. Prefer `Default` + `begin()`.
-- **`Ui::begin(x, y, width)`** — Reset widgets and position for the current frame. Preserves `style`, `focus_index`, and `dragging_slider` state.
+- **`Ui::begin(engine, x, top, width)`** — Reset widgets and position for the current frame. `top` is the offset from the top of the screen; the engine provides the screen height. Preserves `style`, `focus_index`, and `dragging_slider` state.
+- **`Ui::begin_at(x, y, width)`** — Same as `begin()` but with an absolute y coordinate instead of a top-offset. Use when you need raw positioning.
 - **`Ui::with_style(style) -> Self`** — Apply a custom `UiStyle` (colors, sizes, padding).
 - **`Ui::with_focus(index) -> Self`** — Override the focused button index.
 - **`Ui::label(text, size, color)`** / **`label_centered(text, size, color)`** — Static text (left-aligned or centered).
@@ -880,13 +884,13 @@ impl Scene for MyScene {
 - **`Ui::slider(id, label, value, min, max)`** — Horizontal slider. Arrow keys adjust by 5% of range; mouse drag maps x position to value.
 - **`Ui::scroll(id, height, scroll_offset, children)`** — Scrollable container. The next `children` widgets are rendered inside a clipped region of the given `height`. Content is offset vertically by `scroll_offset` (0.0 = top). Mouse wheel scrolling updates the offset, returned via `UiResponse::scroll_for(id)`. Uses Canvas `push_clip`/`pop_clip` for GPU scissor-rect clipping. Focusable rects inside the region are clipped to the visible area.
 - **`Ui::separator(height)`** — Vertical gap between widgets.
-- **`Ui::update(input, mouse_pos) -> UiResponse`** — Process keyboard/gamepad/mouse input:
+- **`Ui::update(engine) -> UiResponse`** — Process keyboard/gamepad/mouse input (fetched from engine internally):
   - Arrow Up / W → focus previous; Arrow Down / S → focus next (wraps).
   - Enter / Space → activate focused button, toggle checkbox, or confirm slider.
   - Mouse hover sets focus; mouse click activates.
   - Returns `UiResponse { focused, activated, hovered, toggled, changed_values, scroll_offsets }`.
   - Convenience: `response.was_activated(id)`, `was_toggled(id)`, `value_for(id) -> Option<f32>`, `scroll_for(id) -> Option<f32>`.
-- **`Ui::render(canvas)`** — Draw all widgets into a `Canvas` layer.
+- **`Ui::render(canvas, engine)`** — Draw all widgets into a `Canvas` layer (font atlas fetched from engine internally).
 - **`UiStyle`** — Configurable struct with fields for text, button, panel, progress bar, checkbox, and slider colors/sizes/padding.
 
 ---
@@ -1395,6 +1399,7 @@ Key API:
 
 - `engine.game_size()` — returns `(render_width, render_height)` when set, else `window_size()`
 - `engine.window_size()` — always returns the OS window dimensions
+- `engine.half_size()` — convenience `(w/2.0, h/2.0)` for screen-edge math
 - `engine.set_scale_mode(mode)` — change the scaling policy at runtime
 
 Both `Renderer` (2D) and `Renderer3D` support offscreen targets.
@@ -2076,7 +2081,7 @@ It is a 2D platformer with:
 | [`create_color_texture`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L256)                                                                                                            | `engine.create_color_texture(32, 32, Color::RED)`                                                                                   |
 | [`white_texture()`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L270)                                                                                                                 | `engine.white_texture()` for solid rectangles without a texture file                                                                |
 | Mouse input                                                                                                                                                                                                   | `engine.input().mouse_delta()`, `is_mouse_down(0)`, `is_mouse_pressed(1)`                                                           |
-| [`Ui`](https://github.com/justinwash/rengine/blob/master/engine/src/ui.rs)                                                                                                                                    | `let mut ui = Ui::new(x, y, w, screen); ui.button(0, "Play"); let resp = ui.update(input, atlas); ui.render(canvas, atlas);`        |
+| [`Ui`](https://github.com/justinwash/rengine/blob/master/engine/src/ui.rs)                                                                                                                                    | `ui.begin(engine, x, top, w); ui.button(0, "Play"); let resp = ui.update(engine); ui.render(canvas, engine);`                       |
 
 ---
 
