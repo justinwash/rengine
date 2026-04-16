@@ -684,7 +684,9 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
                         );
                         frame.canvases.push(fps_canvas);
                     }
-                    engine.renderer.render_frame(&mut frame, &engine.postfx_chain);
+                    engine
+                        .renderer
+                        .render_frame(&mut frame, &engine.postfx_chain);
 
                     engine.input.end_frame();
                 }
@@ -937,7 +939,9 @@ where
                         );
                         frame.canvases.push(fps_canvas);
                     }
-                    engine.renderer.render_frame(&mut frame, &engine.postfx_chain);
+                    engine
+                        .renderer
+                        .render_frame(&mut frame, &engine.postfx_chain);
 
                     engine.input.end_frame();
                 }
