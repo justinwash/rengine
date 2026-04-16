@@ -25,7 +25,9 @@ impl Game for RngDemo {
         let floats: Vec<String> = (0..5).map(|_| format!("{:.3}", rng.f32())).collect();
         results.push(format!("5 f32 [0,1): [{}]", floats.join(", ")));
 
-        let coins: Vec<&str> = (0..10).map(|_| if rng.chance(0.5) { "H" } else { "T" }).collect();
+        let coins: Vec<&str> = (0..10)
+            .map(|_| if rng.chance(0.5) { "H" } else { "T" })
+            .collect();
         results.push(format!("10 coin flips: {}", coins.join("")));
 
         let options = ["Common", "Uncommon", "Rare", "Legendary"];
@@ -36,7 +38,14 @@ impl Game for RngDemo {
         }
         results.push(format!(
             "1000 weighted draws: {}={}, {}={}, {}={}, {}={}",
-            options[0], counts[0], options[1], counts[1], options[2], counts[2], options[3], counts[3]
+            options[0],
+            counts[0],
+            options[1],
+            counts[1],
+            options[2],
+            counts[2],
+            options[3],
+            counts[3]
         ));
 
         let mut deck: Vec<i32> = (1..=10).collect();
@@ -73,7 +82,11 @@ impl Game for RngDemo {
         let engine_roll = engine.rng().range(1, 100);
         results.push(format!("engine.rng().range(1,100) = {engine_roll}"));
 
-        Self { seed, results, quit: false }
+        Self {
+            seed,
+            results,
+            quit: false,
+        }
     }
 
     fn update(&mut self, engine: &Engine, _frame: &mut Frame) {
@@ -90,26 +103,51 @@ impl Game for RngDemo {
         let canvas = frame.canvas(0);
 
         canvas.rect(
-            -hw, -hh,
-            sw as f32, sh as f32,
+            -hw,
+            -hh,
+            sw as f32,
+            sh as f32,
             Color::from_rgba8(20, 20, 30, 255),
         );
 
-        canvas.text(-hw + 20.0, hh - 20.0, "Rng Feature Demo", 28.0, Color::WHITE, atlas);
         canvas.text(
-            -hw + 20.0, hh - 52.0 - 18.0,
+            -hw + 20.0,
+            hh - 20.0,
+            "Rng Feature Demo",
+            28.0,
+            Color::WHITE,
+            atlas,
+        );
+        canvas.text(
+            -hw + 20.0,
+            hh - 52.0 - 18.0,
             &format!("Seed: {}", self.seed),
             18.0,
-            Color::from_rgba8(180, 180, 180, 255), atlas,
+            Color::from_rgba8(180, 180, 180, 255),
+            atlas,
         );
 
         let mut y = hh - 90.0;
         for line in &self.results {
-            canvas.text(-hw + 20.0, y, line, 16.0, Color::from_rgba8(200, 220, 255, 255), atlas);
+            canvas.text(
+                -hw + 20.0,
+                y,
+                line,
+                16.0,
+                Color::from_rgba8(200, 220, 255, 255),
+                atlas,
+            );
             y -= 22.0;
         }
 
-        canvas.text(-hw + 20.0, y - 20.0, "ESC to quit", 14.0, Color::from_rgba8(120, 120, 120, 255), atlas);
+        canvas.text(
+            -hw + 20.0,
+            y - 20.0,
+            "ESC to quit",
+            14.0,
+            Color::from_rgba8(120, 120, 120, 255),
+            atlas,
+        );
     }
 
     fn should_exit(&self) -> bool {

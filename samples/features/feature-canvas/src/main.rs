@@ -82,21 +82,9 @@ impl Game for CanvasDemo {
         let bar_h = 24.0;
         let bar_x = -hw + 260.0;
         let bar_y = hh - 110.0 - bar_h;
-        hud.rect(
-            bar_x,
-            bar_y,
-            bar_w,
-            bar_h,
-            Color::new(0.2, 0.2, 0.2, 1.0),
-        );
+        hud.rect(bar_x, bar_y, bar_w, bar_h, Color::new(0.2, 0.2, 0.2, 1.0));
         let fill = ((self.time * 0.3).sin() * 0.5 + 0.5) * bar_w;
-        hud.rect(
-            bar_x,
-            bar_y,
-            fill,
-            bar_h,
-            Color::new(0.3, 0.8, 0.4, 1.0),
-        );
+        hud.rect(bar_x, bar_y, fill, bar_h, Color::new(0.3, 0.8, 0.4, 1.0));
         hud.text(
             bar_x + 8.0,
             bar_y + 18.0,

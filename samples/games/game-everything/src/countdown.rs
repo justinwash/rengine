@@ -1,5 +1,5 @@
-use rengine::*;
 use crate::game::GameScene;
+use rengine::*;
 
 pub struct CountdownScene {
     timer: f32,

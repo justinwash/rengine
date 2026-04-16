@@ -9,7 +9,7 @@ use rengine::{
     Engine3D, EngineConfig, Frame3D, Game3D, OnlineConfig, RollbackConfig, RollbackSession,
     SessionMode,
 };
-use state::{FpsMpGame, FpsInput, FpsSim};
+use state::{FpsInput, FpsMpGame, FpsSim};
 
 pub const MOVE_SPEED: f32 = 6.0;
 pub const MOUSE_SENSITIVITY: f32 = 0.002;
@@ -35,8 +35,7 @@ impl Game3D for FpsMpGame {
         let port: u16 = arg_value("--port")
             .and_then(|p| p.parse().ok())
             .unwrap_or(7000);
-        let remote: String =
-            arg_value("--remote").unwrap_or_else(|| "127.0.0.1:7001".to_string());
+        let remote: String = arg_value("--remote").unwrap_or_else(|| "127.0.0.1:7001".to_string());
         let player: usize = arg_value("--player")
             .and_then(|p| p.parse().ok())
             .unwrap_or(0);

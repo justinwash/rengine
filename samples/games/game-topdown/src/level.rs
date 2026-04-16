@@ -20,9 +20,15 @@ pub fn build(engine: &mut Engine) -> TopDown {
     let stone_uv = world_sheet.uv_rect(2, 0);
     let water_uv = world_sheet.uv_rect(3, 0);
 
-    let player_tex = assets.texture_id("player").expect("manifest missing player texture");
-    let enemy_tex = assets.texture_id("enemy").expect("manifest missing enemy texture");
-    let gem_tex = assets.texture_id("gem").expect("manifest missing gem texture");
+    let player_tex = assets
+        .texture_id("player")
+        .expect("manifest missing player texture");
+    let enemy_tex = assets
+        .texture_id("enemy")
+        .expect("manifest missing enemy texture");
+    let gem_tex = assets
+        .texture_id("gem")
+        .expect("manifest missing gem texture");
 
     let scene = engine
         .load_scene2d(&assets, "world.scene.json")

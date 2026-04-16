@@ -92,10 +92,8 @@ mod tests {
     #[test]
     fn save_load_determinism() {
         let mut sim_base = FightSim::new();
-        let mut all_inputs: Vec<[FightInput; 2]> =
-            Vec::with_capacity(SIXTY_SECONDS as usize);
-        let mut baseline_checksums: Vec<u64> =
-            Vec::with_capacity(SIXTY_SECONDS as usize);
+        let mut all_inputs: Vec<[FightInput; 2]> = Vec::with_capacity(SIXTY_SECONDS as usize);
+        let mut baseline_checksums: Vec<u64> = Vec::with_capacity(SIXTY_SECONDS as usize);
 
         for f in 0..SIXTY_SECONDS {
             let inputs = bot_inputs(&sim_base, f);
@@ -124,10 +122,8 @@ mod tests {
     #[test]
     fn rollback_packet_loss_determinism() {
         let mut sim_base = FightSim::new();
-        let mut all_inputs: Vec<[FightInput; 2]> =
-            Vec::with_capacity(SIXTY_SECONDS as usize);
-        let mut baseline_checksums: Vec<u64> =
-            Vec::with_capacity(SIXTY_SECONDS as usize);
+        let mut all_inputs: Vec<[FightInput; 2]> = Vec::with_capacity(SIXTY_SECONDS as usize);
+        let mut baseline_checksums: Vec<u64> = Vec::with_capacity(SIXTY_SECONDS as usize);
 
         for f in 0..SIXTY_SECONDS {
             let inputs = bot_inputs(&sim_base, f);
