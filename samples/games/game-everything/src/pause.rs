@@ -78,7 +78,6 @@ impl Scene for PauseOverlay {
             sw as f32,
             sh as f32,
             Color::new(0.0, 0.0, 0.0, 0.65),
-            (sw, sh),
         );
 
         let mut ui = Ui::new(-100.0, hh - 40.0, 200.0, (sw, sh)).with_focus(self.focus);
@@ -95,7 +94,6 @@ impl Scene for PauseOverlay {
                 ),
                 14.0,
                 Color::YELLOW,
-                (sw, sh),
                 atlas,
             );
         }

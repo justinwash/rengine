@@ -760,25 +760,28 @@ The engine embeds `assets/font.ttf` at compile time via `include_bytes!()`. At i
 
 ### 6.2 [`Canvas`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs#L42) Drawing
 
-`Canvas` is an immediate-mode 2D drawing API that operates in **world space** (center-origin, Y-up — matching the sprite coordinate system):
+`Canvas` is an immediate-mode 2D drawing API that operates in **world space** (center-origin, Y-up — matching the sprite coordinate system). It stores `screen_size` internally so callers never need to pass it to drawing methods:
 
 ```rust
 pub struct Canvas {
     pub(crate) verts: Vec<CanvasVertex>,
+    screen_size: (u32, u32),
 }
 ```
 
+`Canvas::new(screen_size)` creates a canvas bound to the given resolution. `canvas.screen_size()` returns it. `Frame::begin(screen_size)` and `Frame3D::new(screen_size)` propagate the size to all canvases automatically.
+
 Methods:
 
-- **[`canvas.rect(x, y, w, h, color, screen_size)`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs#L55)** — Draws a solid rectangle. Converts screen coordinates to NDC via `screen_to_ndc()`, uses the `white_uv` from the font atlas so the fragment shader returns a solid color.
-- **[`canvas.line(x0, y0, x1, y1, thickness, color, screen_size)`]** — Thick line between two points. Computes a perpendicular offset vector and emits a quad (two triangles).
-- **[`canvas.polyline(points, thickness, color, screen_size)`]** — Draws connected line segments through a slice of `(f32, f32)` points.
-- **[`canvas.circle(cx, cy, radius, thickness, segments, color, screen_size)`]** — Circle outline via N line segments.
-- **[`canvas.circle_filled(cx, cy, radius, segments, color, screen_size)`]** — Filled circle via a triangle fan from the center.
-- **[`canvas.text(x, y, text, size, color, screen_size, atlas)`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs#L84)** — Renders text by emitting two triangles per visible glyph. Scales glyphs by `size / FONT_SIZE`. Each quad's UV maps to the glyph's region in the font atlas.
-- **[`canvas.text_spans(x, y, spans, size, screen_size, atlas)`]** — Renders colored text spans. Takes `&[(&str, Color)]` and draws each substring in its own color, advancing the cursor.
-- **[`canvas.text_spans_aligned(x, y, spans, size, align, screen_size, atlas)`]** — Like `text_spans` but measures total width first and applies `TextAlign` offset.
-- **[`canvas.shape(triangles)`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs#L51)** — Accepts raw `CanvasVertex` triangles for custom shapes.
+- **`canvas.rect(x, y, w, h, color)`** — Draws a solid rectangle. Converts screen coordinates to NDC via `screen_to_ndc()` using the stored screen size, uses the `white_uv` from the font atlas so the fragment shader returns a solid color.
+- **`canvas.line(x0, y0, x1, y1, thickness, color)`** — Thick line between two points. Computes a perpendicular offset vector and emits a quad (two triangles).
+- **`canvas.polyline(points, thickness, color)`** — Draws connected line segments through a slice of `(f32, f32)` points.
+- **`canvas.circle(cx, cy, radius, thickness, segments, color)`** — Circle outline via N line segments.
+- **`canvas.circle_filled(cx, cy, radius, segments, color)`** — Filled circle via a triangle fan from the center.
+- **`canvas.text(x, y, text, size, color, atlas)`** — Renders text by emitting two triangles per visible glyph. Scales glyphs by `size / FONT_SIZE`. Each quad's UV maps to the glyph's region in the font atlas.
+- **`canvas.text_spans(x, y, spans, size, atlas)`** — Renders colored text spans. Takes `&[(&str, Color)]` and draws each substring in its own color, advancing the cursor.
+- **`canvas.text_spans_aligned(x, y, spans, size, align, atlas)`** — Like `text_spans` but measures total width first and applies `TextAlign` offset.
+- **`canvas.shape(triangles)`** — Accepts raw `CanvasVertex` triangles for custom shapes.
 
 **NDC conversion:**
 
@@ -813,7 +816,7 @@ The canvas pipeline uses `ALPHA_BLENDING` and `LoadOp::Load` (draws on top of ex
 
 ### 6.4 The FPS Counter
 
-When `EngineConfig::show_fps` is true, the engine creates a dedicated canvas, draws a semi-transparent black background rectangle and green FPS text at (8,8) in 16px size. This canvas is appended to `frame.canvases` after the game's render call.
+When `EngineConfig::show_fps` is true, the engine creates a dedicated canvas, draws a semi-transparent black background rectangle and green FPS text at (8,8) in 16px size. This canvas is appended to `frame.canvases` after the game's render call. The `draw_fps()` function receives only `&mut Canvas` and `&FontAtlas` — it reads screen size from the canvas via `canvas.screen_size()`.
 
 ### 6.5 Text Layout (Measurement, Alignment, Wrapping)
 
@@ -822,8 +825,8 @@ Built on top of the existing single-font `FontAtlas` and `Canvas` text renderer:
 - **`FontAtlas::measure_text(text, size) -> (f32, f32)`** — Returns `(width, height)` in pixels for a single line of text at the given size. Sums glyph advance widths scaled by `size / FONT_SIZE`.
 - **`FontAtlas::line_height(size) -> f32`** — Returns the line height in pixels for the given font size.
 - **`TextAlign`** — Enum with `Left`, `Center`, `Right` variants.
-- **`Canvas::text_aligned(x, y, text, size, color, align, screen_size, atlas)`** — Like `text()` but offsets the x position based on alignment: `Left` draws from x, `Center` shifts left by half the measured width, `Right` shifts left by the full measured width.
-- **`Canvas::text_block(x, y, text, size, color, max_width, align, screen_size, atlas)`** — Word-wraps text to fit `max_width`, then draws each line with `text_aligned()`. Lines advance downward by `line_height`.
+- **`Canvas::text_aligned(x, y, text, size, color, align, atlas)`** — Like `text()` but offsets the x position based on alignment: `Left` draws from x, `Center` shifts left by half the measured width, `Right` shifts left by the full measured width.
+- **`Canvas::text_block(x, y, text, size, color, max_width, align, atlas)`** — Word-wraps text to fit `max_width`, then draws each line with `text_aligned()`. Lines advance downward by `line_height`.
 - **`wrap_text(text, size, max_width, atlas) -> Vec<String>`** — Standalone word-wrapping function. Splits on spaces, respects explicit `\n` line breaks. Returns wrapped lines as a `Vec<String>`.
 
 ### 6.6 Immediate-Mode Widget System ([`ui.rs`](https://github.com/justinwash/rengine/blob/master/engine/src/ui.rs))

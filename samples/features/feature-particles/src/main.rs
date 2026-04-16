@@ -129,7 +129,6 @@ impl Game for ParticleDemo {
             "Fire",
             16.0,
             Color::new(1.0, 0.6, 0.1, 1.0),
-            screen,
             &font,
         );
         canvas.text(
@@ -138,7 +137,6 @@ impl Game for ParticleDemo {
             &format!("alive: {}", self.fire.alive_count()),
             14.0,
             Color::new(0.7, 0.7, 0.7, 1.0),
-            screen,
             &font,
         );
 
@@ -148,7 +146,6 @@ impl Game for ParticleDemo {
             "Fountain",
             16.0,
             Color::new(0.3, 0.6, 1.0, 1.0),
-            screen,
             &font,
         );
         canvas.text(
@@ -157,7 +154,6 @@ impl Game for ParticleDemo {
             &format!("alive: {}", self.fountain.alive_count()),
             14.0,
             Color::new(0.7, 0.7, 0.7, 1.0),
-            screen,
             &font,
         );
 
@@ -167,7 +163,6 @@ impl Game for ParticleDemo {
             "Sparkle (Space)",
             16.0,
             Color::YELLOW,
-            screen,
             &font,
         );
         canvas.text(
@@ -176,7 +171,6 @@ impl Game for ParticleDemo {
             &format!("alive: {}", self.sparkle.alive_count()),
             14.0,
             Color::new(0.7, 0.7, 0.7, 1.0),
-            screen,
             &font,
         );
     }

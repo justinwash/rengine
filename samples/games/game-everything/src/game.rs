@@ -759,7 +759,6 @@ impl Scene for GameScene {
             200.0,
             95.0,
             Color::new(0.0, 0.0, 0.0, 0.5),
-            (sw, sh),
         );
         let popup_scale = 18.0
             + 10.0
@@ -775,7 +774,6 @@ impl Scene for GameScene {
             &format!("Coins: {}", self.score),
             popup_scale,
             Color::YELLOW,
-            (sw, sh),
             atlas,
         );
         hud.text(
@@ -784,7 +782,6 @@ impl Scene for GameScene {
             &format!("Height: {:.0}", self.player_pos.y),
             14.0,
             Color::WHITE,
-            (sw, sh),
             atlas,
         );
         hud.text(
@@ -793,7 +790,6 @@ impl Scene for GameScene {
             &format!("Time: {:.1}s", self.play_time),
             14.0,
             Color::WHITE,
-            (sw, sh),
             atlas,
         );
 
@@ -804,7 +800,6 @@ impl Scene for GameScene {
                 &self.checkpoint_msg,
                 14.0,
                 Color::GREEN,
-                (sw, sh),
                 atlas,
             );
         }
@@ -815,7 +810,6 @@ impl Scene for GameScene {
             "WASD: Move | Space: Jump | +/-: Zoom | ESC: Pause/Quit",
             10.0,
             Color::new(1.0, 1.0, 1.0, 0.6),
-            (sw, sh),
             atlas,
         );
 
@@ -826,7 +820,6 @@ impl Scene for GameScene {
             12.0,
             Color::new(0.7, 0.8, 1.0, 0.8),
             TextAlign::Center,
-            (sw, sh),
             atlas,
         );
 
@@ -838,7 +831,6 @@ impl Scene for GameScene {
             Color::new(1.0, 1.0, 1.0, 0.5),
             190.0,
             TextAlign::Left,
-            (sw, sh),
             atlas,
         );
 
@@ -849,7 +841,6 @@ impl Scene for GameScene {
                 &format!("Best height: {:.0}", stats.best_height),
                 12.0,
                 Color::GREEN,
-                (sw, sh),
                 atlas,
             );
         }
@@ -863,7 +854,6 @@ impl Scene for GameScene {
             "Player",
             10.0,
             Color::new(1.0, 1.0, 1.0, 0.7),
-            (sw, sh),
             atlas,
         );
     }

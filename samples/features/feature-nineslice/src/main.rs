@@ -185,7 +185,6 @@ impl Game for NineSliceDemo {
             "NineSlice Feature Demo",
             28.0,
             Color::WHITE,
-            (sw, sh),
             atlas,
         );
         let (tx, ty) = p(20.0, 42.0, 14.0);
@@ -195,22 +194,21 @@ impl Game for NineSliceDemo {
             "Same 32x32 texture drawn at different sizes - corners stay sharp",
             14.0,
             Color::from_rgba8(180, 180, 180, 255),
-            (sw, sh),
             atlas,
         );
 
         for &(lbl, sx, _, _) in panels1 {
             let (tx, ty) = p(sx, r1_lbl_y, ls);
-            canvas.text(tx, ty, lbl, ls, label_color, (sw, sh), atlas);
+            canvas.text(tx, ty, lbl, ls, label_color, atlas);
         }
         let (tx, ty) = p(660.0, r1_lbl_y, ls);
-        canvas.text(tx, ty, "Source (1:1)", ls, label_color, (sw, sh), atlas);
+        canvas.text(tx, ty, "Source (1:1)", ls, label_color, atlas);
         let (tx, ty) = p(740.0, r1_lbl_y, ls);
-        canvas.text(tx, ty, "Naive stretch", ls, label_color, (sw, sh), atlas);
+        canvas.text(tx, ty, "Naive stretch", ls, label_color, atlas);
 
         for &(lbl, sx, _, _) in panels2 {
             let (tx, ty) = p(sx, r2_lbl_y, ls);
-            canvas.text(tx, ty, lbl, ls, label_color, (sw, sh), atlas);
+            canvas.text(tx, ty, lbl, ls, label_color, atlas);
         }
         let (tx, ty) = p(480.0, r2_lbl_y, ls);
         canvas.text(
@@ -219,7 +217,6 @@ impl Game for NineSliceDemo {
             "Tinted (160x130)",
             ls,
             Color::from_rgba8(255, 200, 150, 255),
-            (sw, sh),
             atlas,
         );
 
@@ -230,7 +227,6 @@ impl Game for NineSliceDemo {
             "Animated (resizing)",
             ls,
             anim_label_color,
-            (sw, sh),
             atlas,
         );
         let (tx, ty) = p(220.0, r3_lbl_y, ls);
@@ -240,7 +236,6 @@ impl Game for NineSliceDemo {
             "Animated (width)",
             ls,
             anim_label_color,
-            (sw, sh),
             atlas,
         );
         let (tx, ty) = p(600.0, r3_lbl_y, ls);
@@ -250,7 +245,6 @@ impl Game for NineSliceDemo {
             "Animated (breathing)",
             ls,
             anim_label_color,
-            (sw, sh),
             atlas,
         );
 
@@ -261,7 +255,6 @@ impl Game for NineSliceDemo {
             "ESC to quit",
             14.0,
             Color::from_rgba8(120, 120, 120, 255),
-            (sw, sh),
             atlas,
         );
     }

@@ -51,7 +51,6 @@ pub fn draw(game: &FpsMpGame, engine: &Engine3D, frame: &mut Frame3D) {
         size * 2.0,
         thickness,
         Color::WHITE,
-        screen_size,
     );
     crosshair.rect(
         -thickness / 2.0,
@@ -59,7 +58,6 @@ pub fn draw(game: &FpsMpGame, engine: &Engine3D, frame: &mut Frame3D) {
         thickness,
         size * 2.0,
         Color::WHITE,
-        screen_size,
     );
 
     let hp_frac = player.hp.max(0) as f32 / crate::MAX_HP as f32;
@@ -75,7 +73,6 @@ pub fn draw(game: &FpsMpGame, engine: &Engine3D, frame: &mut Frame3D) {
         bar_w,
         bar_h,
         Color::from_rgba8(60, 60, 60, 200),
-        screen_size,
     );
     let hp_color = if hp_frac > 0.5 {
         Color::from_rgba8(50, 200, 50, 255)
@@ -84,7 +81,7 @@ pub fn draw(game: &FpsMpGame, engine: &Engine3D, frame: &mut Frame3D) {
     } else {
         Color::from_rgba8(220, 40, 40, 255)
     };
-    hud.rect(bar_x, bar_y, bar_w * hp_frac, bar_h, hp_color, screen_size);
+    hud.rect(bar_x, bar_y, bar_w * hp_frac, bar_h, hp_color);
 
     let score_y = bar_y + bar_h + 8.0 + 16.0;
     let my_score = player.score;
@@ -96,7 +93,6 @@ pub fn draw(game: &FpsMpGame, engine: &Engine3D, frame: &mut Frame3D) {
         &format!("Score: {my_score} — {opp_score}"),
         16.0,
         Color::WHITE,
-        screen_size,
         font,
     );
 }

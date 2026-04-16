@@ -183,7 +183,7 @@ impl Game for PostFxDemo {
 
         let names = effect_names();
         let name = names[self.effect_index];
-        let screen_size = engine.window_size();
+        let _screen_size = engine.window_size();
         let atlas = engine.font_atlas();
         let canvas = frame.canvas(0);
         canvas.rect(
@@ -192,7 +192,6 @@ impl Game for PostFxDemo {
             300.0,
             22.0,
             Color::from_rgba8(0, 0, 0, 180),
-            screen_size,
         );
         let info = format!(
             "PostFx: {} [{}/{}] [Left/Right]",
@@ -206,7 +205,6 @@ impl Game for PostFxDemo {
             &info,
             14.0,
             Color::WHITE,
-            screen_size,
             atlas,
         );
     }

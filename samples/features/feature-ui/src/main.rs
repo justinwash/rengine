@@ -71,7 +71,6 @@ impl Scene for MenuScene {
                 12.0,
                 Color::YELLOW,
                 TextAlign::Center,
-                (sw, sh),
                 atlas,
             );
         }
@@ -83,7 +82,6 @@ impl Scene for MenuScene {
             10.0,
             Color::from_rgba8(140, 140, 140, 255),
             TextAlign::Center,
-            (sw, sh),
             atlas,
         );
     }
@@ -157,7 +155,6 @@ impl Scene for OptionsScene {
             fw,
             fh,
             Color::new(0.0, 0.0, 0.0, 0.6),
-            (sw, sh),
         );
 
         let mut ui = Ui::new(-100.0, hh - 60.0, 200.0, (sw, sh))
@@ -174,7 +171,6 @@ impl Scene for OptionsScene {
             10.0,
             Color::from_rgba8(140, 140, 140, 255),
             TextAlign::Center,
-            (sw, sh),
             atlas,
         );
     }
@@ -290,7 +286,6 @@ impl Scene for DemoScene {
             10.0,
             Color::from_rgba8(180, 180, 180, 255),
             TextAlign::Center,
-            (sw, sh),
             atlas,
         );
 
@@ -301,7 +296,6 @@ impl Scene for DemoScene {
             10.0,
             Color::from_rgba8(140, 140, 140, 255),
             TextAlign::Center,
-            (sw, sh),
             atlas,
         );
     }
@@ -332,7 +326,6 @@ impl Scene for GameScene {
     }
 
     fn render(&self, engine: &Engine, _globals: &Globals, frame: &mut Frame) {
-        let (sw, sh) = engine.window_size();
         let atlas = engine.font_atlas();
         frame.clear_color = Color::from_rgba8(20, 30, 50, 255);
 
@@ -344,7 +337,6 @@ impl Scene for GameScene {
             24.0,
             Color::WHITE,
             TextAlign::Center,
-            (sw, sh),
             atlas,
         );
         canvas.text_aligned(
@@ -354,7 +346,6 @@ impl Scene for GameScene {
             16.0,
             Color::from_rgba8(180, 180, 180, 255),
             TextAlign::Center,
-            (sw, sh),
             atlas,
         );
         canvas.text_aligned(
@@ -364,7 +355,6 @@ impl Scene for GameScene {
             12.0,
             Color::from_rgba8(140, 140, 140, 255),
             TextAlign::Center,
-            (sw, sh),
             atlas,
         );
     }

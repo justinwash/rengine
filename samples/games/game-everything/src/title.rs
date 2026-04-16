@@ -94,7 +94,6 @@ impl Scene for TitleScene {
             "RENGINE KITCHEN SINK",
             32.0,
             Color::YELLOW,
-            (sw, sh),
             atlas,
         );
 
@@ -105,7 +104,6 @@ impl Scene for TitleScene {
                 "Press ENTER to start",
                 18.0,
                 Color::WHITE,
-                (sw, sh),
                 atlas,
             );
         }
@@ -117,7 +115,6 @@ impl Scene for TitleScene {
             &format!("Scene transitions: {}", transitions),
             12.0,
             Color::GREEN,
-            (sw, sh),
             atlas,
         );
 
@@ -128,7 +125,6 @@ impl Scene for TitleScene {
                 "(Gamepad detected: press A)",
                 14.0,
                 Color::ORANGE,
-                (sw, sh),
                 atlas,
             );
         }
