@@ -157,6 +157,23 @@ pub struct Ui {
     dragging_slider: Option<usize>,
 }
 
+impl Default for Ui {
+    fn default() -> Self {
+        Self {
+            x: 0.0,
+            y: 0.0,
+            width: 200.0,
+            style: UiStyle::default(),
+            widgets: Vec::new(),
+            focusable_ids: Vec::new(),
+            focus_index: 0,
+            activated: None,
+            mouse_focus: false,
+            dragging_slider: None,
+        }
+    }
+}
+
 impl Ui {
     pub fn new(x: f32, y: f32, width: f32, _screen_size: (u32, u32)) -> Self {
         Self {
@@ -171,6 +188,16 @@ impl Ui {
             mouse_focus: false,
             dragging_slider: None,
         }
+    }
+
+    pub fn begin(&mut self, x: f32, y: f32, width: f32) {
+        self.x = x;
+        self.y = y;
+        self.width = width;
+        self.widgets.clear();
+        self.focusable_ids.clear();
+        self.activated = None;
+        self.mouse_focus = false;
     }
 
     pub fn with_style(mut self, style: UiStyle) -> Self {

@@ -225,13 +225,7 @@ fn draw_hud(game: &FightGame, hud: &mut Canvas, atlas: &FontAtlas) {
     );
     let p2_fill = (game.sim.p2.hp.max(0) as f32 / MAX_HP as f32) * bar_w;
     let p2_color = hp_color(game.sim.p2.hp);
-    hud.rect(
-        p2_bar_x + bar_w - p2_fill,
-        bar_y,
-        p2_fill,
-        bar_h,
-        p2_color,
-    );
+    hud.rect(p2_bar_x + bar_w - p2_fill, bar_y, p2_fill, bar_h, p2_color);
 
     hud.text(
         p1_bar_x,

@@ -111,7 +111,14 @@ impl Game for PixelArtDemo {
 
         let hud = frame.canvas(0);
         hud.rect(-hw, hh - 40.0, sw, 40.0, Color::new(0.08, 0.07, 0.1, 0.95));
-        hud.text(-hw + 16.0, hh - 10.0, "PixelCanvas Procedural Textures", 18.0, Color::WHITE, atlas);
+        hud.text(
+            -hw + 16.0,
+            hh - 10.0,
+            "PixelCanvas Procedural Textures",
+            18.0,
+            Color::WHITE,
+            atlas,
+        );
 
         let cols = 3;
         let spacing = 180.0;
@@ -137,7 +144,14 @@ impl Game for PixelArtDemo {
             frame.draw(*tex, Vec2::new(x, y), size);
 
             let labels = frame.canvas(0);
-            labels.text(x, y - 8.0, label, 13.0, Color::new(0.7, 0.8, 0.9, 1.0), atlas);
+            labels.text(
+                x,
+                y - 8.0,
+                label,
+                13.0,
+                Color::new(0.7, 0.8, 0.9, 1.0),
+                atlas,
+            );
         }
     }
 }

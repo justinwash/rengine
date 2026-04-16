@@ -45,20 +45,8 @@ pub fn draw(game: &FpsMpGame, engine: &Engine3D, frame: &mut Frame3D) {
     let size = 10.0_f32;
     let thickness = 2.0_f32;
     let crosshair = frame.canvas(0);
-    crosshair.rect(
-        -size,
-        -thickness / 2.0,
-        size * 2.0,
-        thickness,
-        Color::WHITE,
-    );
-    crosshair.rect(
-        -thickness / 2.0,
-        -size,
-        thickness,
-        size * 2.0,
-        Color::WHITE,
-    );
+    crosshair.rect(-size, -thickness / 2.0, size * 2.0, thickness, Color::WHITE);
+    crosshair.rect(-thickness / 2.0, -size, thickness, size * 2.0, Color::WHITE);
 
     let hp_frac = player.hp.max(0) as f32 / crate::MAX_HP as f32;
     let bar_w = 200.0_f32;

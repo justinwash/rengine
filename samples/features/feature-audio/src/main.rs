@@ -116,9 +116,16 @@ impl Game for AudioDemo {
         }
 
         if engine.input().is_key_pressed(KeyCode::KeyI) {
-            let clip = if self.on_track_a { &self.track_a } else { &self.track_b };
+            let clip = if self.on_track_a {
+                &self.track_a
+            } else {
+                &self.track_b
+            };
             let _ = engine.fade_in_music(clip, 2.0, Easing::OutQuad);
-            self.status = format!("Fade in: track {} (2s)", if self.on_track_a { "A" } else { "B" });
+            self.status = format!(
+                "Fade in: track {} (2s)",
+                if self.on_track_a { "A" } else { "B" }
+            );
         }
 
         if engine.input().is_key_pressed(KeyCode::Space) {
@@ -144,16 +151,52 @@ impl Game for AudioDemo {
         let c = frame.canvas(10);
         let hh = h as f32 / 2.0;
 
-        c.text_aligned(0.0, hh - 60.0, "Audio Fades Demo", 28.0, Color::WHITE, TextAlign::Center, &font);
+        c.text_aligned(
+            0.0,
+            hh - 60.0,
+            "Audio Fades Demo",
+            28.0,
+            Color::WHITE,
+            TextAlign::Center,
+            &font,
+        );
 
-        c.text_aligned(0.0, hh - 20.0, &self.status, 20.0, Color::YELLOW, TextAlign::Center, &font);
+        c.text_aligned(
+            0.0,
+            hh - 20.0,
+            &self.status,
+            20.0,
+            Color::YELLOW,
+            TextAlign::Center,
+            &font,
+        );
 
-        let fading = if engine.is_audio_fading() { "fading..." } else { "idle" };
-        c.text_aligned(0.0, hh + 10.0, fading, 16.0, Color::from_rgba8(150, 150, 150, 255), TextAlign::Center, &font);
+        let fading = if engine.is_audio_fading() {
+            "fading..."
+        } else {
+            "idle"
+        };
+        c.text_aligned(
+            0.0,
+            hh + 10.0,
+            fading,
+            16.0,
+            Color::from_rgba8(150, 150, 150, 255),
+            TextAlign::Center,
+            &font,
+        );
 
         if !self.demo_mode {
             let help = "[F] crossfade  [I] fade in  [O] fade out  [Space] SFX  [Up/Down] bus vol";
-            c.text_aligned(0.0, -hh + 30.0, help, 14.0, Color::from_rgba8(120, 120, 120, 255), TextAlign::Center, &font);
+            c.text_aligned(
+                0.0,
+                -hh + 30.0,
+                help,
+                14.0,
+                Color::from_rgba8(120, 120, 120, 255),
+                TextAlign::Center,
+                &font,
+            );
         }
     }
 
