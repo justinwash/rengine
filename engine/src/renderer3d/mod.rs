@@ -111,10 +111,8 @@ pub struct Frame3D {
     atlas: *const FontAtlas,
 }
 
-unsafe impl Send for Frame3D {}
-
 impl Frame3D {
-    pub fn new(screen_size: (u32, u32), atlas: *const FontAtlas) -> Self {
+    pub(crate) fn new(screen_size: (u32, u32), atlas: *const FontAtlas) -> Self {
         Self {
             camera: Camera3D::new(),
             viewmodel: Viewmodel3D::new(),
@@ -156,6 +154,7 @@ impl Frame3D {
     }
 
     pub fn canvas(&mut self, index: usize) -> &mut Canvas {
+        assert!(!self.atlas.is_null(), "Frame3D font atlas not initialized");
         let ss = self.screen_size;
         let a = self.atlas;
         if index >= self.canvases.len() {

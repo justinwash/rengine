@@ -61,10 +61,8 @@ pub struct Canvas {
     atlas: *const FontAtlas,
 }
 
-unsafe impl Send for Canvas {}
-
 impl Canvas {
-    pub fn new(screen_size: (u32, u32), atlas: *const FontAtlas) -> Self {
+    pub(crate) fn new(screen_size: (u32, u32), atlas: *const FontAtlas) -> Self {
         Self {
             verts: Vec::new(),
             segments: Vec::new(),
@@ -76,10 +74,16 @@ impl Canvas {
     }
 
     fn atlas(&self) -> &FontAtlas {
-        // SAFETY: Canvas is only created inside Frame, which is stack-local
-        // to a single game-loop iteration. FontAtlas lives inside Engine
-        // for the entire program lifetime, so it always outlives Canvas.
-        unsafe { &*self.atlas }
+        // SAFETY: `Canvas::new` stores a raw pointer to a `FontAtlas`.
+        // The pointer is validated non-null below. The atlas lives inside
+        // Engine for the entire program lifetime, so it always outlives
+        // any Canvas instance.
+        let ptr = self.atlas;
+        assert!(
+            !ptr.is_null(),
+            "Canvas font atlas not initialized; call Frame::begin() before drawing text"
+        );
+        unsafe { &*ptr }
     }
 
     pub fn screen_size(&self) -> (u32, u32) {
@@ -277,7 +281,9 @@ impl Canvas {
     }
 
     pub fn text(&mut self, x: f32, y: f32, text: &str, size: f32, color: Color) {
-        let atlas = unsafe { &*self.atlas };
+        let ptr = self.atlas;
+        assert!(!ptr.is_null(), "Canvas font atlas not initialized");
+        let atlas = unsafe { &*ptr };
         let scale = size / FONT_SIZE;
         let c = color.to_array();
         let mut cursor_x = x;
@@ -352,7 +358,9 @@ impl Canvas {
     }
 
     pub fn text_spans(&mut self, x: f32, y: f32, spans: &[(&str, Color)], size: f32) {
-        let atlas = unsafe { &*self.atlas };
+        let ptr = self.atlas;
+        assert!(!ptr.is_null(), "Canvas font atlas not initialized");
+        let atlas = unsafe { &*ptr };
         let scale = size / FONT_SIZE;
         let mut cursor_x = x;
 
