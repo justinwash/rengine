@@ -7,7 +7,7 @@ pub use mesh::{cube_mesh, floor_quad, wall_quad, MeshId, Vertex3D};
 use crate::app::ScaleMode;
 use crate::assets::Color;
 use crate::canvas::{self, Canvas};
-use crate::text;
+use crate::text::{self, FontAtlas};
 use glam::{Mat4, Quat, Vec3};
 use mesh::Vertex3D as V3;
 
@@ -108,10 +108,13 @@ pub struct Frame3D {
 
     pub(crate) canvases: Vec<Canvas>,
     screen_size: (u32, u32),
+    atlas: *const FontAtlas,
 }
 
+unsafe impl Send for Frame3D {}
+
 impl Frame3D {
-    pub fn new(screen_size: (u32, u32)) -> Self {
+    pub fn new(screen_size: (u32, u32), atlas: *const FontAtlas) -> Self {
         Self {
             camera: Camera3D::new(),
             viewmodel: Viewmodel3D::new(),
@@ -126,6 +129,7 @@ impl Frame3D {
             raw_idxs: Vec::new(),
             canvases: Vec::new(),
             screen_size,
+            atlas,
         }
     }
 
@@ -153,8 +157,9 @@ impl Frame3D {
 
     pub fn canvas(&mut self, index: usize) -> &mut Canvas {
         let ss = self.screen_size;
+        let a = self.atlas;
         if index >= self.canvases.len() {
-            self.canvases.resize_with(index + 1, || Canvas::new(ss));
+            self.canvases.resize_with(index + 1, || Canvas::new(ss, a));
         }
         &mut self.canvases[index]
     }

@@ -113,7 +113,6 @@ impl Game for ResolutionDemo {
 
         let (ww, wh) = engine.window_size();
         let (gw, gh) = engine.game_size();
-        let atlas = engine.font_atlas();
         let hw = ww as f32 / 2.0;
         let hh = wh as f32 / 2.0;
 
@@ -135,7 +134,7 @@ impl Game for ResolutionDemo {
             22.0,
             Color::from_rgba8(0, 0, 0, 180),
         );
-        canvas.text(-hw + 8.0, hh - 8.0, &info, 14.0, Color::WHITE, atlas);
+        canvas.text(-hw + 8.0, hh - 8.0, &info, 14.0, Color::WHITE);
     }
 
     fn should_exit(&self) -> bool {
