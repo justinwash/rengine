@@ -74,6 +74,7 @@ Recently completed or partially completed:
 - Completed: timer and event queue — `Timer` struct with `once()` and `repeating()` constructors, `tick(dt) -> bool`, `fraction()` progress; `EventQueue<E>` generic delayed event scheduler with `schedule(delay, event)` and `tick(dt) -> Vec<E>`
 - Completed: canvas ergonomics — `Canvas` now stores `screen_size` internally. `Canvas::new(screen_size)` constructor, `screen_size()` getter. All shape and text methods (`rect`, `line`, `polyline`, `circle`, `circle_filled`, `text`, `text_aligned`, `text_spans`, `text_spans_aligned`, `text_block`) no longer require a `screen_size` parameter. Text methods still require `&FontAtlas`. `Frame::begin(screen_size)` and `Frame3D::new(screen_size)` propagate screen size to canvases automatically. `draw_fps()` no longer takes `screen_size`. Public `screen_to_ndc(x, y, screen_size)` standalone function unchanged. All samples updated.
 - Completed: UI layout containers — `Row` and `Grid` container widgets. `row(children)` distributes N children equally across the available width. `row_spaced(spacing, children)` adds horizontal gaps. `grid(columns, children)` wraps children into rows of N columns. `grid_spaced(columns, spacing, children)` adds gaps. Both containers track per-row max height so mixed-height children align correctly. Generalized internal Container stack (replaces old panel-only stack) handles Panel, Row, and Grid uniformly in both hit-testing and rendering. Updated `feature-ui` sample with LayoutScene demonstrating all variants.
+- Completed: scroll regions — `Ui::scroll(id, height, scroll_offset, children)` creates a clipped scrollable container. Canvas `push_clip`/`pop_clip` for GPU scissor-rect clipping with segment-based render pass. `InputState::scroll_delta()` for mouse wheel input wired through all event loops. `UiResponse::scroll_for(id)` returns updated offsets. Focusable rects inside scroll regions are clipped to the visible area. Updated `feature-ui` sample with ScrollScene.
 
 ---
 
@@ -203,8 +204,11 @@ These features make 2D development substantially more practical.
 37. Nine-slice support [done]
     `NineSlice` struct with uniform/asymmetric borders, `frame.draw_nine_slice()`, color tinting, z-order, `feature-nineslice` sample.
 
-38. Masking and clipping
-    Essential for UI panels, scroll regions, and some gameplay effects.
+38. Masking and clipping [done]
+    Canvas `push_clip`/`pop_clip` for GPU scissor-rect clipping. Segment-based render pass splits draw calls at clip boundaries. Used by `ScrollRegion` UI widget.
+
+39. Scroll regions [done]
+    `Ui::scroll(id, height, scroll_offset, children)` creates a clipped, scrollable container. Mouse-wheel input via `InputState::scroll_delta()`. Updated offsets returned in `UiResponse::scroll_for(id)`. `feature-ui` sample demonstrates a scrollable button list.
 
 ---
 
