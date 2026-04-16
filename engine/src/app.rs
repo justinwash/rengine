@@ -514,13 +514,12 @@ impl Engine {
     }
 
     pub fn font_atlas(&self) -> &text::FontAtlas {
-        &self.renderer.fonts[0]
+        self.font(text::FontId::DEFAULT)
     }
 
-    pub fn load_font<P: AsRef<Path>>(&mut self, path: P) -> text::FontId {
-        let bytes = std::fs::read(path.as_ref())
-            .unwrap_or_else(|e| panic!("failed to load font {:?}: {}", path.as_ref(), e));
-        self.renderer.load_font(&bytes)
+    pub fn load_font<P: AsRef<Path>>(&mut self, path: P) -> Result<text::FontId, AssetError> {
+        let bytes = self.assets.load_bytes(path)?;
+        Ok(self.renderer.load_font(&bytes))
     }
 
     pub fn font(&self, id: text::FontId) -> &text::FontAtlas {
@@ -1118,13 +1117,12 @@ impl Engine3D {
     }
 
     pub fn font_atlas(&self) -> &text::FontAtlas {
-        &self.renderer.fonts[0]
+        self.font(text::FontId::DEFAULT)
     }
 
-    pub fn load_font<P: AsRef<Path>>(&mut self, path: P) -> text::FontId {
-        let bytes = std::fs::read(path.as_ref())
-            .unwrap_or_else(|e| panic!("failed to load font {:?}: {}", path.as_ref(), e));
-        self.renderer.load_font(&bytes)
+    pub fn load_font<P: AsRef<Path>>(&mut self, path: P) -> Result<text::FontId, AssetError> {
+        let bytes = self.assets.load_bytes(path)?;
+        Ok(self.renderer.load_font(&bytes))
     }
 
     pub fn font(&self, id: text::FontId) -> &text::FontAtlas {

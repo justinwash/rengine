@@ -7,7 +7,8 @@ struct FontsDemo {
 
 impl Game for FontsDemo {
     fn new(engine: &mut Engine) -> Self {
-        let mono = engine.load_font("assets/mono.ttf");
+        let mono_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/mono.ttf");
+        let mono = engine.load_font(&mono_path).expect("failed to load mono font");
         Self { mono, quit: false }
     }
 
