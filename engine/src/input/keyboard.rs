@@ -11,6 +11,7 @@ pub struct InputState {
     mouse_buttons: [bool; 3],
     mouse_buttons_pressed: [bool; 3],
     mouse_buttons_released: [bool; 3],
+    scroll_delta: (f32, f32),
 }
 
 impl InputState {
@@ -24,6 +25,7 @@ impl InputState {
             mouse_buttons: [false; 3],
             mouse_buttons_pressed: [false; 3],
             mouse_buttons_released: [false; 3],
+            scroll_delta: (0.0, 0.0),
         }
     }
 
@@ -63,6 +65,10 @@ impl InputState {
             .get(button)
             .copied()
             .unwrap_or(false)
+    }
+
+    pub fn scroll_delta(&self) -> (f32, f32) {
+        self.scroll_delta
     }
 
     pub(crate) fn handle_key_event(&mut self, key: KeyCode, state: ElementState) {
@@ -105,11 +111,17 @@ impl InputState {
         }
     }
 
+    pub(crate) fn handle_scroll(&mut self, dx: f32, dy: f32) {
+        self.scroll_delta.0 += dx;
+        self.scroll_delta.1 += dy;
+    }
+
     pub(crate) fn end_frame(&mut self) {
         self.keys_pressed.clear();
         self.keys_released.clear();
         self.mouse_delta = (0.0, 0.0);
         self.mouse_buttons_pressed = [false; 3];
         self.mouse_buttons_released = [false; 3];
+        self.scroll_delta = (0.0, 0.0);
     }
 }

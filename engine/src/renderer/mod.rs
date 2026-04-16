@@ -486,7 +486,7 @@ impl Renderer {
         }
     }
 
-    pub fn render_frame(&mut self, frame: &Frame, postfx_chain: &PostFxChain) {
+    pub fn render_frame(&mut self, frame: &mut Frame, postfx_chain: &PostFxChain) {
         let output = match self.surface.get_current_texture() {
             Ok(t) => t,
             Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
@@ -710,7 +710,7 @@ impl Renderer {
             &self.canvas_pipeline,
             &self.canvas_vb,
             &self.queue,
-            &frame.canvases,
+            &mut frame.canvases,
             &self.font_atlas,
         );
 
