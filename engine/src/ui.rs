@@ -1,6 +1,6 @@
+use crate::app::Engine;
 use crate::assets::Color;
 use crate::canvas::{Canvas, TextAlign};
-use crate::input::InputState;
 use crate::text::FontAtlas;
 use winit::keyboard::KeyCode;
 
@@ -175,22 +175,18 @@ impl Default for Ui {
 }
 
 impl Ui {
-    pub fn new(x: f32, y: f32, width: f32, _screen_size: (u32, u32)) -> Self {
-        Self {
-            x,
-            y,
-            width,
-            style: UiStyle::default(),
-            widgets: Vec::new(),
-            focusable_ids: Vec::new(),
-            focus_index: 0,
-            activated: None,
-            mouse_focus: false,
-            dragging_slider: None,
-        }
+    pub fn begin(&mut self, engine: &Engine, x: f32, top: f32, width: f32) {
+        let (_, sh) = engine.window_size();
+        self.x = x;
+        self.y = (sh as f32 / 2.0) - top;
+        self.width = width;
+        self.widgets.clear();
+        self.focusable_ids.clear();
+        self.activated = None;
+        self.mouse_focus = false;
     }
 
-    pub fn begin(&mut self, x: f32, y: f32, width: f32) {
+    pub fn begin_at(&mut self, x: f32, y: f32, width: f32) {
         self.x = x;
         self.y = y;
         self.width = width;
@@ -660,7 +656,9 @@ impl Ui {
         rects
     }
 
-    pub fn update(&mut self, input: &InputState, atlas: &FontAtlas) -> UiResponse {
+    pub fn update(&mut self, engine: &Engine) -> UiResponse {
+        let input = engine.input();
+        let atlas = engine.font_atlas();
         let mut toggled = Vec::new();
         let mut changed_values = Vec::new();
         let mut hovered = None;
@@ -849,7 +847,8 @@ impl Ui {
         }
     }
 
-    pub fn render(&self, canvas: &mut Canvas, atlas: &FontAtlas) {
+    pub fn render(&self, canvas: &mut Canvas, engine: &Engine) {
+        let atlas = engine.font_atlas();
         let mut cursor_y = self.y;
         let mut base_x = self.x;
         let mut current_width = self.width;

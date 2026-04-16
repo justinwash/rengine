@@ -103,6 +103,13 @@ impl Engine {
         (self.window_width, self.window_height)
     }
 
+    pub fn half_size(&self) -> (f32, f32) {
+        (
+            self.window_width as f32 / 2.0,
+            self.window_height as f32 / 2.0,
+        )
+    }
+
     pub fn game_size(&self) -> (u32, u32) {
         self.render_resolution
             .unwrap_or((self.window_width, self.window_height))
@@ -1035,6 +1042,13 @@ impl Engine3D {
     }
     pub fn window_size(&self) -> (u32, u32) {
         (self.window_width, self.window_height)
+    }
+
+    pub fn half_size(&self) -> (f32, f32) {
+        (
+            self.window_width as f32 / 2.0,
+            self.window_height as f32 / 2.0,
+        )
     }
 
     pub fn game_size(&self) -> (u32, u32) {
