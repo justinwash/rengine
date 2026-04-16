@@ -839,6 +839,8 @@ A lightweight immediate-mode widget builder for menus, pause screens, and HUDs. 
 - **`Ui::label(text, size, color)`** / **`label_centered(text, size, color)`** — Static text (left-aligned or centered).
 - **`Ui::button(id, text)`** — Interactive button identified by a numeric `id`.
 - **`Ui::panel(color, padding, children)`** — Background panel that wraps the next `children` widgets with a colored rect and inward padding.
+- **`Ui::row(children)`** / **`row_spaced(spacing, children)`** — Horizontal layout container. The next `children` widgets are placed side-by-side, each getting an equal share of the available width. `row_spaced` adds horizontal gaps between columns.
+- **`Ui::grid(columns, children)`** / **`grid_spaced(columns, spacing, children)`** — Grid layout container. The next `children` widgets wrap into rows of `columns` columns. Each row's height is the tallest child in that row. `grid_spaced` adds horizontal gaps between columns.
 - **`Ui::progress_bar(label, value, color)`** — Horizontal progress bar (`value` in 0.0–1.0) with a text label.
 - **`Ui::checkbox(id, label, checked)`** — Togglable checkbox. Focusable; toggled on Enter/Space or mouse click.
 - **`Ui::slider(id, label, value, min, max)`** — Horizontal slider. Arrow keys adjust by 5% of range; mouse drag maps x position to value.
