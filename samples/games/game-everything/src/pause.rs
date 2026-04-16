@@ -25,17 +25,12 @@ impl Scene for PauseOverlay {
             demo.log_feature("Scene::on_enter");
             demo.log_feature("Ui (widget system)");
         }
-        let (_sw, sh) = engine.window_size();
-        let hh = sh as f32 / 2.0;
-        self.ui.begin(-100.0, hh - 40.0, 200.0);
+        self.ui.begin(engine, -100.0, 40.0, 200.0);
         Self::build_pause_ui(&mut self.ui);
     }
 
     fn update(&mut self, engine: &Engine, globals: &mut Globals, _frame: &mut Frame) -> SceneOp {
-        let (_sw, sh) = engine.window_size();
-        let hh = sh as f32 / 2.0;
-
-        self.ui.begin(-100.0, hh - 40.0, 200.0);
+        self.ui.begin(engine, -100.0, 40.0, 200.0);
         Self::build_pause_ui(&mut self.ui);
 
         let is_demo = globals.get::<DemoConfig>().map_or(false, |d| d.enabled);
@@ -52,8 +47,7 @@ impl Scene for PauseOverlay {
             return SceneOp::Continue;
         }
 
-        let atlas = engine.font_atlas();
-        let resp = self.ui.update(engine.input(), atlas);
+        let resp = self.ui.update(engine);
 
         if let Some(id) = resp.activated {
             match id {
@@ -70,21 +64,19 @@ impl Scene for PauseOverlay {
     }
 
     fn render(&self, engine: &Engine, globals: &Globals, frame: &mut Frame) {
-        let (sw, sh) = engine.window_size();
-        let hw = sw as f32 / 2.0;
-        let hh = sh as f32 / 2.0;
+        let (hw, hh) = engine.half_size();
         let atlas = engine.font_atlas();
         let overlay = frame.canvas(1);
 
         overlay.rect(
             -hw,
             -hh,
-            sw as f32,
-            sh as f32,
+            hw * 2.0,
+            hh * 2.0,
             Color::new(0.0, 0.0, 0.0, 0.65),
         );
 
-        self.ui.render(overlay, atlas);
+        self.ui.render(overlay, engine);
 
         if let Some(stats) = globals.get::<PlayerStats>() {
             overlay.text(
