@@ -37,8 +37,6 @@ pub struct Frame {
     atlas: *const FontAtlas,
 }
 
-unsafe impl Send for Frame {}
-
 impl Frame {
     pub fn new() -> Self {
         Self {
@@ -92,6 +90,10 @@ impl Frame {
     }
 
     pub fn canvas(&mut self, index: usize) -> &mut Canvas {
+        assert!(
+            !self.atlas.is_null(),
+            "Frame font atlas not initialized; call begin() before canvas()"
+        );
         let ss = self.screen_size;
         let a = self.atlas;
         if index >= self.canvases.len() {
