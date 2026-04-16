@@ -39,7 +39,8 @@
     - [6.3 The canvas.wgsl Shader](#63-the-canvaswgsl-shader)
     - [6.4 The FPS Counter](#64-the-fps-counter)
     - [6.5 Text Layout (Measurement, Alignment, Wrapping)](#65-text-layout-measurement-alignment-wrapping)
-    - [6.6 Immediate-Mode Widget System (`ui.rs`)](#66-immediate-mode-widget-system-uirs)
+    - [6.6 Canvas Clipping](#66-canvas-clipping)
+    - [6.7 Immediate-Mode Widget System (`ui.rs`)](#67-immediate-mode-widget-system-uirs)
   - [7. Input System (`input/`)](#7-input-system-input)
     - [7.1 `InputState` — Keyboard State](#71-inputstate--keyboard-state)
     - [7.2 Mouse State](#72-mouse-state)
@@ -829,7 +830,16 @@ Built on top of the existing single-font `FontAtlas` and `Canvas` text renderer:
 - **`Canvas::text_block(x, y, text, size, color, max_width, align, atlas)`** — Word-wraps text to fit `max_width`, then draws each line with `text_aligned()`. Lines advance downward by `line_height`.
 - **`wrap_text(text, size, max_width, atlas) -> Vec<String>`** — Standalone word-wrapping function. Splits on spaces, respects explicit `\n` line breaks. Returns wrapped lines as a `Vec<String>`.
 
-### 6.6 Immediate-Mode Widget System ([`ui.rs`](https://github.com/justinwash/rengine/blob/master/engine/src/ui.rs))
+### 6.6 Canvas Clipping
+
+`Canvas` supports GPU scissor-rect clipping via a clip stack:
+
+- **`canvas.push_clip(x, y, w, h)`** — Push a clip rectangle in center-origin Y-up coordinates. All subsequent drawing is clipped to this rect (intersected with any parent clip). Internally closes the current draw segment and starts a new one with the scissor rect.
+- **`canvas.pop_clip()`** — Pop the most recent clip rectangle. Restores the previous clip (or no clip if the stack is empty).
+- **`DrawSegment`** — Internal struct tracking a contiguous range of vertices sharing the same scissor state. The render pass iterates segments and applies `set_scissor_rect()` per segment when any clip is active.
+- **`canvas.finalize()`** — Called before rendering to close the final open segment. When no clips are used, the render pass falls back to a single draw call.
+
+### 6.7 Immediate-Mode Widget System ([`ui.rs`](https://github.com/justinwash/rengine/blob/master/engine/src/ui.rs))
 
 A lightweight immediate-mode widget builder for menus, pause screens, and HUDs. Each frame you create a `Ui`, add widgets, call `update()` for input handling, and `render()` to draw.
 
@@ -844,13 +854,14 @@ A lightweight immediate-mode widget builder for menus, pause screens, and HUDs. 
 - **`Ui::progress_bar(label, value, color)`** — Horizontal progress bar (`value` in 0.0–1.0) with a text label.
 - **`Ui::checkbox(id, label, checked)`** — Togglable checkbox. Focusable; toggled on Enter/Space or mouse click.
 - **`Ui::slider(id, label, value, min, max)`** — Horizontal slider. Arrow keys adjust by 5% of range; mouse drag maps x position to value.
+- **`Ui::scroll(id, height, scroll_offset, children)`** — Scrollable container. The next `children` widgets are rendered inside a clipped region of the given `height`. Content is offset vertically by `scroll_offset` (0.0 = top). Mouse wheel scrolling updates the offset, returned via `UiResponse::scroll_for(id)`. Uses Canvas `push_clip`/`pop_clip` for GPU scissor-rect clipping. Focusable rects inside the region are clipped to the visible area.
 - **`Ui::separator(height)`** — Vertical gap between widgets.
 - **`Ui::update(input, mouse_pos) -> UiResponse`** — Process keyboard/gamepad/mouse input:
   - Arrow Up / W → focus previous; Arrow Down / S → focus next (wraps).
   - Enter / Space → activate focused button, toggle checkbox, or confirm slider.
   - Mouse hover sets focus; mouse click activates.
-  - Returns `UiResponse { focused, activated, hovered, toggled, changed_values }`.
-  - Convenience: `response.was_activated(id)`, `was_toggled(id)`, `value_for(id) -> Option<f32>`.
+  - Returns `UiResponse { focused, activated, hovered, toggled, changed_values, scroll_offsets }`.
+  - Convenience: `response.was_activated(id)`, `was_toggled(id)`, `value_for(id) -> Option<f32>`, `scroll_for(id) -> Option<f32>`.
 - **`Ui::render(canvas)`** — Draw all widgets into a `Canvas` layer.
 - **`UiStyle`** — Configurable struct with fields for text, button, panel, progress bar, checkbox, and slider colors/sizes/padding.
 
@@ -870,6 +881,7 @@ pub struct InputState {
     mouse_buttons: [bool; 3],          // Held: [Left, Right, Middle]
     mouse_buttons_pressed: [bool; 3],  // Pressed this frame
     mouse_buttons_released: [bool; 3], // Released this frame
+    scroll_delta: (f32, f32),          // Accumulated mouse wheel delta this frame
 }
 ```
 
@@ -884,7 +896,7 @@ pub struct InputState {
 - On `Pressed`: insert into `keys_down`. If it was newly inserted (not already held), also insert into `keys_pressed`.
 - On `Released`: remove from `keys_down`, insert into `keys_released`.
 
-[`end_frame()`](https://github.com/justinwash/rengine/blob/master/engine/src/input/keyboard.rs#L107) clears `keys_pressed`, `keys_released`, `mouse_delta`, and `mouse_buttons_pressed/released`. This ensures "pressed" and "released" are one-frame events.
+[`end_frame()`](https://github.com/justinwash/rengine/blob/master/engine/src/input/keyboard.rs#L107) clears `keys_pressed`, `keys_released`, `mouse_delta`, `mouse_buttons_pressed/released`, and `scroll_delta`. This ensures "pressed" and "released" are one-frame events.
 
 ### 7.2 Mouse State
 
