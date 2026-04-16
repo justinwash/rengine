@@ -20,20 +20,14 @@ impl MenuScene {
 
 impl Scene for MenuScene {
     fn on_enter(&mut self, engine: &mut Engine, _globals: &mut Globals) {
-        let (_sw, sh) = engine.window_size();
-        let hh = sh as f32 / 2.0;
-        self.ui.begin(-120.0, hh - 80.0, 240.0);
+        self.ui.begin(engine, -120.0, 80.0, 240.0);
         Self::build_menu(&mut self.ui);
     }
 
     fn update(&mut self, engine: &Engine, _globals: &mut Globals, _frame: &mut Frame) -> SceneOp {
-        let (_sw, sh) = engine.window_size();
-        let hh = sh as f32 / 2.0;
-        let atlas = engine.font_atlas();
-
-        self.ui.begin(-120.0, hh - 80.0, 240.0);
+        self.ui.begin(engine, -120.0, 80.0, 240.0);
         Self::build_menu(&mut self.ui);
-        let response = self.ui.update(engine.input(), atlas);
+        let response = self.ui.update(engine);
 
         if let Some(id) = response.activated {
             match id {
@@ -54,13 +48,12 @@ impl Scene for MenuScene {
     }
 
     fn render(&self, engine: &Engine, _globals: &Globals, frame: &mut Frame) {
-        let (_sw, sh) = engine.window_size();
-        let hh = sh as f32 / 2.0;
+        let (_, hh) = engine.half_size();
         let atlas = engine.font_atlas();
         frame.clear_color = Color::from_rgba8(25, 25, 40, 255);
 
         let canvas = frame.canvas(0);
-        self.ui.render(canvas, atlas);
+        self.ui.render(canvas, engine);
 
         if !self.message.is_empty() {
             canvas.text_aligned(
@@ -112,20 +105,14 @@ impl OptionsScene {
 impl Scene for OptionsScene {
     fn on_enter(&mut self, engine: &mut Engine, _globals: &mut Globals) {
         self.ui = Ui::default().with_style(Self::options_style());
-        let (_sw, sh) = engine.window_size();
-        let hh = sh as f32 / 2.0;
-        self.ui.begin(-100.0, hh - 60.0, 200.0);
+        self.ui.begin(engine, -100.0, 60.0, 200.0);
         Self::build_options(&mut self.ui);
     }
 
     fn update(&mut self, engine: &Engine, _globals: &mut Globals, _frame: &mut Frame) -> SceneOp {
-        let (_sw, sh) = engine.window_size();
-        let hh = sh as f32 / 2.0;
-        let atlas = engine.font_atlas();
-
-        self.ui.begin(-100.0, hh - 60.0, 200.0);
+        self.ui.begin(engine, -100.0, 60.0, 200.0);
         Self::build_options(&mut self.ui);
-        let response = self.ui.update(engine.input(), atlas);
+        let response = self.ui.update(engine);
 
         if let Some(id) = response.activated {
             if id == 2 {
@@ -141,16 +128,13 @@ impl Scene for OptionsScene {
     }
 
     fn render(&self, engine: &Engine, _globals: &Globals, frame: &mut Frame) {
-        let (sw, sh) = engine.window_size();
-        let hh = sh as f32 / 2.0;
+        let (hw, hh) = engine.half_size();
         let atlas = engine.font_atlas();
 
         let canvas = frame.canvas(1);
-        let fw = sw as f32;
-        let fh = sh as f32;
-        canvas.rect(-fw / 2.0, -hh, fw, fh, Color::new(0.0, 0.0, 0.0, 0.6));
+        canvas.rect(-hw, -hh, hw * 2.0, hh * 2.0, Color::new(0.0, 0.0, 0.0, 0.6));
 
-        self.ui.render(canvas, atlas);
+        self.ui.render(canvas, engine);
 
         canvas.text_aligned(
             0.0,
@@ -217,9 +201,7 @@ impl DemoScene {
 
 impl Scene for DemoScene {
     fn on_enter(&mut self, engine: &mut Engine, _globals: &mut Globals) {
-        let (_sw, sh) = engine.window_size();
-        let hh = sh as f32 / 2.0;
-        self.ui.begin(-180.0, hh - 40.0, 360.0);
+        self.ui.begin(engine, -180.0, 40.0, 360.0);
         Self::build_widgets(
             &mut self.ui,
             self.health,
@@ -232,11 +214,7 @@ impl Scene for DemoScene {
     }
 
     fn update(&mut self, engine: &Engine, _globals: &mut Globals, _frame: &mut Frame) -> SceneOp {
-        let (_sw, sh) = engine.window_size();
-        let hh = sh as f32 / 2.0;
-        let atlas = engine.font_atlas();
-
-        self.ui.begin(-180.0, hh - 40.0, 360.0);
+        self.ui.begin(engine, -180.0, 40.0, 360.0);
         Self::build_widgets(
             &mut self.ui,
             self.health,
@@ -246,7 +224,7 @@ impl Scene for DemoScene {
             self.speed,
             self.volume,
         );
-        let response = self.ui.update(engine.input(), atlas);
+        let response = self.ui.update(engine);
 
         if response.was_toggled(10) {
             self.fullscreen = !self.fullscreen;
@@ -272,13 +250,12 @@ impl Scene for DemoScene {
     }
 
     fn render(&self, engine: &Engine, _globals: &Globals, frame: &mut Frame) {
-        let (_sw, sh) = engine.window_size();
-        let hh = sh as f32 / 2.0;
+        let (_, hh) = engine.half_size();
         let atlas = engine.font_atlas();
         frame.clear_color = Color::from_rgba8(20, 20, 35, 255);
 
         let canvas = frame.canvas(0);
-        self.ui.render(canvas, atlas);
+        self.ui.render(canvas, engine);
 
         let mouse = engine.mouse_screen_pos();
         canvas.text_aligned(
@@ -367,20 +344,14 @@ impl LayoutScene {
 
 impl Scene for LayoutScene {
     fn on_enter(&mut self, engine: &mut Engine, _globals: &mut Globals) {
-        let (_sw, sh) = engine.window_size();
-        let hh = sh as f32 / 2.0;
-        self.ui.begin(-200.0, hh - 30.0, 400.0);
+        self.ui.begin(engine, -200.0, 30.0, 400.0);
         Self::build_widgets(&mut self.ui);
     }
 
     fn update(&mut self, engine: &Engine, _globals: &mut Globals, _frame: &mut Frame) -> SceneOp {
-        let (_sw, sh) = engine.window_size();
-        let hh = sh as f32 / 2.0;
-        let atlas = engine.font_atlas();
-
-        self.ui.begin(-200.0, hh - 30.0, 400.0);
+        self.ui.begin(engine, -200.0, 30.0, 400.0);
         Self::build_widgets(&mut self.ui);
-        let response = self.ui.update(engine.input(), atlas);
+        let response = self.ui.update(engine);
 
         if response.was_activated(99) || engine.input().is_key_pressed(KeyCode::Escape) {
             return SceneOp::Pop;
@@ -390,13 +361,12 @@ impl Scene for LayoutScene {
     }
 
     fn render(&self, engine: &Engine, _globals: &Globals, frame: &mut Frame) {
-        let (_sw, sh) = engine.window_size();
-        let hh = sh as f32 / 2.0;
+        let (_, hh) = engine.half_size();
         let atlas = engine.font_atlas();
         frame.clear_color = Color::from_rgba8(25, 20, 35, 255);
 
         let canvas = frame.canvas(0);
-        self.ui.render(canvas, atlas);
+        self.ui.render(canvas, engine);
 
         canvas.text_aligned(
             0.0,
@@ -451,20 +421,14 @@ impl ScrollScene {
 
 impl Scene for ScrollScene {
     fn on_enter(&mut self, engine: &mut Engine, _globals: &mut Globals) {
-        let (_sw, sh) = engine.window_size();
-        let hh = sh as f32 / 2.0;
-        self.ui.begin(-200.0, hh - 30.0, 400.0);
+        self.ui.begin(engine, -200.0, 30.0, 400.0);
         Self::build_widgets(&mut self.ui, self.scroll_offset);
     }
 
     fn update(&mut self, engine: &Engine, _globals: &mut Globals, _frame: &mut Frame) -> SceneOp {
-        let (_sw, sh) = engine.window_size();
-        let hh = sh as f32 / 2.0;
-        let atlas = engine.font_atlas();
-
-        self.ui.begin(-200.0, hh - 30.0, 400.0);
+        self.ui.begin(engine, -200.0, 30.0, 400.0);
         Self::build_widgets(&mut self.ui, self.scroll_offset);
-        let response = self.ui.update(engine.input(), atlas);
+        let response = self.ui.update(engine);
 
         if let Some(offset) = response.scroll_for(100) {
             self.scroll_offset = offset;
@@ -478,13 +442,12 @@ impl Scene for ScrollScene {
     }
 
     fn render(&self, engine: &Engine, _globals: &Globals, frame: &mut Frame) {
-        let (_sw, sh) = engine.window_size();
-        let hh = sh as f32 / 2.0;
+        let (_, hh) = engine.half_size();
         let atlas = engine.font_atlas();
         frame.clear_color = Color::from_rgba8(25, 20, 35, 255);
 
         let canvas = frame.canvas(0);
-        self.ui.render(canvas, atlas);
+        self.ui.render(canvas, engine);
 
         canvas.text_aligned(
             0.0,
