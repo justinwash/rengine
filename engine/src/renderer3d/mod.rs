@@ -376,13 +376,8 @@ impl Renderer3D {
 
     pub(crate) fn load_font(&mut self, font_bytes: &[u8]) -> text::FontId {
         let id = text::FontId(self.fonts.len());
-        let atlas = text::build_atlas_from_bytes(
-            &self.device,
-            &self.queue,
-            &self.font_bgl,
-            font_bytes,
-            id,
-        );
+        let atlas =
+            text::build_atlas_from_bytes(&self.device, &self.queue, &self.font_bgl, font_bytes, id);
         self.fonts.push(atlas);
         id
     }

@@ -277,7 +277,7 @@ impl Canvas {
     }
 
     pub fn text(&mut self, x: f32, y: f32, text: &str, size: f32, color: Color, atlas: &FontAtlas) {
-        self.set_font(atlas.id.0);
+        self.set_font(atlas.id().0);
         let scale = size / FONT_SIZE;
         let c = color.to_array();
         let mut cursor_x = x;
@@ -359,7 +359,7 @@ impl Canvas {
         size: f32,
         atlas: &FontAtlas,
     ) {
-        self.set_font(atlas.id.0);
+        self.set_font(atlas.id().0);
         let scale = size / FONT_SIZE;
         let mut cursor_x = x;
 
@@ -656,7 +656,9 @@ pub(crate) fn render_pass(
     pass.set_bind_group(0, &fonts[0].bind_group, &[]);
     pass.set_vertex_buffer(0, vertex_buffer.slice(..));
 
-    let needs_per_segment = global_segments.iter().any(|(_, _, s, f)| s.is_some() || *f != 0);
+    let needs_per_segment = global_segments
+        .iter()
+        .any(|(_, _, s, f)| s.is_some() || *f != 0);
 
     if needs_per_segment {
         let surface_w = canvases.first().map(|c| c.screen_size.0).unwrap_or(1);
