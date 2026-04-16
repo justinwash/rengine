@@ -89,7 +89,6 @@ impl Game for ResolutionDemo {
 
         let (ww, wh) = engine.window_size();
         let (gw, gh) = engine.game_size();
-        let _screen_size = engine.window_size();
         let atlas = engine.font_atlas();
         let hw = ww as f32 / 2.0;
         let hh = wh as f32 / 2.0;

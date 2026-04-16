@@ -3,7 +3,7 @@ use rengine::{Color, Engine3D, Frame3D, Vec3};
 use crate::state::FpsGame;
 use crate::{VIEWMODEL_FOV_DEG, WORLD_FOV_DEG};
 
-pub fn draw(game: &FpsGame, engine: &Engine3D, frame: &mut Frame3D) {
+pub fn draw(game: &FpsGame, _engine: &Engine3D, frame: &mut Frame3D) {
     frame.clear_color = Color::from_rgba8(20, 20, 30, 255);
     frame.light_dir = Vec3::new(0.3, 0.8, 0.4).normalize();
     frame.light_intensity = 0.7;
@@ -46,7 +46,6 @@ pub fn draw(game: &FpsGame, engine: &Engine3D, frame: &mut Frame3D) {
         }
     }
 
-    let _screen_size = engine.window_size();
     let size = 10.0_f32;
     let thickness = 2.0_f32;
     let crosshair = frame.canvas(0);

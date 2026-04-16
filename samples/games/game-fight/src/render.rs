@@ -4,7 +4,6 @@ use crate::state::{Facing, FightGame, FighterData, FighterState, FighterTextures
 use crate::{FIGHTER_H, FIGHTER_W, GROUND_Y, MAX_HP, SCREEN_H, SCREEN_W};
 
 pub fn draw(game: &FightGame, engine: &Engine, frame: &mut Frame) {
-    let _screen = engine.window_size();
     frame.clear_color = Color::from_rgba8(10, 8, 20, 255);
 
     frame.camera.position = Vec2::new(SCREEN_W as f32 / 2.0, SCREEN_H as f32 / 2.0);

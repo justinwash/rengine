@@ -96,15 +96,7 @@ impl Canvas {
         self.verts.extend_from_slice(&[v0, v2, v1, v0, v3, v2]);
     }
 
-    pub fn line(
-        &mut self,
-        x0: f32,
-        y0: f32,
-        x1: f32,
-        y1: f32,
-        thickness: f32,
-        color: Color,
-    ) {
+    pub fn line(&mut self, x0: f32, y0: f32, x1: f32, y1: f32, thickness: f32, color: Color) {
         let dx = x1 - x0;
         let dy = y1 - y0;
         let len = (dx * dx + dy * dy).sqrt();
@@ -121,19 +113,30 @@ impl Canvas {
         let cc = screen_to_ndc(x1 - nx, y1 - ny, self.screen_size);
         let d = screen_to_ndc(x1 + nx, y1 + ny, self.screen_size);
 
-        let va = CanvasVertex { position: a, color: c, uv };
-        let vb = CanvasVertex { position: b, color: c, uv };
-        let vc = CanvasVertex { position: cc, color: c, uv };
-        let vd = CanvasVertex { position: d, color: c, uv };
+        let va = CanvasVertex {
+            position: a,
+            color: c,
+            uv,
+        };
+        let vb = CanvasVertex {
+            position: b,
+            color: c,
+            uv,
+        };
+        let vc = CanvasVertex {
+            position: cc,
+            color: c,
+            uv,
+        };
+        let vd = CanvasVertex {
+            position: d,
+            color: c,
+            uv,
+        };
         self.verts.extend_from_slice(&[va, vc, vd, va, vb, vc]);
     }
 
-    pub fn polyline(
-        &mut self,
-        points: &[(f32, f32)],
-        thickness: f32,
-        color: Color,
-    ) {
+    pub fn polyline(&mut self, points: &[(f32, f32)], thickness: f32, color: Color) {
         for pair in points.windows(2) {
             self.line(pair[0].0, pair[0].1, pair[1].0, pair[1].1, thickness, color);
         }
@@ -163,39 +166,44 @@ impl Canvas {
         }
     }
 
-    pub fn circle_filled(
-        &mut self,
-        cx: f32,
-        cy: f32,
-        radius: f32,
-        segments: u32,
-        color: Color,
-    ) {
+    pub fn circle_filled(&mut self, cx: f32, cy: f32, radius: f32, segments: u32, color: Color) {
         let c = color.to_array();
         let uv = WHITE_UV;
         let center = screen_to_ndc(cx, cy, self.screen_size);
-        let vc = CanvasVertex { position: center, color: c, uv };
+        let vc = CanvasVertex {
+            position: center,
+            color: c,
+            uv,
+        };
         let step = std::f32::consts::TAU / segments as f32;
         for i in 0..segments {
             let a0 = step * i as f32;
             let a1 = step * (i + 1) as f32;
-            let p0 = screen_to_ndc(cx + a0.cos() * radius, cy + a0.sin() * radius, self.screen_size);
-            let p1 = screen_to_ndc(cx + a1.cos() * radius, cy + a1.sin() * radius, self.screen_size);
-            let v0 = CanvasVertex { position: p0, color: c, uv };
-            let v1 = CanvasVertex { position: p1, color: c, uv };
+            let p0 = screen_to_ndc(
+                cx + a0.cos() * radius,
+                cy + a0.sin() * radius,
+                self.screen_size,
+            );
+            let p1 = screen_to_ndc(
+                cx + a1.cos() * radius,
+                cy + a1.sin() * radius,
+                self.screen_size,
+            );
+            let v0 = CanvasVertex {
+                position: p0,
+                color: c,
+                uv,
+            };
+            let v1 = CanvasVertex {
+                position: p1,
+                color: c,
+                uv,
+            };
             self.verts.extend_from_slice(&[vc, v0, v1]);
         }
     }
 
-    pub fn text(
-        &mut self,
-        x: f32,
-        y: f32,
-        text: &str,
-        size: f32,
-        color: Color,
-        atlas: &FontAtlas,
-    ) {
+    pub fn text(&mut self, x: f32, y: f32, text: &str, size: f32, color: Color, atlas: &FontAtlas) {
         let scale = size / FONT_SIZE;
         let c = color.to_array();
         let mut cursor_x = x;
@@ -301,10 +309,26 @@ impl Canvas {
                     let [x0, y0] = screen_to_ndc(gx, gy, self.screen_size);
                     let [x1, y1] = screen_to_ndc(gx + gw, gy + gh, self.screen_size);
 
-                    let v0 = CanvasVertex { position: [x0, y0], color: c, uv: [entry.u0, entry.v1] };
-                    let v1 = CanvasVertex { position: [x1, y0], color: c, uv: [entry.u1, entry.v1] };
-                    let v2 = CanvasVertex { position: [x1, y1], color: c, uv: [entry.u1, entry.v0] };
-                    let v3 = CanvasVertex { position: [x0, y1], color: c, uv: [entry.u0, entry.v0] };
+                    let v0 = CanvasVertex {
+                        position: [x0, y0],
+                        color: c,
+                        uv: [entry.u0, entry.v1],
+                    };
+                    let v1 = CanvasVertex {
+                        position: [x1, y0],
+                        color: c,
+                        uv: [entry.u1, entry.v1],
+                    };
+                    let v2 = CanvasVertex {
+                        position: [x1, y1],
+                        color: c,
+                        uv: [entry.u1, entry.v0],
+                    };
+                    let v3 = CanvasVertex {
+                        position: [x0, y1],
+                        color: c,
+                        uv: [entry.u0, entry.v0],
+                    };
                     self.verts.extend_from_slice(&[v0, v2, v1, v0, v3, v2]);
                 }
 
@@ -325,7 +349,10 @@ impl Canvas {
         let offset = if align == TextAlign::Left {
             0.0
         } else {
-            let total_w: f32 = spans.iter().map(|(s, _)| atlas.measure_text(s, size).0).sum();
+            let total_w: f32 = spans
+                .iter()
+                .map(|(s, _)| atlas.measure_text(s, size).0)
+                .sum();
             match align {
                 TextAlign::Center => -total_w / 2.0,
                 TextAlign::Right => -total_w,
