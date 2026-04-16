@@ -76,6 +76,15 @@ enum Widget {
         padding: f32,
         children: usize,
     },
+    Row {
+        spacing: f32,
+        children: usize,
+    },
+    Grid {
+        columns: usize,
+        spacing: f32,
+        children: usize,
+    },
     ProgressBar {
         label: String,
         value: f32,
@@ -243,6 +252,39 @@ impl Ui {
         });
     }
 
+    /// Lay out the next `children` widgets horizontally in a single row.
+    /// Each child gets an equal share of the current width.
+    pub fn row(&mut self, children: usize) {
+        self.widgets.push(Widget::Row {
+            spacing: self.style.spacing,
+            children,
+        });
+    }
+
+    /// Lay out the next `children` widgets horizontally with custom inter-column spacing.
+    pub fn row_spaced(&mut self, spacing: f32, children: usize) {
+        self.widgets.push(Widget::Row { spacing, children });
+    }
+
+    /// Lay out the next `children` widgets in a grid with the given number of columns.
+    /// Rows wrap automatically. Each cell gets an equal share of the current width.
+    pub fn grid(&mut self, columns: usize, children: usize) {
+        self.widgets.push(Widget::Grid {
+            columns: columns.max(1),
+            spacing: self.style.spacing,
+            children,
+        });
+    }
+
+    /// Lay out the next `children` widgets in a grid with custom inter-cell spacing.
+    pub fn grid_spaced(&mut self, columns: usize, spacing: f32, children: usize) {
+        self.widgets.push(Widget::Grid {
+            columns: columns.max(1),
+            spacing,
+            children,
+        });
+    }
+
     fn compute_widget_height(
         &self,
         widget: &Widget,
@@ -284,6 +326,44 @@ impl Ui {
                 }
                 h
             }
+            Widget::Row {
+                children, ..
+            } => {
+                let n = (*children).min(remaining.len());
+                let child_slice = &remaining[..n];
+                let mut max_h: f32 = 0.0;
+                let mut ci = 0;
+                while ci < child_slice.len() {
+                    let ch =
+                        self.compute_widget_height(&child_slice[ci], &child_slice[ci + 1..], atlas);
+                    max_h = max_h.max(ch);
+                    ci += 1;
+                }
+                max_h + self.style.spacing
+            }
+            Widget::Grid {
+                columns,
+                children,
+                ..
+            } => {
+                let n = (*children).min(remaining.len());
+                let child_slice = &remaining[..n];
+                let cols = (*columns).max(1);
+                let mut total_h: f32 = 0.0;
+                let mut row_max: f32 = 0.0;
+                let mut ci = 0;
+                while ci < child_slice.len() {
+                    let ch =
+                        self.compute_widget_height(&child_slice[ci], &child_slice[ci + 1..], atlas);
+                    row_max = row_max.max(ch);
+                    if (ci + 1) % cols == 0 || ci + 1 == child_slice.len() {
+                        total_h += row_max;
+                        row_max = 0.0;
+                    }
+                    ci += 1;
+                }
+                total_h + self.style.spacing
+            }
         }
     }
 
@@ -292,12 +372,29 @@ impl Ui {
         let mut cursor_y = self.y;
         let mut base_x = self.x;
         let mut current_width = self.width;
-        let mut panel_stack: Vec<(f32, f32, f32)> = Vec::new();
-        let mut panel_counters: Vec<usize> = Vec::new();
+
+        // Container stack: each entry stores the saved layout state and remaining child count.
+        // kind: 0=panel, 1=row, 2=grid
+        struct Container {
+            kind: u8,
+            saved_x: f32,
+            saved_width: f32,
+            remaining: usize,
+            // Panel fields
+            padding: f32,
+            // Row/Grid fields
+            col_index: usize,
+            col_count: usize,
+            col_width: f32,
+            col_spacing: f32,
+            row_start_y: f32,
+            row_max_h: f32,
+        }
+        let mut stack: Vec<Container> = Vec::new();
 
         let mut i = 0;
         while i < self.widgets.len() {
-            let mut pending_panel: Option<(f32, usize)> = None;
+            let mut pending: Option<Container> = None;
 
             match &self.widgets[i] {
                 Widget::Label { size, .. } => {
@@ -317,7 +414,59 @@ impl Ui {
                 Widget::Panel {
                     padding, children, ..
                 } => {
-                    pending_panel = Some((*padding, *children));
+                    pending = Some(Container {
+                        kind: 0,
+                        saved_x: base_x,
+                        saved_width: current_width,
+                        remaining: *children,
+                        padding: *padding,
+                        col_index: 0,
+                        col_count: 0,
+                        col_width: 0.0,
+                        col_spacing: 0.0,
+                        row_start_y: 0.0,
+                        row_max_h: 0.0,
+                    });
+                }
+                Widget::Row { spacing, children } => {
+                    let cols = (*children).max(1);
+                    let total_gap = *spacing * (cols as f32 - 1.0).max(0.0);
+                    let cw = (current_width - total_gap) / cols as f32;
+                    pending = Some(Container {
+                        kind: 1,
+                        saved_x: base_x,
+                        saved_width: current_width,
+                        remaining: *children,
+                        padding: 0.0,
+                        col_index: 0,
+                        col_count: cols,
+                        col_width: cw,
+                        col_spacing: *spacing,
+                        row_start_y: cursor_y,
+                        row_max_h: 0.0,
+                    });
+                }
+                Widget::Grid {
+                    columns,
+                    spacing,
+                    children,
+                } => {
+                    let cols = (*columns).max(1);
+                    let total_gap = *spacing * (cols as f32 - 1.0).max(0.0);
+                    let cw = (current_width - total_gap) / cols as f32;
+                    pending = Some(Container {
+                        kind: 2,
+                        saved_x: base_x,
+                        saved_width: current_width,
+                        remaining: *children,
+                        padding: 0.0,
+                        col_index: 0,
+                        col_count: cols,
+                        col_width: cw,
+                        col_spacing: *spacing,
+                        row_start_y: cursor_y,
+                        row_max_h: 0.0,
+                    });
                 }
                 Widget::ProgressBar { .. } => {
                     let lh = atlas.line_height(self.style.text_size);
@@ -340,28 +489,88 @@ impl Ui {
                 }
             }
 
-            for counter in panel_counters.iter_mut().rev() {
-                if *counter > 0 {
-                    *counter -= 1;
-                    if *counter == 0 {
-                        if let Some((old_x, old_w, padding)) = panel_stack.pop() {
-                            cursor_y -= padding;
-                            base_x = old_x;
-                            current_width = old_w;
-                            cursor_y -= self.style.spacing;
+            // Decrement container child counters and pop finished containers
+            let mut pop_idx = None;
+            for (si, cont) in stack.iter_mut().enumerate().rev() {
+                if cont.remaining > 0 {
+                    cont.remaining -= 1;
+
+                    // For Row/Grid, track column position
+                    if cont.kind >= 1 {
+                        let used_h = cont.row_start_y - cursor_y;
+                        if used_h > cont.row_max_h {
+                            cont.row_max_h = used_h;
                         }
+                        cont.col_index += 1;
+
+                        let end_of_row = cont.col_index >= cont.col_count;
+                        let last_child = cont.remaining == 0;
+
+                        if end_of_row || last_child {
+                            // Finish this row: advance cursor_y by the tallest child
+                            cursor_y = cont.row_start_y - cont.row_max_h;
+                            cont.row_max_h = 0.0;
+                            cont.col_index = 0;
+                            cont.row_start_y = cursor_y;
+                            base_x = cont.saved_x;
+                            current_width = cont.col_width;
+                        } else {
+                            // Move to next column
+                            cursor_y = cont.row_start_y;
+                            base_x += cont.col_width + cont.col_spacing;
+                        }
+                    }
+
+                    if cont.remaining == 0 {
+                        pop_idx = Some(si);
                     }
                     break;
                 }
             }
-            panel_counters.retain(|c| *c > 0);
+            if let Some(si) = pop_idx {
+                let cont = stack.remove(si);
+                match cont.kind {
+                    0 => {
+                        // Panel: restore and add bottom padding
+                        cursor_y -= cont.padding;
+                        base_x = cont.saved_x;
+                        current_width = cont.saved_width;
+                        cursor_y -= self.style.spacing;
+                    }
+                    _ => {
+                        // Row/Grid: restore saved layout
+                        base_x = cont.saved_x;
+                        current_width = cont.saved_width;
+                        cursor_y -= self.style.spacing;
+                    }
+                }
+            }
 
-            if let Some((padding, children)) = pending_panel {
-                cursor_y -= padding;
-                panel_stack.push((base_x, current_width, padding));
-                base_x += padding;
-                current_width -= padding * 2.0;
-                panel_counters.push(children);
+            if let Some(mut cont) = pending {
+                match cont.kind {
+                    0 => {
+                        // Panel: push padding
+                        cursor_y -= cont.padding;
+                        cont.saved_x = base_x;
+                        cont.saved_width = current_width;
+                        // base_x already set in the Container init above, but we need to offset
+                        let pad = cont.padding;
+                        let old_x = base_x;
+                        let old_w = current_width;
+                        base_x += pad;
+                        current_width -= pad * 2.0;
+                        cont.saved_x = old_x;
+                        cont.saved_width = old_w;
+                        stack.push(cont);
+                    }
+                    _ => {
+                        // Row/Grid: set up first column
+                        cont.row_start_y = cursor_y;
+                        base_x = cont.saved_x;
+                        current_width = cont.col_width;
+                        stack.push(cont);
+                    }
+                }
             }
 
             i += 1;
@@ -515,12 +724,24 @@ impl Ui {
                 None
             };
 
-        let mut panel_stack: Vec<(f32, f32, f32)> = Vec::new();
-        let mut panel_counters: Vec<usize> = Vec::new();
+        struct RenderContainer {
+            kind: u8,
+            saved_x: f32,
+            saved_width: f32,
+            remaining: usize,
+            padding: f32,
+            col_index: usize,
+            col_count: usize,
+            col_width: f32,
+            col_spacing: f32,
+            row_start_y: f32,
+            row_max_h: f32,
+        }
+        let mut stack: Vec<RenderContainer> = Vec::new();
 
         let mut i = 0;
         while i < self.widgets.len() {
-            let mut pending_panel: Option<(f32, usize)> = None;
+            let mut pending: Option<RenderContainer> = None;
 
             match &self.widgets[i] {
                 Widget::Label {
@@ -604,7 +825,59 @@ impl Ui {
                         *color,
                     );
 
-                    pending_panel = Some((*padding, *children));
+                    pending = Some(RenderContainer {
+                        kind: 0,
+                        saved_x: base_x,
+                        saved_width: current_width,
+                        remaining: *children,
+                        padding: *padding,
+                        col_index: 0,
+                        col_count: 0,
+                        col_width: 0.0,
+                        col_spacing: 0.0,
+                        row_start_y: 0.0,
+                        row_max_h: 0.0,
+                    });
+                }
+                Widget::Row { spacing, children } => {
+                    let cols = (*children).max(1);
+                    let total_gap = *spacing * (cols as f32 - 1.0).max(0.0);
+                    let cw = (current_width - total_gap) / cols as f32;
+                    pending = Some(RenderContainer {
+                        kind: 1,
+                        saved_x: base_x,
+                        saved_width: current_width,
+                        remaining: *children,
+                        padding: 0.0,
+                        col_index: 0,
+                        col_count: cols,
+                        col_width: cw,
+                        col_spacing: *spacing,
+                        row_start_y: cursor_y,
+                        row_max_h: 0.0,
+                    });
+                }
+                Widget::Grid {
+                    columns,
+                    spacing,
+                    children,
+                } => {
+                    let cols = (*columns).max(1);
+                    let total_gap = *spacing * (cols as f32 - 1.0).max(0.0);
+                    let cw = (current_width - total_gap) / cols as f32;
+                    pending = Some(RenderContainer {
+                        kind: 2,
+                        saved_x: base_x,
+                        saved_width: current_width,
+                        remaining: *children,
+                        padding: 0.0,
+                        col_index: 0,
+                        col_count: cols,
+                        col_width: cw,
+                        col_spacing: *spacing,
+                        row_start_y: cursor_y,
+                        row_max_h: 0.0,
+                    });
                 }
                 Widget::ProgressBar {
                     label,
@@ -800,29 +1073,78 @@ impl Ui {
                 }
             }
 
-            for counter in panel_counters.iter_mut().rev() {
-                if *counter > 0 {
-                    *counter -= 1;
-                    if *counter == 0 {
-                        if let Some((old_x, old_w, padding)) = panel_stack.pop() {
-                            cursor_y -= padding;
-                            base_x = old_x;
-                            current_width = old_w;
-                            cursor_y -= self.style.spacing;
+            // Decrement container child counters and pop finished containers
+            let mut pop_idx = None;
+            for (si, cont) in stack.iter_mut().enumerate().rev() {
+                if cont.remaining > 0 {
+                    cont.remaining -= 1;
+
+                    if cont.kind >= 1 {
+                        let used_h = cont.row_start_y - cursor_y;
+                        if used_h > cont.row_max_h {
+                            cont.row_max_h = used_h;
                         }
+                        cont.col_index += 1;
+
+                        let end_of_row = cont.col_index >= cont.col_count;
+                        let last_child = cont.remaining == 0;
+
+                        if end_of_row || last_child {
+                            cursor_y = cont.row_start_y - cont.row_max_h;
+                            cont.row_max_h = 0.0;
+                            cont.col_index = 0;
+                            cont.row_start_y = cursor_y;
+                            base_x = cont.saved_x;
+                            current_width = cont.col_width;
+                        } else {
+                            cursor_y = cont.row_start_y;
+                            base_x += cont.col_width + cont.col_spacing;
+                        }
+                    }
+
+                    if cont.remaining == 0 {
+                        pop_idx = Some(si);
                     }
                     break;
                 }
             }
+            if let Some(si) = pop_idx {
+                let cont = stack.remove(si);
+                match cont.kind {
+                    0 => {
+                        cursor_y -= cont.padding;
+                        base_x = cont.saved_x;
+                        current_width = cont.saved_width;
+                        cursor_y -= self.style.spacing;
+                    }
+                    _ => {
+                        base_x = cont.saved_x;
+                        current_width = cont.saved_width;
+                        cursor_y -= self.style.spacing;
+                    }
+                }
+            }
 
-            panel_counters.retain(|c| *c > 0);
-
-            if let Some((padding, children)) = pending_panel {
-                cursor_y -= padding;
-                panel_stack.push((base_x, current_width, padding));
-                base_x += padding;
-                current_width -= padding * 2.0;
-                panel_counters.push(children);
+            if let Some(mut cont) = pending {
+                match cont.kind {
+                    0 => {
+                        cursor_y -= cont.padding;
+                        let pad = cont.padding;
+                        let old_x = base_x;
+                        let old_w = current_width;
+                        base_x += pad;
+                        current_width -= pad * 2.0;
+                        cont.saved_x = old_x;
+                        cont.saved_width = old_w;
+                        stack.push(cont);
+                    }
+                    _ => {
+                        cont.row_start_y = cursor_y;
+                        base_x = cont.saved_x;
+                        current_width = cont.col_width;
+                        stack.push(cont);
+                    }
+                }
             }
 
             i += 1;
