@@ -19,7 +19,12 @@ impl MenuScene {
 }
 
 impl Scene for MenuScene {
-    fn on_enter(&mut self, _engine: &mut Engine, _globals: &mut Globals) {}
+    fn on_enter(&mut self, engine: &mut Engine, _globals: &mut Globals) {
+        let (_sw, sh) = engine.window_size();
+        let hh = sh as f32 / 2.0;
+        self.ui.begin(-120.0, hh - 80.0, 240.0);
+        Self::build_menu(&mut self.ui);
+    }
 
     fn update(&mut self, engine: &Engine, _globals: &mut Globals, _frame: &mut Frame) -> SceneOp {
         let (_sw, sh) = engine.window_size();
@@ -105,8 +110,12 @@ impl OptionsScene {
 }
 
 impl Scene for OptionsScene {
-    fn on_enter(&mut self, _engine: &mut Engine, _globals: &mut Globals) {
+    fn on_enter(&mut self, engine: &mut Engine, _globals: &mut Globals) {
         self.ui = Ui::default().with_style(Self::options_style());
+        let (_sw, sh) = engine.window_size();
+        let hh = sh as f32 / 2.0;
+        self.ui.begin(-100.0, hh - 60.0, 200.0);
+        Self::build_options(&mut self.ui);
     }
 
     fn update(&mut self, engine: &Engine, _globals: &mut Globals, _frame: &mut Frame) -> SceneOp {
@@ -207,7 +216,20 @@ impl DemoScene {
 }
 
 impl Scene for DemoScene {
-    fn on_enter(&mut self, _engine: &mut Engine, _globals: &mut Globals) {}
+    fn on_enter(&mut self, engine: &mut Engine, _globals: &mut Globals) {
+        let (_sw, sh) = engine.window_size();
+        let hh = sh as f32 / 2.0;
+        self.ui.begin(-180.0, hh - 40.0, 360.0);
+        Self::build_widgets(
+            &mut self.ui,
+            self.health,
+            self.fuel,
+            self.fullscreen,
+            self.vsync,
+            self.speed,
+            self.volume,
+        );
+    }
 
     fn update(&mut self, engine: &Engine, _globals: &mut Globals, _frame: &mut Frame) -> SceneOp {
         let (_sw, sh) = engine.window_size();
@@ -344,7 +366,12 @@ impl LayoutScene {
 }
 
 impl Scene for LayoutScene {
-    fn on_enter(&mut self, _engine: &mut Engine, _globals: &mut Globals) {}
+    fn on_enter(&mut self, engine: &mut Engine, _globals: &mut Globals) {
+        let (_sw, sh) = engine.window_size();
+        let hh = sh as f32 / 2.0;
+        self.ui.begin(-200.0, hh - 30.0, 400.0);
+        Self::build_widgets(&mut self.ui);
+    }
 
     fn update(&mut self, engine: &Engine, _globals: &mut Globals, _frame: &mut Frame) -> SceneOp {
         let (_sw, sh) = engine.window_size();
@@ -423,7 +450,12 @@ impl ScrollScene {
 }
 
 impl Scene for ScrollScene {
-    fn on_enter(&mut self, _engine: &mut Engine, _globals: &mut Globals) {}
+    fn on_enter(&mut self, engine: &mut Engine, _globals: &mut Globals) {
+        let (_sw, sh) = engine.window_size();
+        let hh = sh as f32 / 2.0;
+        self.ui.begin(-200.0, hh - 30.0, 400.0);
+        Self::build_widgets(&mut self.ui, self.scroll_offset);
+    }
 
     fn update(&mut self, engine: &Engine, _globals: &mut Globals, _frame: &mut Frame) -> SceneOp {
         let (_sw, sh) = engine.window_size();

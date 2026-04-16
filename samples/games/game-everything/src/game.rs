@@ -579,7 +579,6 @@ impl Scene for GameScene {
                         println!("[GameScene] demo: pushing PauseOverlay at frame {f}");
                         return SceneOp::Push(Box::new(PauseOverlay {
                             demo_frames: 0,
-                            focus: 0,
                             ui: Ui::default(),
                         }));
                     }
@@ -649,7 +648,6 @@ impl Scene for GameScene {
             if engine.action_pressed("pause") {
                 return SceneOp::Push(Box::new(PauseOverlay {
                     demo_frames: 0,
-                    focus: 0,
                     ui: Ui::default(),
                 }));
             }

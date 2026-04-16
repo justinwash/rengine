@@ -3,7 +3,6 @@ use rengine::*;
 
 pub struct PauseOverlay {
     pub demo_frames: u32,
-    pub focus: usize,
     pub ui: Ui,
 }
 
@@ -17,7 +16,7 @@ impl PauseOverlay {
 }
 
 impl Scene for PauseOverlay {
-    fn on_enter(&mut self, _engine: &mut Engine, globals: &mut Globals) {
+    fn on_enter(&mut self, engine: &mut Engine, globals: &mut Globals) {
         if let Some(counter) = globals.get_mut::<TransitionCounter>() {
             counter.0 += 1;
         }
@@ -26,9 +25,19 @@ impl Scene for PauseOverlay {
             demo.log_feature("Scene::on_enter");
             demo.log_feature("Ui (widget system)");
         }
+        let (_sw, sh) = engine.window_size();
+        let hh = sh as f32 / 2.0;
+        self.ui.begin(-100.0, hh - 40.0, 200.0);
+        Self::build_pause_ui(&mut self.ui);
     }
 
     fn update(&mut self, engine: &Engine, globals: &mut Globals, _frame: &mut Frame) -> SceneOp {
+        let (_sw, sh) = engine.window_size();
+        let hh = sh as f32 / 2.0;
+
+        self.ui.begin(-100.0, hh - 40.0, 200.0);
+        Self::build_pause_ui(&mut self.ui);
+
         let is_demo = globals.get::<DemoConfig>().map_or(false, |d| d.enabled);
 
         if is_demo {
@@ -43,14 +52,8 @@ impl Scene for PauseOverlay {
             return SceneOp::Continue;
         }
 
-        let (_sw, sh) = engine.window_size();
-        let hh = sh as f32 / 2.0;
         let atlas = engine.font_atlas();
-
-        self.ui.begin(-100.0, hh - 40.0, 200.0);
-        Self::build_pause_ui(&mut self.ui);
         let resp = self.ui.update(engine.input(), atlas);
-        self.focus = resp.focused.unwrap_or(self.focus);
 
         if let Some(id) = resp.activated {
             match id {

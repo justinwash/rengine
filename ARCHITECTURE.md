@@ -843,12 +843,16 @@ Built on top of the existing single-font `FontAtlas` and `Canvas` text renderer:
 
 A lightweight immediate-mode widget builder for menus, pause screens, and HUDs.
 
-**Single-build pattern:** Store a `Ui` as a field on your scene struct (implements `Default`). Each frame, call `begin()` to reset widgets, add widgets, then call `update()` in `update()` and `render()` in `render()`. Focus and slider-drag state persist automatically across frames — no manual tracking needed.
+**Single-build pattern:** Store a `Ui` as a field on your scene struct (implements `Default`). Each frame, call `begin()` to reset widgets, add widgets, then call `update()` in `update()` and `render()` in `render()`. Focus and slider-drag state persist automatically across frames — no manual tracking needed. When using `run_with_scenes()`, also prime the widget list in `on_enter()`: a newly pushed or switched scene is rendered before its first `update()`, so building only in `update()` would produce a one-frame blank UI.
 
 ```rust
 struct MyScene { ui: Ui }
 
 impl Scene for MyScene {
+    fn on_enter(&mut self, engine: &mut Engine, ..) {
+        self.ui.begin(x, y, width);   // prime widgets for the first render
+        self.ui.button(0, "Play");
+    }
     fn update(&mut self, engine: &Engine, ..) -> SceneOp {
         self.ui.begin(x, y, width);   // clears widgets, keeps focus/drag state
         self.ui.button(0, "Play");
