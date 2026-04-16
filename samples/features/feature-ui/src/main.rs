@@ -12,7 +12,8 @@ impl MenuScene {
         ui.button(0, "Start Game");
         ui.button(1, "Options");
         ui.button(2, "Widget Demo");
-        ui.button(3, "Quit");
+        ui.button(3, "Layout Demo");
+        ui.button(4, "Quit");
     }
 }
 
@@ -42,7 +43,10 @@ impl Scene for MenuScene {
                 2 => {
                     return SceneOp::Push(Box::new(DemoScene::new()));
                 }
-                3 => return SceneOp::Quit,
+                3 => {
+                    return SceneOp::Push(Box::new(LayoutScene::new()));
+                }
+                4 => return SceneOp::Quit,
                 _ => {}
             }
         }
@@ -293,6 +297,108 @@ impl Scene for DemoScene {
             0.0,
             -hh + 12.0,
             "Mouse or arrows: navigate | Click/Enter: interact | Left/Right: adjust sliders",
+            10.0,
+            Color::from_rgba8(140, 140, 140, 255),
+            TextAlign::Center,
+            atlas,
+        );
+    }
+}
+
+struct LayoutScene {
+    focus: usize,
+}
+
+impl LayoutScene {
+    fn new() -> Self {
+        Self { focus: 0 }
+    }
+
+    fn build_widgets(&self, ui: &mut Ui) {
+        ui.label_centered("Layout Demo", 24.0, Color::WHITE);
+        ui.separator(8.0);
+
+        // Row: two buttons side by side
+        ui.label("Row (2 buttons):", 14.0, Color::from_rgba8(180, 200, 255, 255));
+        ui.row(2);
+        ui.button(0, "Left");
+        ui.button(1, "Right");
+
+        ui.separator(6.0);
+
+        // Row with spacing: three buttons
+        ui.label("Row spaced (3 buttons):", 14.0, Color::from_rgba8(180, 200, 255, 255));
+        ui.row_spaced(8.0, 3);
+        ui.button(2, "A");
+        ui.button(3, "B");
+        ui.button(4, "C");
+
+        ui.separator(6.0);
+
+        // Grid: 2 columns, 4 items
+        ui.label("Grid 2x2:", 14.0, Color::from_rgba8(180, 200, 255, 255));
+        ui.grid_spaced(2, 4.0, 4);
+        ui.button(5, "One");
+        ui.button(6, "Two");
+        ui.button(7, "Three");
+        ui.button(8, "Four");
+
+        ui.separator(6.0);
+
+        // Grid: 3 columns, 5 items (last row partial)
+        ui.label("Grid 3-col (5 items):", 14.0, Color::from_rgba8(180, 200, 255, 255));
+        ui.grid_spaced(3, 4.0, 5);
+        ui.button(9, "1");
+        ui.button(10, "2");
+        ui.button(11, "3");
+        ui.button(12, "4");
+        ui.button(13, "5");
+
+        ui.separator(10.0);
+        ui.button(99, "Back");
+    }
+}
+
+impl Scene for LayoutScene {
+    fn on_enter(&mut self, _engine: &mut Engine, _globals: &mut Globals) {}
+
+    fn update(&mut self, engine: &Engine, _globals: &mut Globals, _frame: &mut Frame) -> SceneOp {
+        let (sw, sh) = engine.window_size();
+        let atlas = engine.font_atlas();
+        let hh = sh as f32 / 2.0;
+
+        let mut ui = Ui::new(-200.0, hh - 30.0, 400.0, (sw, sh)).with_focus(self.focus);
+        self.build_widgets(&mut ui);
+
+        let response = ui.update(engine.input(), atlas);
+        if let Some(f) = response.focused {
+            self.focus = f;
+        }
+
+        if response.was_activated(99) || engine.input().is_key_pressed(KeyCode::Escape) {
+            return SceneOp::Pop;
+        }
+
+        SceneOp::Continue
+    }
+
+    fn render(&self, engine: &Engine, _globals: &Globals, frame: &mut Frame) {
+        let (sw, sh) = engine.window_size();
+        let hh = sh as f32 / 2.0;
+        let atlas = engine.font_atlas();
+        frame.clear_color = Color::from_rgba8(25, 20, 35, 255);
+
+        let canvas = frame.canvas(0);
+
+        let mut ui = Ui::new(-200.0, hh - 30.0, 400.0, (sw, sh)).with_focus(self.focus);
+        self.build_widgets(&mut ui);
+
+        ui.render(canvas, atlas);
+
+        canvas.text_aligned(
+            0.0,
+            -hh + 12.0,
+            "ESC: back | Arrows: navigate | Enter: select",
             10.0,
             Color::from_rgba8(140, 140, 140, 255),
             TextAlign::Center,
