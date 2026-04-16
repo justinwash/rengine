@@ -58,17 +58,28 @@ pub struct Canvas {
     screen_size: (u32, u32),
     clip_stack: Vec<[u32; 4]>,
     segment_start: usize,
+    atlas: *const FontAtlas,
 }
 
+unsafe impl Send for Canvas {}
+
 impl Canvas {
-    pub fn new(screen_size: (u32, u32)) -> Self {
+    pub fn new(screen_size: (u32, u32), atlas: *const FontAtlas) -> Self {
         Self {
             verts: Vec::new(),
             segments: Vec::new(),
             screen_size,
             clip_stack: Vec::new(),
             segment_start: 0,
+            atlas,
         }
+    }
+
+    fn atlas(&self) -> &FontAtlas {
+        // SAFETY: Canvas is only created inside Frame, which is stack-local
+        // to a single game-loop iteration. FontAtlas lives inside Engine
+        // for the entire program lifetime, so it always outlives Canvas.
+        unsafe { &*self.atlas }
     }
 
     pub fn screen_size(&self) -> (u32, u32) {
@@ -265,7 +276,8 @@ impl Canvas {
         }
     }
 
-    pub fn text(&mut self, x: f32, y: f32, text: &str, size: f32, color: Color, atlas: &FontAtlas) {
+    pub fn text(&mut self, x: f32, y: f32, text: &str, size: f32, color: Color) {
+        let atlas = unsafe { &*self.atlas };
         let scale = size / FONT_SIZE;
         let c = color.to_array();
         let mut cursor_x = x;
@@ -324,8 +336,8 @@ impl Canvas {
         size: f32,
         color: Color,
         align: TextAlign,
-        atlas: &FontAtlas,
     ) {
+        let atlas = self.atlas();
         let offset = if align == TextAlign::Left {
             0.0
         } else {
@@ -336,17 +348,11 @@ impl Canvas {
                 TextAlign::Left => unreachable!(),
             }
         };
-        self.text(x + offset, y, text, size, color, atlas);
+        self.text(x + offset, y, text, size, color);
     }
 
-    pub fn text_spans(
-        &mut self,
-        x: f32,
-        y: f32,
-        spans: &[(&str, Color)],
-        size: f32,
-        atlas: &FontAtlas,
-    ) {
+    pub fn text_spans(&mut self, x: f32, y: f32, spans: &[(&str, Color)], size: f32) {
+        let atlas = unsafe { &*self.atlas };
         let scale = size / FONT_SIZE;
         let mut cursor_x = x;
 
@@ -406,8 +412,8 @@ impl Canvas {
         spans: &[(&str, Color)],
         size: f32,
         align: TextAlign,
-        atlas: &FontAtlas,
     ) {
+        let atlas = self.atlas();
         let offset = if align == TextAlign::Left {
             0.0
         } else {
@@ -421,7 +427,7 @@ impl Canvas {
                 TextAlign::Left => unreachable!(),
             }
         };
-        self.text_spans(x + offset, y, spans, size, atlas);
+        self.text_spans(x + offset, y, spans, size);
     }
 
     pub fn text_block(
@@ -433,14 +439,22 @@ impl Canvas {
         color: Color,
         max_width: f32,
         align: TextAlign,
-        atlas: &FontAtlas,
     ) {
+        let atlas = self.atlas();
         let lines = wrap_text(text, size, max_width, atlas);
         let lh = atlas.line_height(size);
         for (i, line) in lines.iter().enumerate() {
             let ly = y - (i as f32) * lh;
-            self.text_aligned(x, ly, line, size, color, align, atlas);
+            self.text_aligned(x, ly, line, size, color, align);
         }
+    }
+
+    pub fn measure_text(&self, text: &str, size: f32) -> (f32, f32) {
+        self.atlas().measure_text(text, size)
+    }
+
+    pub fn line_height(&self, size: f32) -> f32 {
+        self.atlas().line_height(size)
     }
 }
 
@@ -496,11 +510,11 @@ pub fn wrap_text(text: &str, size: f32, max_width: f32, atlas: &FontAtlas) -> Ve
     lines
 }
 
-pub(crate) fn draw_fps(canvas: &mut Canvas, fps: f32, atlas: &FontAtlas) {
+pub(crate) fn draw_fps(canvas: &mut Canvas, fps: f32) {
     let screen_size = canvas.screen_size();
     let text = format!("{}", fps.round() as u32);
     let size = 16.0;
-    let (text_w, _) = atlas.measure_text(&text, size);
+    let (text_w, _) = canvas.measure_text(&text, size);
     let bg_w = text_w + 8.0;
     let bg_h = size + 8.0;
     let hw = screen_size.0 as f32 / 2.0;
@@ -518,7 +532,6 @@ pub(crate) fn draw_fps(canvas: &mut Canvas, fps: f32, atlas: &FontAtlas) {
         &text,
         size,
         Color::from_rgba8(0, 255, 0, 255),
-        atlas,
     );
 }
 

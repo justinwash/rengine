@@ -195,7 +195,6 @@ impl Game for TriggerDemo {
             ),
             11.0,
             Color::WHITE,
-            engine.font_atlas(),
         );
 
         canvas.text(
@@ -204,7 +203,6 @@ impl Game for TriggerDemo {
             "Green=Checkpoint  Yellow=Pickup  Red=Damage  Purple=Layered(PLAYER only)",
             9.0,
             Color::new(0.7, 0.7, 0.7, 1.0),
-            engine.font_atlas(),
         );
     }
 }

@@ -74,13 +74,11 @@ pub fn draw(game: &FpsMpGame, engine: &Engine3D, frame: &mut Frame3D) {
     let score_y = bar_y + bar_h + 8.0 + 16.0;
     let my_score = player.score;
     let opp_score = game.sim.players[1 - local].score;
-    let font = engine.font_atlas();
     hud.text(
         bar_x,
         score_y,
         &format!("Score: {my_score} — {opp_score}"),
         16.0,
         Color::WHITE,
-        font,
     );
 }

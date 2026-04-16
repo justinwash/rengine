@@ -892,7 +892,7 @@ impl Ui {
                         TextAlign::Center => base_x + current_width / 2.0,
                         TextAlign::Right => base_x + current_width,
                     };
-                    canvas.text_aligned(ax, cursor_y, text, *size, *color, *align, atlas);
+                    canvas.text_aligned(ax, cursor_y, text, *size, *color, *align);
                     cursor_y -= lh + self.style.spacing;
                 }
                 Widget::Button { id, text } => {
@@ -924,7 +924,7 @@ impl Ui {
                     } else {
                         format!("  {}", text)
                     };
-                    canvas.text(base_x + pad, cursor_y, &label, text_size, fg, atlas);
+                    canvas.text(base_x + pad, cursor_y, &label, text_size, fg);
 
                     cursor_y -= btn_h + self.style.spacing;
                 }
@@ -1030,14 +1030,7 @@ impl Ui {
 
                     if !label.is_empty() {
                         let display = format!("{} ({}%)", label, (*value * 100.0) as u32);
-                        canvas.text(
-                            base_x,
-                            cursor_y,
-                            &display,
-                            text_size,
-                            self.style.text_color,
-                            atlas,
-                        );
+                        canvas.text(base_x, cursor_y, &display, text_size, self.style.text_color);
                         cursor_y -= lh + self.style.spacing;
                     }
 
@@ -1119,7 +1112,7 @@ impl Ui {
                     } else {
                         self.style.text_color
                     };
-                    canvas.text(text_x, text_y, label, text_size, fg, atlas);
+                    canvas.text(text_x, text_y, label, text_size, fg);
 
                     cursor_y -= row_h + self.style.spacing;
                 }
@@ -1136,14 +1129,7 @@ impl Ui {
 
                     if !label.is_empty() {
                         let display = format!("{}: {:.1}", label, value);
-                        canvas.text(
-                            base_x,
-                            cursor_y,
-                            &display,
-                            text_size,
-                            self.style.text_color,
-                            atlas,
-                        );
+                        canvas.text(base_x, cursor_y, &display, text_size, self.style.text_color);
                         cursor_y -= atlas.line_height(text_size) + self.style.spacing;
                     }
 

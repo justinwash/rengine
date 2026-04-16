@@ -104,7 +104,6 @@ impl Game for SpriteShowcase {
             "1:Basic  2:Tint  3:UV  4:Flip  5:Rotation  6:Z-Order  |  0/Space:Overview  +/-:Zoom",
             11.0,
             Color::WHITE,
-            engine.font_atlas(),
         );
 
         let sx = -380.0;

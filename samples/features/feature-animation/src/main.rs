@@ -131,7 +131,6 @@ impl Game for AnimationDemo {
         let sw = screen.0 as f32;
         let hw = sw / 2.0;
         let hh = screen.1 as f32 / 2.0;
-        let atlas = engine.font_atlas();
 
         let hud = frame.canvas(0);
         hud.rect(-hw, hh - 40.0, sw, 40.0, Color::new(0.08, 0.07, 0.1, 0.95));
@@ -141,7 +140,6 @@ impl Game for AnimationDemo {
             "SpriteSheet + Animation Demo",
             18.0,
             Color::WHITE,
-            atlas,
         );
 
         let animations: [(&str, &Animation); 8] = [
@@ -180,14 +178,7 @@ impl Game for AnimationDemo {
             );
 
             let labels = frame.canvas(0);
-            labels.text(
-                x,
-                y - 6.0,
-                label,
-                12.0,
-                Color::new(0.7, 0.8, 0.9, 1.0),
-                atlas,
-            );
+            labels.text(x, y - 6.0, label, 12.0, Color::new(0.7, 0.8, 0.9, 1.0));
 
             let frame_text = format!("frame: ({},{})", fc, fr);
             labels.text(
@@ -196,7 +187,6 @@ impl Game for AnimationDemo {
                 &frame_text,
                 11.0,
                 Color::new(0.5, 0.6, 0.7, 1.0),
-                atlas,
             );
         }
 
@@ -207,7 +197,6 @@ impl Game for AnimationDemo {
             "Sprite sheet (4x4 grid, 16x16 cells):",
             13.0,
             Color::new(0.6, 0.7, 0.8, 1.0),
-            atlas,
         );
 
         let sheet_y = start_y + 2.0 * y_spacing + 30.0;

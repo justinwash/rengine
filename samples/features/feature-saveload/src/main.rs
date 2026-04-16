@@ -92,7 +92,6 @@ impl Game for SaveLoadDemo {
         let (sw, sh) = engine.window_size();
         let hw = sw as f32 / 2.0;
         let hh = sh as f32 / 2.0;
-        let atlas = engine.font_atlas();
         let canvas = frame.canvas(0);
 
         canvas.rect(
@@ -109,7 +108,6 @@ impl Game for SaveLoadDemo {
             "Save / Load Demo",
             24.0,
             Color::WHITE,
-            atlas,
         );
 
         let x = -hw + 30.0;
@@ -117,33 +115,24 @@ impl Game for SaveLoadDemo {
         let label_col = Color::from_rgba8(180, 180, 180, 255);
         let val_col = Color::from_rgba8(100, 200, 255, 255);
 
-        let line =
-            |canvas: &mut Canvas, y: &mut f32, label: &str, value: &str, atlas: &FontAtlas| {
-                canvas.text(x, *y, label, 16.0, label_col, atlas);
-                canvas.text(x + 160.0, *y, value, 16.0, val_col, atlas);
-                *y -= 28.0;
-            };
+        let line = |canvas: &mut Canvas, y: &mut f32, label: &str, value: &str| {
+            canvas.text(x, *y, label, 16.0, label_col);
+            canvas.text(x + 160.0, *y, value, 16.0, val_col);
+            *y -= 28.0;
+        };
 
         line(
             canvas,
             &mut y,
             "High Score:",
             &self.data.high_score.to_string(),
-            atlas,
         );
-        line(
-            canvas,
-            &mut y,
-            "Coins:",
-            &self.data.coins.to_string(),
-            atlas,
-        );
+        line(canvas, &mut y, "Coins:", &self.data.coins.to_string());
         line(
             canvas,
             &mut y,
             "Times Played:",
             &self.data.times_played.to_string(),
-            atlas,
         );
 
         y -= 20.0;
@@ -153,7 +142,6 @@ impl Game for SaveLoadDemo {
             &self.status,
             14.0,
             Color::from_rgba8(255, 220, 80, 255),
-            atlas,
         );
 
         y -= 40.0;
@@ -163,7 +151,7 @@ impl Game for SaveLoadDemo {
         } else {
             slots.join(", ")
         };
-        line(canvas, &mut y, "Save Slots:", &slot_text, atlas);
+        line(canvas, &mut y, "Save Slots:", &slot_text);
 
         y -= 20.0;
         let hint_col = Color::from_rgba8(100, 100, 100, 255);
@@ -173,7 +161,6 @@ impl Game for SaveLoadDemo {
             "SPACE = earn coins | S = save | L = load | D = delete | R = reset | ESC = quit",
             12.0,
             hint_col,
-            atlas,
         );
     }
 

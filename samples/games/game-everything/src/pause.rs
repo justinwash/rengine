@@ -65,7 +65,6 @@ impl Scene for PauseOverlay {
 
     fn render(&self, engine: &Engine, globals: &Globals, frame: &mut Frame) {
         let (hw, hh) = engine.half_size();
-        let atlas = engine.font_atlas();
         let overlay = frame.canvas(1);
 
         overlay.rect(
@@ -88,7 +87,6 @@ impl Scene for PauseOverlay {
                 ),
                 14.0,
                 Color::YELLOW,
-                atlas,
             );
         }
     }

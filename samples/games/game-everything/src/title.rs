@@ -74,7 +74,6 @@ impl Scene for TitleScene {
         let (sw, sh) = engine.window_size();
         let hw = sw as f32 / 2.0;
         let hh = sh as f32 / 2.0;
-        let atlas = engine.font_atlas();
 
         if let Some(panel) = &self.panel {
             frame.draw_nine_slice(panel, Vec2::new(-320.0, 40.0), Vec2::new(640.0, 280.0));
@@ -94,7 +93,6 @@ impl Scene for TitleScene {
             "RENGINE KITCHEN SINK",
             32.0,
             Color::YELLOW,
-            atlas,
         );
 
         if (self.blink_timer * 2.0).sin() > 0.0 {
@@ -104,7 +102,6 @@ impl Scene for TitleScene {
                 "Press ENTER to start",
                 18.0,
                 Color::WHITE,
-                atlas,
             );
         }
 
@@ -115,7 +112,6 @@ impl Scene for TitleScene {
             &format!("Scene transitions: {}", transitions),
             12.0,
             Color::GREEN,
-            atlas,
         );
 
         if engine.gamepads_connected() > 0 {
@@ -125,7 +121,6 @@ impl Scene for TitleScene {
                 "(Gamepad detected: press A)",
                 14.0,
                 Color::ORANGE,
-                atlas,
             );
         }
 

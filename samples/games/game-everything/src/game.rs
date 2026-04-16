@@ -750,7 +750,6 @@ impl Scene for GameScene {
         let (sw, sh) = engine.window_size();
         let hw = sw as f32 / 2.0;
         let hh = sh as f32 / 2.0;
-        let atlas = engine.font_atlas();
         let hud = frame.canvas(0);
 
         hud.rect(
@@ -774,7 +773,6 @@ impl Scene for GameScene {
             &format!("Coins: {}", self.score),
             popup_scale,
             Color::YELLOW,
-            atlas,
         );
         hud.text(
             -hw + 10.0,
@@ -782,7 +780,6 @@ impl Scene for GameScene {
             &format!("Height: {:.0}", self.player_pos.y),
             14.0,
             Color::WHITE,
-            atlas,
         );
         hud.text(
             -hw + 10.0,
@@ -790,7 +787,6 @@ impl Scene for GameScene {
             &format!("Time: {:.1}s", self.play_time),
             14.0,
             Color::WHITE,
-            atlas,
         );
 
         if self.checkpoint_flash > 0.0 {
@@ -800,7 +796,6 @@ impl Scene for GameScene {
                 &self.checkpoint_msg,
                 14.0,
                 Color::GREEN,
-                atlas,
             );
         }
 
@@ -810,7 +805,6 @@ impl Scene for GameScene {
             "WASD: Move | Space: Jump | +/-: Zoom | ESC: Pause/Quit",
             10.0,
             Color::new(1.0, 1.0, 1.0, 0.6),
-            atlas,
         );
 
         hud.text_aligned(
@@ -820,7 +814,6 @@ impl Scene for GameScene {
             12.0,
             Color::new(0.7, 0.8, 1.0, 0.8),
             TextAlign::Center,
-            atlas,
         );
 
         hud.text_block(
@@ -831,7 +824,6 @@ impl Scene for GameScene {
             Color::new(1.0, 1.0, 1.0, 0.5),
             190.0,
             TextAlign::Left,
-            atlas,
         );
 
         if let Some(stats) = globals.get::<PlayerStats>() {
@@ -841,7 +833,6 @@ impl Scene for GameScene {
                 &format!("Best height: {:.0}", stats.best_height),
                 12.0,
                 Color::GREEN,
-                atlas,
             );
         }
 
@@ -854,7 +845,6 @@ impl Scene for GameScene {
             "Player",
             10.0,
             Color::new(1.0, 1.0, 1.0, 0.7),
-            atlas,
         );
     }
 
