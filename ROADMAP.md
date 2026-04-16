@@ -537,7 +537,7 @@ Tracked against the build order. Crossed-off items are done.
 12. ~~Colored text spans~~ ✓
 13. ~~UI widgets (checkbox, slider, progress bar)~~ ✓
 14. ~~Mouse hover/click on widgets~~ ✓
-15. ~~UI single-build pattern — stop duplicating widget trees in update() and render()~~
+15. ~~UI single-build pattern — stop duplicating widget trees in update() and render()~~ ✓
 16. Screen-space sprites / UI image widget — card artwork, driver portraits, facility icons
 17. Tooltip widget — card descriptions, stat explanations
 18. Widget animation hooks — card flip, slide-in, highlight pulse
@@ -546,4 +546,4 @@ Tracked against the build order. Crossed-off items are done.
 21. Animation state machines — car sprite states
 22. Rebindable controls — player key remapping
 
-Items 1-14 done. Items 15-16 unblock productive game development. Items 17-18 make it feel real. Items 19-22 are polish.
+Items 1-15 done. Item 16 unblocks productive game development. Items 17-18 make it feel real. Items 19-22 are polish.
