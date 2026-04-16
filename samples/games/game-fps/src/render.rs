@@ -46,10 +46,10 @@ pub fn draw(game: &FpsGame, engine: &Engine3D, frame: &mut Frame3D) {
         }
     }
 
-    let screen_size = engine.window_size();
+    let _screen_size = engine.window_size();
     let size = 10.0_f32;
     let thickness = 2.0_f32;
     let crosshair = frame.canvas(0);
-    crosshair.rect(-size, -thickness / 2.0, size * 2.0, thickness, Color::WHITE, screen_size);
-    crosshair.rect(-thickness / 2.0, -size, thickness, size * 2.0, Color::WHITE, screen_size);
+    crosshair.rect(-size, -thickness / 2.0, size * 2.0, thickness, Color::WHITE);
+    crosshair.rect(-thickness / 2.0, -size, thickness, size * 2.0, Color::WHITE);
 }

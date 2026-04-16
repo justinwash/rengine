@@ -48,20 +48,28 @@ const WHITE_UV: [f32; 2] = [1.0 / ATLAS_SIZE as f32, 1.0 / ATLAS_SIZE as f32];
 
 pub struct Canvas {
     pub(crate) verts: Vec<CanvasVertex>,
+    screen_size: (u32, u32),
 }
 
 impl Canvas {
-    pub fn new() -> Self {
-        Self { verts: Vec::new() }
+    pub fn new(screen_size: (u32, u32)) -> Self {
+        Self {
+            verts: Vec::new(),
+            screen_size,
+        }
+    }
+
+    pub fn screen_size(&self) -> (u32, u32) {
+        self.screen_size
     }
 
     pub fn shape(&mut self, triangles: &[CanvasVertex]) {
         self.verts.extend_from_slice(triangles);
     }
 
-    pub fn rect(&mut self, x: f32, y: f32, w: f32, h: f32, color: Color, screen_size: (u32, u32)) {
-        let [x0, y0] = screen_to_ndc(x, y, screen_size);
-        let [x1, y1] = screen_to_ndc(x + w, y + h, screen_size);
+    pub fn rect(&mut self, x: f32, y: f32, w: f32, h: f32, color: Color) {
+        let [x0, y0] = screen_to_ndc(x, y, self.screen_size);
+        let [x1, y1] = screen_to_ndc(x + w, y + h, self.screen_size);
 
         let c = color.to_array();
         let uv = WHITE_UV;
@@ -96,7 +104,6 @@ impl Canvas {
         y1: f32,
         thickness: f32,
         color: Color,
-        screen_size: (u32, u32),
     ) {
         let dx = x1 - x0;
         let dy = y1 - y0;
@@ -109,10 +116,10 @@ impl Canvas {
 
         let c = color.to_array();
         let uv = WHITE_UV;
-        let a = screen_to_ndc(x0 + nx, y0 + ny, screen_size);
-        let b = screen_to_ndc(x0 - nx, y0 - ny, screen_size);
-        let cc = screen_to_ndc(x1 - nx, y1 - ny, screen_size);
-        let d = screen_to_ndc(x1 + nx, y1 + ny, screen_size);
+        let a = screen_to_ndc(x0 + nx, y0 + ny, self.screen_size);
+        let b = screen_to_ndc(x0 - nx, y0 - ny, self.screen_size);
+        let cc = screen_to_ndc(x1 - nx, y1 - ny, self.screen_size);
+        let d = screen_to_ndc(x1 + nx, y1 + ny, self.screen_size);
 
         let va = CanvasVertex { position: a, color: c, uv };
         let vb = CanvasVertex { position: b, color: c, uv };
@@ -126,10 +133,9 @@ impl Canvas {
         points: &[(f32, f32)],
         thickness: f32,
         color: Color,
-        screen_size: (u32, u32),
     ) {
         for pair in points.windows(2) {
-            self.line(pair[0].0, pair[0].1, pair[1].0, pair[1].1, thickness, color, screen_size);
+            self.line(pair[0].0, pair[0].1, pair[1].0, pair[1].1, thickness, color);
         }
     }
 
@@ -141,7 +147,6 @@ impl Canvas {
         thickness: f32,
         segments: u32,
         color: Color,
-        screen_size: (u32, u32),
     ) {
         let step = std::f32::consts::TAU / segments as f32;
         for i in 0..segments {
@@ -154,7 +159,6 @@ impl Canvas {
                 cy + a1.sin() * radius,
                 thickness,
                 color,
-                screen_size,
             );
         }
     }
@@ -166,18 +170,17 @@ impl Canvas {
         radius: f32,
         segments: u32,
         color: Color,
-        screen_size: (u32, u32),
     ) {
         let c = color.to_array();
         let uv = WHITE_UV;
-        let center = screen_to_ndc(cx, cy, screen_size);
+        let center = screen_to_ndc(cx, cy, self.screen_size);
         let vc = CanvasVertex { position: center, color: c, uv };
         let step = std::f32::consts::TAU / segments as f32;
         for i in 0..segments {
             let a0 = step * i as f32;
             let a1 = step * (i + 1) as f32;
-            let p0 = screen_to_ndc(cx + a0.cos() * radius, cy + a0.sin() * radius, screen_size);
-            let p1 = screen_to_ndc(cx + a1.cos() * radius, cy + a1.sin() * radius, screen_size);
+            let p0 = screen_to_ndc(cx + a0.cos() * radius, cy + a0.sin() * radius, self.screen_size);
+            let p1 = screen_to_ndc(cx + a1.cos() * radius, cy + a1.sin() * radius, self.screen_size);
             let v0 = CanvasVertex { position: p0, color: c, uv };
             let v1 = CanvasVertex { position: p1, color: c, uv };
             self.verts.extend_from_slice(&[vc, v0, v1]);
@@ -191,7 +194,6 @@ impl Canvas {
         text: &str,
         size: f32,
         color: Color,
-        screen_size: (u32, u32),
         atlas: &FontAtlas,
     ) {
         let scale = size / FONT_SIZE;
@@ -214,8 +216,8 @@ impl Canvas {
                 let gw = entry.width_px * scale;
                 let gh = entry.height_px * scale;
 
-                let [x0, y0] = screen_to_ndc(gx, gy, screen_size);
-                let [x1, y1] = screen_to_ndc(gx + gw, gy + gh, screen_size);
+                let [x0, y0] = screen_to_ndc(gx, gy, self.screen_size);
+                let [x1, y1] = screen_to_ndc(gx + gw, gy + gh, self.screen_size);
 
                 let v0 = CanvasVertex {
                     position: [x0, y0],
@@ -252,7 +254,6 @@ impl Canvas {
         size: f32,
         color: Color,
         align: TextAlign,
-        screen_size: (u32, u32),
         atlas: &FontAtlas,
     ) {
         let offset = if align == TextAlign::Left {
@@ -265,7 +266,7 @@ impl Canvas {
                 TextAlign::Left => unreachable!(),
             }
         };
-        self.text(x + offset, y, text, size, color, screen_size, atlas);
+        self.text(x + offset, y, text, size, color, atlas);
     }
 
     pub fn text_spans(
@@ -274,7 +275,6 @@ impl Canvas {
         y: f32,
         spans: &[(&str, Color)],
         size: f32,
-        screen_size: (u32, u32),
         atlas: &FontAtlas,
     ) {
         let scale = size / FONT_SIZE;
@@ -298,8 +298,8 @@ impl Canvas {
                     let gw = entry.width_px * scale;
                     let gh = entry.height_px * scale;
 
-                    let [x0, y0] = screen_to_ndc(gx, gy, screen_size);
-                    let [x1, y1] = screen_to_ndc(gx + gw, gy + gh, screen_size);
+                    let [x0, y0] = screen_to_ndc(gx, gy, self.screen_size);
+                    let [x1, y1] = screen_to_ndc(gx + gw, gy + gh, self.screen_size);
 
                     let v0 = CanvasVertex { position: [x0, y0], color: c, uv: [entry.u0, entry.v1] };
                     let v1 = CanvasVertex { position: [x1, y0], color: c, uv: [entry.u1, entry.v1] };
@@ -320,7 +320,6 @@ impl Canvas {
         spans: &[(&str, Color)],
         size: f32,
         align: TextAlign,
-        screen_size: (u32, u32),
         atlas: &FontAtlas,
     ) {
         let offset = if align == TextAlign::Left {
@@ -333,7 +332,7 @@ impl Canvas {
                 TextAlign::Left => unreachable!(),
             }
         };
-        self.text_spans(x + offset, y, spans, size, screen_size, atlas);
+        self.text_spans(x + offset, y, spans, size, atlas);
     }
 
     pub fn text_block(
@@ -345,14 +344,13 @@ impl Canvas {
         color: Color,
         max_width: f32,
         align: TextAlign,
-        screen_size: (u32, u32),
         atlas: &FontAtlas,
     ) {
         let lines = wrap_text(text, size, max_width, atlas);
         let lh = atlas.line_height(size);
         for (i, line) in lines.iter().enumerate() {
             let ly = y - (i as f32) * lh;
-            self.text_aligned(x, ly, line, size, color, align, screen_size, atlas);
+            self.text_aligned(x, ly, line, size, color, align, atlas);
         }
     }
 }
@@ -409,7 +407,8 @@ pub fn wrap_text(text: &str, size: f32, max_width: f32, atlas: &FontAtlas) -> Ve
     lines
 }
 
-pub(crate) fn draw_fps(canvas: &mut Canvas, fps: f32, screen_size: (u32, u32), atlas: &FontAtlas) {
+pub(crate) fn draw_fps(canvas: &mut Canvas, fps: f32, atlas: &FontAtlas) {
+    let screen_size = canvas.screen_size();
     let text = format!("{}", fps.round() as u32);
     let size = 16.0;
     let (text_w, _) = atlas.measure_text(&text, size);
@@ -423,7 +422,6 @@ pub(crate) fn draw_fps(canvas: &mut Canvas, fps: f32, screen_size: (u32, u32), a
         bg_w,
         bg_h,
         Color::from_rgba8(0, 0, 0, 160),
-        screen_size,
     );
     canvas.text(
         -hw + 8.0,
@@ -431,7 +429,6 @@ pub(crate) fn draw_fps(canvas: &mut Canvas, fps: f32, screen_size: (u32, u32), a
         &text,
         size,
         Color::from_rgba8(0, 255, 0, 255),
-        screen_size,
         atlas,
     );
 }
