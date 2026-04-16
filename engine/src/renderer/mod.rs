@@ -31,6 +31,7 @@ pub struct Frame {
     pub clear_color: Color,
 
     pub(crate) canvases: Vec<Canvas>,
+    screen_size: (u32, u32),
 }
 
 impl Frame {
@@ -40,7 +41,12 @@ impl Frame {
             camera: Camera2D::new(),
             clear_color: Color::BLACK,
             canvases: Vec::new(),
+            screen_size: (1, 1),
         }
+    }
+
+    pub fn screen_size(&self) -> (u32, u32) {
+        self.screen_size
     }
 
     pub fn draw_sprite(&mut self, params: DrawParams) {
@@ -71,15 +77,17 @@ impl Frame {
         nine_slice.patches_into(position, size, &mut self.sprites);
     }
 
-    pub fn begin(&mut self) {
+    pub fn begin(&mut self, screen_size: (u32, u32)) {
         self.sprites.clear();
         self.canvases.clear();
         self.clear_color = Color::BLACK;
+        self.screen_size = screen_size;
     }
 
     pub fn canvas(&mut self, index: usize) -> &mut Canvas {
+        let ss = self.screen_size;
         if index >= self.canvases.len() {
-            self.canvases.resize_with(index + 1, Canvas::new);
+            self.canvases.resize_with(index + 1, || Canvas::new(ss));
         }
         &mut self.canvases[index]
     }

@@ -139,21 +139,21 @@ impl Game for AudioDemo {
     fn render(&mut self, engine: &Engine, frame: &mut Frame) {
         frame.clear_color = Color::from_rgba8(20, 20, 30, 255);
         let (w, h) = engine.window_size();
-        let screen = (w, h);
+        let _screen = (w, h);
         let font = engine.font_atlas();
         let c = frame.canvas(10);
         let hh = h as f32 / 2.0;
 
-        c.text_aligned(0.0, hh - 60.0, "Audio Fades Demo", 28.0, Color::WHITE, TextAlign::Center, screen, &font);
+        c.text_aligned(0.0, hh - 60.0, "Audio Fades Demo", 28.0, Color::WHITE, TextAlign::Center, &font);
 
-        c.text_aligned(0.0, hh - 20.0, &self.status, 20.0, Color::YELLOW, TextAlign::Center, screen, &font);
+        c.text_aligned(0.0, hh - 20.0, &self.status, 20.0, Color::YELLOW, TextAlign::Center, &font);
 
         let fading = if engine.is_audio_fading() { "fading..." } else { "idle" };
-        c.text_aligned(0.0, hh + 10.0, fading, 16.0, Color::from_rgba8(150, 150, 150, 255), TextAlign::Center, screen, &font);
+        c.text_aligned(0.0, hh + 10.0, fading, 16.0, Color::from_rgba8(150, 150, 150, 255), TextAlign::Center, &font);
 
         if !self.demo_mode {
             let help = "[F] crossfade  [I] fade in  [O] fade out  [Space] SFX  [Up/Down] bus vol";
-            c.text_aligned(0.0, -hh + 30.0, help, 14.0, Color::from_rgba8(120, 120, 120, 255), TextAlign::Center, screen, &font);
+            c.text_aligned(0.0, -hh + 30.0, help, 14.0, Color::from_rgba8(120, 120, 120, 255), TextAlign::Center, &font);
         }
     }
 

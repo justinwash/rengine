@@ -163,7 +163,6 @@ impl Game for CameraDemo {
             "WASD:Move  Space:Shake  R:Rotation",
             11.0,
             Color::WHITE,
-            (sw, sh),
             engine.font_atlas(),
         );
     }
