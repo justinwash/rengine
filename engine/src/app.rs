@@ -896,13 +896,7 @@ where
                             let mut overlay = canvas::Canvas::new(screen_size);
                             let c =
                                 crate::assets::Color::new(t.color.r, t.color.g, t.color.b, alpha);
-                            overlay.rect(
-                                -hw,
-                                -hh,
-                                screen_size.0 as f32,
-                                screen_size.1 as f32,
-                                c,
-                            );
+                            overlay.rect(-hw, -hh, screen_size.0 as f32, screen_size.1 as f32, c);
                             frame.canvases.push(overlay);
                         }
                     }
