@@ -1,0 +1,11 @@
+[package]
+name = "rengine-feature-fonts"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "rengine-feature-fonts"
+path = "src/main.rs"
+
+[dependencies]
+rengine = { path = "../../../engine" }

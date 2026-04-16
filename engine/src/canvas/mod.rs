@@ -50,6 +50,7 @@ pub(crate) struct DrawSegment {
     pub start: usize,
     pub count: usize,
     pub scissor: Option<[u32; 4]>,
+    pub font_id: usize,
 }
 
 pub struct Canvas {
@@ -58,6 +59,7 @@ pub struct Canvas {
     screen_size: (u32, u32),
     clip_stack: Vec<[u32; 4]>,
     segment_start: usize,
+    current_font: usize,
 }
 
 impl Canvas {
@@ -68,6 +70,7 @@ impl Canvas {
             screen_size,
             clip_stack: Vec::new(),
             segment_start: 0,
+            current_font: 0,
         }
     }
 
@@ -116,9 +119,17 @@ impl Canvas {
                 start: self.segment_start,
                 count,
                 scissor: self.clip_stack.last().copied(),
+                font_id: self.current_font,
             });
         }
         self.segment_start = self.verts.len();
+    }
+
+    fn set_font(&mut self, font_id: usize) {
+        if font_id != self.current_font {
+            self.close_segment();
+            self.current_font = font_id;
+        }
     }
 
     pub(crate) fn finalize(&mut self) {
@@ -266,6 +277,7 @@ impl Canvas {
     }
 
     pub fn text(&mut self, x: f32, y: f32, text: &str, size: f32, color: Color, atlas: &FontAtlas) {
+        self.set_font(atlas.id.0);
         let scale = size / FONT_SIZE;
         let c = color.to_array();
         let mut cursor_x = x;
@@ -347,6 +359,7 @@ impl Canvas {
         size: f32,
         atlas: &FontAtlas,
     ) {
+        self.set_font(atlas.id.0);
         let scale = size / FONT_SIZE;
         let mut cursor_x = x;
 
@@ -593,7 +606,7 @@ pub(crate) fn render_pass(
     vertex_buffer: &wgpu::Buffer,
     queue: &wgpu::Queue,
     canvases: &mut [Canvas],
-    font_atlas: &FontAtlas,
+    fonts: &[FontAtlas],
 ) {
     for canvas in canvases.iter_mut() {
         canvas.finalize();
@@ -608,16 +621,16 @@ pub(crate) fn render_pass(
     }
     queue.write_buffer(vertex_buffer, 0, bytemuck::cast_slice(&verts));
 
-    let mut global_segments: Vec<(usize, usize, Option<[u32; 4]>)> = Vec::new();
+    let mut global_segments: Vec<(usize, usize, Option<[u32; 4]>, usize)> = Vec::new();
     let mut offset = 0usize;
     for canvas in canvases.iter() {
         if canvas.segments.is_empty() {
             if !canvas.verts.is_empty() {
-                global_segments.push((offset, canvas.verts.len(), None));
+                global_segments.push((offset, canvas.verts.len(), None, 0));
             }
         } else {
             for seg in &canvas.segments {
-                global_segments.push((offset + seg.start, seg.count, seg.scissor));
+                global_segments.push((offset + seg.start, seg.count, seg.scissor, seg.font_id));
             }
         }
         offset += canvas.verts.len();
@@ -640,18 +653,25 @@ pub(crate) fn render_pass(
         multiview_mask: None,
     });
     pass.set_pipeline(pipeline);
-    pass.set_bind_group(0, &font_atlas.bind_group, &[]);
+    pass.set_bind_group(0, &fonts[0].bind_group, &[]);
     pass.set_vertex_buffer(0, vertex_buffer.slice(..));
 
-    let has_scissors = global_segments.iter().any(|(_, _, s)| s.is_some());
+    let needs_per_segment = global_segments.iter().any(|(_, _, s, f)| s.is_some() || *f != 0);
 
-    if has_scissors {
+    if needs_per_segment {
         let surface_w = canvases.first().map(|c| c.screen_size.0).unwrap_or(1);
         let surface_h = canvases.first().map(|c| c.screen_size.1).unwrap_or(1);
+        let mut bound_font: usize = 0;
 
-        for (start, count, scissor) in &global_segments {
+        for (start, count, scissor, font_id) in &global_segments {
             if *count == 0 {
                 continue;
+            }
+            if *font_id != bound_font {
+                if let Some(atlas) = fonts.get(*font_id) {
+                    pass.set_bind_group(0, &atlas.bind_group, &[]);
+                }
+                bound_font = *font_id;
             }
             if let Some([sx, sy, sw, sh]) = scissor {
                 if *sw == 0 || *sh == 0 {
