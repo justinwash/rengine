@@ -46,21 +46,83 @@ pub const MAX_CANVAS_VERTICES: usize = 8_000;
 
 const WHITE_UV: [f32; 2] = [1.0 / ATLAS_SIZE as f32, 1.0 / ATLAS_SIZE as f32];
 
+pub(crate) struct DrawSegment {
+    pub start: usize,
+    pub count: usize,
+    pub scissor: Option<[u32; 4]>,
+}
+
 pub struct Canvas {
     pub(crate) verts: Vec<CanvasVertex>,
+    pub(crate) segments: Vec<DrawSegment>,
     screen_size: (u32, u32),
+    clip_stack: Vec<[u32; 4]>,
+    segment_start: usize,
 }
 
 impl Canvas {
     pub fn new(screen_size: (u32, u32)) -> Self {
         Self {
             verts: Vec::new(),
+            segments: Vec::new(),
             screen_size,
+            clip_stack: Vec::new(),
+            segment_start: 0,
         }
     }
 
     pub fn screen_size(&self) -> (u32, u32) {
         self.screen_size
+    }
+
+    pub fn push_clip(&mut self, x: f32, y: f32, w: f32, h: f32) {
+        self.close_segment();
+
+        let (sw, sh) = self.screen_size;
+        let hw = sw as f32 / 2.0;
+        let hh = sh as f32 / 2.0;
+
+        let px = ((x + hw).max(0.0)) as u32;
+        let py = ((hh - y - h).max(0.0)) as u32;
+        let pw = (w as u32).min(sw.saturating_sub(px));
+        let ph = (h as u32).min(sh.saturating_sub(py));
+
+        let mut rect = [px, py, pw, ph];
+
+        if let Some(parent) = self.clip_stack.last() {
+            let l = rect[0].max(parent[0]);
+            let t = rect[1].max(parent[1]);
+            let r = (rect[0] + rect[2]).min(parent[0] + parent[2]);
+            let b = (rect[1] + rect[3]).min(parent[1] + parent[3]);
+            if l >= r || t >= b {
+                rect = [0, 0, 0, 0];
+            } else {
+                rect = [l, t, r - l, b - t];
+            }
+        }
+
+        self.clip_stack.push(rect);
+    }
+
+    pub fn pop_clip(&mut self) {
+        self.close_segment();
+        self.clip_stack.pop();
+    }
+
+    fn close_segment(&mut self) {
+        let count = self.verts.len() - self.segment_start;
+        if count > 0 {
+            self.segments.push(DrawSegment {
+                start: self.segment_start,
+                count,
+                scissor: self.clip_stack.last().copied(),
+            });
+        }
+        self.segment_start = self.verts.len();
+    }
+
+    pub(crate) fn finalize(&mut self) {
+        self.close_segment();
     }
 
     pub fn shape(&mut self, triangles: &[CanvasVertex]) {
@@ -530,9 +592,13 @@ pub(crate) fn render_pass(
     pipeline: &wgpu::RenderPipeline,
     vertex_buffer: &wgpu::Buffer,
     queue: &wgpu::Queue,
-    canvases: &[Canvas],
+    canvases: &mut [Canvas],
     font_atlas: &FontAtlas,
 ) {
+    for canvas in canvases.iter_mut() {
+        canvas.finalize();
+    }
+
     let verts: Vec<CanvasVertex> = canvases
         .iter()
         .flat_map(|c| c.verts.iter().copied())
@@ -541,6 +607,21 @@ pub(crate) fn render_pass(
         return;
     }
     queue.write_buffer(vertex_buffer, 0, bytemuck::cast_slice(&verts));
+
+    let mut global_segments: Vec<(usize, usize, Option<[u32; 4]>)> = Vec::new();
+    let mut offset = 0usize;
+    for canvas in canvases.iter() {
+        if canvas.segments.is_empty() {
+            if !canvas.verts.is_empty() {
+                global_segments.push((offset, canvas.verts.len(), None));
+            }
+        } else {
+            for seg in &canvas.segments {
+                global_segments.push((offset + seg.start, seg.count, seg.scissor));
+            }
+        }
+        offset += canvas.verts.len();
+    }
 
     let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
         label: Some("canvas_pass"),
@@ -561,5 +642,28 @@ pub(crate) fn render_pass(
     pass.set_pipeline(pipeline);
     pass.set_bind_group(0, &font_atlas.bind_group, &[]);
     pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-    pass.draw(0..verts.len() as u32, 0..1);
+
+    let has_scissors = global_segments.iter().any(|(_, _, s)| s.is_some());
+
+    if has_scissors {
+        let surface_w = canvases.first().map(|c| c.screen_size.0).unwrap_or(1);
+        let surface_h = canvases.first().map(|c| c.screen_size.1).unwrap_or(1);
+
+        for (start, count, scissor) in &global_segments {
+            if *count == 0 {
+                continue;
+            }
+            if let Some([sx, sy, sw, sh]) = scissor {
+                if *sw == 0 || *sh == 0 {
+                    continue;
+                }
+                pass.set_scissor_rect(*sx, *sy, *sw, *sh);
+            } else {
+                pass.set_scissor_rect(0, 0, surface_w, surface_h);
+            }
+            pass.draw(*start as u32..(*start + *count) as u32, 0..1);
+        }
+    } else {
+        pass.draw(0..verts.len() as u32, 0..1);
+    }
 }

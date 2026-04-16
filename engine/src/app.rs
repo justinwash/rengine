@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use serde::de::DeserializeOwned;
 use winit::dpi::LogicalSize;
-use winit::event::{DeviceEvent, Event, KeyEvent, MouseButton, WindowEvent};
+use winit::event::{DeviceEvent, Event, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::EventLoop;
 use winit::keyboard::PhysicalKey;
 use winit::window::{CursorGrabMode, WindowBuilder};
@@ -645,6 +645,16 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
                     engine.input.handle_mouse_button(idx, state);
                 }
 
+                WindowEvent::MouseWheel { delta, .. } => {
+                    let (dx, dy) = match delta {
+                        MouseScrollDelta::LineDelta(x, y) => (x, y),
+                        MouseScrollDelta::PixelDelta(pos) => {
+                            (pos.x as f32 / 40.0, pos.y as f32 / 40.0)
+                        }
+                    };
+                    engine.input.handle_scroll(dx, dy);
+                }
+
                 WindowEvent::RedrawRequested => {
                     engine.time.tick();
                     engine.gamepads.update();
@@ -674,7 +684,9 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
                         );
                         frame.canvases.push(fps_canvas);
                     }
-                    engine.renderer.render_frame(&frame, &engine.postfx_chain);
+                    engine
+                        .renderer
+                        .render_frame(&mut frame, &engine.postfx_chain);
 
                     engine.input.end_frame();
                 }
@@ -824,6 +836,16 @@ where
                     engine.input.handle_mouse_button(idx, state);
                 }
 
+                WindowEvent::MouseWheel { delta, .. } => {
+                    let (dx, dy) = match delta {
+                        MouseScrollDelta::LineDelta(x, y) => (x, y),
+                        MouseScrollDelta::PixelDelta(pos) => {
+                            (pos.x as f32 / 40.0, pos.y as f32 / 40.0)
+                        }
+                    };
+                    engine.input.handle_scroll(dx, dy);
+                }
+
                 WindowEvent::RedrawRequested => {
                     engine.time.tick();
                     engine.gamepads.update();
@@ -917,7 +939,9 @@ where
                         );
                         frame.canvases.push(fps_canvas);
                     }
-                    engine.renderer.render_frame(&frame, &engine.postfx_chain);
+                    engine
+                        .renderer
+                        .render_frame(&mut frame, &engine.postfx_chain);
 
                     engine.input.end_frame();
                 }
@@ -1505,6 +1529,16 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
                     engine.input.handle_mouse_button(idx, state);
                 }
 
+                WindowEvent::MouseWheel { delta, .. } => {
+                    let (dx, dy) = match delta {
+                        MouseScrollDelta::LineDelta(x, y) => (x, y),
+                        MouseScrollDelta::PixelDelta(pos) => {
+                            (pos.x as f32 / 40.0, pos.y as f32 / 40.0)
+                        }
+                    };
+                    engine.input.handle_scroll(dx, dy);
+                }
+
                 WindowEvent::CursorMoved { position, .. } => {
                     let x = position.x as f32 - engine.window_width as f32 / 2.0;
                     let y = -(position.y as f32 - engine.window_height as f32 / 2.0);
@@ -1539,7 +1573,7 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
                         );
                         frame.canvases.push(fps_canvas);
                     }
-                    engine.renderer.render_frame(&frame);
+                    engine.renderer.render_frame(&mut frame);
 
                     engine.input.end_frame();
                 }
@@ -1736,6 +1770,16 @@ where
                     engine.input.handle_mouse_button(idx, state);
                 }
 
+                WindowEvent::MouseWheel { delta, .. } => {
+                    let (dx, dy) = match delta {
+                        MouseScrollDelta::LineDelta(x, y) => (x, y),
+                        MouseScrollDelta::PixelDelta(pos) => {
+                            (pos.x as f32 / 40.0, pos.y as f32 / 40.0)
+                        }
+                    };
+                    engine.input.handle_scroll(dx, dy);
+                }
+
                 WindowEvent::CursorMoved { position, .. } => {
                     let x = position.x as f32 - engine.window_width as f32 / 2.0;
                     let y = -(position.y as f32 - engine.window_height as f32 / 2.0);
@@ -1783,7 +1827,7 @@ where
                         );
                         frame.canvases.push(fps_canvas);
                     }
-                    engine.renderer.render_frame(&frame);
+                    engine.renderer.render_frame(&mut frame);
 
                     engine.input.end_frame();
                 }

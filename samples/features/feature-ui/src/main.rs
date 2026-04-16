@@ -13,6 +13,7 @@ impl MenuScene {
         ui.button(1, "Options");
         ui.button(2, "Widget Demo");
         ui.button(3, "Layout Demo");
+        ui.button(5, "Scroll Demo");
         ui.button(4, "Quit");
     }
 }
@@ -45,6 +46,9 @@ impl Scene for MenuScene {
                 }
                 3 => {
                     return SceneOp::Push(Box::new(LayoutScene::new()));
+                }
+                5 => {
+                    return SceneOp::Push(Box::new(ScrollScene::new()));
                 }
                 4 => return SceneOp::Quit,
                 _ => {}
@@ -399,6 +403,93 @@ impl Scene for LayoutScene {
             0.0,
             -hh + 12.0,
             "ESC: back | Arrows: navigate | Enter: select",
+            10.0,
+            Color::from_rgba8(140, 140, 140, 255),
+            TextAlign::Center,
+            atlas,
+        );
+    }
+}
+
+struct ScrollScene {
+    focus: usize,
+    scroll_offset: f32,
+}
+
+impl ScrollScene {
+    fn new() -> Self {
+        Self {
+            focus: 0,
+            scroll_offset: 0.0,
+        }
+    }
+
+    fn build_widgets(&self, ui: &mut Ui) {
+        ui.label_centered("Scroll Demo", 24.0, Color::WHITE);
+        ui.separator(8.0);
+
+        ui.label("Scrollable list:", 14.0, Color::from_rgba8(180, 200, 255, 255));
+        ui.scroll(100, 150.0, self.scroll_offset, 10);
+        ui.button(10, "Item 1");
+        ui.button(11, "Item 2");
+        ui.button(12, "Item 3");
+        ui.button(13, "Item 4");
+        ui.button(14, "Item 5");
+        ui.button(15, "Item 6");
+        ui.button(16, "Item 7");
+        ui.button(17, "Item 8");
+        ui.button(18, "Item 9");
+        ui.button(19, "Item 10");
+
+        ui.separator(10.0);
+        ui.button(99, "Back");
+    }
+}
+
+impl Scene for ScrollScene {
+    fn on_enter(&mut self, _engine: &mut Engine, _globals: &mut Globals) {}
+
+    fn update(&mut self, engine: &Engine, _globals: &mut Globals, _frame: &mut Frame) -> SceneOp {
+        let (sw, sh) = engine.window_size();
+        let atlas = engine.font_atlas();
+        let hh = sh as f32 / 2.0;
+
+        let mut ui = Ui::new(-200.0, hh - 30.0, 400.0, (sw, sh)).with_focus(self.focus);
+        self.build_widgets(&mut ui);
+
+        let response = ui.update(engine.input(), atlas);
+        if let Some(f) = response.focused {
+            self.focus = f;
+        }
+
+        if let Some(offset) = response.scroll_for(100) {
+            self.scroll_offset = offset;
+        }
+
+        if response.was_activated(99) || engine.input().is_key_pressed(KeyCode::Escape) {
+            return SceneOp::Pop;
+        }
+
+        SceneOp::Continue
+    }
+
+    fn render(&self, engine: &Engine, _globals: &Globals, frame: &mut Frame) {
+        let (sw, sh) = engine.window_size();
+        let hh = sh as f32 / 2.0;
+        let atlas = engine.font_atlas();
+        frame.clear_color = Color::from_rgba8(25, 20, 35, 255);
+
+        let canvas = frame.canvas(0);
+
+        let mut ui = Ui::new(-200.0, hh - 30.0, 400.0, (sw, sh)).with_focus(self.focus);
+        self.build_widgets(&mut ui);
+
+        ui.render(canvas, atlas);
+
+        canvas.text_aligned(
+            0.0,
+            -hh + 12.0,
+            "ESC: back | Mouse wheel: scroll | Arrows: navigate",
             10.0,
             Color::from_rgba8(140, 140, 140, 255),
             TextAlign::Center,

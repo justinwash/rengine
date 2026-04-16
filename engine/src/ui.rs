@@ -102,6 +102,12 @@ enum Widget {
         min: f32,
         max: f32,
     },
+    ScrollRegion {
+        id: usize,
+        height: f32,
+        scroll_offset: f32,
+        children: usize,
+    },
 }
 
 pub struct UiResponse {
@@ -111,6 +117,7 @@ pub struct UiResponse {
     pub toggled: Vec<usize>,
     pub changed_values: Vec<(usize, f32)>,
     pub dragging: Option<usize>,
+    pub scroll_offsets: Vec<(usize, f32)>,
 }
 
 impl UiResponse {
@@ -126,6 +133,13 @@ impl UiResponse {
         self.changed_values
             .iter()
             .find(|(cid, _)| *cid == id)
+            .map(|(_, v)| *v)
+    }
+
+    pub fn scroll_for(&self, id: usize) -> Option<f32> {
+        self.scroll_offsets
+            .iter()
+            .find(|(sid, _)| *sid == id)
             .map(|(_, v)| *v)
     }
 }
@@ -252,8 +266,6 @@ impl Ui {
         });
     }
 
-    /// Lay out the next `children` widgets horizontally in a single row.
-    /// Each child gets an equal share of the current width.
     pub fn row(&mut self, children: usize) {
         self.widgets.push(Widget::Row {
             spacing: self.style.spacing,
@@ -261,13 +273,10 @@ impl Ui {
         });
     }
 
-    /// Lay out the next `children` widgets horizontally with custom inter-column spacing.
     pub fn row_spaced(&mut self, spacing: f32, children: usize) {
         self.widgets.push(Widget::Row { spacing, children });
     }
 
-    /// Lay out the next `children` widgets in a grid with the given number of columns.
-    /// Rows wrap automatically. Each cell gets an equal share of the current width.
     pub fn grid(&mut self, columns: usize, children: usize) {
         self.widgets.push(Widget::Grid {
             columns: columns.max(1),
@@ -276,11 +285,19 @@ impl Ui {
         });
     }
 
-    /// Lay out the next `children` widgets in a grid with custom inter-cell spacing.
     pub fn grid_spaced(&mut self, columns: usize, spacing: f32, children: usize) {
         self.widgets.push(Widget::Grid {
             columns: columns.max(1),
             spacing,
+            children,
+        });
+    }
+
+    pub fn scroll(&mut self, id: usize, height: f32, scroll_offset: f32, children: usize) {
+        self.widgets.push(Widget::ScrollRegion {
+            id,
+            height,
+            scroll_offset,
             children,
         });
     }
@@ -326,9 +343,7 @@ impl Ui {
                 }
                 h
             }
-            Widget::Row {
-                children, ..
-            } => {
+            Widget::Row { children, .. } => {
                 let n = (*children).min(remaining.len());
                 let child_slice = &remaining[..n];
                 let mut max_h: f32 = 0.0;
@@ -342,9 +357,7 @@ impl Ui {
                 max_h + self.style.spacing
             }
             Widget::Grid {
-                columns,
-                children,
-                ..
+                columns, children, ..
             } => {
                 let n = (*children).min(remaining.len());
                 let child_slice = &remaining[..n];
@@ -364,6 +377,7 @@ impl Ui {
                 }
                 total_h + self.style.spacing
             }
+            Widget::ScrollRegion { height, .. } => *height + self.style.spacing,
         }
     }
 
@@ -373,22 +387,20 @@ impl Ui {
         let mut base_x = self.x;
         let mut current_width = self.width;
 
-        // Container stack: each entry stores the saved layout state and remaining child count.
-        // kind: 0=panel, 1=row, 2=grid
         struct Container {
             kind: u8,
             saved_x: f32,
             saved_width: f32,
             remaining: usize,
-            // Panel fields
             padding: f32,
-            // Row/Grid fields
             col_index: usize,
             col_count: usize,
             col_width: f32,
             col_spacing: f32,
             row_start_y: f32,
             row_max_h: f32,
+            scroll_clip_top: f32,
+            scroll_clip_bottom: f32,
         }
         let mut stack: Vec<Container> = Vec::new();
 
@@ -426,6 +438,8 @@ impl Ui {
                         col_spacing: 0.0,
                         row_start_y: 0.0,
                         row_max_h: 0.0,
+                        scroll_clip_top: 0.0,
+                        scroll_clip_bottom: 0.0,
                     });
                 }
                 Widget::Row { spacing, children } => {
@@ -444,6 +458,8 @@ impl Ui {
                         col_spacing: *spacing,
                         row_start_y: cursor_y,
                         row_max_h: 0.0,
+                        scroll_clip_top: 0.0,
+                        scroll_clip_bottom: 0.0,
                     });
                 }
                 Widget::Grid {
@@ -466,6 +482,8 @@ impl Ui {
                         col_spacing: *spacing,
                         row_start_y: cursor_y,
                         row_max_h: 0.0,
+                        scroll_clip_top: 0.0,
+                        scroll_clip_bottom: 0.0,
                     });
                 }
                 Widget::ProgressBar { .. } => {
@@ -487,16 +505,39 @@ impl Ui {
                     rects.push((*id, base_x, cursor_y - h, current_width, h));
                     cursor_y -= h + self.style.spacing;
                 }
+                Widget::ScrollRegion {
+                    id: _,
+                    height,
+                    scroll_offset,
+                    children,
+                } => {
+                    let clip_top = cursor_y;
+                    let clip_bottom = cursor_y - *height;
+                    pending = Some(Container {
+                        kind: 3,
+                        saved_x: base_x,
+                        saved_width: current_width,
+                        remaining: *children,
+                        padding: 0.0,
+                        col_index: 0,
+                        col_count: 0,
+                        col_width: 0.0,
+                        col_spacing: 0.0,
+                        row_start_y: 0.0,
+                        row_max_h: 0.0,
+                        scroll_clip_top: clip_top,
+                        scroll_clip_bottom: clip_bottom,
+                    });
+                    cursor_y += *scroll_offset;
+                }
             }
 
-            // Decrement container child counters and pop finished containers
             let mut pop_idx = None;
             for (si, cont) in stack.iter_mut().enumerate().rev() {
                 if cont.remaining > 0 {
                     cont.remaining -= 1;
 
-                    // For Row/Grid, track column position
-                    if cont.kind >= 1 {
+                    if cont.kind == 1 || cont.kind == 2 {
                         let used_h = cont.row_start_y - cursor_y;
                         if used_h > cont.row_max_h {
                             cont.row_max_h = used_h;
@@ -507,7 +548,6 @@ impl Ui {
                         let last_child = cont.remaining == 0;
 
                         if end_of_row || last_child {
-                            // Finish this row: advance cursor_y by the tallest child
                             cursor_y = cont.row_start_y - cont.row_max_h;
                             cont.row_max_h = 0.0;
                             cont.col_index = 0;
@@ -515,7 +555,6 @@ impl Ui {
                             base_x = cont.saved_x;
                             current_width = cont.col_width;
                         } else {
-                            // Move to next column
                             cursor_y = cont.row_start_y;
                             base_x += cont.col_width + cont.col_spacing;
                         }
@@ -531,14 +570,29 @@ impl Ui {
                 let cont = stack.remove(si);
                 match cont.kind {
                     0 => {
-                        // Panel: restore and add bottom padding
                         cursor_y -= cont.padding;
                         base_x = cont.saved_x;
                         current_width = cont.saved_width;
                         cursor_y -= self.style.spacing;
                     }
+                    3 => {
+                        cursor_y = cont.scroll_clip_bottom;
+                        base_x = cont.saved_x;
+                        current_width = cont.saved_width;
+                        let clip_top = cont.scroll_clip_top;
+                        let clip_bot = cont.scroll_clip_bottom;
+                        let start = cont.col_index;
+                        for r in &mut rects[start..] {
+                            let top = r.2 + r.4;
+                            let bot = r.2;
+                            if top <= clip_bot || bot >= clip_top {
+                                r.3 = 0.0;
+                                r.4 = 0.0;
+                            }
+                        }
+                        cursor_y -= self.style.spacing;
+                    }
                     _ => {
-                        // Row/Grid: restore saved layout
                         base_x = cont.saved_x;
                         current_width = cont.saved_width;
                         cursor_y -= self.style.spacing;
@@ -549,11 +603,9 @@ impl Ui {
             if let Some(mut cont) = pending {
                 match cont.kind {
                     0 => {
-                        // Panel: push padding
                         cursor_y -= cont.padding;
                         cont.saved_x = base_x;
                         cont.saved_width = current_width;
-                        // base_x already set in the Container init above, but we need to offset
                         let pad = cont.padding;
                         let old_x = base_x;
                         let old_w = current_width;
@@ -563,8 +615,11 @@ impl Ui {
                         cont.saved_width = old_w;
                         stack.push(cont);
                     }
+                    3 => {
+                        cont.col_index = rects.len();
+                        stack.push(cont);
+                    }
                     _ => {
-                        // Row/Grid: set up first column
                         cont.row_start_y = cursor_y;
                         base_x = cont.saved_x;
                         current_width = cont.col_width;
@@ -591,6 +646,7 @@ impl Ui {
                 toggled,
                 changed_values,
                 dragging: None,
+                scroll_offsets: Vec::new(),
             };
         }
 
@@ -703,6 +759,58 @@ impl Ui {
             }
         }
 
+        let mut scroll_offsets = Vec::new();
+        let (scroll_dx, scroll_dy) = input.scroll_delta();
+        if scroll_dy.abs() > 0.0 {
+            let mut sy = self.y;
+            let mut si = 0;
+            while si < self.widgets.len() {
+                match &self.widgets[si] {
+                    Widget::ScrollRegion {
+                        id,
+                        height,
+                        scroll_offset,
+                        children,
+                    } => {
+                        let region_top = sy;
+                        let region_bottom = sy - *height;
+                        if mx >= self.x
+                            && mx <= self.x + self.width
+                            && my <= region_top
+                            && my >= region_bottom
+                        {
+                            let n = (*children).min(self.widgets.len() - si - 1);
+                            let child_slice = &self.widgets[si + 1..si + 1 + n];
+                            let mut content_h: f32 = 0.0;
+                            for (ci, cw) in child_slice.iter().enumerate() {
+                                content_h +=
+                                    self.compute_widget_height(cw, &child_slice[ci + 1..], atlas);
+                            }
+                            let max_scroll = (content_h - *height).max(0.0);
+                            let new_offset =
+                                (*scroll_offset - scroll_dy * 30.0).clamp(0.0, max_scroll);
+                            scroll_offsets.push((*id, new_offset));
+                        }
+                        sy -= *height + self.style.spacing;
+                        si += 1 + *children;
+                        continue;
+                    }
+                    other => {
+                        sy -= self.compute_widget_height(other, &self.widgets[si + 1..], atlas);
+                        let skip = match other {
+                            Widget::Panel { children, .. }
+                            | Widget::Row { children, .. }
+                            | Widget::Grid { children, .. } => *children,
+                            _ => 0,
+                        };
+                        si += skip;
+                    }
+                }
+                si += 1;
+            }
+            let _ = scroll_dx;
+        }
+
         UiResponse {
             focused: Some(self.focus_index),
             activated: self.activated,
@@ -710,6 +818,7 @@ impl Ui {
             toggled,
             changed_values,
             dragging: self.dragging_slider,
+            scroll_offsets,
         }
     }
 
@@ -736,6 +845,7 @@ impl Ui {
             col_spacing: f32,
             row_start_y: f32,
             row_max_h: f32,
+            scroll_height: f32,
         }
         let mut stack: Vec<RenderContainer> = Vec::new();
 
@@ -837,6 +947,7 @@ impl Ui {
                         col_spacing: 0.0,
                         row_start_y: 0.0,
                         row_max_h: 0.0,
+                        scroll_height: 0.0,
                     });
                 }
                 Widget::Row { spacing, children } => {
@@ -855,6 +966,7 @@ impl Ui {
                         col_spacing: *spacing,
                         row_start_y: cursor_y,
                         row_max_h: 0.0,
+                        scroll_height: 0.0,
                     });
                 }
                 Widget::Grid {
@@ -877,6 +989,7 @@ impl Ui {
                         col_spacing: *spacing,
                         row_start_y: cursor_y,
                         row_max_h: 0.0,
+                        scroll_height: 0.0,
                     });
                 }
                 Widget::ProgressBar {
@@ -1071,15 +1184,37 @@ impl Ui {
 
                     cursor_y -= bar_h + self.style.spacing;
                 }
+                Widget::ScrollRegion {
+                    height,
+                    scroll_offset,
+                    children,
+                    ..
+                } => {
+                    canvas.push_clip(base_x, cursor_y - *height, current_width, *height);
+                    pending = Some(RenderContainer {
+                        kind: 3,
+                        saved_x: base_x,
+                        saved_width: current_width,
+                        remaining: *children,
+                        padding: 0.0,
+                        col_index: 0,
+                        col_count: 0,
+                        col_width: 0.0,
+                        col_spacing: 0.0,
+                        row_start_y: cursor_y,
+                        row_max_h: 0.0,
+                        scroll_height: *height,
+                    });
+                    cursor_y += *scroll_offset;
+                }
             }
 
-            // Decrement container child counters and pop finished containers
             let mut pop_idx = None;
             for (si, cont) in stack.iter_mut().enumerate().rev() {
                 if cont.remaining > 0 {
                     cont.remaining -= 1;
 
-                    if cont.kind >= 1 {
+                    if cont.kind == 1 || cont.kind == 2 {
                         let used_h = cont.row_start_y - cursor_y;
                         if used_h > cont.row_max_h {
                             cont.row_max_h = used_h;
@@ -1117,6 +1252,13 @@ impl Ui {
                         current_width = cont.saved_width;
                         cursor_y -= self.style.spacing;
                     }
+                    3 => {
+                        canvas.pop_clip();
+                        cursor_y = cont.row_start_y - cont.scroll_height;
+                        base_x = cont.saved_x;
+                        current_width = cont.saved_width;
+                        cursor_y -= self.style.spacing;
+                    }
                     _ => {
                         base_x = cont.saved_x;
                         current_width = cont.saved_width;
@@ -1136,6 +1278,9 @@ impl Ui {
                         current_width -= pad * 2.0;
                         cont.saved_x = old_x;
                         cont.saved_width = old_w;
+                        stack.push(cont);
+                    }
+                    3 => {
                         stack.push(cont);
                     }
                     _ => {
