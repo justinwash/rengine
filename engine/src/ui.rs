@@ -343,9 +343,7 @@ impl Ui {
                 }
                 h
             }
-            Widget::Row {
-                children, ..
-            } => {
+            Widget::Row { children, .. } => {
                 let n = (*children).min(remaining.len());
                 let child_slice = &remaining[..n];
                 let mut max_h: f32 = 0.0;
@@ -359,9 +357,7 @@ impl Ui {
                 max_h + self.style.spacing
             }
             Widget::Grid {
-                columns,
-                children,
-                ..
+                columns, children, ..
             } => {
                 let n = (*children).min(remaining.len());
                 let child_slice = &remaining[..n];
@@ -381,9 +377,7 @@ impl Ui {
                 }
                 total_h + self.style.spacing
             }
-            Widget::ScrollRegion { height, .. } => {
-                *height + self.style.spacing
-            }
+            Widget::ScrollRegion { height, .. } => *height + self.style.spacing,
         }
     }
 
@@ -784,14 +778,12 @@ impl Ui {
                             let child_slice = &self.widgets[si + 1..si + 1 + n];
                             let mut content_h: f32 = 0.0;
                             for (ci, cw) in child_slice.iter().enumerate() {
-                                content_h += self.compute_widget_height(
-                                    cw,
-                                    &child_slice[ci + 1..],
-                                    atlas,
-                                );
+                                content_h +=
+                                    self.compute_widget_height(cw, &child_slice[ci + 1..], atlas);
                             }
                             let max_scroll = (content_h - *height).max(0.0);
-                            let new_offset = (*scroll_offset - scroll_dy * 30.0).clamp(0.0, max_scroll);
+                            let new_offset =
+                                (*scroll_offset - scroll_dy * 30.0).clamp(0.0, max_scroll);
                             scroll_offsets.push((*id, new_offset));
                         }
                         sy -= *height + self.style.spacing;
@@ -799,11 +791,7 @@ impl Ui {
                         continue;
                     }
                     other => {
-                        sy -= self.compute_widget_height(
-                            other,
-                            &self.widgets[si + 1..],
-                            atlas,
-                        );
+                        sy -= self.compute_widget_height(other, &self.widgets[si + 1..], atlas);
                     }
                 }
                 si += 1;
