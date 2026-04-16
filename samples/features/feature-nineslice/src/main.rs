@@ -95,7 +95,6 @@ impl Game for NineSliceDemo {
 
     fn render(&mut self, engine: &Engine, frame: &mut Frame) {
         let (sw, sh) = engine.window_size();
-        let atlas = engine.font_atlas();
         let t = self.time;
         let hw = sw as f32 / 2.0;
         let hh = sh as f32 / 2.0;
@@ -179,7 +178,7 @@ impl Game for NineSliceDemo {
         let p = |sx: f32, sy: f32, _size: f32| -> (f32, f32) { (sx - hw, hh - sy) };
 
         let (tx, ty) = p(20.0, 10.0, 28.0);
-        canvas.text(tx, ty, "NineSlice Feature Demo", 28.0, Color::WHITE, atlas);
+        canvas.text(tx, ty, "NineSlice Feature Demo", 28.0, Color::WHITE);
         let (tx, ty) = p(20.0, 42.0, 14.0);
         canvas.text(
             tx,
@@ -187,21 +186,20 @@ impl Game for NineSliceDemo {
             "Same 32x32 texture drawn at different sizes - corners stay sharp",
             14.0,
             Color::from_rgba8(180, 180, 180, 255),
-            atlas,
         );
 
         for &(lbl, sx, _, _) in panels1 {
             let (tx, ty) = p(sx, r1_lbl_y, ls);
-            canvas.text(tx, ty, lbl, ls, label_color, atlas);
+            canvas.text(tx, ty, lbl, ls, label_color);
         }
         let (tx, ty) = p(660.0, r1_lbl_y, ls);
-        canvas.text(tx, ty, "Source (1:1)", ls, label_color, atlas);
+        canvas.text(tx, ty, "Source (1:1)", ls, label_color);
         let (tx, ty) = p(740.0, r1_lbl_y, ls);
-        canvas.text(tx, ty, "Naive stretch", ls, label_color, atlas);
+        canvas.text(tx, ty, "Naive stretch", ls, label_color);
 
         for &(lbl, sx, _, _) in panels2 {
             let (tx, ty) = p(sx, r2_lbl_y, ls);
-            canvas.text(tx, ty, lbl, ls, label_color, atlas);
+            canvas.text(tx, ty, lbl, ls, label_color);
         }
         let (tx, ty) = p(480.0, r2_lbl_y, ls);
         canvas.text(
@@ -210,15 +208,14 @@ impl Game for NineSliceDemo {
             "Tinted (160x130)",
             ls,
             Color::from_rgba8(255, 200, 150, 255),
-            atlas,
         );
 
         let (tx, ty) = p(20.0, r3_lbl_y, ls);
-        canvas.text(tx, ty, "Animated (resizing)", ls, anim_label_color, atlas);
+        canvas.text(tx, ty, "Animated (resizing)", ls, anim_label_color);
         let (tx, ty) = p(220.0, r3_lbl_y, ls);
-        canvas.text(tx, ty, "Animated (width)", ls, anim_label_color, atlas);
+        canvas.text(tx, ty, "Animated (width)", ls, anim_label_color);
         let (tx, ty) = p(600.0, r3_lbl_y, ls);
-        canvas.text(tx, ty, "Animated (breathing)", ls, anim_label_color, atlas);
+        canvas.text(tx, ty, "Animated (breathing)", ls, anim_label_color);
 
         let (tx, ty) = p(20.0, sh as f32 - 24.0, 14.0);
         canvas.text(
@@ -227,7 +224,6 @@ impl Game for NineSliceDemo {
             "ESC to quit",
             14.0,
             Color::from_rgba8(120, 120, 120, 255),
-            atlas,
         );
     }
 

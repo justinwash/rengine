@@ -10,7 +10,7 @@ fn draw_label(frame: &mut Frame, engine: &Engine, y: f32, size: f32, color: Colo
     let hw = screen.0 as f32 / 2.0;
     let hh = screen.1 as f32 / 2.0;
     let canvas = frame.canvas(0);
-    canvas.text(-hw + 20.0, hh - y, text, size, color, engine.font_atlas());
+    canvas.text(-hw + 20.0, hh - y, text, size, color);
 }
 
 struct ColorScene {
@@ -145,7 +145,6 @@ impl Scene for PauseOverlay {
             "PAUSED  —  press P or Esc to resume",
             28.0,
             Color::WHITE,
-            engine.font_atlas(),
         );
     }
 

@@ -20,7 +20,6 @@ impl Game for CanvasDemo {
         let sh = screen.1 as f32;
         let hw = sw / 2.0;
         let hh = sh / 2.0;
-        let atlas = engine.font_atlas();
 
         let hud = frame.canvas(0);
 
@@ -31,21 +30,13 @@ impl Game for CanvasDemo {
             120.0,
             Color::new(0.15, 0.15, 0.22, 0.9),
         );
-        hud.text(
-            -hw + 30.0,
-            hh - 30.0,
-            "Canvas Demo",
-            20.0,
-            Color::WHITE,
-            atlas,
-        );
+        hud.text(-hw + 30.0, hh - 30.0, "Canvas Demo", 20.0, Color::WHITE);
         hud.text(
             -hw + 30.0,
             hh - 56.0,
             "Rectangles, text,",
             14.0,
             Color::new(0.7, 0.7, 0.7, 1.0),
-            atlas,
         );
         hud.text(
             -hw + 30.0,
@@ -53,7 +44,6 @@ impl Game for CanvasDemo {
             "and custom shapes",
             14.0,
             Color::new(0.7, 0.7, 0.7, 1.0),
-            atlas,
         );
 
         let colors = [
@@ -75,7 +65,6 @@ impl Game for CanvasDemo {
             "Color palette",
             14.0,
             Color::new(0.7, 0.7, 0.7, 1.0),
-            atlas,
         );
 
         let bar_w = 300.0;
@@ -91,7 +80,6 @@ impl Game for CanvasDemo {
             "Animated bar",
             14.0,
             Color::WHITE,
-            atlas,
         );
 
         let shapes = frame.canvas(1);
@@ -138,7 +126,6 @@ impl Game for CanvasDemo {
             "Custom triangle fan",
             14.0,
             Color::WHITE,
-            atlas,
         );
 
         let dx = 0.3 * hw;
@@ -185,7 +172,6 @@ impl Game for CanvasDemo {
             "Spinning quad",
             14.0,
             Color::WHITE,
-            atlas,
         );
 
         let stats = frame.canvas(3);
@@ -198,21 +184,13 @@ impl Game for CanvasDemo {
             50.0,
             Color::new(0.1, 0.1, 0.15, 0.85),
         );
-        stats.text(
-            -hw + 30.0,
-            -hh + 46.0,
-            &fps_text,
-            14.0,
-            Color::YELLOW,
-            atlas,
-        );
+        stats.text(-hw + 30.0, -hh + 46.0, &fps_text, 14.0, Color::YELLOW);
         stats.text(
             -hw + 30.0,
             -hh + 28.0,
             &time_text,
             14.0,
             Color::new(0.6, 0.8, 1.0, 1.0),
-            atlas,
         );
     }
 }

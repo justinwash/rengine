@@ -99,7 +99,6 @@ impl Game for RngDemo {
         let (sw, sh) = engine.window_size();
         let hw = sw as f32 / 2.0;
         let hh = sh as f32 / 2.0;
-        let atlas = engine.font_atlas();
         let canvas = frame.canvas(0);
 
         canvas.rect(
@@ -116,7 +115,6 @@ impl Game for RngDemo {
             "Rng Feature Demo",
             28.0,
             Color::WHITE,
-            atlas,
         );
         canvas.text(
             -hw + 20.0,
@@ -124,7 +122,6 @@ impl Game for RngDemo {
             &format!("Seed: {}", self.seed),
             18.0,
             Color::from_rgba8(180, 180, 180, 255),
-            atlas,
         );
 
         let mut y = hh - 90.0;
@@ -135,7 +132,6 @@ impl Game for RngDemo {
                 line,
                 16.0,
                 Color::from_rgba8(200, 220, 255, 255),
-                atlas,
             );
             y -= 22.0;
         }
@@ -146,7 +142,6 @@ impl Game for RngDemo {
             "ESC to quit",
             14.0,
             Color::from_rgba8(120, 120, 120, 255),
-            atlas,
         );
     }
 

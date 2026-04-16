@@ -118,7 +118,6 @@ impl Game for ParticleDemo {
         self.sparkle.draw(frame, self.white_tex);
 
         let screen = engine.window_size();
-        let font = engine.font_atlas();
         let canvas = frame.canvas(0);
         let hw = screen.0 as f32 / 2.0;
         let hh = screen.1 as f32 / 2.0;
@@ -129,7 +128,6 @@ impl Game for ParticleDemo {
             "Fire",
             16.0,
             Color::new(1.0, 0.6, 0.1, 1.0),
-            &font,
         );
         canvas.text(
             -hw * 0.6 - 30.0,
@@ -137,7 +135,6 @@ impl Game for ParticleDemo {
             &format!("alive: {}", self.fire.alive_count()),
             14.0,
             Color::new(0.7, 0.7, 0.7, 1.0),
-            &font,
         );
 
         canvas.text(
@@ -146,7 +143,6 @@ impl Game for ParticleDemo {
             "Fountain",
             16.0,
             Color::new(0.3, 0.6, 1.0, 1.0),
-            &font,
         );
         canvas.text(
             -30.0,
@@ -154,7 +150,6 @@ impl Game for ParticleDemo {
             &format!("alive: {}", self.fountain.alive_count()),
             14.0,
             Color::new(0.7, 0.7, 0.7, 1.0),
-            &font,
         );
 
         canvas.text(
@@ -163,7 +158,6 @@ impl Game for ParticleDemo {
             "Sparkle (Space)",
             16.0,
             Color::YELLOW,
-            &font,
         );
         canvas.text(
             hw * 0.6 - 30.0,
@@ -171,7 +165,6 @@ impl Game for ParticleDemo {
             &format!("alive: {}", self.sparkle.alive_count()),
             14.0,
             Color::new(0.7, 0.7, 0.7, 1.0),
-            &font,
         );
     }
 

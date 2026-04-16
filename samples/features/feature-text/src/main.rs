@@ -19,7 +19,6 @@ impl Game for TextDemo {
         let (sw, sh) = engine.window_size();
         let hw = sw as f32 / 2.0;
         let hh = sh as f32 / 2.0;
-        let atlas = engine.font_atlas();
         frame.clear_color = Color::from_rgba8(30, 30, 40, 255);
 
         let canvas = frame.canvas(0);
@@ -33,19 +32,19 @@ impl Game for TextDemo {
         let col_x = -hw + 30.0;
         let mut y = hh - 40.0;
 
-        canvas.text(col_x, y, "measure_text()", heading, label_color, atlas);
+        canvas.text(col_x, y, "measure_text()", heading, label_color);
         y -= 30.0;
         let sample = "Hello, World!";
         let sizes = [12.0, 18.0, 24.0, 36.0];
         for &sz in &sizes {
-            let (w, h) = atlas.measure_text(sample, sz);
+            let (w, h) = canvas.measure_text(sample, sz);
             let label = format!("{}px: \"{}\" => {:.0} x {:.0}", sz, sample, w, h);
-            canvas.text(col_x + 10.0, y, &label, body, text_color, atlas);
+            canvas.text(col_x + 10.0, y, &label, body, text_color);
             y -= 20.0;
         }
 
         y -= 15.0;
-        canvas.text(col_x, y, "TextAlign", heading, label_color, atlas);
+        canvas.text(col_x, y, "TextAlign", heading, label_color);
         y -= 30.0;
 
         let align_x = 0.0;
@@ -63,14 +62,14 @@ impl Game for TextDemo {
                 TextAlign::Center => align_x,
                 TextAlign::Right => align_x + guide_w / 2.0,
             };
-            canvas.text_aligned(ax, y, txt, body, text_color, *align, atlas);
+            canvas.text_aligned(ax, y, txt, body, text_color, *align);
             y -= 22.0;
         }
 
         canvas.rect(align_x - guide_w / 2.0, y + 18.0, guide_w, 1.0, dim_color);
 
         y -= 20.0;
-        canvas.text(col_x, y, "Word wrapping", heading, label_color, atlas);
+        canvas.text(col_x, y, "Word wrapping", heading, label_color);
         y -= 30.0;
 
         let paragraph = "The quick brown fox jumps over the lazy dog. \
@@ -89,11 +88,11 @@ impl Game for TextDemo {
             let max_w = widths[i];
             let by = y;
 
-            canvas.text(bx, by, labels[i], 11.0, dim_color, atlas);
+            canvas.text(bx, by, labels[i], 11.0, dim_color);
             let by = by - 18.0;
 
-            let lines = wrap_text(paragraph, body, max_w, atlas);
-            let lh = atlas.line_height(body);
+            let lines = wrap_text(paragraph, body, max_w, engine.font_atlas());
+            let lh = canvas.line_height(body);
             let block_h = lines.len() as f32 * lh;
 
             canvas.rect(
@@ -103,16 +102,7 @@ impl Game for TextDemo {
                 block_h + 4.0,
                 Color::from_rgba8(50, 50, 60, 255),
             );
-            canvas.text_block(
-                bx,
-                by,
-                paragraph,
-                body,
-                text_color,
-                max_w,
-                TextAlign::Left,
-                atlas,
-            );
+            canvas.text_block(bx, by, paragraph, body, text_color, max_w, TextAlign::Left);
         }
 
         y -= 120.0;
@@ -122,7 +112,6 @@ impl Game for TextDemo {
             "text_block() with alignment",
             heading,
             label_color,
-            atlas,
         );
         y -= 30.0;
 
@@ -138,7 +127,7 @@ impl Game for TextDemo {
 
         for (i, (align, name)) in block_aligns.iter().enumerate() {
             let bx = start_x + i as f32 * spacing;
-            canvas.text(bx, y, name, 11.0, dim_color, atlas);
+            canvas.text(bx, y, name, 11.0, dim_color);
             let by = y - 18.0;
 
             canvas.rect(
@@ -154,13 +143,13 @@ impl Game for TextDemo {
                 TextAlign::Center => bx + block_w / 2.0,
                 TextAlign::Right => bx + block_w,
             };
-            canvas.text_block(ax, by, short_text, body, text_color, block_w, *align, atlas);
+            canvas.text_block(ax, by, short_text, body, text_color, block_w, *align);
         }
 
         y -= 120.0;
         let features =
             "Features: measure_text, line_height, TextAlign, wrap_text, text_aligned, text_block";
-        canvas.text(col_x, y, features, 11.0, dim_color, atlas);
+        canvas.text(col_x, y, features, 11.0, dim_color);
     }
 
     fn should_exit(&self) -> bool {

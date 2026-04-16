@@ -1,9 +1,9 @@
-use rengine::{Canvas, Color, DrawParams, Engine, FontAtlas, Frame, Vec2};
+use rengine::{Canvas, Color, DrawParams, Engine, Frame, Vec2};
 
 use crate::state::{Facing, FightGame, FighterData, FighterState, FighterTextures};
 use crate::{FIGHTER_H, FIGHTER_W, GROUND_Y, MAX_HP, SCREEN_H, SCREEN_W};
 
-pub fn draw(game: &FightGame, engine: &Engine, frame: &mut Frame) {
+pub fn draw(game: &FightGame, _engine: &Engine, frame: &mut Frame) {
     frame.clear_color = Color::from_rgba8(10, 8, 20, 255);
 
     frame.camera.position = Vec2::new(SCREEN_W as f32 / 2.0, SCREEN_H as f32 / 2.0);
@@ -139,10 +139,10 @@ pub fn draw(game: &FightGame, engine: &Engine, frame: &mut Frame) {
         );
     }
 
-    draw_hud(game, frame.canvas(0), engine.font_atlas());
+    draw_hud(game, frame.canvas(0));
 
     if game.demo_mode {
-        draw_demo_overlay(game, frame.canvas(1), engine.font_atlas());
+        draw_demo_overlay(game, frame.canvas(1));
     }
 }
 
@@ -180,7 +180,7 @@ fn draw_fighter(game: &FightGame, fighter: &FighterData, tex: &FighterTextures, 
     }
 }
 
-fn draw_hud(game: &FightGame, hud: &mut Canvas, atlas: &FontAtlas) {
+fn draw_hud(game: &FightGame, hud: &mut Canvas) {
     let screen = hud.screen_size();
     let hw = screen.0 as f32 / 2.0;
     let hh = screen.1 as f32 / 2.0;
@@ -233,7 +233,6 @@ fn draw_hud(game: &FightGame, hud: &mut Canvas, atlas: &FontAtlas) {
         "1",
         16.0,
         Color::from_rgba8(80, 120, 255, 255),
-        atlas,
     );
     hud.text(
         p2_bar_x + bar_w - 10.0,
@@ -241,7 +240,6 @@ fn draw_hud(game: &FightGame, hud: &mut Canvas, atlas: &FontAtlas) {
         "2",
         16.0,
         Color::from_rgba8(255, 80, 80, 255),
-        atlas,
     );
 
     let marker_size = 10.0;
@@ -271,7 +269,6 @@ fn draw_hud(game: &FightGame, hud: &mut Canvas, atlas: &FontAtlas) {
         &game.sim.round_number.to_string(),
         20.0,
         Color::WHITE,
-        atlas,
     );
 
     if game.sim.round_pause > 0.0 {
@@ -285,18 +282,11 @@ fn draw_hud(game: &FightGame, hud: &mut Canvas, atlas: &FontAtlas) {
             50.0,
             Color::from_rgba8(0, 0, 0, 200),
         );
-        hud.text(
-            ko_x,
-            ko_y + 36.0,
-            &winner.to_string(),
-            36.0,
-            Color::YELLOW,
-            atlas,
-        );
+        hud.text(ko_x, ko_y + 36.0, &winner.to_string(), 36.0, Color::YELLOW);
     }
 }
 
-fn draw_demo_overlay(game: &FightGame, hud: &mut Canvas, atlas: &FontAtlas) {
+fn draw_demo_overlay(game: &FightGame, hud: &mut Canvas) {
     let screen = hud.screen_size();
     let hw = screen.0 as f32 / 2.0;
     let hh = screen.1 as f32 / 2.0;
@@ -321,7 +311,6 @@ fn draw_demo_overlay(game: &FightGame, hud: &mut Canvas, atlas: &FontAtlas) {
         &game.demo_frame.to_string(),
         14.0,
         Color::from_rgba8(100, 255, 100, 255),
-        atlas,
     );
     hud.text(
         -hw + 200.0,
@@ -329,7 +318,6 @@ fn draw_demo_overlay(game: &FightGame, hud: &mut Canvas, atlas: &FontAtlas) {
         &elapsed_mins.to_string(),
         14.0,
         Color::WHITE,
-        atlas,
     );
     hud.text(
         -hw + 240.0,
@@ -337,7 +325,6 @@ fn draw_demo_overlay(game: &FightGame, hud: &mut Canvas, atlas: &FontAtlas) {
         &elapsed_rem.to_string(),
         14.0,
         Color::WHITE,
-        atlas,
     );
     hud.text(
         hw - 40.0,
@@ -345,7 +332,6 @@ fn draw_demo_overlay(game: &FightGame, hud: &mut Canvas, atlas: &FontAtlas) {
         "7",
         14.0,
         Color::from_rgba8(255, 200, 50, 255),
-        atlas,
     );
 
     let state_y = banner_y + 2.0 + 12.0;
@@ -355,7 +341,6 @@ fn draw_demo_overlay(game: &FightGame, hud: &mut Canvas, atlas: &FontAtlas) {
         &game.sim.p1.hp.max(0).to_string(),
         12.0,
         Color::from_rgba8(80, 120, 255, 255),
-        atlas,
     );
     hud.text(
         -hw + 80.0,
@@ -363,7 +348,6 @@ fn draw_demo_overlay(game: &FightGame, hud: &mut Canvas, atlas: &FontAtlas) {
         &game.sim.p2.hp.max(0).to_string(),
         12.0,
         Color::from_rgba8(255, 80, 80, 255),
-        atlas,
     );
 }
 

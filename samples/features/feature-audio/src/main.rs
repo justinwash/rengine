@@ -147,7 +147,6 @@ impl Game for AudioDemo {
         frame.clear_color = Color::from_rgba8(20, 20, 30, 255);
         let (w, h) = engine.window_size();
         let _screen = (w, h);
-        let font = engine.font_atlas();
         let c = frame.canvas(10);
         let hh = h as f32 / 2.0;
 
@@ -158,7 +157,6 @@ impl Game for AudioDemo {
             28.0,
             Color::WHITE,
             TextAlign::Center,
-            &font,
         );
 
         c.text_aligned(
@@ -168,7 +166,6 @@ impl Game for AudioDemo {
             20.0,
             Color::YELLOW,
             TextAlign::Center,
-            &font,
         );
 
         let fading = if engine.is_audio_fading() {
@@ -183,7 +180,6 @@ impl Game for AudioDemo {
             16.0,
             Color::from_rgba8(150, 150, 150, 255),
             TextAlign::Center,
-            &font,
         );
 
         if !self.demo_mode {
@@ -195,7 +191,6 @@ impl Game for AudioDemo {
                 14.0,
                 Color::from_rgba8(120, 120, 120, 255),
                 TextAlign::Center,
-                &font,
             );
         }
     }
