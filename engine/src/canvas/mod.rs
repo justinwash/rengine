@@ -654,7 +654,10 @@ pub(crate) fn render_pass(
                 continue;
             }
             if let Some([sx, sy, sw, sh]) = scissor {
-                pass.set_scissor_rect(*sx, *sy, (*sw).max(1), (*sh).max(1));
+                if *sw == 0 || *sh == 0 {
+                    continue;
+                }
+                pass.set_scissor_rect(*sx, *sy, *sw, *sh);
             } else {
                 pass.set_scissor_rect(0, 0, surface_w, surface_h);
             }

@@ -581,11 +581,15 @@ impl Ui {
                         current_width = cont.saved_width;
                         let clip_top = cont.scroll_clip_top;
                         let clip_bot = cont.scroll_clip_bottom;
-                        rects.retain(|(_, _, ry, _, rh)| {
-                            let top = *ry + *rh;
-                            let bot = *ry;
-                            top > clip_bot && bot < clip_top
-                        });
+                        let start = cont.col_index;
+                        for r in &mut rects[start..] {
+                            let top = r.2 + r.4;
+                            let bot = r.2;
+                            if top <= clip_bot || bot >= clip_top {
+                                r.3 = 0.0;
+                                r.4 = 0.0;
+                            }
+                        }
                         cursor_y -= self.style.spacing;
                     }
                     _ => {
@@ -612,6 +616,7 @@ impl Ui {
                         stack.push(cont);
                     }
                     3 => {
+                        cont.col_index = rects.len();
                         stack.push(cont);
                     }
                     _ => {
@@ -792,6 +797,13 @@ impl Ui {
                     }
                     other => {
                         sy -= self.compute_widget_height(other, &self.widgets[si + 1..], atlas);
+                        let skip = match other {
+                            Widget::Panel { children, .. }
+                            | Widget::Row { children, .. }
+                            | Widget::Grid { children, .. } => *children,
+                            _ => 0,
+                        };
+                        si += skip;
                     }
                 }
                 si += 1;
@@ -1189,7 +1201,7 @@ impl Ui {
                         col_count: 0,
                         col_width: 0.0,
                         col_spacing: 0.0,
-                        row_start_y: 0.0,
+                        row_start_y: cursor_y,
                         row_max_h: 0.0,
                         scroll_height: *height,
                     });
@@ -1269,7 +1281,6 @@ impl Ui {
                         stack.push(cont);
                     }
                     3 => {
-                        cont.row_start_y = cursor_y;
                         stack.push(cont);
                     }
                     _ => {
