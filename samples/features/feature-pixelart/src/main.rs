@@ -107,7 +107,6 @@ impl Game for PixelArtDemo {
         let sw = screen.0 as f32;
         let hw = sw / 2.0;
         let hh = screen.1 as f32 / 2.0;
-        let atlas = engine.font_atlas();
 
         let hud = frame.canvas(0);
         hud.rect(-hw, hh - 40.0, sw, 40.0, Color::new(0.08, 0.07, 0.1, 0.95));
@@ -117,7 +116,6 @@ impl Game for PixelArtDemo {
             "PixelCanvas Procedural Textures",
             18.0,
             Color::WHITE,
-            atlas,
         );
 
         let cols = 3;
@@ -144,14 +142,7 @@ impl Game for PixelArtDemo {
             frame.draw(*tex, Vec2::new(x, y), size);
 
             let labels = frame.canvas(0);
-            labels.text(
-                x,
-                y - 8.0,
-                label,
-                13.0,
-                Color::new(0.7, 0.8, 0.9, 1.0),
-                atlas,
-            );
+            labels.text(x, y - 8.0, label, 13.0, Color::new(0.7, 0.8, 0.9, 1.0));
         }
     }
 }
