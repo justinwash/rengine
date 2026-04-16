@@ -96,12 +96,34 @@ impl Game for TextDemo {
             let lh = atlas.line_height(body);
             let block_h = lines.len() as f32 * lh;
 
-            canvas.rect(bx - 2.0, by - block_h + 2.0, max_w + 4.0, block_h + 4.0, Color::from_rgba8(50, 50, 60, 255));
-            canvas.text_block(bx, by, paragraph, body, text_color, max_w, TextAlign::Left, atlas);
+            canvas.rect(
+                bx - 2.0,
+                by - block_h + 2.0,
+                max_w + 4.0,
+                block_h + 4.0,
+                Color::from_rgba8(50, 50, 60, 255),
+            );
+            canvas.text_block(
+                bx,
+                by,
+                paragraph,
+                body,
+                text_color,
+                max_w,
+                TextAlign::Left,
+                atlas,
+            );
         }
 
         y -= 120.0;
-        canvas.text(col_x, y, "text_block() with alignment", heading, label_color, atlas);
+        canvas.text(
+            col_x,
+            y,
+            "text_block() with alignment",
+            heading,
+            label_color,
+            atlas,
+        );
         y -= 30.0;
 
         let short_text = "Short lines\nshow alignment\nclearly across\nmultiple lines.";
@@ -119,7 +141,13 @@ impl Game for TextDemo {
             canvas.text(bx, y, name, 11.0, dim_color, atlas);
             let by = y - 18.0;
 
-            canvas.rect(bx - 2.0, by - 70.0, block_w + 4.0, 74.0, Color::from_rgba8(50, 50, 60, 255));
+            canvas.rect(
+                bx - 2.0,
+                by - 70.0,
+                block_w + 4.0,
+                74.0,
+                Color::from_rgba8(50, 50, 60, 255),
+            );
 
             let ax = match align {
                 TextAlign::Left => bx,
@@ -130,7 +158,8 @@ impl Game for TextDemo {
         }
 
         y -= 120.0;
-        let features = "Features: measure_text, line_height, TextAlign, wrap_text, text_aligned, text_block";
+        let features =
+            "Features: measure_text, line_height, TextAlign, wrap_text, text_aligned, text_block";
         canvas.text(col_x, y, features, 11.0, dim_color, atlas);
     }
 

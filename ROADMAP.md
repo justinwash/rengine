@@ -461,3 +461,89 @@ That means the highest-value work is:
 - import tools
 
 Those are the features that make an engine pleasant to build games in, rather than merely possible to build games in.
+
+---
+
+## Personal End-Goal: Loop Hero-Inspired Motorsport Simulator
+
+The target game that drives engine development priorities. Everything below describes what the engine must eventually support so a human can sit down and build this game without fighting the tooling.
+
+### Concept
+
+Loop Hero meets the entire history of Formula 1 compressed into one race. Cars drive themselves around a track based on driver/car stats. The player makes management decisions between laps — hiring drivers, allocating R&D, playing cards, building facilities — to win both the Drivers' and Constructors' Championships. Each lap advances 3-4 years through motorsport history (1950s → present), with cars naturally evolving as eras progress.
+
+### Core Loop
+
+1. Create/choose a team (engine supplier, car parts, two drivers from a market)
+2. Race starts in the 1950s
+3. Cars race autonomously based on stats
+4. Each lap = 3-4 years of progress through ~7-10 regulatory eras
+5. Between laps: 3-5 decisions (cards, tech tree, staff, strategy)
+6. Goal: win Drivers' Championship, then Constructors' Championship
+
+### Key Mechanics
+
+- **Tech Tree**: Permanent progression branches (aero vs engine vs chassis vs reliability). Long-term strategic bets — picking aero early peaks in the ground-effect era but struggles in the turbo era.
+- **Cards**: Random tactical per-lap draws (3-5 drawn, play 1-2). Examples: Wind Tunnel Breakthrough (+15% aero for 2 laps), Engine Blow (opponent DNF), Rain Dance (wet lap), Miraculous Save (cancel crash), Poaching (steal rival engineer), Regulation Change (reset a tech branch), Budget Cap (spend limit for 3 laps).
+- **Card Rarity**: Common (small stat buffs), Rare (significant advantages), Legendary (game-changers like "Regulation Loophole" — ignore one regulation change).
+- **Regulation Changes**: Periodic bans that wipe overspecialized teams and create catch-up opportunities. Scripted per era or card-driven.
+- **Drivers**: Two per team. Traits: consistent, aggressive, wet-weather specialist, tyre whisperer, team player vs maverick. Contract length/cost. Hidden "potential" stat — young rookies may bloom into champions or plateau after 2-3 eras.
+- **Staff**: Race engineer affects stat-to-laptime translation. Team principal decisions: team orders, pit strategy, risk tolerance.
+- **Qualifying**: Mini-decision phase before each era determines grid position (spend tokens for practice, risk crash for speed, or play safe).
+- **Points System**: Evolves with era (1950s: 8-6-4-3-2 → modern: 25-18-15-etc).
+- **Rival AI Archetypes**: Conservative (reliability), Aggressive (aero), Budget (poach staff). Gives personality to the field.
+- **Heritage Bonus**: Staying with the same engine supplier across eras builds a relationship bonus.
+- **Pit Crew**: Upgradeable facility — a 1.8-second stop creates drama.
+- **Weather Cards**: Affect multiple laps ("Monsoon Season" = 3 wet laps, forces planning).
+- **Scandal Events**: Cheating, illegal parts, political interference — narrative chaos.
+- **End-of-Era Draft**: When regulations change, worse-performing teams pick first from the new era's tech tree.
+
+### Facilities (3-5 upgrade levels each)
+
+- Factory — manufacturing quality (chassis, engine parts)
+- Wind Tunnel / CFD Suite — aero development speed
+- Training Center — driver development rate
+- Sponsorship Office — passive income
+
+### Race Visualization
+
+- Top-down or isometric track, cars as colored dots/sprites
+- Commentary/event log for drama ("Lap 3 (1962): Your driver Stirling takes the lead!")
+- Incidents based on reliability + RNG (crashes, mechanical failures, weather, safety cars)
+- Abstracted pit stops (push hard / conserve / pit early)
+
+### Win Conditions
+
+- Easy: win Drivers' title
+- Normal: win both titles
+- Hard: win both with budget constraint
+- Nightmare: start in 1970 (miss easy early eras)
+
+### Engine Features Still Needed
+
+Tracked against the build order. Crossed-off items are done.
+
+1. ~~Canvas stores screen_size~~ ✓
+2. ~~UI layout containers (Row, Grid)~~ ✓
+3. ~~UI scroll region~~ ✓
+4. ~~Nine-slice rendering~~ ✓
+5. ~~Particles~~ ✓
+6. ~~Post-processing (CRT/bloom/vignette for era filters)~~ ✓
+7. ~~Resolution scaling~~ ✓
+8. ~~Audio fades/crossfades~~ ✓
+9. ~~Scene transitions~~ ✓
+10. ~~Timer + EventQueue~~ ✓
+11. ~~Canvas drawing primitives~~ ✓
+12. ~~Colored text spans~~ ✓
+13. ~~UI widgets (checkbox, slider, progress bar)~~ ✓
+14. ~~Mouse hover/click on widgets~~ ✓
+15. ~~UI single-build pattern — stop duplicating widget trees in update() and render()~~ ✓
+16. Screen-space sprites / UI image widget — card artwork, driver portraits, facility icons
+17. Tooltip widget — card descriptions, stat explanations
+18. Widget animation hooks — card flip, slide-in, highlight pulse
+19. Multiple font support — headers, body, commentary, HUD
+20. Text input widget — team naming
+21. Animation state machines — car sprite states
+22. Rebindable controls — player key remapping
+
+Items 1-15 done. Item 16 unblocks productive game development. Items 17-18 make it feel real. Items 19-22 are polish.

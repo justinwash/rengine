@@ -34,10 +34,7 @@ impl Game for TopDown {
         actions.bind_axis(
             "move_y",
             AxisMapping {
-                positive: vec![
-                    Binding::Key(KeyCode::KeyW),
-                    Binding::Key(KeyCode::ArrowUp),
-                ],
+                positive: vec![Binding::Key(KeyCode::KeyW), Binding::Key(KeyCode::ArrowUp)],
                 negative: vec![
                     Binding::Key(KeyCode::KeyS),
                     Binding::Key(KeyCode::ArrowDown),

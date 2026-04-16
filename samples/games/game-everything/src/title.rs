@@ -1,6 +1,6 @@
-use rengine::*;
 use crate::game::GameScene;
 use crate::state::*;
+use rengine::*;
 
 pub struct TitleScene {
     blink_timer: f32,

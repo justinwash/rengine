@@ -36,10 +36,7 @@ impl Game for IsoGame {
                     Binding::Key(KeyCode::KeyS),
                     Binding::Key(KeyCode::ArrowDown),
                 ],
-                negative: vec![
-                    Binding::Key(KeyCode::KeyW),
-                    Binding::Key(KeyCode::ArrowUp),
-                ],
+                negative: vec![Binding::Key(KeyCode::KeyW), Binding::Key(KeyCode::ArrowUp)],
                 gamepad_axis: None,
             },
         );

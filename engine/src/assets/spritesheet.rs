@@ -49,7 +49,6 @@ impl SpriteSheet {
 
 #[derive(Debug, Clone)]
 pub struct Animation {
-
     pub frames: Vec<(u32, u32)>,
 
     pub frame_time: f32,

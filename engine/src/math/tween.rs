@@ -358,14 +358,8 @@ mod tests {
         ] {
             let v0 = easing.apply(0.0);
             let v1 = easing.apply(1.0);
-            assert!(
-                (v0 - 0.0).abs() < 0.001,
-                "{easing:?} at t=0 was {v0}"
-            );
-            assert!(
-                (v1 - 1.0).abs() < 0.001,
-                "{easing:?} at t=1 was {v1}"
-            );
+            assert!((v0 - 0.0).abs() < 0.001, "{easing:?} at t=0 was {v0}");
+            assert!((v1 - 1.0).abs() < 0.001, "{easing:?} at t=1 was {v1}");
         }
     }
 

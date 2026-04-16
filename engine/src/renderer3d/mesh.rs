@@ -25,19 +25,16 @@ impl Vertex3D {
             array_stride: std::mem::size_of::<Self>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &[
-
                 wgpu::VertexAttribute {
                     offset: 0,
                     shader_location: 0,
                     format: wgpu::VertexFormat::Float32x3,
                 },
-
                 wgpu::VertexAttribute {
                     offset: 12,
                     shader_location: 1,
                     format: wgpu::VertexFormat::Float32x3,
                 },
-
                 wgpu::VertexAttribute {
                     offset: 24,
                     shader_location: 2,
@@ -60,7 +57,11 @@ pub fn cube_mesh(sx: f32, sy: f32, sz: f32, color: Color) -> (Vec<Vertex3D>, Vec
     let mut add_face = |positions: [[f32; 3]; 4], normal: [f32; 3]| {
         let base = verts.len() as u32;
         for p in &positions {
-            verts.push(Vertex3D { position: *p, normal, color: c });
+            verts.push(Vertex3D {
+                position: *p,
+                normal,
+                color: c,
+            });
         }
         idxs.extend_from_slice(&[base + 2, base + 1, base, base, base + 3, base + 2]);
     };
@@ -71,7 +72,12 @@ pub fn cube_mesh(sx: f32, sy: f32, sz: f32, color: Color) -> (Vec<Vertex3D>, Vec
     );
 
     add_face(
-        [[-hx, -hy, hz], [hx, -hy, hz], [hx, -hy, -hz], [-hx, -hy, -hz]],
+        [
+            [-hx, -hy, hz],
+            [hx, -hy, hz],
+            [hx, -hy, -hz],
+            [-hx, -hy, -hz],
+        ],
         [0.0, -1.0, 0.0],
     );
 
@@ -81,7 +87,12 @@ pub fn cube_mesh(sx: f32, sy: f32, sz: f32, color: Color) -> (Vec<Vertex3D>, Vec
     );
 
     add_face(
-        [[hx, -hy, -hz], [hx, hy, -hz], [-hx, hy, -hz], [-hx, -hy, -hz]],
+        [
+            [hx, -hy, -hz],
+            [hx, hy, -hz],
+            [-hx, hy, -hz],
+            [-hx, -hy, -hz],
+        ],
         [0.0, 0.0, -1.0],
     );
 
@@ -91,7 +102,12 @@ pub fn cube_mesh(sx: f32, sy: f32, sz: f32, color: Color) -> (Vec<Vertex3D>, Vec
     );
 
     add_face(
-        [[-hx, -hy, -hz], [-hx, hy, -hz], [-hx, hy, hz], [-hx, -hy, hz]],
+        [
+            [-hx, -hy, -hz],
+            [-hx, hy, -hz],
+            [-hx, hy, hz],
+            [-hx, -hy, hz],
+        ],
         [-1.0, 0.0, 0.0],
     );
 
@@ -104,10 +120,26 @@ pub fn floor_quad(width: f32, depth: f32, y: f32, color: Color) -> (Vec<Vertex3D
     let c = color.to_array();
     let n = [0.0, 1.0, 0.0];
     let verts = vec![
-        Vertex3D { position: [-hw, y, -hd], normal: n, color: c },
-        Vertex3D { position: [hw, y, -hd], normal: n, color: c },
-        Vertex3D { position: [hw, y, hd], normal: n, color: c },
-        Vertex3D { position: [-hw, y, hd], normal: n, color: c },
+        Vertex3D {
+            position: [-hw, y, -hd],
+            normal: n,
+            color: c,
+        },
+        Vertex3D {
+            position: [hw, y, -hd],
+            normal: n,
+            color: c,
+        },
+        Vertex3D {
+            position: [hw, y, hd],
+            normal: n,
+            color: c,
+        },
+        Vertex3D {
+            position: [-hw, y, hd],
+            normal: n,
+            color: c,
+        },
     ];
     let idxs = vec![2, 1, 0, 0, 3, 2];
     (verts, idxs)
@@ -127,10 +159,26 @@ pub fn wall_quad(
     let n = [-dz / len, 0.0, dx / len];
 
     let verts = vec![
-        Vertex3D { position: p0, normal: n, color: c },
-        Vertex3D { position: p1, normal: n, color: c },
-        Vertex3D { position: [p1[0], p1[1] + height, p1[2]], normal: n, color: c },
-        Vertex3D { position: [p0[0], p0[1] + height, p0[2]], normal: n, color: c },
+        Vertex3D {
+            position: p0,
+            normal: n,
+            color: c,
+        },
+        Vertex3D {
+            position: p1,
+            normal: n,
+            color: c,
+        },
+        Vertex3D {
+            position: [p1[0], p1[1] + height, p1[2]],
+            normal: n,
+            color: c,
+        },
+        Vertex3D {
+            position: [p0[0], p0[1] + height, p0[2]],
+            normal: n,
+            color: c,
+        },
     ];
     let idxs = vec![0, 1, 2, 2, 3, 0];
     (verts, idxs)

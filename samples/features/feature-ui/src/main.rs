@@ -1,7 +1,7 @@
 use rengine::*;
 
 struct MenuScene {
-    focus: usize,
+    ui: Ui,
     message: String,
 }
 
@@ -19,37 +19,32 @@ impl MenuScene {
 }
 
 impl Scene for MenuScene {
-    fn on_enter(&mut self, _engine: &mut Engine, _globals: &mut Globals) {}
+    fn on_enter(&mut self, engine: &mut Engine, _globals: &mut Globals) {
+        let (_sw, sh) = engine.window_size();
+        let hh = sh as f32 / 2.0;
+        self.ui.begin(-120.0, hh - 80.0, 240.0);
+        Self::build_menu(&mut self.ui);
+    }
 
     fn update(&mut self, engine: &Engine, _globals: &mut Globals, _frame: &mut Frame) -> SceneOp {
-        let (sw, sh) = engine.window_size();
-        let atlas = engine.font_atlas();
+        let (_sw, sh) = engine.window_size();
         let hh = sh as f32 / 2.0;
+        let atlas = engine.font_atlas();
 
-        let mut ui = Ui::new(-120.0, hh - 80.0, 240.0, (sw, sh)).with_focus(self.focus);
-        Self::build_menu(&mut ui);
-
-        let response = ui.update(engine.input(), atlas);
-        if let Some(f) = response.focused {
-            self.focus = f;
-        }
+        self.ui.begin(-120.0, hh - 80.0, 240.0);
+        Self::build_menu(&mut self.ui);
+        let response = self.ui.update(engine.input(), atlas);
 
         if let Some(id) = response.activated {
             match id {
                 0 => return SceneOp::Switch(Box::new(GameScene::new())),
                 1 => {
                     self.message = "Options not implemented".into();
-                    return SceneOp::Push(Box::new(OptionsScene { focus: 0 }));
+                    return SceneOp::Push(Box::new(OptionsScene { ui: Ui::default() }));
                 }
-                2 => {
-                    return SceneOp::Push(Box::new(DemoScene::new()));
-                }
-                3 => {
-                    return SceneOp::Push(Box::new(LayoutScene::new()));
-                }
-                5 => {
-                    return SceneOp::Push(Box::new(ScrollScene::new()));
-                }
+                2 => return SceneOp::Push(Box::new(DemoScene::new())),
+                3 => return SceneOp::Push(Box::new(LayoutScene::new())),
+                5 => return SceneOp::Push(Box::new(ScrollScene::new())),
                 4 => return SceneOp::Quit,
                 _ => {}
             }
@@ -59,17 +54,13 @@ impl Scene for MenuScene {
     }
 
     fn render(&self, engine: &Engine, _globals: &Globals, frame: &mut Frame) {
-        let (sw, sh) = engine.window_size();
+        let (_sw, sh) = engine.window_size();
         let hh = sh as f32 / 2.0;
         let atlas = engine.font_atlas();
         frame.clear_color = Color::from_rgba8(25, 25, 40, 255);
 
         let canvas = frame.canvas(0);
-
-        let mut ui = Ui::new(-120.0, hh - 80.0, 240.0, (sw, sh)).with_focus(self.focus);
-        Self::build_menu(&mut ui);
-
-        ui.render(canvas, atlas);
+        self.ui.render(canvas, atlas);
 
         if !self.message.is_empty() {
             canvas.text_aligned(
@@ -96,7 +87,7 @@ impl Scene for MenuScene {
 }
 
 struct OptionsScene {
-    focus: usize,
+    ui: Ui,
 }
 
 impl OptionsScene {
@@ -119,22 +110,22 @@ impl OptionsScene {
 }
 
 impl Scene for OptionsScene {
-    fn on_enter(&mut self, _engine: &mut Engine, _globals: &mut Globals) {}
+    fn on_enter(&mut self, engine: &mut Engine, _globals: &mut Globals) {
+        self.ui = Ui::default().with_style(Self::options_style());
+        let (_sw, sh) = engine.window_size();
+        let hh = sh as f32 / 2.0;
+        self.ui.begin(-100.0, hh - 60.0, 200.0);
+        Self::build_options(&mut self.ui);
+    }
 
     fn update(&mut self, engine: &Engine, _globals: &mut Globals, _frame: &mut Frame) -> SceneOp {
-        let (sw, sh) = engine.window_size();
-        let atlas = engine.font_atlas();
+        let (_sw, sh) = engine.window_size();
         let hh = sh as f32 / 2.0;
+        let atlas = engine.font_atlas();
 
-        let mut ui = Ui::new(-100.0, hh - 60.0, 200.0, (sw, sh))
-            .with_style(Self::options_style())
-            .with_focus(self.focus);
-        Self::build_options(&mut ui);
-
-        let response = ui.update(engine.input(), atlas);
-        if let Some(f) = response.focused {
-            self.focus = f;
-        }
+        self.ui.begin(-100.0, hh - 60.0, 200.0);
+        Self::build_options(&mut self.ui);
+        let response = self.ui.update(engine.input(), atlas);
 
         if let Some(id) = response.activated {
             if id == 2 {
@@ -157,20 +148,9 @@ impl Scene for OptionsScene {
         let canvas = frame.canvas(1);
         let fw = sw as f32;
         let fh = sh as f32;
-        canvas.rect(
-            -fw / 2.0,
-            -hh,
-            fw,
-            fh,
-            Color::new(0.0, 0.0, 0.0, 0.6),
-        );
+        canvas.rect(-fw / 2.0, -hh, fw, fh, Color::new(0.0, 0.0, 0.0, 0.6));
 
-        let mut ui = Ui::new(-100.0, hh - 60.0, 200.0, (sw, sh))
-            .with_style(Self::options_style())
-            .with_focus(self.focus);
-        Self::build_options(&mut ui);
-
-        ui.render(canvas, atlas);
+        self.ui.render(canvas, atlas);
 
         canvas.text_aligned(
             0.0,
@@ -185,8 +165,7 @@ impl Scene for OptionsScene {
 }
 
 struct DemoScene {
-    focus: usize,
-    dragging: Option<usize>,
+    ui: Ui,
     speed: f32,
     volume: f32,
     fullscreen: bool,
@@ -198,8 +177,7 @@ struct DemoScene {
 impl DemoScene {
     fn new() -> Self {
         Self {
-            focus: 0,
-            dragging: None,
+            ui: Ui::default(),
             speed: 1.5,
             volume: 0.75,
             fullscreen: false,
@@ -209,20 +187,28 @@ impl DemoScene {
         }
     }
 
-    fn build_widgets(&self, ui: &mut Ui) {
+    fn build_widgets(
+        ui: &mut Ui,
+        health: f32,
+        fuel: f32,
+        fullscreen: bool,
+        vsync: bool,
+        speed: f32,
+        volume: f32,
+    ) {
         ui.label_centered("Widget Demo", 24.0, Color::WHITE);
         ui.separator(8.0);
 
         ui.panel(8);
         ui.label("Stats", 18.0, Color::from_rgba8(180, 200, 255, 255));
         ui.separator(4.0);
-        ui.progress_bar("Health", self.health);
-        ui.progress_bar_colored("Fuel", self.fuel, Color::from_rgba8(220, 160, 40, 255));
+        ui.progress_bar("Health", health);
+        ui.progress_bar_colored("Fuel", fuel, Color::from_rgba8(220, 160, 40, 255));
         ui.separator(4.0);
-        ui.checkbox(10, "Fullscreen", self.fullscreen);
-        ui.checkbox(11, "VSync", self.vsync);
-        ui.slider(20, "Game Speed", self.speed, 0.5, 3.0);
-        ui.slider(21, "Volume", self.volume, 0.0, 1.0);
+        ui.checkbox(10, "Fullscreen", fullscreen);
+        ui.checkbox(11, "VSync", vsync);
+        ui.slider(20, "Game Speed", speed, 0.5, 3.0);
+        ui.slider(21, "Volume", volume, 0.0, 1.0);
 
         ui.separator(8.0);
         ui.button(99, "Back");
@@ -230,23 +216,37 @@ impl DemoScene {
 }
 
 impl Scene for DemoScene {
-    fn on_enter(&mut self, _engine: &mut Engine, _globals: &mut Globals) {}
+    fn on_enter(&mut self, engine: &mut Engine, _globals: &mut Globals) {
+        let (_sw, sh) = engine.window_size();
+        let hh = sh as f32 / 2.0;
+        self.ui.begin(-180.0, hh - 40.0, 360.0);
+        Self::build_widgets(
+            &mut self.ui,
+            self.health,
+            self.fuel,
+            self.fullscreen,
+            self.vsync,
+            self.speed,
+            self.volume,
+        );
+    }
 
     fn update(&mut self, engine: &Engine, _globals: &mut Globals, _frame: &mut Frame) -> SceneOp {
-        let (sw, sh) = engine.window_size();
-        let atlas = engine.font_atlas();
+        let (_sw, sh) = engine.window_size();
         let hh = sh as f32 / 2.0;
+        let atlas = engine.font_atlas();
 
-        let mut ui = Ui::new(-180.0, hh - 40.0, 360.0, (sw, sh))
-            .with_focus(self.focus)
-            .with_dragging(self.dragging);
-        self.build_widgets(&mut ui);
-
-        let response = ui.update(engine.input(), atlas);
-        if let Some(f) = response.focused {
-            self.focus = f;
-        }
-        self.dragging = response.dragging;
+        self.ui.begin(-180.0, hh - 40.0, 360.0);
+        Self::build_widgets(
+            &mut self.ui,
+            self.health,
+            self.fuel,
+            self.fullscreen,
+            self.vsync,
+            self.speed,
+            self.volume,
+        );
+        let response = self.ui.update(engine.input(), atlas);
 
         if response.was_toggled(10) {
             self.fullscreen = !self.fullscreen;
@@ -272,19 +272,13 @@ impl Scene for DemoScene {
     }
 
     fn render(&self, engine: &Engine, _globals: &Globals, frame: &mut Frame) {
-        let (sw, sh) = engine.window_size();
+        let (_sw, sh) = engine.window_size();
         let hh = sh as f32 / 2.0;
         let atlas = engine.font_atlas();
         frame.clear_color = Color::from_rgba8(20, 20, 35, 255);
 
         let canvas = frame.canvas(0);
-
-        let mut ui = Ui::new(-180.0, hh - 40.0, 360.0, (sw, sh))
-            .with_focus(self.focus)
-            .with_dragging(self.dragging);
-        self.build_widgets(&mut ui);
-
-        ui.render(canvas, atlas);
+        self.ui.render(canvas, atlas);
 
         let mouse = engine.mouse_screen_pos();
         canvas.text_aligned(
@@ -310,28 +304,34 @@ impl Scene for DemoScene {
 }
 
 struct LayoutScene {
-    focus: usize,
+    ui: Ui,
 }
 
 impl LayoutScene {
     fn new() -> Self {
-        Self { focus: 0 }
+        Self { ui: Ui::default() }
     }
 
-    fn build_widgets(&self, ui: &mut Ui) {
+    fn build_widgets(ui: &mut Ui) {
         ui.label_centered("Layout Demo", 24.0, Color::WHITE);
         ui.separator(8.0);
 
-        // Row: two buttons side by side
-        ui.label("Row (2 buttons):", 14.0, Color::from_rgba8(180, 200, 255, 255));
+        ui.label(
+            "Row (2 buttons):",
+            14.0,
+            Color::from_rgba8(180, 200, 255, 255),
+        );
         ui.row(2);
         ui.button(0, "Left");
         ui.button(1, "Right");
 
         ui.separator(6.0);
 
-        // Row with spacing: three buttons
-        ui.label("Row spaced (3 buttons):", 14.0, Color::from_rgba8(180, 200, 255, 255));
+        ui.label(
+            "Row spaced (3 buttons):",
+            14.0,
+            Color::from_rgba8(180, 200, 255, 255),
+        );
         ui.row_spaced(8.0, 3);
         ui.button(2, "A");
         ui.button(3, "B");
@@ -339,7 +339,6 @@ impl LayoutScene {
 
         ui.separator(6.0);
 
-        // Grid: 2 columns, 4 items
         ui.label("Grid 2x2:", 14.0, Color::from_rgba8(180, 200, 255, 255));
         ui.grid_spaced(2, 4.0, 4);
         ui.button(5, "One");
@@ -349,8 +348,11 @@ impl LayoutScene {
 
         ui.separator(6.0);
 
-        // Grid: 3 columns, 5 items (last row partial)
-        ui.label("Grid 3-col (5 items):", 14.0, Color::from_rgba8(180, 200, 255, 255));
+        ui.label(
+            "Grid 3-col (5 items):",
+            14.0,
+            Color::from_rgba8(180, 200, 255, 255),
+        );
         ui.grid_spaced(3, 4.0, 5);
         ui.button(9, "1");
         ui.button(10, "2");
@@ -364,20 +366,21 @@ impl LayoutScene {
 }
 
 impl Scene for LayoutScene {
-    fn on_enter(&mut self, _engine: &mut Engine, _globals: &mut Globals) {}
+    fn on_enter(&mut self, engine: &mut Engine, _globals: &mut Globals) {
+        let (_sw, sh) = engine.window_size();
+        let hh = sh as f32 / 2.0;
+        self.ui.begin(-200.0, hh - 30.0, 400.0);
+        Self::build_widgets(&mut self.ui);
+    }
 
     fn update(&mut self, engine: &Engine, _globals: &mut Globals, _frame: &mut Frame) -> SceneOp {
-        let (sw, sh) = engine.window_size();
-        let atlas = engine.font_atlas();
+        let (_sw, sh) = engine.window_size();
         let hh = sh as f32 / 2.0;
+        let atlas = engine.font_atlas();
 
-        let mut ui = Ui::new(-200.0, hh - 30.0, 400.0, (sw, sh)).with_focus(self.focus);
-        self.build_widgets(&mut ui);
-
-        let response = ui.update(engine.input(), atlas);
-        if let Some(f) = response.focused {
-            self.focus = f;
-        }
+        self.ui.begin(-200.0, hh - 30.0, 400.0);
+        Self::build_widgets(&mut self.ui);
+        let response = self.ui.update(engine.input(), atlas);
 
         if response.was_activated(99) || engine.input().is_key_pressed(KeyCode::Escape) {
             return SceneOp::Pop;
@@ -387,17 +390,13 @@ impl Scene for LayoutScene {
     }
 
     fn render(&self, engine: &Engine, _globals: &Globals, frame: &mut Frame) {
-        let (sw, sh) = engine.window_size();
+        let (_sw, sh) = engine.window_size();
         let hh = sh as f32 / 2.0;
         let atlas = engine.font_atlas();
         frame.clear_color = Color::from_rgba8(25, 20, 35, 255);
 
         let canvas = frame.canvas(0);
-
-        let mut ui = Ui::new(-200.0, hh - 30.0, 400.0, (sw, sh)).with_focus(self.focus);
-        self.build_widgets(&mut ui);
-
-        ui.render(canvas, atlas);
+        self.ui.render(canvas, atlas);
 
         canvas.text_aligned(
             0.0,
@@ -412,24 +411,28 @@ impl Scene for LayoutScene {
 }
 
 struct ScrollScene {
-    focus: usize,
+    ui: Ui,
     scroll_offset: f32,
 }
 
 impl ScrollScene {
     fn new() -> Self {
         Self {
-            focus: 0,
+            ui: Ui::default(),
             scroll_offset: 0.0,
         }
     }
 
-    fn build_widgets(&self, ui: &mut Ui) {
+    fn build_widgets(ui: &mut Ui, scroll_offset: f32) {
         ui.label_centered("Scroll Demo", 24.0, Color::WHITE);
         ui.separator(8.0);
 
-        ui.label("Scrollable list:", 14.0, Color::from_rgba8(180, 200, 255, 255));
-        ui.scroll(100, 150.0, self.scroll_offset, 10);
+        ui.label(
+            "Scrollable list:",
+            14.0,
+            Color::from_rgba8(180, 200, 255, 255),
+        );
+        ui.scroll(100, 150.0, scroll_offset, 10);
         ui.button(10, "Item 1");
         ui.button(11, "Item 2");
         ui.button(12, "Item 3");
@@ -447,20 +450,21 @@ impl ScrollScene {
 }
 
 impl Scene for ScrollScene {
-    fn on_enter(&mut self, _engine: &mut Engine, _globals: &mut Globals) {}
+    fn on_enter(&mut self, engine: &mut Engine, _globals: &mut Globals) {
+        let (_sw, sh) = engine.window_size();
+        let hh = sh as f32 / 2.0;
+        self.ui.begin(-200.0, hh - 30.0, 400.0);
+        Self::build_widgets(&mut self.ui, self.scroll_offset);
+    }
 
     fn update(&mut self, engine: &Engine, _globals: &mut Globals, _frame: &mut Frame) -> SceneOp {
-        let (sw, sh) = engine.window_size();
-        let atlas = engine.font_atlas();
+        let (_sw, sh) = engine.window_size();
         let hh = sh as f32 / 2.0;
+        let atlas = engine.font_atlas();
 
-        let mut ui = Ui::new(-200.0, hh - 30.0, 400.0, (sw, sh)).with_focus(self.focus);
-        self.build_widgets(&mut ui);
-
-        let response = ui.update(engine.input(), atlas);
-        if let Some(f) = response.focused {
-            self.focus = f;
-        }
+        self.ui.begin(-200.0, hh - 30.0, 400.0);
+        Self::build_widgets(&mut self.ui, self.scroll_offset);
+        let response = self.ui.update(engine.input(), atlas);
 
         if let Some(offset) = response.scroll_for(100) {
             self.scroll_offset = offset;
@@ -474,17 +478,13 @@ impl Scene for ScrollScene {
     }
 
     fn render(&self, engine: &Engine, _globals: &Globals, frame: &mut Frame) {
-        let (sw, sh) = engine.window_size();
+        let (_sw, sh) = engine.window_size();
         let hh = sh as f32 / 2.0;
         let atlas = engine.font_atlas();
         frame.clear_color = Color::from_rgba8(25, 20, 35, 255);
 
         let canvas = frame.canvas(0);
-
-        let mut ui = Ui::new(-200.0, hh - 30.0, 400.0, (sw, sh)).with_focus(self.focus);
-        self.build_widgets(&mut ui);
-
-        ui.render(canvas, atlas);
+        self.ui.render(canvas, atlas);
 
         canvas.text_aligned(
             0.0,
@@ -515,7 +515,7 @@ impl Scene for GameScene {
         self.time += engine.dt();
         if engine.input().is_key_pressed(KeyCode::Escape) {
             return SceneOp::Switch(Box::new(MenuScene {
-                focus: 0,
+                ui: Ui::default(),
                 message: String::new(),
             }));
         }
@@ -566,7 +566,7 @@ fn main() {
     };
     let _ = rengine::run_with_scenes(config, |_engine, _globals| -> Box<dyn Scene> {
         Box::new(MenuScene {
-            focus: 0,
+            ui: Ui::default(),
             message: String::new(),
         })
     });

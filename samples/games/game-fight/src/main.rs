@@ -50,8 +50,28 @@ impl Game for FightGame {
 
         let actions = engine.actions_mut();
         for (prefix, keys) in [
-            ("p1", [KeyCode::KeyA, KeyCode::KeyD, KeyCode::KeyW, KeyCode::KeyS, KeyCode::KeyF, KeyCode::KeyG]),
-            ("p2", [KeyCode::ArrowLeft, KeyCode::ArrowRight, KeyCode::ArrowUp, KeyCode::ArrowDown, KeyCode::KeyK, KeyCode::KeyL]),
+            (
+                "p1",
+                [
+                    KeyCode::KeyA,
+                    KeyCode::KeyD,
+                    KeyCode::KeyW,
+                    KeyCode::KeyS,
+                    KeyCode::KeyF,
+                    KeyCode::KeyG,
+                ],
+            ),
+            (
+                "p2",
+                [
+                    KeyCode::ArrowLeft,
+                    KeyCode::ArrowRight,
+                    KeyCode::ArrowUp,
+                    KeyCode::ArrowDown,
+                    KeyCode::KeyK,
+                    KeyCode::KeyL,
+                ],
+            ),
         ] {
             actions.bind_axis(
                 &format!("{prefix}_move_x"),
@@ -70,13 +90,25 @@ impl Game for FightGame {
                 },
             );
             actions.bind(&format!("{prefix}_jump"), Binding::Key(keys[2]));
-            actions.bind(&format!("{prefix}_jump"), Binding::GamepadButton(GamepadButton::DPadUp));
+            actions.bind(
+                &format!("{prefix}_jump"),
+                Binding::GamepadButton(GamepadButton::DPadUp),
+            );
             actions.bind(&format!("{prefix}_crouch"), Binding::Key(keys[3]));
-            actions.bind(&format!("{prefix}_crouch"), Binding::GamepadButton(GamepadButton::DPadDown));
+            actions.bind(
+                &format!("{prefix}_crouch"),
+                Binding::GamepadButton(GamepadButton::DPadDown),
+            );
             actions.bind(&format!("{prefix}_punch"), Binding::Key(keys[4]));
-            actions.bind(&format!("{prefix}_punch"), Binding::GamepadButton(GamepadButton::South));
+            actions.bind(
+                &format!("{prefix}_punch"),
+                Binding::GamepadButton(GamepadButton::South),
+            );
             actions.bind(&format!("{prefix}_kick"), Binding::Key(keys[5]));
-            actions.bind(&format!("{prefix}_kick"), Binding::GamepadButton(GamepadButton::West));
+            actions.bind(
+                &format!("{prefix}_kick"),
+                Binding::GamepadButton(GamepadButton::West),
+            );
         }
 
         let blue_sheet = engine
@@ -203,7 +235,10 @@ impl Game for FightGame {
             if prev_round_pause <= 0.0 && self.sim.round_pause > 0.0 {
                 engine.pause_music();
                 let _ = engine.play_sound_on_bus(AudioBus::Ui, &self.hit_sfx, 0.55);
-            } else if prev_round_pause > 0.0 && self.sim.round_pause <= 0.0 && self.sim.winner().is_none() {
+            } else if prev_round_pause > 0.0
+                && self.sim.round_pause <= 0.0
+                && self.sim.winner().is_none()
+            {
                 engine.resume_music();
             }
         }

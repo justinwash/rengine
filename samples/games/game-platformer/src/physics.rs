@@ -4,7 +4,6 @@ use crate::state::{Platform, Player};
 use crate::{GRAVITY, PLAYER_H, PLAYER_W};
 
 pub fn update(player: &mut Player, platforms: &[Platform], dt: f32) {
-
     player.vel.y += GRAVITY * dt;
 
     player.sprite.position += player.vel * dt;
@@ -18,11 +17,9 @@ pub fn update(player: &mut Player, platforms: &[Platform], dt: f32) {
             player.sprite.position += mtv;
 
             if mtv.y > 0.0 {
-
                 player.vel.y = 0.0;
                 player.on_ground = true;
             } else if mtv.y < 0.0 {
-
                 player.vel.y = 0.0;
             }
         }

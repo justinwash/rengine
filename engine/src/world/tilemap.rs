@@ -1,6 +1,6 @@
-use glam::Vec2;
 use crate::assets::Color;
 use crate::renderer::{DrawParams, Frame, TextureId};
+use glam::Vec2;
 
 pub struct TileMap {
     pub width: usize,
@@ -42,7 +42,6 @@ impl TileDef {
 }
 
 impl TileMap {
-
     pub fn new(width: usize, height: usize, tile_size: f32) -> Self {
         Self {
             width,
@@ -133,9 +132,13 @@ impl TileMap {
 
         let half_w = 600.0;
         let half_h = 400.0;
-        let left = ((cam.position.x - half_w) / self.tile_size).floor().max(0.0) as usize;
+        let left = ((cam.position.x - half_w) / self.tile_size)
+            .floor()
+            .max(0.0) as usize;
         let right = ((cam.position.x + half_w) / self.tile_size).ceil() as usize;
-        let bottom = ((cam.position.y - half_h) / self.tile_size).floor().max(0.0) as usize;
+        let bottom = ((cam.position.y - half_h) / self.tile_size)
+            .floor()
+            .max(0.0) as usize;
         let top = ((cam.position.y + half_h) / self.tile_size).ceil() as usize;
 
         let right = right.min(self.width);

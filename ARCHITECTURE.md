@@ -841,11 +841,35 @@ Built on top of the existing single-font `FontAtlas` and `Canvas` text renderer:
 
 ### 6.7 Immediate-Mode Widget System ([`ui.rs`](https://github.com/justinwash/rengine/blob/master/engine/src/ui.rs))
 
-A lightweight immediate-mode widget builder for menus, pause screens, and HUDs. Each frame you create a `Ui`, add widgets, call `update()` for input handling, and `render()` to draw.
+A lightweight immediate-mode widget builder for menus, pause screens, and HUDs.
 
-- **`Ui::new(x, y, width, screen_size)`** — Create a new UI context anchored at `(x, y)` with the given column width.
+**Single-build pattern:** Store a `Ui` as a field on your scene struct (implements `Default`). Each frame, call `begin()` to reset widgets, add widgets, then call `update()` in `update()` and `render()` in `render()`. Focus and slider-drag state persist automatically across frames — no manual tracking needed. When using `run_with_scenes()`, also prime the widget list in `on_enter()`: a newly pushed or switched scene is rendered before its first `update()`, so building only in `update()` would produce a one-frame blank UI.
+
+```rust
+struct MyScene { ui: Ui }
+
+impl Scene for MyScene {
+    fn on_enter(&mut self, engine: &mut Engine, ..) {
+        self.ui.begin(x, y, width);   // prime widgets for the first render
+        self.ui.button(0, "Play");
+    }
+    fn update(&mut self, engine: &Engine, ..) -> SceneOp {
+        self.ui.begin(x, y, width);   // clears widgets, keeps focus/drag state
+        self.ui.button(0, "Play");
+        let resp = self.ui.update(engine.input(), atlas);
+        ..
+    }
+    fn render(&self, ..) {
+        self.ui.render(canvas, atlas); // just draws the last-built widget list
+    }
+}
+```
+
+- **`Ui::default()`** — Create a default UI context (position 0,0, width 200).
+- **`Ui::new(x, y, width, screen_size)`** — Create a UI context with explicit position and width. Prefer `Default` + `begin()`.
+- **`Ui::begin(x, y, width)`** — Reset widgets and position for the current frame. Preserves `style`, `focus_index`, and `dragging_slider` state.
 - **`Ui::with_style(style) -> Self`** — Apply a custom `UiStyle` (colors, sizes, padding).
-- **`Ui::with_focus(index) -> Self`** — Set the initially focused button index.
+- **`Ui::with_focus(index) -> Self`** — Override the focused button index.
 - **`Ui::label(text, size, color)`** / **`label_centered(text, size, color)`** — Static text (left-aligned or centered).
 - **`Ui::button(id, text)`** — Interactive button identified by a numeric `id`.
 - **`Ui::panel(color, padding, children)`** — Background panel that wraps the next `children` widgets with a colored rect and inward padding.

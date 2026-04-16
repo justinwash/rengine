@@ -5,7 +5,6 @@ use crate::state::{Enemy, TopDown};
 use crate::{MAP_H, MAP_W, PLAYER_SIZE, PLAYER_SPEED, TILE_SIZE};
 
 pub fn move_player(game: &mut TopDown, dir: Vec2, dt: f32) {
-
     game.player.pos.x += dir.x * PLAYER_SPEED * dt;
     let rect = Rect::from_pos_size(game.player.pos, Vec2::splat(PLAYER_SIZE));
     if let Some(mtv) = collide_stone(&game.tilemap, &rect) {
@@ -68,12 +67,7 @@ pub fn collide_stone(tilemap: &TileMap, rect: &Rect) -> Option<Vec2> {
                     TILE_SIZE,
                     TILE_SIZE,
                 );
-                let adj = Rect::new(
-                    rect.x + total.x,
-                    rect.y + total.y,
-                    rect.width,
-                    rect.height,
-                );
+                let adj = Rect::new(rect.x + total.x, rect.y + total.y, rect.width, rect.height);
                 if let Some(mtv) = aabb_overlap(&adj, &tile_rect) {
                     total += mtv;
                     hit = true;
@@ -82,5 +76,9 @@ pub fn collide_stone(tilemap: &TileMap, rect: &Rect) -> Option<Vec2> {
         }
     }
 
-    if hit { Some(total) } else { None }
+    if hit {
+        Some(total)
+    } else {
+        None
+    }
 }
