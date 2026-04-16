@@ -4,6 +4,7 @@ use rengine::*;
 pub struct PauseOverlay {
     pub demo_frames: u32,
     pub focus: usize,
+    pub ui: Ui,
 }
 
 impl PauseOverlay {
@@ -42,13 +43,13 @@ impl Scene for PauseOverlay {
             return SceneOp::Continue;
         }
 
-        let (sw, sh) = engine.window_size();
+        let (_sw, sh) = engine.window_size();
         let hh = sh as f32 / 2.0;
         let atlas = engine.font_atlas();
 
-        let mut ui = Ui::new(-100.0, hh - 40.0, 200.0, (sw, sh)).with_focus(self.focus);
-        Self::build_pause_ui(&mut ui);
-        let resp = ui.update(engine.input(), atlas);
+        self.ui.begin(-100.0, hh - 40.0, 200.0);
+        Self::build_pause_ui(&mut self.ui);
+        let resp = self.ui.update(engine.input(), atlas);
         self.focus = resp.focused.unwrap_or(self.focus);
 
         if let Some(id) = resp.activated {
@@ -80,9 +81,7 @@ impl Scene for PauseOverlay {
             Color::new(0.0, 0.0, 0.0, 0.65),
         );
 
-        let mut ui = Ui::new(-100.0, hh - 40.0, 200.0, (sw, sh)).with_focus(self.focus);
-        Self::build_pause_ui(&mut ui);
-        ui.render(overlay, atlas);
+        self.ui.render(overlay, atlas);
 
         if let Some(stats) = globals.get::<PlayerStats>() {
             overlay.text(

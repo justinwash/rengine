@@ -179,14 +179,7 @@ impl Game for NineSliceDemo {
         let p = |sx: f32, sy: f32, _size: f32| -> (f32, f32) { (sx - hw, hh - sy) };
 
         let (tx, ty) = p(20.0, 10.0, 28.0);
-        canvas.text(
-            tx,
-            ty,
-            "NineSlice Feature Demo",
-            28.0,
-            Color::WHITE,
-            atlas,
-        );
+        canvas.text(tx, ty, "NineSlice Feature Demo", 28.0, Color::WHITE, atlas);
         let (tx, ty) = p(20.0, 42.0, 14.0);
         canvas.text(
             tx,
@@ -221,32 +214,11 @@ impl Game for NineSliceDemo {
         );
 
         let (tx, ty) = p(20.0, r3_lbl_y, ls);
-        canvas.text(
-            tx,
-            ty,
-            "Animated (resizing)",
-            ls,
-            anim_label_color,
-            atlas,
-        );
+        canvas.text(tx, ty, "Animated (resizing)", ls, anim_label_color, atlas);
         let (tx, ty) = p(220.0, r3_lbl_y, ls);
-        canvas.text(
-            tx,
-            ty,
-            "Animated (width)",
-            ls,
-            anim_label_color,
-            atlas,
-        );
+        canvas.text(tx, ty, "Animated (width)", ls, anim_label_color, atlas);
         let (tx, ty) = p(600.0, r3_lbl_y, ls);
-        canvas.text(
-            tx,
-            ty,
-            "Animated (breathing)",
-            ls,
-            anim_label_color,
-            atlas,
-        );
+        canvas.text(tx, ty, "Animated (breathing)", ls, anim_label_color, atlas);
 
         let (tx, ty) = p(20.0, sh as f32 - 24.0, 14.0);
         canvas.text(

@@ -29,7 +29,11 @@ impl Game for ResolutionDemo {
             checker_b: engine.create_color_texture(1, 1, Color::from_rgba8(60, 90, 160, 255)),
             border: engine.create_color_texture(1, 1, Color::from_rgba8(255, 200, 50, 255)),
             mode_index: 1,
-            modes: [ScaleMode::Stretch, ScaleMode::Letterbox, ScaleMode::PixelPerfect],
+            modes: [
+                ScaleMode::Stretch,
+                ScaleMode::Letterbox,
+                ScaleMode::PixelPerfect,
+            ],
             frame_count: 0,
             demo,
             max_frames,
@@ -77,15 +81,35 @@ impl Game for ResolutionDemo {
         }
 
         let b = 2.0;
-        frame.draw(self.border, Vec2::new(-half_w, -half_h), Vec2::new(GAME_W as f32, b));
-        frame.draw(self.border, Vec2::new(-half_w, half_h - b), Vec2::new(GAME_W as f32, b));
-        frame.draw(self.border, Vec2::new(-half_w, -half_h), Vec2::new(b, GAME_H as f32));
-        frame.draw(self.border, Vec2::new(half_w - b, -half_h), Vec2::new(b, GAME_H as f32));
+        frame.draw(
+            self.border,
+            Vec2::new(-half_w, -half_h),
+            Vec2::new(GAME_W as f32, b),
+        );
+        frame.draw(
+            self.border,
+            Vec2::new(-half_w, half_h - b),
+            Vec2::new(GAME_W as f32, b),
+        );
+        frame.draw(
+            self.border,
+            Vec2::new(-half_w, -half_h),
+            Vec2::new(b, GAME_H as f32),
+        );
+        frame.draw(
+            self.border,
+            Vec2::new(half_w - b, -half_h),
+            Vec2::new(b, GAME_H as f32),
+        );
 
         let t = self.frame_count as f32 * 0.02;
         let marker_x = t.sin() * 100.0;
         let marker_y = t.cos() * 60.0;
-        frame.draw(self.border, Vec2::new(marker_x - 4.0, marker_y - 4.0), Vec2::new(8.0, 8.0));
+        frame.draw(
+            self.border,
+            Vec2::new(marker_x - 4.0, marker_y - 4.0),
+            Vec2::new(8.0, 8.0),
+        );
 
         let (ww, wh) = engine.window_size();
         let (gw, gh) = engine.game_size();
@@ -104,7 +128,13 @@ impl Game for ResolutionDemo {
         );
 
         let canvas = frame.canvas(0);
-        canvas.rect(-hw + 4.0, hh - 4.0 - 22.0, 400.0, 22.0, Color::from_rgba8(0, 0, 0, 180));
+        canvas.rect(
+            -hw + 4.0,
+            hh - 4.0 - 22.0,
+            400.0,
+            22.0,
+            Color::from_rgba8(0, 0, 0, 180),
+        );
         canvas.text(-hw + 8.0, hh - 8.0, &info, 14.0, Color::WHITE, atlas);
     }
 

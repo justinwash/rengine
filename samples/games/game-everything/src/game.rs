@@ -1,6 +1,6 @@
-use rengine::*;
 use crate::pause::PauseOverlay;
 use crate::state::*;
+use rengine::*;
 
 pub struct GameScene {
     config: Option<GameConfig>,
@@ -580,6 +580,7 @@ impl Scene for GameScene {
                         return SceneOp::Push(Box::new(PauseOverlay {
                             demo_frames: 0,
                             focus: 0,
+                            ui: Ui::default(),
                         }));
                     }
                     if prev < 500 && f >= 500 {
@@ -649,6 +650,7 @@ impl Scene for GameScene {
                 return SceneOp::Push(Box::new(PauseOverlay {
                     demo_frames: 0,
                     focus: 0,
+                    ui: Ui::default(),
                 }));
             }
         }

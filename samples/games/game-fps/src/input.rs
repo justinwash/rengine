@@ -21,10 +21,18 @@ pub fn move_dir(engine: &Engine3D, yaw: f32) -> Vec3 {
     let right = Vec3::new(yaw.cos(), 0.0, yaw.sin()).normalize();
 
     let mut dir = Vec3::ZERO;
-    if input.is_key_down(KeyCode::KeyW) { dir += forward; }
-    if input.is_key_down(KeyCode::KeyS) { dir -= forward; }
-    if input.is_key_down(KeyCode::KeyD) { dir += right; }
-    if input.is_key_down(KeyCode::KeyA) { dir -= right; }
+    if input.is_key_down(KeyCode::KeyW) {
+        dir += forward;
+    }
+    if input.is_key_down(KeyCode::KeyS) {
+        dir -= forward;
+    }
+    if input.is_key_down(KeyCode::KeyD) {
+        dir += right;
+    }
+    if input.is_key_down(KeyCode::KeyA) {
+        dir -= right;
+    }
 
     if dir.length_squared() > 0.0 {
         dir = dir.normalize();

@@ -199,14 +199,7 @@ impl Game for PostFxDemo {
             self.effect_index + 1,
             names.len()
         );
-        canvas.text(
-            -hw + 8.0,
-            hh - 8.0,
-            &info,
-            14.0,
-            Color::WHITE,
-            atlas,
-        );
+        canvas.text(-hw + 8.0, hh - 8.0, &info, 14.0, Color::WHITE, atlas);
     }
 
     fn should_exit(&self) -> bool {

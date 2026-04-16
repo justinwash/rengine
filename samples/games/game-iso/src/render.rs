@@ -6,8 +6,7 @@ use crate::{MAP_SIZE, TILE_H, TILE_W};
 pub fn draw(game: &IsoGame, frame: &mut Frame) {
     frame.clear_color = Color::from_rgba8(30, 30, 50, 255);
 
-    let player_screen =
-        iso_to_screen_frac(game.player_col, game.player_row, TILE_W, TILE_H);
+    let player_screen = iso_to_screen_frac(game.player_col, game.player_row, TILE_W, TILE_H);
     frame.camera.position = player_screen;
 
     for row in 0..MAP_SIZE {
@@ -41,8 +40,7 @@ pub fn draw(game: &IsoGame, frame: &mut Frame) {
         frame.draw(game.tree_tex, draw_pos, Vec2::new(32.0, 48.0));
     }
 
-    let player_screen =
-        iso_to_screen_frac(game.player_col, game.player_row, TILE_W, TILE_H);
+    let player_screen = iso_to_screen_frac(game.player_col, game.player_row, TILE_W, TILE_H);
     let draw_pos = Vec2::new(player_screen.x - 8.0, player_screen.y - 8.0);
     frame.draw(game.player_tex, draw_pos, Vec2::new(16.0, 24.0));
 }
