@@ -535,15 +535,7 @@ impl Ui {
                         TextAlign::Center => base_x + current_width / 2.0,
                         TextAlign::Right => base_x + current_width,
                     };
-                    canvas.text_aligned(
-                        ax,
-                        cursor_y,
-                        text,
-                        *size,
-                        *color,
-                        *align,
-                        atlas,
-                    );
+                    canvas.text_aligned(ax, cursor_y, text, *size, *color, *align, atlas);
                     cursor_y -= lh + self.style.spacing;
                 }
                 Widget::Button { id, text } => {
@@ -568,27 +560,14 @@ impl Ui {
                     let lh = atlas.line_height(text_size);
                     let btn_h = lh + pad * 2.0;
 
-                    canvas.rect(
-                        base_x,
-                        cursor_y - btn_h + pad,
-                        current_width,
-                        btn_h,
-                        bg,
-                    );
+                    canvas.rect(base_x, cursor_y - btn_h + pad, current_width, btn_h, bg);
 
                     let label = if is_focused && !self.mouse_focus {
                         format!("> {}", text)
                     } else {
                         format!("  {}", text)
                     };
-                    canvas.text(
-                        base_x + pad,
-                        cursor_y,
-                        &label,
-                        text_size,
-                        fg,
-                        atlas,
-                    );
+                    canvas.text(base_x + pad, cursor_y, &label, text_size, fg, atlas);
 
                     cursor_y -= btn_h + self.style.spacing;
                 }
@@ -718,13 +697,7 @@ impl Ui {
                             outline,
                         );
                         canvas.rect(bx - border, by, border, box_size, outline);
-                        canvas.rect(
-                            bx + box_size,
-                            by,
-                            border,
-                            box_size,
-                            outline,
-                        );
+                        canvas.rect(bx + box_size, by, border, box_size, outline);
                     }
 
                     let text_x = base_x + box_size + 8.0;
@@ -734,14 +707,7 @@ impl Ui {
                     } else {
                         self.style.text_color
                     };
-                    canvas.text(
-                        text_x,
-                        text_y,
-                        label,
-                        text_size,
-                        fg,
-                        atlas,
-                    );
+                    canvas.text(text_x, text_y, label, text_size, fg, atlas);
 
                     cursor_y -= row_h + self.style.spacing;
                 }
@@ -820,13 +786,7 @@ impl Ui {
                             border,
                             outline,
                         );
-                        canvas.rect(
-                            base_x - border,
-                            cursor_y - bar_h,
-                            border,
-                            bar_h,
-                            outline,
-                        );
+                        canvas.rect(base_x - border, cursor_y - bar_h, border, bar_h, outline);
                         canvas.rect(
                             base_x + current_width,
                             cursor_y - bar_h,
