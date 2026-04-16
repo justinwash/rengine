@@ -125,7 +125,6 @@ pub struct Ui {
     x: f32,
     y: f32,
     width: f32,
-    screen_size: (u32, u32),
     style: UiStyle,
     widgets: Vec<Widget>,
     focusable_ids: Vec<usize>,
@@ -136,12 +135,11 @@ pub struct Ui {
 }
 
 impl Ui {
-    pub fn new(x: f32, y: f32, width: f32, screen_size: (u32, u32)) -> Self {
+    pub fn new(x: f32, y: f32, width: f32, _screen_size: (u32, u32)) -> Self {
         Self {
             x,
             y,
             width,
-            screen_size,
             style: UiStyle::default(),
             widgets: Vec::new(),
             focusable_ids: Vec::new(),
@@ -537,16 +535,7 @@ impl Ui {
                         TextAlign::Center => base_x + current_width / 2.0,
                         TextAlign::Right => base_x + current_width,
                     };
-                    canvas.text_aligned(
-                        ax,
-                        cursor_y,
-                        text,
-                        *size,
-                        *color,
-                        *align,
-                        self.screen_size,
-                        atlas,
-                    );
+                    canvas.text_aligned(ax, cursor_y, text, *size, *color, *align, atlas);
                     cursor_y -= lh + self.style.spacing;
                 }
                 Widget::Button { id, text } => {
@@ -571,29 +560,14 @@ impl Ui {
                     let lh = atlas.line_height(text_size);
                     let btn_h = lh + pad * 2.0;
 
-                    canvas.rect(
-                        base_x,
-                        cursor_y - btn_h + pad,
-                        current_width,
-                        btn_h,
-                        bg,
-                        self.screen_size,
-                    );
+                    canvas.rect(base_x, cursor_y - btn_h + pad, current_width, btn_h, bg);
 
                     let label = if is_focused && !self.mouse_focus {
                         format!("> {}", text)
                     } else {
                         format!("  {}", text)
                     };
-                    canvas.text(
-                        base_x + pad,
-                        cursor_y,
-                        &label,
-                        text_size,
-                        fg,
-                        self.screen_size,
-                        atlas,
-                    );
+                    canvas.text(base_x + pad, cursor_y, &label, text_size, fg, atlas);
 
                     cursor_y -= btn_h + self.style.spacing;
                 }
@@ -628,7 +602,6 @@ impl Ui {
                         current_width,
                         panel_h,
                         *color,
-                        self.screen_size,
                     );
 
                     pending_panel = Some((*padding, *children));
@@ -651,7 +624,6 @@ impl Ui {
                             &display,
                             text_size,
                             self.style.text_color,
-                            self.screen_size,
                             atlas,
                         );
                         cursor_y -= lh + self.style.spacing;
@@ -663,7 +635,6 @@ impl Ui {
                         current_width,
                         bar_h,
                         self.style.progress_bg,
-                        self.screen_size,
                     );
                     if *value > 0.0 {
                         canvas.rect(
@@ -672,7 +643,6 @@ impl Ui {
                             current_width * *value,
                             bar_h,
                             fill_color,
-                            self.screen_size,
                         );
                     }
                     cursor_y -= bar_h + self.style.spacing;
@@ -692,7 +662,7 @@ impl Ui {
 
                     let bx = base_x;
                     let by = cursor_y - row_h + (row_h - box_size) / 2.0;
-                    canvas.rect(bx, by, box_size, box_size, box_bg, self.screen_size);
+                    canvas.rect(bx, by, box_size, box_size, box_bg);
 
                     if *checked {
                         let inset = box_size * 0.25;
@@ -702,7 +672,6 @@ impl Ui {
                             box_size - inset * 2.0,
                             box_size - inset * 2.0,
                             Color::WHITE,
-                            self.screen_size,
                         );
                     }
 
@@ -719,7 +688,6 @@ impl Ui {
                             box_size + border * 2.0,
                             border,
                             outline,
-                            self.screen_size,
                         );
                         canvas.rect(
                             bx - border,
@@ -727,17 +695,9 @@ impl Ui {
                             box_size + border * 2.0,
                             border,
                             outline,
-                            self.screen_size,
                         );
-                        canvas.rect(bx - border, by, border, box_size, outline, self.screen_size);
-                        canvas.rect(
-                            bx + box_size,
-                            by,
-                            border,
-                            box_size,
-                            outline,
-                            self.screen_size,
-                        );
+                        canvas.rect(bx - border, by, border, box_size, outline);
+                        canvas.rect(bx + box_size, by, border, box_size, outline);
                     }
 
                     let text_x = base_x + box_size + 8.0;
@@ -747,15 +707,7 @@ impl Ui {
                     } else {
                         self.style.text_color
                     };
-                    canvas.text(
-                        text_x,
-                        text_y,
-                        label,
-                        text_size,
-                        fg,
-                        self.screen_size,
-                        atlas,
-                    );
+                    canvas.text(text_x, text_y, label, text_size, fg, atlas);
 
                     cursor_y -= row_h + self.style.spacing;
                 }
@@ -778,7 +730,6 @@ impl Ui {
                             &display,
                             text_size,
                             self.style.text_color,
-                            self.screen_size,
                             atlas,
                         );
                         cursor_y -= atlas.line_height(text_size) + self.style.spacing;
@@ -790,7 +741,6 @@ impl Ui {
                         current_width,
                         bar_h,
                         self.style.slider_track_color,
-                        self.screen_size,
                     );
 
                     let range = max - min;
@@ -806,7 +756,6 @@ impl Ui {
                             current_width * t,
                             bar_h,
                             self.style.slider_fill_color,
-                            self.screen_size,
                         );
                     }
 
@@ -818,7 +767,6 @@ impl Ui {
                         thumb_w,
                         bar_h + 4.0,
                         self.style.slider_thumb_color,
-                        self.screen_size,
                     );
 
                     if is_focused {
@@ -830,7 +778,6 @@ impl Ui {
                             current_width + border * 2.0,
                             border,
                             outline,
-                            self.screen_size,
                         );
                         canvas.rect(
                             base_x - border,
@@ -838,23 +785,14 @@ impl Ui {
                             current_width + border * 2.0,
                             border,
                             outline,
-                            self.screen_size,
                         );
-                        canvas.rect(
-                            base_x - border,
-                            cursor_y - bar_h,
-                            border,
-                            bar_h,
-                            outline,
-                            self.screen_size,
-                        );
+                        canvas.rect(base_x - border, cursor_y - bar_h, border, bar_h, outline);
                         canvas.rect(
                             base_x + current_width,
                             cursor_y - bar_h,
                             border,
                             bar_h,
                             outline,
-                            self.screen_size,
                         );
                     }
 

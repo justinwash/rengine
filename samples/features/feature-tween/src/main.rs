@@ -71,8 +71,8 @@ impl Game for TweenDemo {
         let atlas = engine.font_atlas();
         let canvas = frame.canvas(0);
 
-        canvas.rect(-hw, -hh, sw as f32, sh as f32, Color::from_rgba8(20, 20, 30, 255), (sw, sh));
-        canvas.text(-hw + 20.0, hh - 24.0, "Tween / Easing Demo", 24.0, Color::WHITE, (sw, sh), atlas);
+        canvas.rect(-hw, -hh, sw as f32, sh as f32, Color::from_rgba8(20, 20, 30, 255));
+        canvas.text(-hw + 20.0, hh - 24.0, "Tween / Easing Demo", 24.0, Color::WHITE, atlas);
 
         let label_x = -hw + 20.0;
         let bar_x = -hw + 160.0;
@@ -88,21 +88,21 @@ impl Game for TweenDemo {
             let y = top - i as f32 * row_h;
             let val = tw.value();
 
-            canvas.text(label_x, y, name, 13.0, Color::from_rgba8(180, 180, 180, 255), (sw, sh), atlas);
-            canvas.rect(bar_x, y - 2.0, BAR_WIDTH, bar_h, track_color, (sw, sh));
-            canvas.rect(bar_x, y - 2.0, val, bar_h, fill_color, (sw, sh));
-            canvas.rect(bar_x + val - 3.0, y - 4.0, 6.0, bar_h + 4.0, dot_color, (sw, sh));
+            canvas.text(label_x, y, name, 13.0, Color::from_rgba8(180, 180, 180, 255), atlas);
+            canvas.rect(bar_x, y - 2.0, BAR_WIDTH, bar_h, track_color);
+            canvas.rect(bar_x, y - 2.0, val, bar_h, fill_color);
+            canvas.rect(bar_x + val - 3.0, y - 4.0, 6.0, bar_h + 4.0, dot_color);
         }
 
         let bounce_y = top - self.tweens.len() as f32 * row_h - 40.0;
         let bounce_val = ease(0.0, 200.0, (self.elapsed * 1.5 % 2.0) / 2.0, Easing::OutBounce);
-        canvas.rect(-hw + 200.0, bounce_y + bounce_val - 10.0, 20.0, 20.0, Color::from_rgba8(255, 100, 100, 255), (sw, sh));
-        canvas.text(-hw + 20.0, bounce_y - 10.0, "OutBounce ball:", 13.0, Color::from_rgba8(180, 180, 180, 255), (sw, sh), atlas);
+        canvas.rect(-hw + 200.0, bounce_y + bounce_val - 10.0, 20.0, 20.0, Color::from_rgba8(255, 100, 100, 255));
+        canvas.text(-hw + 20.0, bounce_y - 10.0, "OutBounce ball:", 13.0, Color::from_rgba8(180, 180, 180, 255), atlas);
 
         canvas.text(
             -hw + 20.0, -hh + 16.0,
             "ESC to quit | tweens ping-pong automatically",
-            12.0, Color::from_rgba8(100, 100, 100, 255), (sw, sh), atlas,
+            12.0, Color::from_rgba8(100, 100, 100, 255), atlas,
         );
     }
 

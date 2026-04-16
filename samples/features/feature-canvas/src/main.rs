@@ -30,7 +30,6 @@ impl Game for CanvasDemo {
             200.0,
             120.0,
             Color::new(0.15, 0.15, 0.22, 0.9),
-            screen,
         );
         hud.text(
             -hw + 30.0,
@@ -38,7 +37,6 @@ impl Game for CanvasDemo {
             "Canvas Demo",
             20.0,
             Color::WHITE,
-            screen,
             atlas,
         );
         hud.text(
@@ -47,7 +45,6 @@ impl Game for CanvasDemo {
             "Rectangles, text,",
             14.0,
             Color::new(0.7, 0.7, 0.7, 1.0),
-            screen,
             atlas,
         );
         hud.text(
@@ -56,7 +53,6 @@ impl Game for CanvasDemo {
             "and custom shapes",
             14.0,
             Color::new(0.7, 0.7, 0.7, 1.0),
-            screen,
             atlas,
         );
 
@@ -71,7 +67,7 @@ impl Game for CanvasDemo {
         ];
         for (i, color) in colors.iter().enumerate() {
             let x = -hw + 260.0 + i as f32 * 50.0;
-            hud.rect(x, hh - 30.0 - 40.0, 40.0, 40.0, *color, screen);
+            hud.rect(x, hh - 30.0 - 40.0, 40.0, 40.0, *color);
         }
         hud.text(
             -hw + 260.0,
@@ -79,7 +75,6 @@ impl Game for CanvasDemo {
             "Color palette",
             14.0,
             Color::new(0.7, 0.7, 0.7, 1.0),
-            screen,
             atlas,
         );
 
@@ -93,7 +88,6 @@ impl Game for CanvasDemo {
             bar_w,
             bar_h,
             Color::new(0.2, 0.2, 0.2, 1.0),
-            screen,
         );
         let fill = ((self.time * 0.3).sin() * 0.5 + 0.5) * bar_w;
         hud.rect(
@@ -102,7 +96,6 @@ impl Game for CanvasDemo {
             fill,
             bar_h,
             Color::new(0.3, 0.8, 0.4, 1.0),
-            screen,
         );
         hud.text(
             bar_x + 8.0,
@@ -110,7 +103,6 @@ impl Game for CanvasDemo {
             "Animated bar",
             14.0,
             Color::WHITE,
-            screen,
             atlas,
         );
 
@@ -158,7 +150,6 @@ impl Game for CanvasDemo {
             "Custom triangle fan",
             14.0,
             Color::WHITE,
-            screen,
             atlas,
         );
 
@@ -206,7 +197,6 @@ impl Game for CanvasDemo {
             "Spinning quad",
             14.0,
             Color::WHITE,
-            screen,
             atlas,
         );
 
@@ -219,7 +209,6 @@ impl Game for CanvasDemo {
             160.0,
             50.0,
             Color::new(0.1, 0.1, 0.15, 0.85),
-            screen,
         );
         stats.text(
             -hw + 30.0,
@@ -227,7 +216,6 @@ impl Game for CanvasDemo {
             &fps_text,
             14.0,
             Color::YELLOW,
-            screen,
             atlas,
         );
         stats.text(
@@ -236,7 +224,6 @@ impl Game for CanvasDemo {
             &time_text,
             14.0,
             Color::new(0.6, 0.8, 1.0, 1.0),
-            screen,
             atlas,
         );
     }

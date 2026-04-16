@@ -107,10 +107,11 @@ pub struct Frame3D {
     pub(crate) raw_idxs: Vec<u32>,
 
     pub(crate) canvases: Vec<Canvas>,
+    screen_size: (u32, u32),
 }
 
 impl Frame3D {
-    pub fn new() -> Self {
+    pub fn new(screen_size: (u32, u32)) -> Self {
         Self {
             camera: Camera3D::new(),
             viewmodel: Viewmodel3D::new(),
@@ -124,7 +125,12 @@ impl Frame3D {
             raw_verts: Vec::new(),
             raw_idxs: Vec::new(),
             canvases: Vec::new(),
+            screen_size,
         }
+    }
+
+    pub fn screen_size(&self) -> (u32, u32) {
+        self.screen_size
     }
 
     pub fn draw_mesh(&mut self, mesh: MeshId, position: Vec3) {
@@ -146,8 +152,9 @@ impl Frame3D {
     }
 
     pub fn canvas(&mut self, index: usize) -> &mut Canvas {
+        let ss = self.screen_size;
         if index >= self.canvases.len() {
-            self.canvases.resize_with(index + 1, Canvas::new);
+            self.canvases.resize_with(index + 1, || Canvas::new(ss));
         }
         &mut self.canvases[index]
     }

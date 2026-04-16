@@ -16,7 +16,6 @@ fn draw_label(frame: &mut Frame, engine: &Engine, y: f32, size: f32, color: Colo
         text,
         size,
         color,
-        screen,
         engine.font_atlas(),
     );
 }
@@ -152,7 +151,6 @@ impl Scene for PauseOverlay {
             w as f32,
             h as f32,
             Color::new(0.0, 0.0, 0.0, 0.6),
-            (w, h),
         );
         canvas.text(
             -hw + 20.0,
@@ -160,7 +158,6 @@ impl Scene for PauseOverlay {
             "PAUSED  —  press P or Esc to resume",
             28.0,
             Color::WHITE,
-            (w, h),
             engine.font_atlas(),
         );
     }
