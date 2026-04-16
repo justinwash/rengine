@@ -514,7 +514,17 @@ impl Engine {
     }
 
     pub fn font_atlas(&self) -> &text::FontAtlas {
-        &self.renderer.font_atlas
+        &self.renderer.fonts[0]
+    }
+
+    pub fn load_font<P: AsRef<Path>>(&mut self, path: P) -> text::FontId {
+        let bytes = std::fs::read(path.as_ref())
+            .unwrap_or_else(|e| panic!("failed to load font {:?}: {}", path.as_ref(), e));
+        self.renderer.load_font(&bytes)
+    }
+
+    pub fn font(&self, id: text::FontId) -> &text::FontAtlas {
+        &self.renderer.fonts[id.0]
     }
 }
 
@@ -687,7 +697,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
                         canvas::draw_fps(
                             &mut fps_canvas,
                             engine.time.fps(),
-                            &engine.renderer.font_atlas,
+                            &engine.renderer.fonts[0],
                         );
                         frame.canvases.push(fps_canvas);
                     }
@@ -942,7 +952,7 @@ where
                         canvas::draw_fps(
                             &mut fps_canvas,
                             engine.time.fps(),
-                            &engine.renderer.font_atlas,
+                            &engine.renderer.fonts[0],
                         );
                         frame.canvases.push(fps_canvas);
                     }
@@ -1108,7 +1118,17 @@ impl Engine3D {
     }
 
     pub fn font_atlas(&self) -> &text::FontAtlas {
-        &self.renderer.font_atlas
+        &self.renderer.fonts[0]
+    }
+
+    pub fn load_font<P: AsRef<Path>>(&mut self, path: P) -> text::FontId {
+        let bytes = std::fs::read(path.as_ref())
+            .unwrap_or_else(|e| panic!("failed to load font {:?}: {}", path.as_ref(), e));
+        self.renderer.load_font(&bytes)
+    }
+
+    pub fn font(&self, id: text::FontId) -> &text::FontAtlas {
+        &self.renderer.fonts[id.0]
     }
 
     pub fn load_bytes<P: AsRef<Path>>(&mut self, path: P) -> Result<Arc<[u8]>, AssetError> {
@@ -1583,7 +1603,7 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
                         canvas::draw_fps(
                             &mut fps_canvas,
                             engine.time.fps(),
-                            &engine.renderer.font_atlas,
+                            &engine.renderer.fonts[0],
                         );
                         frame.canvases.push(fps_canvas);
                     }
@@ -1837,7 +1857,7 @@ where
                         canvas::draw_fps(
                             &mut fps_canvas,
                             engine.time.fps(),
-                            &engine.renderer.font_atlas,
+                            &engine.renderer.fonts[0],
                         );
                         frame.canvases.push(fps_canvas);
                     }

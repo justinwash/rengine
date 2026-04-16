@@ -53,6 +53,7 @@ pub use scene::{
     SceneInstance2D, SceneInstance2DDef, SceneOp, Transition,
 };
 pub use text::FontAtlas;
+pub use text::FontId;
 pub use ui::{Ui, UiResponse, UiStyle};
 
 pub use particle::{EmitShape, EmitterConfig, ParticleEmitter, RangeF32};
