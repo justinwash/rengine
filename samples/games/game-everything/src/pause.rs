@@ -4,12 +4,17 @@ use rengine::*;
 pub struct PauseOverlay {
     pub demo_frames: u32,
     pub ui: Ui,
+    pub badge: Option<TextureId>,
 }
 
 impl PauseOverlay {
-    fn build_pause_ui(ui: &mut Ui) {
+    fn build_pause_ui(ui: &mut Ui, badge: Option<TextureId>) {
         ui.label_centered("PAUSED", 40.0, Color::WHITE);
         ui.separator(12.0);
+        if let Some(texture) = badge {
+            ui.image(texture, Vec2::new(56.0, 56.0));
+            ui.separator(8.0);
+        }
         ui.button(0, "Resume");
         ui.button(1, "Quit");
     }
@@ -24,14 +29,41 @@ impl Scene for PauseOverlay {
         if let Some(demo) = globals.get_mut::<DemoConfig>() {
             demo.log_feature("Scene::on_enter");
             demo.log_feature("Ui (widget system)");
+            demo.log_feature("Ui::image");
         }
+
+        if self.badge.is_none() {
+            let mut icon = pixelart::PixelCanvas::new(24, 24);
+            icon.fill(Color::new(0.08, 0.08, 0.12, 0.0));
+            let shell = Color::from_rgba8(235, 70, 70, 255);
+            let visor = Color::from_rgba8(160, 230, 255, 255);
+            for y in 4..20 {
+                for x in 4..20 {
+                    let dx = x as f32 - 11.5;
+                    let dy = y as f32 - 11.5;
+                    if dx * dx + dy * dy <= 60.0 {
+                        icon.set(x, y, shell);
+                    }
+                }
+            }
+            for y in 10..15 {
+                for x in 9..19 {
+                    icon.set(x, y, visor);
+                }
+            }
+            for x in 5..19 {
+                icon.set(x, 19, Color::from_rgba8(40, 40, 55, 255));
+            }
+            self.badge = Some(engine.create_texture(24, 24, &icon.into_bytes()));
+        }
+
         self.ui.begin(engine, -100.0, 40.0, 200.0);
-        Self::build_pause_ui(&mut self.ui);
+        Self::build_pause_ui(&mut self.ui, self.badge);
     }
 
     fn update(&mut self, engine: &Engine, globals: &mut Globals, _frame: &mut Frame) -> SceneOp {
         self.ui.begin(engine, -100.0, 40.0, 200.0);
-        Self::build_pause_ui(&mut self.ui);
+        Self::build_pause_ui(&mut self.ui, self.badge);
 
         let is_demo = globals.get::<DemoConfig>().map_or(false, |d| d.enabled);
 

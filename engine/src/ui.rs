@@ -2,6 +2,8 @@ use crate::app::Engine;
 use crate::assets::Color;
 use crate::canvas::{Canvas, TextAlign};
 use crate::text::FontAtlas;
+use crate::TextureId;
+use glam::Vec2;
 use winit::keyboard::KeyCode;
 
 #[derive(Clone)]
@@ -63,6 +65,12 @@ enum Widget {
         size: f32,
         color: Color,
         align: TextAlign,
+    },
+    Image {
+        texture: TextureId,
+        size: Vec2,
+        color: Color,
+        uv_rect: [f32; 4],
     },
     Button {
         id: usize,
@@ -229,6 +237,33 @@ impl Ui {
         });
     }
 
+    pub fn image(&mut self, texture: TextureId, size: Vec2) {
+        self.widgets.push(Widget::Image {
+            texture,
+            size,
+            color: Color::WHITE,
+            uv_rect: [0.0, 0.0, 1.0, 1.0],
+        });
+    }
+
+    pub fn image_colored(&mut self, texture: TextureId, size: Vec2, color: Color) {
+        self.widgets.push(Widget::Image {
+            texture,
+            size,
+            color,
+            uv_rect: [0.0, 0.0, 1.0, 1.0],
+        });
+    }
+
+    pub fn image_region(&mut self, texture: TextureId, size: Vec2, uv_rect: [f32; 4]) {
+        self.widgets.push(Widget::Image {
+            texture,
+            size,
+            color: Color::WHITE,
+            uv_rect,
+        });
+    }
+
     pub fn button(&mut self, id: usize, text: &str) {
         self.focusable_ids.push(id);
         self.widgets.push(Widget::Button {
@@ -333,6 +368,7 @@ impl Ui {
     ) -> f32 {
         match widget {
             Widget::Label { size, .. } => atlas.line_height(*size) + self.style.spacing,
+            Widget::Image { size, .. } => size.y + self.style.spacing,
             Widget::Button { .. } => {
                 let lh = atlas.line_height(self.style.text_size);
                 lh + self.style.button_padding * 2.0 + self.style.spacing
@@ -434,6 +470,9 @@ impl Ui {
             match &self.widgets[i] {
                 Widget::Label { size, .. } => {
                     cursor_y -= atlas.line_height(*size) + self.style.spacing;
+                }
+                Widget::Image { size, .. } => {
+                    cursor_y -= size.y + self.style.spacing;
                 }
                 Widget::Button { id, .. } => {
                     let lh = atlas.line_height(self.style.text_size);
@@ -894,6 +933,17 @@ impl Ui {
                     };
                     canvas.text_aligned(ax, cursor_y, text, *size, *color, *align);
                     cursor_y -= lh + self.style.spacing;
+                }
+                Widget::Image {
+                    texture,
+                    size,
+                    color,
+                    uv_rect,
+                } => {
+                    let image_x = base_x + (current_width - size.x).max(0.0) * 0.5;
+                    let image_y = cursor_y - size.y;
+                    canvas.image_region(*texture, image_x, image_y, size.x, size.y, *uv_rect, *color);
+                    cursor_y -= size.y + self.style.spacing;
                 }
                 Widget::Button { id, text } => {
                     let is_focused = focused_id == Some(*id);
