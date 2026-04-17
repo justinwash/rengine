@@ -1,3 +1,10 @@
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct FontId(pub(crate) usize);
+
+impl FontId {
+    pub const DEFAULT: FontId = FontId(0);
+}
+
 #[derive(Clone, Copy)]
 pub(crate) struct GlyphEntry {
     pub u0: f32,
@@ -19,9 +26,14 @@ pub struct FontAtlas {
     pub(crate) glyphs: [Option<GlyphEntry>; 128],
     white_uv: [f32; 2],
     pub(crate) line_height: f32,
+    pub(crate) id: FontId,
 }
 
 impl FontAtlas {
+    pub fn id(&self) -> FontId {
+        self.id
+    }
+
     pub fn white_uv(&self) -> [f32; 2] {
         self.white_uv
     }
@@ -75,8 +87,18 @@ pub fn font_atlas(
     bind_group_layout: &wgpu::BindGroupLayout,
 ) -> FontAtlas {
     let font_bytes = include_bytes!("../assets/font.ttf");
-    let font = fontdue::Font::from_bytes(font_bytes as &[u8], fontdue::FontSettings::default())
-        .expect("failed to parse embedded font");
+    build_atlas_from_bytes(device, queue, bind_group_layout, font_bytes, FontId::DEFAULT)
+}
+
+pub(crate) fn build_atlas_from_bytes(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    bind_group_layout: &wgpu::BindGroupLayout,
+    font_bytes: &[u8],
+    id: FontId,
+) -> FontAtlas {
+    let font = fontdue::Font::from_bytes(font_bytes, fontdue::FontSettings::default())
+        .expect("failed to parse font");
 
     let mut pixels = vec![0u8; (ATLAS_SIZE * ATLAS_SIZE) as usize];
 
@@ -227,5 +249,6 @@ pub fn font_atlas(
         glyphs,
         white_uv,
         line_height,
+        id,
     }
 }

@@ -514,7 +514,16 @@ impl Engine {
     }
 
     pub fn font_atlas(&self) -> &text::FontAtlas {
-        &self.renderer.font_atlas
+        self.font(text::FontId::DEFAULT)
+    }
+
+    pub fn load_font<P: AsRef<Path>>(&mut self, path: P) -> Result<text::FontId, AssetError> {
+        let bytes = self.assets.load_bytes(path)?;
+        Ok(self.renderer.load_font(&bytes))
+    }
+
+    pub fn font(&self, id: text::FontId) -> &text::FontAtlas {
+        &self.renderer.fonts[id.0]
     }
 }
 
@@ -683,7 +692,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
 
                     if show_fps {
                         let screen_size = engine.window_size();
-                        let atlas: *const text::FontAtlas = &engine.renderer.font_atlas;
+                        let atlas: *const text::FontAtlas = &engine.renderer.fonts[0];
                         let mut fps_canvas = canvas::Canvas::new(screen_size, atlas);
                         canvas::draw_fps(&mut fps_canvas, engine.time.fps());
                         frame.canvases.push(fps_canvas);
@@ -919,7 +928,7 @@ where
                             let screen_size = engine.window_size();
                             let hw = screen_size.0 as f32 / 2.0;
                             let hh = screen_size.1 as f32 / 2.0;
-                            let atlas: *const text::FontAtlas = &engine.renderer.font_atlas;
+                            let atlas: *const text::FontAtlas = &engine.renderer.fonts[0];
                             let mut overlay = canvas::Canvas::new(screen_size, atlas);
                             let c =
                                 crate::assets::Color::new(t.color.r, t.color.g, t.color.b, alpha);
@@ -936,7 +945,7 @@ where
 
                     if show_fps {
                         let screen_size = engine.window_size();
-                        let atlas: *const text::FontAtlas = &engine.renderer.font_atlas;
+                        let atlas: *const text::FontAtlas = &engine.renderer.fonts[0];
                         let mut fps_canvas = canvas::Canvas::new(screen_size, atlas);
                         canvas::draw_fps(&mut fps_canvas, engine.time.fps());
                         frame.canvases.push(fps_canvas);
@@ -1103,7 +1112,16 @@ impl Engine3D {
     }
 
     pub fn font_atlas(&self) -> &text::FontAtlas {
-        &self.renderer.font_atlas
+        self.font(text::FontId::DEFAULT)
+    }
+
+    pub fn load_font<P: AsRef<Path>>(&mut self, path: P) -> Result<text::FontId, AssetError> {
+        let bytes = self.assets.load_bytes(path)?;
+        Ok(self.renderer.load_font(&bytes))
+    }
+
+    pub fn font(&self, id: text::FontId) -> &text::FontAtlas {
+        &self.renderer.fonts[id.0]
     }
 
     pub fn load_bytes<P: AsRef<Path>>(&mut self, path: P) -> Result<Arc<[u8]>, AssetError> {
@@ -1447,8 +1465,7 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
             while engine.time.consume_fixed_step() {
                 game.fixed_update(&engine);
             }
-            let mut headless_frame =
-                Frame3D::new(engine.window_size(), &engine.renderer.font_atlas);
+            let mut headless_frame = Frame3D::new(engine.window_size(), &engine.renderer.fonts[0]);
             game.update(&engine, &mut headless_frame);
             if game.should_exit() {
                 return Ok(());
@@ -1563,7 +1580,7 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
                     while engine.time.consume_fixed_step() {
                         game.fixed_update(&engine);
                     }
-                    let mut frame = Frame3D::new(engine.window_size(), &engine.renderer.font_atlas);
+                    let mut frame = Frame3D::new(engine.window_size(), &engine.renderer.fonts[0]);
                     game.update(&engine, &mut frame);
 
                     if game.should_exit() {
@@ -1575,7 +1592,7 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
 
                     if show_fps {
                         let screen_size = engine.window_size();
-                        let atlas: *const text::FontAtlas = &engine.renderer.font_atlas;
+                        let atlas: *const text::FontAtlas = &engine.renderer.fonts[0];
                         let mut fps_canvas = canvas::Canvas::new(screen_size, atlas);
                         canvas::draw_fps(&mut fps_canvas, engine.time.fps());
                         frame.canvases.push(fps_canvas);
@@ -1678,8 +1695,7 @@ where
                 }
             }
 
-            let mut headless_frame =
-                Frame3D::new(engine.window_size(), &engine.renderer.font_atlas);
+            let mut headless_frame = Frame3D::new(engine.window_size(), &engine.renderer.fonts[0]);
             let op = if let Some(scene) = stack.last_mut() {
                 scene.update(&engine, &mut globals, &mut headless_frame)
             } else {
@@ -1805,7 +1821,7 @@ where
                         }
                     }
 
-                    let mut frame = Frame3D::new(engine.window_size(), &engine.renderer.font_atlas);
+                    let mut frame = Frame3D::new(engine.window_size(), &engine.renderer.fonts[0]);
 
                     let op = if let Some(scene) = stack.last_mut() {
                         scene.update(&engine, &mut globals, &mut frame)
@@ -1827,7 +1843,7 @@ where
 
                     if show_fps {
                         let screen_size = engine.window_size();
-                        let atlas: *const text::FontAtlas = &engine.renderer.font_atlas;
+                        let atlas: *const text::FontAtlas = &engine.renderer.fonts[0];
                         let mut fps_canvas = canvas::Canvas::new(screen_size, atlas);
                         canvas::draw_fps(&mut fps_canvas, engine.time.fps());
                         frame.canvases.push(fps_canvas);

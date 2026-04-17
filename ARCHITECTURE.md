@@ -749,7 +749,9 @@ pub struct Camera3D {
 
 ### 6.1 [`FontAtlas`](https://github.com/justinwash/rengine/blob/master/engine/src/text.rs#L17) Construction
 
-The engine embeds `assets/font.ttf` at compile time via `include_bytes!()`. At initialization:
+The engine embeds `assets/font.ttf` at compile time via `include_bytes!()` and builds it as the default font (`FontId::DEFAULT`). Additional fonts can be loaded at runtime with `Engine::load_font(path)`, which returns a `FontId` handle. Each font produces its own `FontAtlas` with an independent GPU texture and bind group.
+
+Atlas construction (`build_atlas_from_bytes`):
 
 1. Parse the font with `fontdue::Font::from_bytes()`.
 2. Allocate a 512×512 single-channel (`R8Unorm`) pixel buffer.
@@ -759,6 +761,12 @@ The engine embeds `assets/font.ttf` at compile time via `include_bytes!()`. At i
 6. For each glyph, store UV coordinates, pixel dimensions, x/y offsets, and advance width in a `[Option<GlyphEntry>; 128]` array.
 7. Upload the atlas to a GPU texture.
 8. Create a bind group with the texture + a linear-filtering sampler.
+
+The `Renderer` and `Renderer3D` store a `Vec<FontAtlas>` (index 0 is always the default) and a shared `BindGroupLayout` (`font_bgl`) so all font atlases share the same pipeline layout.
+
+**API**: `engine.load_font("path/to/font.ttf") -> FontId`, `engine.font(id) -> &FontAtlas`, `engine.font_atlas() -> &FontAtlas` (default font shorthand).
+
+**Rendering**: `Canvas` tracks `current_font: usize` and records the font id in each `DrawSegment`. During `render_pass`, the renderer binds the correct font atlas per segment, switching bind groups only when the font id changes.
 
 ### 6.2 [`Canvas`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs#L42) Drawing
 
