@@ -75,6 +75,7 @@ Recently completed or partially completed:
 - Completed: canvas ergonomics — `Canvas` now stores `screen_size` and `FontAtlas` pointer internally. All shape and text methods no longer require `screen_size` or `&FontAtlas` parameters. `Canvas` exposes `measure_text(text, size)` and `line_height(size)` convenience methods. `Frame::begin(screen_size, atlas)` and `Frame3D::new(screen_size, atlas)` propagate both to canvases automatically. `draw_fps()` uses canvas-internal atlas. `wrap_text()` standalone function still accepts `&FontAtlas` for use outside Canvas. `engine.font_atlas()` remains public for edge cases like direct `measure_text()` calls. All samples updated — no game code needs to call `engine.font_atlas()` for text rendering.
 - Completed: UI layout containers — `Row` and `Grid` container widgets. `row(children)` distributes N children equally across the available width. `row_spaced(spacing, children)` adds horizontal gaps. `grid(columns, children)` wraps children into rows of N columns. `grid_spaced(columns, spacing, children)` adds gaps. Both containers track per-row max height so mixed-height children align correctly. Generalized internal Container stack (replaces old panel-only stack) handles Panel, Row, and Grid uniformly in both hit-testing and rendering. Updated `feature-ui` sample with LayoutScene demonstrating all variants.
 - Completed: scroll regions — `Ui::scroll(id, height, scroll_offset, children)` creates a clipped scrollable container. Canvas `push_clip`/`pop_clip` for GPU scissor-rect clipping with segment-based render pass. `InputState::scroll_delta()` for mouse wheel input wired through all event loops. `UiResponse::scroll_for(id)` returns updated offsets. Focusable rects inside scroll regions are clipped to the visible area. Updated `feature-ui` sample with ScrollScene.
+- Completed: multiple font support — `FontId` handle type, `Engine::load_font()` for runtime `.ttf`/`.otf` loading, per-canvas-segment font tracking with bind group switching, `Engine::font(id)` accessor, `FontId::DEFAULT` for the built-in font, backward-compatible `font_atlas()` method, `feature-fonts` sample
 
 ---
 
@@ -541,9 +542,9 @@ Tracked against the build order. Crossed-off items are done.
 16. Screen-space sprites / UI image widget — card artwork, driver portraits, facility icons
 17. Tooltip widget — card descriptions, stat explanations
 18. Widget animation hooks — card flip, slide-in, highlight pulse
-19. Multiple font support — headers, body, commentary, HUD
+19. ~~Multiple font support — headers, body, commentary, HUD~~ ✓
 20. Text input widget — team naming
 21. Animation state machines — car sprite states
 22. Rebindable controls — player key remapping
 
-Items 1-15 done. Item 16 unblocks productive game development. Items 17-18 make it feel real. Items 19-22 are polish.
+Items 1-15 done. Item 16 unblocks productive game development. Items 17-18 make it feel real. Item 19 done. Items 20-22 are polish.

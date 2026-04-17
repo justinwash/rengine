@@ -136,7 +136,8 @@ pub(crate) struct Renderer {
 
     canvas_pipeline: wgpu::RenderPipeline,
     canvas_vb: wgpu::Buffer,
-    pub(crate) font_atlas: text::FontAtlas,
+    pub(crate) fonts: Vec<text::FontAtlas>,
+    font_bgl: wgpu::BindGroupLayout,
 
     offscreen: Option<OffscreenTarget>,
     postfx: Option<PostFxPipeline>,
@@ -348,7 +349,8 @@ impl Renderer {
             white_texture: TextureId(0),
             canvas_pipeline,
             canvas_vb,
-            font_atlas,
+            fonts: vec![font_atlas],
+            font_bgl,
             offscreen: None,
             postfx: None,
         };
@@ -357,6 +359,14 @@ impl Renderer {
         renderer.white_texture = white;
 
         renderer
+    }
+
+    pub(crate) fn load_font(&mut self, font_bytes: &[u8]) -> text::FontId {
+        let id = text::FontId(self.fonts.len());
+        let atlas =
+            text::build_atlas_from_bytes(&self.device, &self.queue, &self.font_bgl, font_bytes, id);
+        self.fonts.push(atlas);
+        id
     }
 
     pub fn create_texture(&mut self, width: u32, height: u32, pixels: &[u8]) -> TextureId {
@@ -721,7 +731,7 @@ impl Renderer {
             &self.canvas_vb,
             &self.queue,
             &mut frame.canvases,
-            &self.font_atlas,
+            &self.fonts,
         );
 
         self.queue.submit(std::iter::once(encoder.finish()));
