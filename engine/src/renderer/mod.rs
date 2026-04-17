@@ -724,9 +724,6 @@ impl Renderer {
             pass.draw(0..3, 0..1);
         }
 
-        let texture_bind_groups: Vec<&wgpu::BindGroup> =
-            self.textures.iter().map(|texture| &texture.bind_group).collect();
-
         canvas::render_pass(
             &mut encoder,
             &swap_view,
@@ -735,7 +732,7 @@ impl Renderer {
             &self.queue,
             &mut frame.canvases,
             &self.fonts,
-            &texture_bind_groups,
+            |texture_id| self.textures.get(texture_id).map(|texture| &texture.bind_group),
         );
 
         self.queue.submit(std::iter::once(encoder.finish()));

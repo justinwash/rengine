@@ -355,7 +355,7 @@ This is the scene-aware alternative. Instead of a [`Game`](https://github.com/ju
 
 `Engine3D` mirrors `Engine` but wraps a `Renderer3D` instead of `Renderer`, and adds `mouse_captured: bool`. It provides the same asset/audio/input API plus 3D-specific methods:
 
-- [`engine.create_texture(w, h, &rgba)`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L98) / [`engine.load_texture(path)`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L145) / [`engine.white_texture()`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L270) → 2D texture helpers that also work for `Frame3D::canvas()` HUD drawing
+- [`engine.create_texture(w, h, &rgba)`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs) / [`engine.load_texture(path)`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs) / [`engine.white_texture()`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs) → 2D texture helpers that also work for `Frame3D::canvas()` HUD drawing
 - [`engine.load_obj_mesh(path)`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L669) / [`engine.load_gltf_mesh(path)`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L675) / [`engine.load_mesh(path)`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L681) → `Result<MeshAsset, AssetError>`
 - [`engine.create_mesh(vertices, indices)`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L764) → `MeshId`
 

@@ -500,33 +500,33 @@ impl Canvas {
         let u1 = u0 + uw;
         let v_bottom = v0 + vh;
 
-        let top_left = CanvasVertex {
+        let bottom_left = CanvasVertex {
             position: [x0, y0],
             color: c,
             uv: [u0, v_bottom],
         };
-        let top_right = CanvasVertex {
+        let bottom_right = CanvasVertex {
             position: [x1, y0],
             color: c,
             uv: [u1, v_bottom],
         };
-        let bottom_right = CanvasVertex {
+        let top_right = CanvasVertex {
             position: [x1, y1],
             color: c,
             uv: [u1, v0],
         };
-        let bottom_left = CanvasVertex {
+        let top_left = CanvasVertex {
             position: [x0, y1],
             color: c,
             uv: [u0, v0],
         };
         self.verts.extend_from_slice(&[
-            top_left,
-            bottom_right,
-            top_right,
-            top_left,
             bottom_left,
+            top_right,
             bottom_right,
+            bottom_left,
+            top_left,
+            top_right,
         ]);
     }
 
@@ -724,7 +724,7 @@ pub(crate) fn vertex_buffer(device: &wgpu::Device) -> wgpu::Buffer {
     })
 }
 
-pub(crate) fn render_pass(
+pub(crate) fn render_pass<'a, F>(
     encoder: &mut wgpu::CommandEncoder,
     view: &wgpu::TextureView,
     pipeline: &wgpu::RenderPipeline,
@@ -732,8 +732,10 @@ pub(crate) fn render_pass(
     queue: &wgpu::Queue,
     canvases: &mut [Canvas],
     fonts: &[FontAtlas],
-    textures: &[&wgpu::BindGroup],
-) {
+    texture_bind_group: F,
+) where
+    F: Fn(usize) -> Option<&'a wgpu::BindGroup>,
+{
     for canvas in canvases.iter_mut() {
         canvas.finalize();
     }
@@ -803,8 +805,8 @@ pub(crate) fn render_pass(
                         }
                     }
                     DrawTexture::Texture(texture_id) => {
-                        if let Some(bind_group) = textures.get(texture_id) {
-                            pass.set_bind_group(0, *bind_group, &[]);
+                        if let Some(bind_group) = texture_bind_group(texture_id) {
+                            pass.set_bind_group(0, bind_group, &[]);
                         }
                     }
                 }
