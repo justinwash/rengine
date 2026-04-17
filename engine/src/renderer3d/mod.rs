@@ -502,6 +502,70 @@ impl Renderer3D {
         id
     }
 
+    pub fn replace_texture(&mut self, id: TextureId, width: u32, height: u32, pixels: &[u8]) {
+        assert_eq!(
+            pixels.len(),
+            (width * height * 4) as usize,
+            "pixel data length must match width × height × 4"
+        );
+
+        let size = wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        };
+
+        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("canvas_texture_3d"),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            pixels,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * width),
+                rows_per_image: Some(height),
+            },
+            size,
+        );
+
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("texture_bg_3d"),
+            layout: &self.texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+            ],
+        });
+
+        self.textures[id.0] = GpuTexture {
+            _texture: texture,
+            _view: view,
+            bind_group,
+        };
+    }
+
     fn create_depth_texture(device: &wgpu::Device, width: u32, height: u32) -> wgpu::TextureView {
         let tex = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("depth_texture"),
@@ -731,9 +795,6 @@ impl Renderer3D {
             pass.draw(0..3, 0..1);
         }
 
-        let texture_bind_groups: Vec<&wgpu::BindGroup> =
-            self.textures.iter().map(|texture| &texture.bind_group).collect();
-
         canvas::render_pass(
             &mut encoder,
             &swap_view,
@@ -742,7 +803,7 @@ impl Renderer3D {
             &self.queue,
             &mut frame.canvases,
             &self.fonts,
-            &texture_bind_groups,
+            |texture_id| self.textures.get(texture_id).map(|texture| &texture.bind_group),
         );
 
         self.queue.submit(std::iter::once(encoder.finish()));

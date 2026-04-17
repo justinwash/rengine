@@ -1344,6 +1344,18 @@ impl Engine3D {
             return;
         }
 
+        for result in self
+            .assets
+            .reload_changed_textures(|id, width, height, pixels| {
+                self.renderer.replace_texture(id, width, height, pixels)
+            })
+        {
+            match result {
+                Ok(path) => log::info!("Reloaded texture {}", path.display()),
+                Err(error) => log::warn!("Texture reload failed: {error}"),
+            }
+        }
+
         for result in self.assets.reload_changed_meshes(|id, vertices, indices| {
             self.renderer.replace_mesh(id, vertices, indices)
         }) {
@@ -1391,6 +1403,10 @@ impl Engine3D {
 
     pub fn unload_mesh<P: AsRef<Path>>(&mut self, path: P) {
         self.assets.unload_mesh(path);
+    }
+
+    pub fn unload_texture<P: AsRef<Path>>(&mut self, path: P) {
+        self.assets.unload_texture(path);
     }
 
     pub fn unload_data<P: AsRef<Path>>(&mut self, path: P) {

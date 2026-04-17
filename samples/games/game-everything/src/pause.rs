@@ -1,6 +1,8 @@
 use crate::state::*;
 use rengine::*;
 
+struct PauseBadge(TextureId);
+
 pub struct PauseOverlay {
     pub demo_frames: u32,
     pub ui: Ui,
@@ -32,7 +34,7 @@ impl Scene for PauseOverlay {
             demo.log_feature("Ui::image");
         }
 
-        if self.badge.is_none() {
+        if !globals.contains::<PauseBadge>() {
             let mut icon = pixelart::PixelCanvas::new(24, 24);
             icon.fill(Color::new(0.08, 0.08, 0.12, 0.0));
             let shell = Color::from_rgba8(235, 70, 70, 255);
@@ -54,8 +56,10 @@ impl Scene for PauseOverlay {
             for x in 5..19 {
                 icon.set(x, 19, Color::from_rgba8(40, 40, 55, 255));
             }
-            self.badge = Some(engine.create_texture(24, 24, &icon.into_bytes()));
+            globals.set(PauseBadge(engine.create_texture(24, 24, &icon.into_bytes())));
         }
+
+        self.badge = globals.get::<PauseBadge>().map(|badge| badge.0);
 
         self.ui.begin(engine, -100.0, 40.0, 200.0);
         Self::build_pause_ui(&mut self.ui, self.badge);

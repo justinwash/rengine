@@ -100,11 +100,15 @@ pub(crate) fn build_atlas_from_bytes(
     let font = fontdue::Font::from_bytes(font_bytes, fontdue::FontSettings::default())
         .expect("failed to parse font");
 
-    let mut pixels = vec![0u8; (ATLAS_SIZE * ATLAS_SIZE) as usize];
+    let mut pixels = vec![0u8; (ATLAS_SIZE * ATLAS_SIZE * 4) as usize];
 
     for y in 0..2u32 {
         for x in 0..2u32 {
-            pixels[(y * ATLAS_SIZE + x) as usize] = 255;
+            let offset = ((y * ATLAS_SIZE + x) * 4) as usize;
+            pixels[offset] = 255;
+            pixels[offset + 1] = 255;
+            pixels[offset + 2] = 255;
+            pixels[offset + 3] = 255;
         }
     }
     let white_uv = [1.0 / ATLAS_SIZE as f32, 1.0 / ATLAS_SIZE as f32];
@@ -153,8 +157,11 @@ pub(crate) fn build_atlas_from_bytes(
         for gy in 0..gh {
             for gx in 0..gw {
                 let src = (gy * gw + gx) as usize;
-                let dst = ((cursor_y + gy) * ATLAS_SIZE + cursor_x + gx) as usize;
-                pixels[dst] = bitmap[src];
+                let dst = (((cursor_y + gy) * ATLAS_SIZE + cursor_x + gx) * 4) as usize;
+                pixels[dst] = 255;
+                pixels[dst + 1] = 255;
+                pixels[dst + 2] = 255;
+                pixels[dst + 3] = bitmap[src];
             }
         }
 
@@ -196,7 +203,7 @@ pub(crate) fn build_atlas_from_bytes(
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::R8Unorm,
+        format: wgpu::TextureFormat::Rgba8UnormSrgb,
         usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
         view_formats: &[],
     });
@@ -211,7 +218,7 @@ pub(crate) fn build_atlas_from_bytes(
         &pixels,
         wgpu::TexelCopyBufferLayout {
             offset: 0,
-            bytes_per_row: Some(ATLAS_SIZE),
+            bytes_per_row: Some(ATLAS_SIZE * 4),
             rows_per_image: Some(ATLAS_SIZE),
         },
         wgpu::Extent3d {
