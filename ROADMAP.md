@@ -77,6 +77,7 @@ Recently completed or partially completed:
 - Completed: scroll regions — `Ui::scroll(id, height, scroll_offset, children)` creates a clipped scrollable container. Canvas `push_clip`/`pop_clip` for GPU scissor-rect clipping with segment-based render pass. `InputState::scroll_delta()` for mouse wheel input wired through all event loops. `UiResponse::scroll_for(id)` returns updated offsets. Focusable rects inside scroll regions are clipped to the visible area. Updated `feature-ui` sample with ScrollScene.
 - Completed: multiple font support — `FontId` handle type, `Engine::load_font()` for runtime `.ttf`/`.otf` loading, per-canvas-segment font tracking with bind group switching, `Engine::font(id)` accessor, `FontId::DEFAULT` for the built-in font, backward-compatible `font_atlas()` method, `feature-fonts` sample
 - Completed: screen-space images — `Canvas::image()`, `image_colored()`, and `image_region()` for textured screen-space quads, generalized canvas draw segments that switch between font atlases and texture bind groups, `Ui::image()` / `image_colored()` / `image_region()` widget support, `feature-images` sample, kitchen-sink pause overlay integration, and matching Engine3D texture helpers for HUD canvases
+- Completed: tooltip widget — `Ui::tooltip()` and `tooltip_sized()` attach explanatory text to the most recently added widget, rendering near the mouse or keyboard-focused control with wrapping, screen-edge clamping, and tooltip style fields on `UiStyle`; includes `feature-tooltips` and kitchen-sink pause overlay coverage
 
 ---
 
@@ -541,20 +542,19 @@ Tracked against the build order. Crossed-off items are done.
 14. ~~Mouse hover/click on widgets~~ ✓
 15. ~~UI single-build pattern — stop duplicating widget trees in update() and render()~~ ✓
 16. ~~Screen-space sprites / UI image widget — card artwork, driver portraits, facility icons~~ ✓
-17. Tooltip widget — card descriptions, stat explanations
+17. ~~Tooltip widget — card descriptions, stat explanations~~ ✓
 18. Widget animation hooks — card flip, slide-in, highlight pulse
 19. ~~Multiple font support — headers, body, commentary, HUD~~ ✓
 20. Text input widget — team naming
 21. Animation state machines — car sprite states
 22. ~~Rebindable controls — player key remapping~~ ✓
 
-Items 1-16 are done. Item 17 is now the next blocker for comfortable card-heavy UI work. Items 18-21 remain after that, with 19 and 22 already finished.
+Items 1-17 are done. Item 18 is now the next blocker for making the management UI feel alive, while items 20-21 remain the larger follow-up gaps.
 
 Current priority engine issues for this game:
 
-1. Tooltip widget — needed for hover explanations on cards, stats, facilities, and commentary affordances.
-2. Widget animation hooks — needed for card flip, slide-in, highlight pulse, and more generally to make the management UI feel alive.
-3. Text input widget — still needs both a UI control and typed-character plumbing in the engine input/event layer.
-4. Animation state machines — useful once car sprites, driver portraits, and richer UI-driven stateful animations start to matter.
+1. Widget animation hooks — needed for card flip, slide-in, highlight pulse, and more generally to make the management UI feel alive.
+2. Text input widget — still needs both a UI control and typed-character plumbing in the engine input/event layer.
+3. Animation state machines — useful once car sprites, driver portraits, and richer UI-driven stateful animations start to matter.
 
-Unless a more urgent engine bug appears, the next engine work for the motorsport game should stay focused on those four items.
+Unless a more urgent engine bug appears, the next engine work for the motorsport game should stay focused on those three items.

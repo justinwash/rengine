@@ -15,10 +15,13 @@ impl PauseOverlay {
         ui.separator(12.0);
         if let Some(texture) = badge {
             ui.image(texture, Vec2::new(56.0, 56.0));
+            ui.tooltip("Crew badge tooltip: images and other non-interactive widgets can now explain themselves on hover.");
             ui.separator(8.0);
         }
         ui.button(0, "Resume");
+        ui.tooltip("Return to the current run without losing any state.");
         ui.button(1, "Quit");
+        ui.tooltip("Exit the kitchen-sink demo immediately.");
     }
 }
 
@@ -32,6 +35,7 @@ impl Scene for PauseOverlay {
             demo.log_feature("Scene::on_enter");
             demo.log_feature("Ui (widget system)");
             demo.log_feature("Ui::image");
+            demo.log_feature("Ui::tooltip");
         }
 
         if !globals.contains::<PauseBadge>() {
