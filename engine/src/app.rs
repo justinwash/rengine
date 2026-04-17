@@ -1111,6 +1111,10 @@ impl Engine3D {
         self.assets.set_root(root);
     }
 
+    pub fn create_texture(&mut self, width: u32, height: u32, pixels: &[u8]) -> TextureId {
+        self.renderer.create_texture(width, height, pixels)
+    }
+
     pub fn font_atlas(&self) -> &text::FontAtlas {
         self.font(text::FontId::DEFAULT)
     }
@@ -1130,6 +1134,12 @@ impl Engine3D {
 
     pub fn load_text<P: AsRef<Path>>(&mut self, path: P) -> Result<Arc<str>, AssetError> {
         self.assets.load_text(path)
+    }
+
+    pub fn load_texture<P: AsRef<Path>>(&mut self, path: P) -> Result<TextureAsset, AssetError> {
+        self.assets.load_texture(path, |width, height, pixels| {
+            self.renderer.create_texture(width, height, pixels)
+        })
     }
 
     pub fn load_resource<T: DeserializeOwned>(
@@ -1218,6 +1228,10 @@ impl Engine3D {
         let resolved = self.assets.resolve_path(path.as_ref());
         let bytes = self.assets.load_bytes(path)?;
         Ok(self.audio.register_clip(resolved, bytes))
+    }
+
+    pub fn white_texture(&self) -> TextureId {
+        self.renderer.white_texture
     }
 
     pub fn play_sound(&self, clip: &AudioClip) -> Result<(), AssetError> {

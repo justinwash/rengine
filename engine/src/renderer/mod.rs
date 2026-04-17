@@ -328,7 +328,7 @@ impl Renderer {
             ..Default::default()
         });
 
-        let font_bgl = text::font_bind_group_layout(&device);
+        let font_bgl = texture_bgl.clone();
         let canvas_pipeline = canvas::pipeline(&device, surface_format, &font_bgl);
         let canvas_vb = canvas::vertex_buffer(&device);
         let font_atlas = text::font_atlas(&device, &queue, &font_bgl);
@@ -724,6 +724,9 @@ impl Renderer {
             pass.draw(0..3, 0..1);
         }
 
+        let texture_bind_groups: Vec<&wgpu::BindGroup> =
+            self.textures.iter().map(|texture| &texture.bind_group).collect();
+
         canvas::render_pass(
             &mut encoder,
             &swap_view,
@@ -732,6 +735,7 @@ impl Renderer {
             &self.queue,
             &mut frame.canvases,
             &self.fonts,
+            &texture_bind_groups,
         );
 
         self.queue.submit(std::iter::once(encoder.finish()));
