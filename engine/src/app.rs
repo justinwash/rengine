@@ -1465,8 +1465,7 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
             while engine.time.consume_fixed_step() {
                 game.fixed_update(&engine);
             }
-            let mut headless_frame =
-                Frame3D::new(engine.window_size(), &engine.renderer.fonts[0]);
+            let mut headless_frame = Frame3D::new(engine.window_size(), &engine.renderer.fonts[0]);
             game.update(&engine, &mut headless_frame);
             if game.should_exit() {
                 return Ok(());
@@ -1696,8 +1695,7 @@ where
                 }
             }
 
-            let mut headless_frame =
-                Frame3D::new(engine.window_size(), &engine.renderer.fonts[0]);
+            let mut headless_frame = Frame3D::new(engine.window_size(), &engine.renderer.fonts[0]);
             let op = if let Some(scene) = stack.last_mut() {
                 scene.update(&engine, &mut globals, &mut headless_frame)
             } else {
