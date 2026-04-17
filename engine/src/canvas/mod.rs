@@ -1,4 +1,5 @@
 use crate::assets::Color;
+use crate::renderer::TextureId;
 use crate::text::{FontAtlas, ATLAS_SIZE, FONT_SIZE};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -46,11 +47,17 @@ pub const MAX_CANVAS_VERTICES: usize = 8_000;
 
 const WHITE_UV: [f32; 2] = [1.0 / ATLAS_SIZE as f32, 1.0 / ATLAS_SIZE as f32];
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum DrawTexture {
+    Font(usize),
+    Texture(usize),
+}
+
 pub(crate) struct DrawSegment {
     pub start: usize,
     pub count: usize,
     pub scissor: Option<[u32; 4]>,
-    pub font_id: usize,
+    pub texture: DrawTexture,
 }
 
 pub struct Canvas {
@@ -59,7 +66,7 @@ pub struct Canvas {
     screen_size: (u32, u32),
     clip_stack: Vec<[u32; 4]>,
     segment_start: usize,
-    current_font: usize,
+    current_texture: DrawTexture,
     atlas: *const FontAtlas,
 }
 
@@ -71,7 +78,7 @@ impl Canvas {
             screen_size,
             clip_stack: Vec::new(),
             segment_start: 0,
-            current_font: 0,
+            current_texture: DrawTexture::Font(0),
             atlas,
         }
     }
@@ -134,16 +141,20 @@ impl Canvas {
                 start: self.segment_start,
                 count,
                 scissor: self.clip_stack.last().copied(),
-                font_id: self.current_font,
+                texture: self.current_texture,
             });
         }
         self.segment_start = self.verts.len();
     }
 
     fn set_font(&mut self, font_id: usize) {
-        if font_id != self.current_font {
+        self.set_texture(DrawTexture::Font(font_id));
+    }
+
+    fn set_texture(&mut self, texture: DrawTexture) {
+        if texture != self.current_texture {
             self.close_segment();
-            self.current_font = font_id;
+            self.current_texture = texture;
         }
     }
 
@@ -152,10 +163,12 @@ impl Canvas {
     }
 
     pub fn shape(&mut self, triangles: &[CanvasVertex]) {
+        self.set_font(0);
         self.verts.extend_from_slice(triangles);
     }
 
     pub fn rect(&mut self, x: f32, y: f32, w: f32, h: f32, color: Color) {
+        self.set_font(0);
         let [x0, y0] = screen_to_ndc(x, y, self.screen_size);
         let [x1, y1] = screen_to_ndc(x + w, y + h, self.screen_size);
 
@@ -185,6 +198,7 @@ impl Canvas {
     }
 
     pub fn line(&mut self, x0: f32, y0: f32, x1: f32, y1: f32, thickness: f32, color: Color) {
+        self.set_font(0);
         let dx = x1 - x0;
         let dy = y1 - y0;
         let len = (dx * dx + dy * dy).sqrt();
@@ -255,6 +269,7 @@ impl Canvas {
     }
 
     pub fn circle_filled(&mut self, cx: f32, cy: f32, radius: f32, segments: u32, color: Color) {
+        self.set_font(0);
         let c = color.to_array();
         let uv = WHITE_UV;
         let center = screen_to_ndc(cx, cy, self.screen_size);
@@ -447,6 +462,72 @@ impl Canvas {
                 cursor_x += entry.advance * scale;
             }
         }
+    }
+
+    pub fn image(&mut self, texture: TextureId, x: f32, y: f32, w: f32, h: f32) {
+        self.image_colored(texture, x, y, w, h, Color::WHITE);
+    }
+
+    pub fn image_colored(
+        &mut self,
+        texture: TextureId,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        color: Color,
+    ) {
+        self.image_region(texture, x, y, w, h, [0.0, 0.0, 1.0, 1.0], color);
+    }
+
+    pub fn image_region(
+        &mut self,
+        texture: TextureId,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        uv_rect: [f32; 4],
+        color: Color,
+    ) {
+        self.set_texture(DrawTexture::Texture(texture.0));
+
+        let [x0, y0] = screen_to_ndc(x, y, self.screen_size);
+        let [x1, y1] = screen_to_ndc(x + w, y + h, self.screen_size);
+
+        let c = color.to_array();
+        let [u0, v0, uw, vh] = uv_rect;
+        let u1 = u0 + uw;
+        let v_bottom = v0 + vh;
+
+        let bottom_left = CanvasVertex {
+            position: [x0, y0],
+            color: c,
+            uv: [u0, v_bottom],
+        };
+        let bottom_right = CanvasVertex {
+            position: [x1, y0],
+            color: c,
+            uv: [u1, v_bottom],
+        };
+        let top_right = CanvasVertex {
+            position: [x1, y1],
+            color: c,
+            uv: [u1, v0],
+        };
+        let top_left = CanvasVertex {
+            position: [x0, y1],
+            color: c,
+            uv: [u0, v0],
+        };
+        self.verts.extend_from_slice(&[
+            bottom_left,
+            top_right,
+            bottom_right,
+            bottom_left,
+            top_left,
+            top_right,
+        ]);
     }
 
     pub fn text_spans_aligned(
@@ -643,7 +724,7 @@ pub(crate) fn vertex_buffer(device: &wgpu::Device) -> wgpu::Buffer {
     })
 }
 
-pub(crate) fn render_pass(
+pub(crate) fn render_pass<'a, F>(
     encoder: &mut wgpu::CommandEncoder,
     view: &wgpu::TextureView,
     pipeline: &wgpu::RenderPipeline,
@@ -651,7 +732,10 @@ pub(crate) fn render_pass(
     queue: &wgpu::Queue,
     canvases: &mut [Canvas],
     fonts: &[FontAtlas],
-) {
+    texture_bind_group: F,
+) where
+    F: Fn(usize) -> Option<&'a wgpu::BindGroup>,
+{
     for canvas in canvases.iter_mut() {
         canvas.finalize();
     }
@@ -665,16 +749,16 @@ pub(crate) fn render_pass(
     }
     queue.write_buffer(vertex_buffer, 0, bytemuck::cast_slice(&verts));
 
-    let mut global_segments: Vec<(usize, usize, Option<[u32; 4]>, usize)> = Vec::new();
+    let mut global_segments: Vec<(usize, usize, Option<[u32; 4]>, DrawTexture)> = Vec::new();
     let mut offset = 0usize;
     for canvas in canvases.iter() {
         if canvas.segments.is_empty() {
             if !canvas.verts.is_empty() {
-                global_segments.push((offset, canvas.verts.len(), None, 0));
+                global_segments.push((offset, canvas.verts.len(), None, DrawTexture::Font(0)));
             }
         } else {
             for seg in &canvas.segments {
-                global_segments.push((offset + seg.start, seg.count, seg.scissor, seg.font_id));
+                global_segments.push((offset + seg.start, seg.count, seg.scissor, seg.texture));
             }
         }
         offset += canvas.verts.len();
@@ -702,22 +786,31 @@ pub(crate) fn render_pass(
 
     let needs_per_segment = global_segments
         .iter()
-        .any(|(_, _, s, f)| s.is_some() || *f != 0);
+        .any(|(_, _, s, texture)| s.is_some() || *texture != DrawTexture::Font(0));
 
     if needs_per_segment {
         let surface_w = canvases.first().map(|c| c.screen_size.0).unwrap_or(1);
         let surface_h = canvases.first().map(|c| c.screen_size.1).unwrap_or(1);
-        let mut bound_font: usize = 0;
+        let mut bound_texture = DrawTexture::Font(0);
 
-        for (start, count, scissor, font_id) in &global_segments {
+        for (start, count, scissor, texture) in &global_segments {
             if *count == 0 {
                 continue;
             }
-            if *font_id != bound_font {
-                if let Some(atlas) = fonts.get(*font_id) {
-                    pass.set_bind_group(0, &atlas.bind_group, &[]);
+            if *texture != bound_texture {
+                match *texture {
+                    DrawTexture::Font(font_id) => {
+                        if let Some(atlas) = fonts.get(font_id) {
+                            pass.set_bind_group(0, &atlas.bind_group, &[]);
+                        }
+                    }
+                    DrawTexture::Texture(texture_id) => {
+                        if let Some(bind_group) = texture_bind_group(texture_id) {
+                            pass.set_bind_group(0, bind_group, &[]);
+                        }
+                    }
                 }
-                bound_font = *font_id;
+                bound_texture = *texture;
             }
             if let Some([sx, sy, sw, sh]) = scissor {
                 if *sw == 0 || *sh == 0 {

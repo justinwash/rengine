@@ -328,7 +328,7 @@ impl Renderer {
             ..Default::default()
         });
 
-        let font_bgl = text::font_bind_group_layout(&device);
+        let font_bgl = texture_bgl.clone();
         let canvas_pipeline = canvas::pipeline(&device, surface_format, &font_bgl);
         let canvas_vb = canvas::vertex_buffer(&device);
         let font_atlas = text::font_atlas(&device, &queue, &font_bgl);
@@ -732,6 +732,11 @@ impl Renderer {
             &self.queue,
             &mut frame.canvases,
             &self.fonts,
+            |texture_id| {
+                self.textures
+                    .get(texture_id)
+                    .map(|texture| &texture.bind_group)
+            },
         );
 
         self.queue.submit(std::iter::once(encoder.finish()));

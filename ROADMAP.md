@@ -48,7 +48,7 @@ Recently completed or partially completed:
 - Completed: `feature-scenes` sample — demonstrates Switch, Push/Pop, pause overlay with transparency, Globals-based persistent counters, and all lifecycle hooks
 - Completed: improved 2D camera — rotation, smooth follow with configurable speed, dead zones, screen shake with decay, camera bounds clamping via `CameraBounds`, projection refactored to ortho × view matrix
 - Completed: `feature-camera` sample — demonstrates follow, dead zone, bounds, shake, and rotation toggle
-- Completed: input action mapping — `ActionMap` with named digital actions and analog axes, `Binding` enum for Key/MouseButton/GamepadButton, `AxisMapping` with positive/negative bindings and optional gamepad stick axis, convenience methods on `Engine` and `Engine3D`
+- Completed: input action mapping and engine-side rebinding — `ActionMap` with named digital actions and analog axes, `Binding` enum for Key/MouseButton/GamepadButton, `AxisMapping` with positive/negative bindings and optional gamepad stick axis, convenience methods on `Engine` and `Engine3D`, plus runtime `bind`/`unbind`/`clear` and `bind_axis`/`unbind_axis` support
 - Completed: `feature-input` sample — demonstrates action binding setup, axis-driven movement, pressed/down/released queries with visual feedback
 - Completed: asset pipeline validation and dependency tracking — `validate_manifest()` for pre-load checks, `manifest_dependencies()` for tracking which files each manifest loaded, `loaded_asset_summary()` for debugging, `unload_texture/mesh/data()` for cache eviction
 - Completed: serializable resources — `load_resource<T>()` and `load_resource_list<T>()` on Engine and Engine3D for JSON-driven data definitions with serde deserialization
@@ -76,6 +76,7 @@ Recently completed or partially completed:
 - Completed: UI layout containers — `Row` and `Grid` container widgets. `row(children)` distributes N children equally across the available width. `row_spaced(spacing, children)` adds horizontal gaps. `grid(columns, children)` wraps children into rows of N columns. `grid_spaced(columns, spacing, children)` adds gaps. Both containers track per-row max height so mixed-height children align correctly. Generalized internal Container stack (replaces old panel-only stack) handles Panel, Row, and Grid uniformly in both hit-testing and rendering. Updated `feature-ui` sample with LayoutScene demonstrating all variants.
 - Completed: scroll regions — `Ui::scroll(id, height, scroll_offset, children)` creates a clipped scrollable container. Canvas `push_clip`/`pop_clip` for GPU scissor-rect clipping with segment-based render pass. `InputState::scroll_delta()` for mouse wheel input wired through all event loops. `UiResponse::scroll_for(id)` returns updated offsets. Focusable rects inside scroll regions are clipped to the visible area. Updated `feature-ui` sample with ScrollScene.
 - Completed: multiple font support — `FontId` handle type, `Engine::load_font()` for runtime `.ttf`/`.otf` loading, per-canvas-segment font tracking with bind group switching, `Engine::font(id)` accessor, `FontId::DEFAULT` for the built-in font, backward-compatible `font_atlas()` method, `feature-fonts` sample
+- Completed: screen-space images — `Canvas::image()`, `image_colored()`, and `image_region()` for textured screen-space quads, generalized canvas draw segments that switch between font atlases and texture bind groups, `Ui::image()` / `image_colored()` / `image_region()` widget support, `feature-images` sample, kitchen-sink pause overlay integration, and matching Engine3D texture helpers for HUD canvases
 
 ---
 
@@ -112,8 +113,8 @@ These are the features that most directly increase the engine’s usefulness for
 10. Input action mapping [done]
     Named actions (`"jump"`, `"shoot"`) and axes (`"move_x"`, `"move_y"`) bound to keyboard keys, mouse buttons, and gamepad buttons/sticks. Queries via `engine.action_down()`, `action_pressed()`, `action_released()`, `axis()`. Per-player variants for multiplayer.
 
-11. Rebindable controls
-    Let players or games remap keyboard and gamepad actions.
+11. Rebindable controls [done]
+    `ActionMap` supports runtime `bind()`, `unbind()`, `clear()`, `bind_axis()`, and `unbind_axis()`, so the engine side of player/game remapping is already in place. What remains game-specific is the UI for collecting new bindings.
 
 12. Collision layers and masks [done]
     `CollisionLayer` with `layer` and `mask` u32 bitmasks. Named constants for WORLD, PLAYER, ENEMY, PROJECTILE, TRIGGER, UI. `aabb_overlap_layered()` checks layer compatibility before spatial overlap. Default is all-bits so existing code is unaffected.
@@ -539,12 +540,21 @@ Tracked against the build order. Crossed-off items are done.
 13. ~~UI widgets (checkbox, slider, progress bar)~~ ✓
 14. ~~Mouse hover/click on widgets~~ ✓
 15. ~~UI single-build pattern — stop duplicating widget trees in update() and render()~~ ✓
-16. Screen-space sprites / UI image widget — card artwork, driver portraits, facility icons
+16. ~~Screen-space sprites / UI image widget — card artwork, driver portraits, facility icons~~ ✓
 17. Tooltip widget — card descriptions, stat explanations
 18. Widget animation hooks — card flip, slide-in, highlight pulse
 19. ~~Multiple font support — headers, body, commentary, HUD~~ ✓
 20. Text input widget — team naming
 21. Animation state machines — car sprite states
-22. Rebindable controls — player key remapping
+22. ~~Rebindable controls — player key remapping~~ ✓
 
-Items 1-15 done. Item 16 unblocks productive game development. Items 17-18 make it feel real. Item 19 done. Items 20-22 are polish.
+Items 1-16 are done. Item 17 is now the next blocker for comfortable card-heavy UI work. Items 18-21 remain after that, with 19 and 22 already finished.
+
+Current priority engine issues for this game:
+
+1. Tooltip widget — needed for hover explanations on cards, stats, facilities, and commentary affordances.
+2. Widget animation hooks — needed for card flip, slide-in, highlight pulse, and more generally to make the management UI feel alive.
+3. Text input widget — still needs both a UI control and typed-character plumbing in the engine input/event layer.
+4. Animation state machines — useful once car sprites, driver portraits, and richer UI-driven stateful animations start to matter.
+
+Unless a more urgent engine bug appears, the next engine work for the motorsport game should stay focused on those four items.
