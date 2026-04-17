@@ -355,6 +355,7 @@ This is the scene-aware alternative. Instead of a [`Game`](https://github.com/ju
 
 `Engine3D` mirrors `Engine` but wraps a `Renderer3D` instead of `Renderer`, and adds `mouse_captured: bool`. It provides the same asset/audio/input API plus 3D-specific methods:
 
+- [`engine.create_texture(w, h, &rgba)`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs) / [`engine.load_texture(path)`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs) / [`engine.white_texture()`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs) → 2D texture helpers that also work for `Frame3D::canvas()` HUD drawing
 - [`engine.load_obj_mesh(path)`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L669) / [`engine.load_gltf_mesh(path)`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L675) / [`engine.load_mesh(path)`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L681) → `Result<MeshAsset, AssetError>`
 - [`engine.create_mesh(vertices, indices)`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L764) → `MeshId`
 
@@ -762,24 +763,29 @@ Atlas construction (`build_atlas_from_bytes`):
 7. Upload the atlas to a GPU texture.
 8. Create a bind group with the texture + a linear-filtering sampler.
 
-The `Renderer` and `Renderer3D` store a `Vec<FontAtlas>` (index 0 is always the default) and a shared `BindGroupLayout` (`font_bgl`) so all font atlases share the same pipeline layout.
+The `Renderer` and `Renderer3D` store a `Vec<FontAtlas>` (index 0 is always the default) and use the same texture/sampler bind-group layout for both font atlases and ordinary textures, which lets the shared canvas pass switch between text and images without changing pipelines.
 
 **API**: `engine.load_font("path/to/font.ttf") -> FontId`, `engine.font(id) -> &FontAtlas`, `engine.font_atlas() -> &FontAtlas` (default font shorthand).
 
-**Rendering**: `Canvas` tracks `current_font: usize` and records the font id in each `DrawSegment`. During `render_pass`, the renderer binds the correct font atlas per segment, switching bind groups only when the font id changes.
+**Rendering**: `Canvas` tracks the currently bound draw texture for each segment. Text segments record a font atlas id; image segments record a `TextureId`. During `render_pass`, the renderer binds the correct font atlas or texture bind group per segment and only switches when the backing GPU resource changes.
 
 ### 6.2 [`Canvas`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs#L42) Drawing
 
-`Canvas` is an immediate-mode 2D drawing API that operates in **world space** (center-origin, Y-up — matching the sprite coordinate system). It stores `screen_size` internally so callers never need to pass it to drawing methods:
+`Canvas` is an immediate-mode 2D drawing API that operates in **center-origin, Y-up screen space**. `Frame` and `Frame3D` pass the default font atlas into each canvas at construction time, so callers can use the default font without threading `&FontAtlas` through every text call:
 
 ```rust
 pub struct Canvas {
     pub(crate) verts: Vec<CanvasVertex>,
+    pub(crate) segments: Vec<DrawSegment>,
     screen_size: (u32, u32),
+    clip_stack: Vec<[u32; 4]>,
+    segment_start: usize,
+    current_texture: DrawTexture,
+    atlas: *const FontAtlas,
 }
 ```
 
-`Canvas::new(screen_size)` creates a canvas bound to the given resolution. `canvas.screen_size()` returns it. `Frame::begin(screen_size)` and `Frame3D::new(screen_size)` propagate the size to all canvases automatically.
+`Canvas::new(screen_size, atlas)` creates a canvas bound to the given resolution and default font atlas. `canvas.screen_size()` returns the size. `Frame::begin(screen_size, atlas)` and `Frame3D::new(screen_size, atlas)` propagate both into canvases automatically.
 
 Methods:
 
@@ -788,8 +794,13 @@ Methods:
 - **`canvas.polyline(points, thickness, color)`** — Draws connected line segments through a slice of `(f32, f32)` points.
 - **`canvas.circle(cx, cy, radius, thickness, segments, color)`** — Circle outline via N line segments.
 - **`canvas.circle_filled(cx, cy, radius, segments, color)`** — Filled circle via a triangle fan from the center.
-- **`canvas.text(x, y, text, size, color)`** — Renders text by emitting two triangles per visible glyph. Scales glyphs by `size / FONT_SIZE`. Each quad's UV maps to the glyph's region in the font atlas. Uses the internally stored `FontAtlas` pointer.
-- **`canvas.text_spans(x, y, spans, size)`** — Renders colored text spans. Takes `&[(&str, Color)]` and draws each substring in its own color, advancing the cursor.
+- **`canvas.image(texture, x, y, w, h)`** — Draws a textured screen-space quad using normalized full-texture UVs.
+- **`canvas.image_colored(texture, x, y, w, h, color)`** — Same as `image()`, but multiplies the sampled texture by a tint color.
+- **`canvas.image_region(texture, x, y, w, h, uv_rect, color)`** — Draws a textured screen-space quad from a normalized UV sub-rectangle `[u, v, w, h]`, useful for icon sheets or packed UI art.
+- **`canvas.text(x, y, text, size, color)`** — Renders text with the canvas's default font atlas.
+- **`canvas.text_with_font(x, y, text, size, color, atlas)`** — Renders text with an explicit `FontAtlas`, recording the font id in the active draw segment so the render pass can switch bind groups as needed.
+- **`canvas.text_spans(x, y, spans, size)`** — Renders colored text spans with the default font atlas.
+- **`canvas.text_spans_with_font(x, y, spans, size, atlas)`** — Multi-font equivalent of `text_spans()`.
 - **`canvas.text_spans_aligned(x, y, spans, size, align)`** — Like `text_spans` but measures total width first and applies `TextAlign` offset.
 - **`canvas.measure_text(text, size) -> (f32, f32)`** — Convenience wrapper for `FontAtlas::measure_text()` using the canvas's internal atlas.
 - **`canvas.line_height(size) -> f32`** — Convenience wrapper for `FontAtlas::line_height()` using the canvas's internal atlas.
@@ -805,7 +816,7 @@ pub fn screen_to_ndc(x: f32, y: f32, screen_size: (u32, u32)) -> [f32; 2] {
 }
 ```
 
-Maps world-space (0,0 = center, Y-up) to NDC (-1,-1 = bottom-left, +1,+1 = top-right). This matches the sprite renderer's coordinate system, so canvas overlays and sprites use the same coordinates.
+Maps center-origin Y-up screen space `(0,0 = center)` to NDC `(-1,-1 = bottom-left, +1,+1 = top-right)`. The orientation matches the sprite renderer, but when resolution scaling is active the sprite pass renders to the game/offscreen target and the canvas pass still renders directly to the window after the blit pass. `Camera2D::world_to_screen()` / `screen_to_world()` still help bridge the gap, but card art, portraits, and UI icons can now live directly in the canvas pass via `Canvas::image*()`.
 
 ### 6.3 The canvas.wgsl Shader
 
@@ -832,13 +843,14 @@ When `EngineConfig::show_fps` is true, the engine creates a dedicated canvas, dr
 
 ### 6.5 Text Layout (Measurement, Alignment, Wrapping)
 
-Built on top of the existing single-font `FontAtlas` and `Canvas` text renderer. `Canvas` stores a `FontAtlas` pointer internally, so text methods no longer require an explicit `&FontAtlas` parameter:
+Built on top of `FontAtlas` plus the canvas text renderer. `Canvas` stores a pointer to the default font atlas internally, while the explicit `*_with_font` variants let callers use additional loaded fonts:
 
 - **`FontAtlas::measure_text(text, size) -> (f32, f32)`** — Returns `(width, height)` in pixels for a single line of text at the given size. Sums glyph advance widths scaled by `size / FONT_SIZE`.
 - **`FontAtlas::line_height(size) -> f32`** — Returns the line height in pixels for the given font size.
 - **`TextAlign`** — Enum with `Left`, `Center`, `Right` variants.
 - **`Canvas::text_aligned(x, y, text, size, color, align)`** — Like `text()` but offsets the x position based on alignment: `Left` draws from x, `Center` shifts left by half the measured width, `Right` shifts left by the full measured width.
 - **`Canvas::text_block(x, y, text, size, color, max_width, align)`** — Word-wraps text to fit `max_width`, then draws each line with `text_aligned()`. Lines advance downward by `line_height`.
+- **`Canvas::text_with_font(...)` / `text_spans_with_font(...)`** — Opt into a non-default `FontAtlas` on a per-draw basis. This is the current public path for multiple font support.
 - **`wrap_text(text, size, max_width, atlas) -> Vec<String>`** — Standalone word-wrapping function. Splits on spaces, respects explicit `\n` line breaks. Returns wrapped lines as a `Vec<String>`. Still requires `&FontAtlas` since it's a free function without canvas access.
 
 ### 6.6 Canvas Clipping
@@ -885,6 +897,7 @@ impl Scene for MyScene {
 - **`Ui::with_style(style) -> Self`** — Apply a custom `UiStyle` (colors, sizes, padding).
 - **`Ui::with_focus(index) -> Self`** — Override the focused button index.
 - **`Ui::label(text, size, color)`** / **`label_centered(text, size, color)`** — Static text (left-aligned or centered).
+- **`Ui::image(texture, size)`** / **`image_colored(texture, size, color)`** / **`image_region(texture, size, uv_rect)`** — Non-interactive image widgets backed by the canvas image API. These render centered within the current layout width and participate in panels, rows, grids, and scroll regions like any other widget.
 - **`Ui::button(id, text)`** — Interactive button identified by a numeric `id`.
 - **`Ui::panel(color, padding, children)`** — Background panel that wraps the next `children` widgets with a colored rect and inward padding.
 - **`Ui::row(children)`** / **`row_spaced(spacing, children)`** — Horizontal layout container. The next `children` widgets are placed side-by-side, each getting an equal share of the available width. `row_spaced` adds horizontal gaps between columns.
@@ -902,6 +915,15 @@ impl Scene for MyScene {
   - Convenience: `response.was_activated(id)`, `was_toggled(id)`, `value_for(id) -> Option<f32>`, `scroll_for(id) -> Option<f32>`.
 - **`Ui::render(canvas, engine)`** — Draw all widgets into a `Canvas` layer (font atlas fetched from engine internally).
 - **`UiStyle`** — Configurable struct with fields for text, button, panel, progress bar, checkbox, and slider colors/sizes/padding.
+
+### 6.8 Remaining UI-Heavy Gaps
+
+The current UI/canvas stack is strong enough for menus, HUDs, stat panels, scrollable management screens, and now screen-space card art or iconography, but a few gaps still matter for card-heavy management games:
+
+- **No tooltip widget** — hover state exists, but there is no built-in tooltip presentation layer.
+- **No widget animation system** — the engine has `Tween`, `Timer`, and `EventQueue`, but `Ui` itself has no enter/exit/focus animation hooks.
+- **No text input widget** — and more importantly, the input layer still does not expose typed-character / IME events, so text entry is not just a missing widget.
+- **No general drag-and-drop** — only slider dragging is built into `Ui` right now.
 
 ---
 
@@ -1048,7 +1070,7 @@ Keyboard and mouse bindings always contribute regardless of player index (only o
 
 `Engine3D` also has `actions_mut()`, `action_down()`, `action_pressed()`, `action_released()`, and `axis()`. `Engine3D` uses a dummy gamepad state (no real gamepad polling), so gamepad bindings are accepted but inert.
 
-`ActionMap` also provides `unbind()`, `unbind_axis()`, and `clear()` for runtime rebinding.
+`ActionMap` also provides `unbind()`, `unbind_axis()`, and `clear()` for runtime rebinding. That means the engine side of rebindable controls is already in place; what remains game-side is the UI flow for capturing a new key/button from the player.
 
 ---
 

@@ -7,6 +7,7 @@ pub use mesh::{cube_mesh, floor_quad, wall_quad, MeshId, Vertex3D};
 use crate::app::ScaleMode;
 use crate::assets::Color;
 use crate::canvas::{self, Canvas};
+use crate::renderer::TextureId;
 use crate::text::{self, FontAtlas};
 use glam::{Mat4, Quat, Vec3};
 use mesh::Vertex3D as V3;
@@ -169,6 +170,12 @@ struct GpuMesh {
     indices: Vec<u32>,
 }
 
+struct GpuTexture {
+    _texture: wgpu::Texture,
+    _view: wgpu::TextureView,
+    bind_group: wgpu::BindGroup,
+}
+
 struct OffscreenTarget {
     _texture: wgpu::Texture,
     view: wgpu::TextureView,
@@ -190,6 +197,10 @@ pub(crate) struct Renderer3D {
     uniform_buffer: wgpu::Buffer,
     uniform_bind_group: wgpu::BindGroup,
     depth_view: wgpu::TextureView,
+    texture_bind_group_layout: wgpu::BindGroupLayout,
+    textures: Vec<GpuTexture>,
+    sampler: wgpu::Sampler,
+    pub(crate) white_texture: TextureId,
     meshes: Vec<GpuMesh>,
 
     canvas_pipeline: wgpu::RenderPipeline,
@@ -289,6 +300,38 @@ impl Renderer3D {
             }],
         });
 
+        let texture_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("texture_bgl_3d"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("texture_sampler_3d"),
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            ..Default::default()
+        });
+
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("mesh3d_pipeline_layout"),
             bind_group_layouts: &[&uniform_bgl],
@@ -353,12 +396,12 @@ impl Renderer3D {
             mapped_at_creation: false,
         });
 
-        let font_bgl = text::font_bind_group_layout(&device);
+        let font_bgl = texture_bgl.clone();
         let canvas_pipeline = canvas::pipeline(&device, surface_format, &font_bgl);
         let canvas_vb = canvas::vertex_buffer(&device);
         let font_atlas = text::font_atlas(&device, &queue, &font_bgl);
 
-        Self {
+        let mut renderer = Self {
             surface,
             device,
             queue,
@@ -369,13 +412,20 @@ impl Renderer3D {
             uniform_buffer,
             uniform_bind_group,
             depth_view,
+            texture_bind_group_layout: texture_bgl,
+            textures: Vec::new(),
+            sampler,
+            white_texture: TextureId(0),
             meshes: Vec::new(),
             canvas_pipeline,
             canvas_vb,
             fonts: vec![font_atlas],
             font_bgl,
             offscreen: None,
-        }
+        };
+
+        renderer.white_texture = renderer.create_texture(1, 1, &[255, 255, 255, 255]);
+        renderer
     }
 
     pub(crate) fn load_font(&mut self, font_bytes: &[u8]) -> text::FontId {
@@ -384,6 +434,136 @@ impl Renderer3D {
             text::build_atlas_from_bytes(&self.device, &self.queue, &self.font_bgl, font_bytes, id);
         self.fonts.push(atlas);
         id
+    }
+
+    pub fn create_texture(&mut self, width: u32, height: u32, pixels: &[u8]) -> TextureId {
+        assert_eq!(
+            pixels.len(),
+            (width * height * 4) as usize,
+            "pixel data length must match width × height × 4"
+        );
+
+        let size = wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        };
+
+        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("canvas_texture_3d"),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            pixels,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * width),
+                rows_per_image: Some(height),
+            },
+            size,
+        );
+
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("texture_bg_3d"),
+            layout: &self.texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+            ],
+        });
+
+        let id = TextureId(self.textures.len());
+        self.textures.push(GpuTexture {
+            _texture: texture,
+            _view: view,
+            bind_group,
+        });
+        id
+    }
+
+    pub fn replace_texture(&mut self, id: TextureId, width: u32, height: u32, pixels: &[u8]) {
+        assert_eq!(
+            pixels.len(),
+            (width * height * 4) as usize,
+            "pixel data length must match width × height × 4"
+        );
+
+        let size = wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        };
+
+        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("canvas_texture_3d"),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            pixels,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * width),
+                rows_per_image: Some(height),
+            },
+            size,
+        );
+
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("texture_bg_3d"),
+            layout: &self.texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+            ],
+        });
+
+        self.textures[id.0] = GpuTexture {
+            _texture: texture,
+            _view: view,
+            bind_group,
+        };
     }
 
     fn create_depth_texture(device: &wgpu::Device, width: u32, height: u32) -> wgpu::TextureView {
@@ -623,6 +803,11 @@ impl Renderer3D {
             &self.queue,
             &mut frame.canvases,
             &self.fonts,
+            |texture_id| {
+                self.textures
+                    .get(texture_id)
+                    .map(|texture| &texture.bind_group)
+            },
         );
 
         self.queue.submit(std::iter::once(encoder.finish()));

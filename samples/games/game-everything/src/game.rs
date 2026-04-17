@@ -580,6 +580,7 @@ impl Scene for GameScene {
                         return SceneOp::Push(Box::new(PauseOverlay {
                             demo_frames: 0,
                             ui: Ui::default(),
+                            badge: None,
                         }));
                     }
                     if prev < 500 && f >= 500 {
@@ -649,6 +650,7 @@ impl Scene for GameScene {
                 return SceneOp::Push(Box::new(PauseOverlay {
                     demo_frames: 0,
                     ui: Ui::default(),
+                    badge: None,
                 }));
             }
         }
