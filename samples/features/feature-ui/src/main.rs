@@ -49,7 +49,6 @@ impl Scene for MenuScene {
 
     fn render(&self, engine: &Engine, _globals: &Globals, frame: &mut Frame) {
         let (_, hh) = engine.half_size();
-        let atlas = engine.font_atlas();
         frame.clear_color = Color::from_rgba8(25, 25, 40, 255);
 
         let canvas = frame.canvas(0);
@@ -63,7 +62,6 @@ impl Scene for MenuScene {
                 12.0,
                 Color::YELLOW,
                 TextAlign::Center,
-                atlas,
             );
         }
 
@@ -74,7 +72,6 @@ impl Scene for MenuScene {
             10.0,
             Color::from_rgba8(140, 140, 140, 255),
             TextAlign::Center,
-            atlas,
         );
     }
 }
@@ -129,7 +126,6 @@ impl Scene for OptionsScene {
 
     fn render(&self, engine: &Engine, _globals: &Globals, frame: &mut Frame) {
         let (hw, hh) = engine.half_size();
-        let atlas = engine.font_atlas();
 
         let canvas = frame.canvas(1);
         canvas.rect(-hw, -hh, hw * 2.0, hh * 2.0, Color::new(0.0, 0.0, 0.0, 0.6));
@@ -143,7 +139,6 @@ impl Scene for OptionsScene {
             10.0,
             Color::from_rgba8(140, 140, 140, 255),
             TextAlign::Center,
-            atlas,
         );
     }
 }
@@ -251,7 +246,6 @@ impl Scene for DemoScene {
 
     fn render(&self, engine: &Engine, _globals: &Globals, frame: &mut Frame) {
         let (_, hh) = engine.half_size();
-        let atlas = engine.font_atlas();
         frame.clear_color = Color::from_rgba8(20, 20, 35, 255);
 
         let canvas = frame.canvas(0);
@@ -265,7 +259,6 @@ impl Scene for DemoScene {
             10.0,
             Color::from_rgba8(180, 180, 180, 255),
             TextAlign::Center,
-            atlas,
         );
 
         canvas.text_aligned(
@@ -275,7 +268,6 @@ impl Scene for DemoScene {
             10.0,
             Color::from_rgba8(140, 140, 140, 255),
             TextAlign::Center,
-            atlas,
         );
     }
 }
@@ -362,7 +354,6 @@ impl Scene for LayoutScene {
 
     fn render(&self, engine: &Engine, _globals: &Globals, frame: &mut Frame) {
         let (_, hh) = engine.half_size();
-        let atlas = engine.font_atlas();
         frame.clear_color = Color::from_rgba8(25, 20, 35, 255);
 
         let canvas = frame.canvas(0);
@@ -375,7 +366,6 @@ impl Scene for LayoutScene {
             10.0,
             Color::from_rgba8(140, 140, 140, 255),
             TextAlign::Center,
-            atlas,
         );
     }
 }
@@ -443,7 +433,6 @@ impl Scene for ScrollScene {
 
     fn render(&self, engine: &Engine, _globals: &Globals, frame: &mut Frame) {
         let (_, hh) = engine.half_size();
-        let atlas = engine.font_atlas();
         frame.clear_color = Color::from_rgba8(25, 20, 35, 255);
 
         let canvas = frame.canvas(0);
@@ -456,7 +445,6 @@ impl Scene for ScrollScene {
             10.0,
             Color::from_rgba8(140, 140, 140, 255),
             TextAlign::Center,
-            atlas,
         );
     }
 }
@@ -485,8 +473,7 @@ impl Scene for GameScene {
         SceneOp::Continue
     }
 
-    fn render(&self, engine: &Engine, _globals: &Globals, frame: &mut Frame) {
-        let atlas = engine.font_atlas();
+    fn render(&self, _engine: &Engine, _globals: &Globals, frame: &mut Frame) {
         frame.clear_color = Color::from_rgba8(20, 30, 50, 255);
 
         let canvas = frame.canvas(0);
@@ -497,7 +484,6 @@ impl Scene for GameScene {
             24.0,
             Color::WHITE,
             TextAlign::Center,
-            atlas,
         );
         canvas.text_aligned(
             0.0,
@@ -506,7 +492,6 @@ impl Scene for GameScene {
             16.0,
             Color::from_rgba8(180, 180, 180, 255),
             TextAlign::Center,
-            atlas,
         );
         canvas.text_aligned(
             0.0,
@@ -515,7 +500,6 @@ impl Scene for GameScene {
             12.0,
             Color::from_rgba8(140, 140, 140, 255),
             TextAlign::Center,
-            atlas,
         );
     }
 }

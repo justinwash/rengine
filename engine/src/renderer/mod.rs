@@ -14,6 +14,8 @@ use crate::app::ScaleMode;
 use crate::assets::Color;
 use crate::canvas::{self, Canvas};
 use crate::text;
+use crate::text::FontAtlas;
+
 use postfx::PostFxPipeline;
 use sprite::Vertex;
 
@@ -32,6 +34,7 @@ pub struct Frame {
 
     pub(crate) canvases: Vec<Canvas>,
     screen_size: (u32, u32),
+    atlas: *const FontAtlas,
 }
 
 impl Frame {
@@ -42,6 +45,7 @@ impl Frame {
             clear_color: Color::BLACK,
             canvases: Vec::new(),
             screen_size: (1, 1),
+            atlas: std::ptr::null(),
         }
     }
 
@@ -77,17 +81,23 @@ impl Frame {
         nine_slice.patches_into(position, size, &mut self.sprites);
     }
 
-    pub fn begin(&mut self, screen_size: (u32, u32)) {
+    pub fn begin(&mut self, screen_size: (u32, u32), atlas: &FontAtlas) {
         self.sprites.clear();
         self.canvases.clear();
         self.clear_color = Color::BLACK;
         self.screen_size = screen_size;
+        self.atlas = atlas as *const FontAtlas;
     }
 
     pub fn canvas(&mut self, index: usize) -> &mut Canvas {
+        assert!(
+            !self.atlas.is_null(),
+            "Frame font atlas not initialized; call begin() before canvas()"
+        );
         let ss = self.screen_size;
+        let a = self.atlas;
         if index >= self.canvases.len() {
-            self.canvases.resize_with(index + 1, || Canvas::new(ss));
+            self.canvases.resize_with(index + 1, || Canvas::new(ss, a));
         }
         &mut self.canvases[index]
     }

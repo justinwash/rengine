@@ -68,7 +68,6 @@ impl Game for TweenDemo {
         let (sw, sh) = engine.window_size();
         let hw = sw as f32 / 2.0;
         let hh = sh as f32 / 2.0;
-        let atlas = engine.font_atlas();
         let canvas = frame.canvas(0);
 
         canvas.rect(
@@ -84,7 +83,6 @@ impl Game for TweenDemo {
             "Tween / Easing Demo",
             24.0,
             Color::WHITE,
-            atlas,
         );
 
         let label_x = -hw + 20.0;
@@ -107,7 +105,6 @@ impl Game for TweenDemo {
                 name,
                 13.0,
                 Color::from_rgba8(180, 180, 180, 255),
-                atlas,
             );
             canvas.rect(bar_x, y - 2.0, BAR_WIDTH, bar_h, track_color);
             canvas.rect(bar_x, y - 2.0, val, bar_h, fill_color);
@@ -134,7 +131,6 @@ impl Game for TweenDemo {
             "OutBounce ball:",
             13.0,
             Color::from_rgba8(180, 180, 180, 255),
-            atlas,
         );
 
         canvas.text(
@@ -143,7 +139,6 @@ impl Game for TweenDemo {
             "ESC to quit | tweens ping-pong automatically",
             12.0,
             Color::from_rgba8(100, 100, 100, 255),
-            atlas,
         );
     }
 

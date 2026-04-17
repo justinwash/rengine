@@ -24,7 +24,6 @@ impl Scene for CountdownScene {
 
         frame.clear_color = Color::new(0.05, 0.05, 0.15, 1.0);
 
-        let atlas = engine.font_atlas();
         let canvas = frame.canvas(0);
 
         let secs = self.timer.ceil() as i32;
@@ -34,7 +33,7 @@ impl Scene for CountdownScene {
             format!("{secs}")
         };
 
-        canvas.text(-40.0, 50.0, &label, 80.0, Color::WHITE, atlas);
+        canvas.text(-40.0, 50.0, &label, 80.0, Color::WHITE);
 
         canvas.text(
             -140.0,
@@ -42,7 +41,6 @@ impl Scene for CountdownScene {
             "Demo starting... start recording!",
             16.0,
             Color::new(0.7, 0.7, 0.7, 1.0),
-            atlas,
         );
 
         SceneOp::Continue

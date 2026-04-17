@@ -327,7 +327,7 @@ On every `WindowEvent::RedrawRequested`:
 └─ engine.input.end_frame()        // Clear per-frame flags (pressed, released, mouse delta)
 ```
 
-`Frame` is created once before the event loop so that `Camera2D` state (position, shake, rotation) persists across frames. `frame.begin()` clears only transient per-frame data (sprites, canvases).
+`Frame` is created once before the event loop so that `Camera2D` state (position, shake, rotation) persists across frames. `frame.begin(screen_size, atlas)` clears only transient per-frame data (sprites, canvases) and stores the font atlas pointer so that canvases can access it internally for text rendering.
 
 Other event handlers:
 
@@ -788,9 +788,11 @@ Methods:
 - **`canvas.polyline(points, thickness, color)`** — Draws connected line segments through a slice of `(f32, f32)` points.
 - **`canvas.circle(cx, cy, radius, thickness, segments, color)`** — Circle outline via N line segments.
 - **`canvas.circle_filled(cx, cy, radius, segments, color)`** — Filled circle via a triangle fan from the center.
-- **`canvas.text(x, y, text, size, color, atlas)`** — Renders text by emitting two triangles per visible glyph. Scales glyphs by `size / FONT_SIZE`. Each quad's UV maps to the glyph's region in the font atlas.
-- **`canvas.text_spans(x, y, spans, size, atlas)`** — Renders colored text spans. Takes `&[(&str, Color)]` and draws each substring in its own color, advancing the cursor.
-- **`canvas.text_spans_aligned(x, y, spans, size, align, atlas)`** — Like `text_spans` but measures total width first and applies `TextAlign` offset.
+- **`canvas.text(x, y, text, size, color)`** — Renders text by emitting two triangles per visible glyph. Scales glyphs by `size / FONT_SIZE`. Each quad's UV maps to the glyph's region in the font atlas. Uses the internally stored `FontAtlas` pointer.
+- **`canvas.text_spans(x, y, spans, size)`** — Renders colored text spans. Takes `&[(&str, Color)]` and draws each substring in its own color, advancing the cursor.
+- **`canvas.text_spans_aligned(x, y, spans, size, align)`** — Like `text_spans` but measures total width first and applies `TextAlign` offset.
+- **`canvas.measure_text(text, size) -> (f32, f32)`** — Convenience wrapper for `FontAtlas::measure_text()` using the canvas's internal atlas.
+- **`canvas.line_height(size) -> f32`** — Convenience wrapper for `FontAtlas::line_height()` using the canvas's internal atlas.
 - **`canvas.shape(triangles)`** — Accepts raw `CanvasVertex` triangles for custom shapes.
 
 **NDC conversion:**
@@ -826,18 +828,18 @@ The canvas pipeline uses `ALPHA_BLENDING` and `LoadOp::Load` (draws on top of ex
 
 ### 6.4 The FPS Counter
 
-When `EngineConfig::show_fps` is true, the engine creates a dedicated canvas, draws a semi-transparent black background rectangle and green FPS text at (8,8) in 16px size. This canvas is appended to `frame.canvases` after the game's render call. The `draw_fps()` function receives only `&mut Canvas` and `&FontAtlas` — it reads screen size from the canvas via `canvas.screen_size()`.
+When `EngineConfig::show_fps` is true, the engine creates a dedicated canvas, draws a semi-transparent black background rectangle and green FPS text at (8,8) in 16px size. This canvas is appended to `frame.canvases` after the game's render call. The `draw_fps()` function receives only `&mut Canvas` — it reads screen size and font atlas from the canvas internally.
 
 ### 6.5 Text Layout (Measurement, Alignment, Wrapping)
 
-Built on top of the existing single-font `FontAtlas` and `Canvas` text renderer:
+Built on top of the existing single-font `FontAtlas` and `Canvas` text renderer. `Canvas` stores a `FontAtlas` pointer internally, so text methods no longer require an explicit `&FontAtlas` parameter:
 
 - **`FontAtlas::measure_text(text, size) -> (f32, f32)`** — Returns `(width, height)` in pixels for a single line of text at the given size. Sums glyph advance widths scaled by `size / FONT_SIZE`.
 - **`FontAtlas::line_height(size) -> f32`** — Returns the line height in pixels for the given font size.
 - **`TextAlign`** — Enum with `Left`, `Center`, `Right` variants.
-- **`Canvas::text_aligned(x, y, text, size, color, align, atlas)`** — Like `text()` but offsets the x position based on alignment: `Left` draws from x, `Center` shifts left by half the measured width, `Right` shifts left by the full measured width.
-- **`Canvas::text_block(x, y, text, size, color, max_width, align, atlas)`** — Word-wraps text to fit `max_width`, then draws each line with `text_aligned()`. Lines advance downward by `line_height`.
-- **`wrap_text(text, size, max_width, atlas) -> Vec<String>`** — Standalone word-wrapping function. Splits on spaces, respects explicit `\n` line breaks. Returns wrapped lines as a `Vec<String>`.
+- **`Canvas::text_aligned(x, y, text, size, color, align)`** — Like `text()` but offsets the x position based on alignment: `Left` draws from x, `Center` shifts left by half the measured width, `Right` shifts left by the full measured width.
+- **`Canvas::text_block(x, y, text, size, color, max_width, align)`** — Word-wraps text to fit `max_width`, then draws each line with `text_aligned()`. Lines advance downward by `line_height`.
+- **`wrap_text(text, size, max_width, atlas) -> Vec<String>`** — Standalone word-wrapping function. Splits on spaces, respects explicit `\n` line breaks. Returns wrapped lines as a `Vec<String>`. Still requires `&FontAtlas` since it's a free function without canvas access.
 
 ### 6.6 Canvas Clipping
 
@@ -2062,7 +2064,7 @@ It is a 2D platformer with:
 - **Trigger volumes** — `TriggerSystem`, `TriggerZone`, `OverlapEvent`
 - **Camera** — `Camera2D` follow, dead zone, bounds, shake, rotation, zoom, `world_to_screen`
 - **Drawing** — `DrawParams` builder (position, size, color, uv_rect, flip_x, rotation, origin, z_order)
-- **Canvas HUD** — `Canvas::rect()`, `Canvas::text()`, `FontAtlas`
+- **Canvas HUD** — `Canvas::rect()`, `Canvas::text()` (atlas accessed internally)
 - **Input** — `InputState`, `GamepadState`, `TimeState`
 - **Color** — constants + `rgb()` / `new()`
 - **Hot reload** and **FPS overlay** via config
@@ -2083,9 +2085,9 @@ It is a 2D platformer with:
 | Rollback netcode                                                                                                                                                                                              | Enable `rollback` feature, implement `Rollbackable`, create `RollbackSession`                                                       |
 | [`iso_to_screen`](https://github.com/justinwash/rengine/blob/master/engine/src/world/iso.rs#L4) / [`screen_to_iso`](https://github.com/justinwash/rengine/blob/master/engine/src/world/iso.rs#L11)            | Use in an isometric game for tile placement                                                                                         |
 | [`Canvas::shape()`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs#L51)                                                                                                           | Pass raw `CanvasVertex` triangles for custom shapes                                                                                 |
-| [`FontAtlas::measure_text()`](https://github.com/justinwash/rengine/blob/master/engine/src/text.rs)                                                                                                           | `let (w, h) = atlas.measure_text("Hello", 24.0);`                                                                                   |
-| [`TextAlign`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs) / `text_aligned`                                                                                                    | `canvas.text_aligned(x, y, "Title", 24.0, color, TextAlign::Center, screen, atlas);`                                                |
-| [`wrap_text`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs) / `text_block`                                                                                                      | `canvas.text_block(x, y, paragraph, 14.0, color, 300.0, TextAlign::Left, screen, atlas);`                                           |
+| [`FontAtlas::measure_text()`](https://github.com/justinwash/rengine/blob/master/engine/src/text.rs)                                                                                                           | `let (w, h) = engine.font_atlas().measure_text("Hello", 24.0);` or `canvas.measure_text("Hello", 24.0)`                             |
+| [`TextAlign`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs) / `text_aligned`                                                                                                    | `canvas.text_aligned(x, y, "Title", 24.0, color, TextAlign::Center);`                                                               |
+| [`wrap_text`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs) / `text_block`                                                                                                      | `canvas.text_block(x, y, paragraph, 14.0, color, 300.0, TextAlign::Left);`                                                          |
 | [`create_color_texture`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L256)                                                                                                            | `engine.create_color_texture(32, 32, Color::RED)`                                                                                   |
 | [`white_texture()`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L270)                                                                                                                 | `engine.white_texture()` for solid rectangles without a texture file                                                                |
 | Mouse input                                                                                                                                                                                                   | `engine.input().mouse_delta()`, `is_mouse_down(0)`, `is_mouse_pressed(1)`                                                           |

@@ -612,7 +612,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
             while engine.time.consume_fixed_step() {
                 game.fixed_update(&engine);
             }
-            headless_frame.begin(engine.window_size());
+            headless_frame.begin(engine.window_size(), engine.font_atlas());
             game.update(&engine, &mut headless_frame);
             if game.should_exit() {
                 return Ok(());
@@ -680,7 +680,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
                     while engine.time.consume_fixed_step() {
                         game.fixed_update(&engine);
                     }
-                    frame.begin(engine.window_size());
+                    frame.begin(engine.window_size(), engine.font_atlas());
                     game.update(&engine, &mut frame);
 
                     if game.should_exit() {
@@ -692,12 +692,9 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
 
                     if show_fps {
                         let screen_size = engine.window_size();
-                        let mut fps_canvas = canvas::Canvas::new(screen_size);
-                        canvas::draw_fps(
-                            &mut fps_canvas,
-                            engine.time.fps(),
-                            &engine.renderer.fonts[0],
-                        );
+                        let atlas: *const text::FontAtlas = &engine.renderer.fonts[0];
+                        let mut fps_canvas = canvas::Canvas::new(screen_size, atlas);
+                        canvas::draw_fps(&mut fps_canvas, engine.time.fps());
                         frame.canvases.push(fps_canvas);
                     }
                     engine
@@ -793,7 +790,7 @@ where
                 }
             }
 
-            frame.begin(engine.window_size());
+            frame.begin(engine.window_size(), engine.font_atlas());
             let op = if let Some(scene) = stack.last_mut() {
                 scene.update(&engine, &mut globals, &mut frame)
             } else {
@@ -874,7 +871,7 @@ where
                         }
                     }
 
-                    frame.begin(engine.window_size());
+                    frame.begin(engine.window_size(), engine.font_atlas());
 
                     if transition.is_none() {
                         let op = if let Some(scene) = stack.last_mut() {
@@ -931,7 +928,8 @@ where
                             let screen_size = engine.window_size();
                             let hw = screen_size.0 as f32 / 2.0;
                             let hh = screen_size.1 as f32 / 2.0;
-                            let mut overlay = canvas::Canvas::new(screen_size);
+                            let atlas: *const text::FontAtlas = &engine.renderer.fonts[0];
+                            let mut overlay = canvas::Canvas::new(screen_size, atlas);
                             let c =
                                 crate::assets::Color::new(t.color.r, t.color.g, t.color.b, alpha);
                             overlay.rect(-hw, -hh, screen_size.0 as f32, screen_size.1 as f32, c);
@@ -947,12 +945,9 @@ where
 
                     if show_fps {
                         let screen_size = engine.window_size();
-                        let mut fps_canvas = canvas::Canvas::new(screen_size);
-                        canvas::draw_fps(
-                            &mut fps_canvas,
-                            engine.time.fps(),
-                            &engine.renderer.fonts[0],
-                        );
+                        let atlas: *const text::FontAtlas = &engine.renderer.fonts[0];
+                        let mut fps_canvas = canvas::Canvas::new(screen_size, atlas);
+                        canvas::draw_fps(&mut fps_canvas, engine.time.fps());
                         frame.canvases.push(fps_canvas);
                     }
                     engine
@@ -1470,7 +1465,8 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
             while engine.time.consume_fixed_step() {
                 game.fixed_update(&engine);
             }
-            let mut headless_frame = Frame3D::new(engine.window_size());
+            let mut headless_frame =
+                Frame3D::new(engine.window_size(), &engine.renderer.fonts[0]);
             game.update(&engine, &mut headless_frame);
             if game.should_exit() {
                 return Ok(());
@@ -1585,7 +1581,7 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
                     while engine.time.consume_fixed_step() {
                         game.fixed_update(&engine);
                     }
-                    let mut frame = Frame3D::new(engine.window_size());
+                    let mut frame = Frame3D::new(engine.window_size(), &engine.renderer.fonts[0]);
                     game.update(&engine, &mut frame);
 
                     if game.should_exit() {
@@ -1597,12 +1593,9 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
 
                     if show_fps {
                         let screen_size = engine.window_size();
-                        let mut fps_canvas = canvas::Canvas::new(screen_size);
-                        canvas::draw_fps(
-                            &mut fps_canvas,
-                            engine.time.fps(),
-                            &engine.renderer.fonts[0],
-                        );
+                        let atlas: *const text::FontAtlas = &engine.renderer.fonts[0];
+                        let mut fps_canvas = canvas::Canvas::new(screen_size, atlas);
+                        canvas::draw_fps(&mut fps_canvas, engine.time.fps());
                         frame.canvases.push(fps_canvas);
                     }
                     engine.renderer.render_frame(&mut frame);
@@ -1703,7 +1696,8 @@ where
                 }
             }
 
-            let mut headless_frame = Frame3D::new(engine.window_size());
+            let mut headless_frame =
+                Frame3D::new(engine.window_size(), &engine.renderer.fonts[0]);
             let op = if let Some(scene) = stack.last_mut() {
                 scene.update(&engine, &mut globals, &mut headless_frame)
             } else {
@@ -1829,7 +1823,7 @@ where
                         }
                     }
 
-                    let mut frame = Frame3D::new(engine.window_size());
+                    let mut frame = Frame3D::new(engine.window_size(), &engine.renderer.fonts[0]);
 
                     let op = if let Some(scene) = stack.last_mut() {
                         scene.update(&engine, &mut globals, &mut frame)
@@ -1851,12 +1845,9 @@ where
 
                     if show_fps {
                         let screen_size = engine.window_size();
-                        let mut fps_canvas = canvas::Canvas::new(screen_size);
-                        canvas::draw_fps(
-                            &mut fps_canvas,
-                            engine.time.fps(),
-                            &engine.renderer.fonts[0],
-                        );
+                        let atlas: *const text::FontAtlas = &engine.renderer.fonts[0];
+                        let mut fps_canvas = canvas::Canvas::new(screen_size, atlas);
+                        canvas::draw_fps(&mut fps_canvas, engine.time.fps());
                         frame.canvases.push(fps_canvas);
                     }
                     engine.renderer.render_frame(&mut frame);
