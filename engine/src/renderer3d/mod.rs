@@ -803,7 +803,11 @@ impl Renderer3D {
             &self.queue,
             &mut frame.canvases,
             &self.fonts,
-            |texture_id| self.textures.get(texture_id).map(|texture| &texture.bind_group),
+            |texture_id| {
+                self.textures
+                    .get(texture_id)
+                    .map(|texture| &texture.bind_group)
+            },
         );
 
         self.queue.submit(std::iter::once(encoder.finish()));
