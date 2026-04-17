@@ -298,7 +298,15 @@ impl Canvas {
         self.text_with_font(x, y, text, size, color, atlas);
     }
 
-    pub fn text_with_font(&mut self, x: f32, y: f32, text: &str, size: f32, color: Color, atlas: &FontAtlas) {
+    pub fn text_with_font(
+        &mut self,
+        x: f32,
+        y: f32,
+        text: &str,
+        size: f32,
+        color: Color,
+        atlas: &FontAtlas,
+    ) {
         self.set_font(atlas.id().0);
         let scale = size / FONT_SIZE;
         let c = color.to_array();
@@ -380,7 +388,14 @@ impl Canvas {
         self.text_spans_with_font(x, y, spans, size, atlas);
     }
 
-    pub fn text_spans_with_font(&mut self, x: f32, y: f32, spans: &[(&str, Color)], size: f32, atlas: &FontAtlas) {
+    pub fn text_spans_with_font(
+        &mut self,
+        x: f32,
+        y: f32,
+        spans: &[(&str, Color)],
+        size: f32,
+        atlas: &FontAtlas,
+    ) {
         self.set_font(atlas.id().0);
         let scale = size / FONT_SIZE;
         let mut cursor_x = x;
