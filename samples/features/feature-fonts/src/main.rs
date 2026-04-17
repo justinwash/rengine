@@ -38,44 +38,44 @@ impl Game for FontsDemo {
         let col_x = -hw + 30.0;
         let mut y = hh - 40.0;
 
-        canvas.text(col_x, y, "Multiple Font Support", heading, label_color, default);
+        canvas.text(col_x, y, "Multiple Font Support", heading, label_color);
         y -= 35.0;
 
-        canvas.text(col_x, y, "Default font (built-in):", body, dim_color, default);
+        canvas.text(col_x, y, "Default font (built-in):", body, dim_color);
         y -= 24.0;
-        canvas.text(col_x + 10.0, y, "The quick brown fox jumps over the lazy dog.", body, text_color, default);
+        canvas.text(col_x + 10.0, y, "The quick brown fox jumps over the lazy dog.", body, text_color);
         y -= 24.0;
-        canvas.text(col_x + 10.0, y, "ABCDEFGHIJKLMNOPQRSTUVWXYZ 0123456789", body, text_color, default);
+        canvas.text(col_x + 10.0, y, "ABCDEFGHIJKLMNOPQRSTUVWXYZ 0123456789", body, text_color);
         y -= 40.0;
 
-        canvas.text(col_x, y, "Mono font (JetBrains Mono, loaded from file):", body, dim_color, default);
+        canvas.text(col_x, y, "Mono font (JetBrains Mono, loaded from file):", body, dim_color);
         y -= 24.0;
-        canvas.text(col_x + 10.0, y, "The quick brown fox jumps over the lazy dog.", body, text_color, mono);
+        canvas.text_with_font(col_x + 10.0, y, "The quick brown fox jumps over the lazy dog.", body, text_color, mono);
         y -= 24.0;
-        canvas.text(col_x + 10.0, y, "ABCDEFGHIJKLMNOPQRSTUVWXYZ 0123456789", body, text_color, mono);
+        canvas.text_with_font(col_x + 10.0, y, "ABCDEFGHIJKLMNOPQRSTUVWXYZ 0123456789", body, text_color, mono);
         y -= 40.0;
 
-        canvas.text(col_x, y, "Mixed fonts on the same canvas:", heading, label_color, default);
+        canvas.text(col_x, y, "Mixed fonts on the same canvas:", heading, label_color);
         y -= 30.0;
-        canvas.text(col_x + 10.0, y, "This is the default font, ", body, text_color, default);
+        canvas.text(col_x + 10.0, y, "This is the default font, ", body, text_color);
         let w = default.measure_text("This is the default font, ", body).0;
-        canvas.text(col_x + 10.0 + w, y, "and this is mono.", body, Color::from_rgba8(120, 255, 120, 255), mono);
+        canvas.text_with_font(col_x + 10.0 + w, y, "and this is mono.", body, Color::from_rgba8(120, 255, 120, 255), mono);
         y -= 40.0;
 
-        canvas.text(col_x, y, "Size comparison:", heading, label_color, default);
+        canvas.text(col_x, y, "Size comparison:", heading, label_color);
         y -= 30.0;
         let sizes = [12.0, 16.0, 24.0, 32.0];
         for &sz in &sizes {
             let label = format!("{}px default", sz as u32);
-            canvas.text(col_x + 10.0, y, &label, sz, text_color, default);
+            canvas.text(col_x + 10.0, y, &label, sz, text_color);
             let dw = default.measure_text(&label, sz).0;
             let mono_label = format!("  |  {}px mono", sz as u32);
-            canvas.text(col_x + 10.0 + dw, y, &mono_label, sz, label_color, mono);
+            canvas.text_with_font(col_x + 10.0 + dw, y, &mono_label, sz, label_color, mono);
             y -= sz + 8.0;
         }
 
         y -= 10.0;
-        canvas.text(col_x, y, "Measurement:", heading, label_color, default);
+        canvas.text(col_x, y, "Measurement:", heading, label_color);
         y -= 30.0;
         let sample = "Hello, World!";
         let sz = 20.0;
@@ -84,13 +84,13 @@ impl Game for FontsDemo {
         canvas.text(
             col_x + 10.0, y,
             &format!("Default \"{}\" @ {}px: {:.0}x{:.0}", sample, sz as u32, dw, dh),
-            14.0, text_color, default,
+            14.0, text_color,
         );
         y -= 20.0;
         canvas.text(
             col_x + 10.0, y,
             &format!("Mono    \"{}\" @ {}px: {:.0}x{:.0}", sample, sz as u32, mw, mh),
-            14.0, text_color, default,
+            14.0, text_color,
         );
     }
 

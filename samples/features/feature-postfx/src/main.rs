@@ -184,7 +184,6 @@ impl Game for PostFxDemo {
         let names = effect_names();
         let name = names[self.effect_index];
         let _screen_size = engine.window_size();
-        let atlas = engine.font_atlas();
         let canvas = frame.canvas(0);
         canvas.rect(
             -hw + 4.0,
@@ -199,7 +198,7 @@ impl Game for PostFxDemo {
             self.effect_index + 1,
             names.len()
         );
-        canvas.text(-hw + 8.0, hh - 8.0, &info, 14.0, Color::WHITE, atlas);
+        canvas.text(-hw + 8.0, hh - 8.0, &info, 14.0, Color::WHITE);
     }
 
     fn should_exit(&self) -> bool {
