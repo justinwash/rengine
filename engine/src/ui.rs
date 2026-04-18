@@ -269,13 +269,6 @@ struct TooltipRuntime {
     elapsed: f32,
 }
 
-fn tooltip_for_widget(tooltips: &[TooltipSpec], widget_index: usize) -> Option<&TooltipSpec> {
-    tooltips
-        .iter()
-        .rev()
-        .find(|tooltip| tooltip.widget_index == widget_index)
-}
-
 fn widget_supports_tooltip(widget: &Widget) -> bool {
     matches!(
         widget,
@@ -382,8 +375,7 @@ fn resolve_active_tooltip<'a>(
 }
 
 fn capture_tooltip<'a>(
-    tooltips: &'a [TooltipSpec],
-    widget_index: usize,
+    tooltip: &'a TooltipSpec,
     rect: UiRect,
     focus_id: Option<usize>,
     focused_id: Option<usize>,
@@ -395,10 +387,6 @@ fn capture_tooltip<'a>(
     hovered_tooltip: &mut Option<ActiveTooltip<'a>>,
     focused_tooltip: &mut Option<ActiveTooltip<'a>>,
 ) {
-    let Some(tooltip) = tooltip_for_widget(tooltips, widget_index) else {
-        return;
-    };
-
     if point_visible(mouse, rect, clip_stack) {
         *hovered_tooltip = Some(resolve_active_tooltip(
             tooltip, rect, true, mouse, input, style,
@@ -428,18 +416,20 @@ fn draw_tooltip(
     let margin = 8.0;
     let max_box_width = (screen_size.0 as f32 - margin * 2.0).max(1.0);
     let max_box_height = (screen_size.1 as f32 - margin * 2.0).max(1.0);
+    let min_box_width = (style.tooltip_padding * 2.0 + 1.0).min(max_box_width);
+    let min_box_height = (style.tooltip_padding * 2.0 + 1.0).min(max_box_height);
     let max_text_width = (max_box_width - style.tooltip_padding * 2.0).max(1.0);
     let fixed_box_width = if let Some(width) = tooltip.fixed_width {
         width
             .min(max_box_width)
-            .max(style.tooltip_padding * 2.0 + 1.0)
+            .max(min_box_width)
     } else {
         0.0
     };
     let text_wrap_width = if fixed_box_width > 0.0 {
         (fixed_box_width - style.tooltip_padding * 2.0).max(1.0)
     } else {
-        tooltip.max_width.max(32.0).min(max_text_width.max(32.0))
+        tooltip.max_width.max(1.0).min(max_text_width)
     };
     let lines = wrap_text(
         tooltip.text,
@@ -458,12 +448,12 @@ fn draw_tooltip(
     } else {
         (text_width + style.tooltip_padding * 2.0).min(max_box_width)
     }
-    .max(style.tooltip_padding * 2.0 + 1.0);
+    .max(min_box_width);
     let box_height = tooltip
         .fixed_height
         .unwrap_or(content_height + style.tooltip_padding * 2.0)
         .min(max_box_height)
-        .max(style.tooltip_padding * 2.0 + 1.0);
+        .max(min_box_height);
     let half_width = screen_size.0 as f32 / 2.0;
     let half_height = screen_size.1 as f32 / 2.0;
     let animation_t = visibility.clamp(0.0, 1.0);
@@ -514,13 +504,12 @@ fn draw_tooltip(
         (box_width - style.tooltip_padding * 2.0).max(1.0),
         text_clip_height,
     );
-    canvas.text_block(
+    canvas.text_block_lines(
         x + style.tooltip_padding,
         top - style.tooltip_padding,
-        tooltip.text,
+        &lines,
         style.tooltip_text_size,
         fg,
-        text_wrap_width,
         TextAlign::Left,
     );
     canvas.pop_clip();
@@ -1352,6 +1341,12 @@ impl Ui {
         let mut clip_stack: Vec<UiRect> = Vec::new();
         let mut hovered_tooltip: Option<ActiveTooltip<'_>> = None;
         let mut focused_tooltip: Option<ActiveTooltip<'_>> = None;
+        let mut tooltip_indices = vec![None; self.widgets.len()];
+        for (tooltip_index, tooltip) in self.tooltips.iter().enumerate() {
+            if tooltip.widget_index < tooltip_indices.len() {
+                tooltip_indices[tooltip.widget_index] = Some(tooltip_index);
+            }
+        }
 
         struct RenderContainer {
             kind: u8,
@@ -1374,7 +1369,8 @@ impl Ui {
             let mut pending: Option<RenderContainer> = None;
             let mut tooltip_rect = None;
             let mut tooltip_focus_id = None;
-            let has_tooltip = tooltip_for_widget(&self.tooltips, i).is_some();
+            let tooltip = tooltip_indices[i].map(|tooltip_index| &self.tooltips[tooltip_index]);
+            let has_tooltip = tooltip.is_some();
 
             match &self.widgets[i] {
                 Widget::Label {
@@ -1807,10 +1803,9 @@ impl Ui {
                 }
             }
 
-            if let Some(rect) = tooltip_rect {
+            if let (Some(tooltip), Some(rect)) = (tooltip, tooltip_rect) {
                 capture_tooltip(
-                    &self.tooltips,
-                    i,
+                    tooltip,
                     rect,
                     tooltip_focus_id,
                     focused_id,

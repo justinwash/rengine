@@ -565,8 +565,23 @@ impl Canvas {
         max_width: f32,
         align: TextAlign,
     ) {
+        let lines = {
+            let atlas = self.atlas();
+            wrap_text(text, size, max_width, atlas)
+        };
+        self.text_block_lines(x, y, &lines, size, color, align);
+    }
+
+    pub(crate) fn text_block_lines(
+        &mut self,
+        x: f32,
+        y: f32,
+        lines: &[String],
+        size: f32,
+        color: Color,
+        align: TextAlign,
+    ) {
         let atlas = self.atlas();
-        let lines = wrap_text(text, size, max_width, atlas);
         let lh = atlas.line_height(size);
         for (i, line) in lines.iter().enumerate() {
             let ly = y - (i as f32) * lh;
