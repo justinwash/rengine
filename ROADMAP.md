@@ -78,6 +78,7 @@ Recently completed or partially completed:
 - Completed: multiple font support — `FontId` handle type, `Engine::load_font()` for runtime `.ttf`/`.otf` loading, per-canvas-segment font tracking with bind group switching, `Engine::font(id)` accessor, `FontId::DEFAULT` for the built-in font, backward-compatible `font_atlas()` method, `feature-fonts` sample
 - Completed: screen-space images — `Canvas::image()`, `image_colored()`, and `image_region()` for textured screen-space quads, generalized canvas draw segments that switch between font atlases and texture bind groups, `Ui::image()` / `image_colored()` / `image_region()` widget support, `feature-images` sample, kitchen-sink pause overlay integration, and matching Engine3D texture helpers for HUD canvases
 - Completed: tooltip widget — `Ui::tooltip()`, `tooltip_sized()`, and `tooltip_with()` attach explanatory text to the most recently added widget, with engine-level delay, fixed or auto sizing, mouse/widget/screen placement modes, built-in fade/fade-slide animation options, Shift-or-custom-key expansion for advanced text, and a runtime-state fix so tooltips disappear cleanly when no widget is active; includes `feature-tooltips` and kitchen-sink pause overlay coverage
+- Completed: widget animation hooks — `Ui::animate_with()` attaches `UiAnimationOptions` to the most recently added widget, with reusable `UiAnimation` builders for hover, focus, press, and appear states built on top of existing `Easing` curves. Hooks currently support labels, images, buttons, progress bars, checkboxes, and sliders, compose offset/scale/alpha at render time, keep tooltip hit rects aligned with transformed widgets, and ship with the new `feature-ui-animations` sample plus kitchen-sink pause overlay coverage
 
 Tooltip follow-up backlog after the current tooltip PR lands:
 
@@ -549,18 +550,18 @@ Tracked against the build order. Crossed-off items are done.
 15. ~~UI single-build pattern — stop duplicating widget trees in update() and render()~~ ✓
 16. ~~Screen-space sprites / UI image widget — card artwork, driver portraits, facility icons~~ ✓
 17. ~~Tooltip widget — card descriptions, stat explanations~~ ✓
-18. Widget animation hooks — card flip, slide-in, highlight pulse
+18. ~~Widget animation hooks — card flip, slide-in, highlight pulse~~ ✓
 19. ~~Multiple font support — headers, body, commentary, HUD~~ ✓
 20. Text input widget — team naming
 21. Animation state machines — car sprite states
 22. ~~Rebindable controls — player key remapping~~ ✓
 
-Items 1-17 are done. Item 18 is now the next blocker for making the management UI feel alive, while items 20-21 remain the larger follow-up gaps.
+Items 1-18 are done. Items 20-21 are now the main remaining engine gaps for the motorsport management game.
 
 Current priority engine issues for this game:
 
-1. Widget animation hooks — needed for card flip, slide-in, highlight pulse, and more generally to make the management UI feel alive.
-2. Text input widget — still needs both a UI control and typed-character plumbing in the engine input/event layer.
-3. Animation state machines — useful once car sprites, driver portraits, and richer UI-driven stateful animations start to matter.
+1. Text input widget — still needs both a UI control and typed-character plumbing in the engine input/event layer.
+2. Animation state machines — useful once car sprites, driver portraits, and richer UI-driven stateful animations start to matter.
+3. Asset manager follow-through — content-heavy management UI still wants cleaner loading, caching, and lifetime handling than the current mostly-direct asset access path.
 
 Unless a more urgent engine bug appears, the next engine work for the motorsport game should stay focused on those three items.
