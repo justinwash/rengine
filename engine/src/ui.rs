@@ -1,5 +1,5 @@
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::app::Engine;
 use crate::assets::Color;
@@ -190,6 +190,12 @@ impl TooltipOptions {
 pub struct UiStyle {
     pub text_color: Color,
     pub text_size: f32,
+    pub text_input_bg: Color,
+    pub text_input_focused_bg: Color,
+    pub text_input_text_color: Color,
+    pub text_input_placeholder_color: Color,
+    pub text_input_caret_color: Color,
+    pub text_input_padding: f32,
     pub button_bg: Color,
     pub button_focused_bg: Color,
     pub button_pressed_bg: Color,
@@ -226,6 +232,12 @@ impl Default for UiStyle {
         Self {
             text_color: Color::WHITE,
             text_size: 16.0,
+            text_input_bg: Color::from_rgba8(32, 36, 50, 220),
+            text_input_focused_bg: Color::from_rgba8(54, 72, 122, 240),
+            text_input_text_color: Color::WHITE,
+            text_input_placeholder_color: Color::from_rgba8(150, 156, 176, 255),
+            text_input_caret_color: Color::WHITE,
+            text_input_padding: 8.0,
             button_bg: Color::from_rgba8(60, 60, 80, 200),
             button_focused_bg: Color::from_rgba8(80, 100, 180, 240),
             button_pressed_bg: Color::from_rgba8(120, 140, 220, 255),
@@ -275,6 +287,11 @@ enum Widget {
     Button {
         id: usize,
         text: String,
+    },
+    TextInput {
+        id: usize,
+        text: String,
+        placeholder: String,
     },
     Separator {
         height: f32,
@@ -380,6 +397,7 @@ struct WidgetAnimationRuntime {
 enum WidgetRuntimeKey {
     Indexed(usize),
     Button(usize),
+    TextInput(usize),
     Checkbox(usize),
     Slider(usize),
     ScrollRegion(usize),
@@ -408,6 +426,7 @@ fn widget_supports_tooltip(widget: &Widget) -> bool {
         Widget::Label { .. }
             | Widget::Image { .. }
             | Widget::Button { .. }
+            | Widget::TextInput { .. }
             | Widget::Panel { .. }
             | Widget::ProgressBar { .. }
             | Widget::Checkbox { .. }
@@ -422,6 +441,7 @@ fn widget_supports_animation(widget: &Widget) -> bool {
         Widget::Label { .. }
             | Widget::Image { .. }
             | Widget::Button { .. }
+            | Widget::TextInput { .. }
             | Widget::ProgressBar { .. }
             | Widget::Checkbox { .. }
             | Widget::Slider { .. }
@@ -472,10 +492,43 @@ fn scale_alpha(color: Color, alpha: f32) -> Color {
 fn widget_runtime_key(widget: &Widget, widget_index: usize) -> WidgetRuntimeKey {
     match widget {
         Widget::Button { id, .. } => WidgetRuntimeKey::Button(*id),
+        Widget::TextInput { id, .. } => WidgetRuntimeKey::TextInput(*id),
         Widget::Checkbox { id, .. } => WidgetRuntimeKey::Checkbox(*id),
         Widget::Slider { id, .. } => WidgetRuntimeKey::Slider(*id),
         Widget::ScrollRegion { id, .. } => WidgetRuntimeKey::ScrollRegion(*id),
         _ => WidgetRuntimeKey::Indexed(widget_index),
+    }
+}
+
+fn prev_char_boundary(text: &str, index: usize) -> usize {
+    if index == 0 {
+        return 0;
+    }
+
+    text[..index]
+        .char_indices()
+        .next_back()
+        .map(|(idx, _)| idx)
+        .unwrap_or(0)
+}
+
+fn next_char_boundary(text: &str, index: usize) -> usize {
+    if index >= text.len() {
+        return text.len();
+    }
+
+    match text[index..].chars().next() {
+        Some(ch) => index + ch.len_utf8(),
+        None => text.len(),
+    }
+}
+
+fn clamp_char_boundary(text: &str, index: usize) -> usize {
+    let clamped = index.min(text.len());
+    if text.is_char_boundary(clamped) {
+        clamped
+    } else {
+        prev_char_boundary(text, clamped)
     }
 }
 
@@ -833,6 +886,7 @@ pub struct UiResponse {
     pub hovered: Option<usize>,
     pub toggled: Vec<usize>,
     pub changed_values: Vec<(usize, f32)>,
+    pub changed_text: Vec<(usize, String)>,
     pub dragging: Option<usize>,
     pub scroll_offsets: Vec<(usize, f32)>,
 }
@@ -851,6 +905,13 @@ impl UiResponse {
             .iter()
             .find(|(cid, _)| *cid == id)
             .map(|(_, v)| *v)
+    }
+
+    pub fn text_for(&self, id: usize) -> Option<&str> {
+        self.changed_text
+            .iter()
+            .find(|(cid, _)| *cid == id)
+            .map(|(_, text)| text.as_str())
     }
 
     pub fn scroll_for(&self, id: usize) -> Option<f32> {
@@ -877,6 +938,7 @@ pub struct Ui {
     tooltip_runtime: Cell<TooltipRuntime>,
     animation_runtime: RefCell<HashMap<WidgetRuntimeKey, WidgetAnimationRuntime>>,
     animation_frame: Cell<u64>,
+    text_input_cursor: RefCell<HashMap<usize, usize>>,
 }
 
 impl Default for Ui {
@@ -897,6 +959,7 @@ impl Default for Ui {
             tooltip_runtime: Cell::new(TooltipRuntime::default()),
             animation_runtime: RefCell::new(HashMap::new()),
             animation_frame: Cell::new(0),
+            text_input_cursor: RefCell::new(HashMap::new()),
         }
     }
 }
@@ -944,9 +1007,40 @@ impl Ui {
         &mut self.style
     }
 
+    fn normalize_text_cursor(&self, id: usize, cursor: usize) -> usize {
+        self.widgets
+            .iter()
+            .find_map(|widget| match widget {
+                Widget::TextInput {
+                    id: widget_id,
+                    text,
+                    ..
+                } if *widget_id == id => Some(clamp_char_boundary(text, cursor)),
+                _ => None,
+            })
+            .unwrap_or(cursor)
+    }
+
+    pub fn text_cursor(&self, id: usize) -> Option<usize> {
+        self.text_input_cursor
+            .borrow()
+            .get(&id)
+            .copied()
+            .map(|cursor| self.normalize_text_cursor(id, cursor))
+    }
+
+    pub fn set_text_cursor(&self, id: usize, cursor: usize) {
+        let cursor = self.normalize_text_cursor(id, cursor);
+        self.text_input_cursor.borrow_mut().insert(id, cursor);
+    }
+
     pub fn with_focus(mut self, focus: usize) -> Self {
         self.focus_index = focus;
         self
+    }
+
+    pub fn set_focus(&mut self, focus: usize) {
+        self.focus_index = focus;
     }
 
     pub fn with_dragging(mut self, dragging: Option<usize>) -> Self {
@@ -1054,6 +1148,15 @@ impl Ui {
         });
     }
 
+    pub fn text_input(&mut self, id: usize, text: &str, placeholder: &str) {
+        self.focusable_ids.push(id);
+        self.widgets.push(Widget::TextInput {
+            id,
+            text: text.to_string(),
+            placeholder: placeholder.to_string(),
+        });
+    }
+
     pub fn separator(&mut self, height: f32) {
         self.widgets.push(Widget::Separator { height });
     }
@@ -1154,6 +1257,10 @@ impl Ui {
             Widget::Button { .. } => {
                 let lh = atlas.line_height(self.style.text_size);
                 lh + self.style.button_padding * 2.0 + self.style.spacing
+            }
+            Widget::TextInput { .. } => {
+                let lh = atlas.line_height(self.style.text_size);
+                lh + self.style.text_input_padding * 2.0 + self.style.spacing
             }
             Widget::Separator { height } => *height,
             Widget::Panel {
@@ -1263,6 +1370,14 @@ impl Ui {
                     let btn_y = cursor_y - btn_h + pad;
                     rects.push((*id, base_x, btn_y, current_width, btn_h));
                     cursor_y -= btn_h + self.style.spacing;
+                }
+                Widget::TextInput { id, .. } => {
+                    let lh = atlas.line_height(self.style.text_size);
+                    let pad = self.style.text_input_padding;
+                    let field_h = lh + pad * 2.0;
+                    let field_y = cursor_y - field_h + pad;
+                    rects.push((*id, base_x, field_y, current_width, field_h));
+                    cursor_y -= field_h + self.style.spacing;
                 }
                 Widget::Separator { height } => {
                     cursor_y -= *height;
@@ -1482,7 +1597,20 @@ impl Ui {
         let atlas = engine.font_atlas();
         let mut toggled = Vec::new();
         let mut changed_values = Vec::new();
+        let mut changed_text = Vec::new();
         let mut hovered = None;
+        let active_text_input_ids: HashSet<usize> = self
+            .widgets
+            .iter()
+            .filter_map(|widget| match widget {
+                Widget::TextInput { id, .. } => Some(*id),
+                _ => None,
+            })
+            .collect();
+
+        self.text_input_cursor
+            .borrow_mut()
+            .retain(|id, _| active_text_input_ids.contains(id));
 
         if self.focusable_ids.is_empty() {
             return UiResponse {
@@ -1491,6 +1619,7 @@ impl Ui {
                 hovered: None,
                 toggled,
                 changed_values,
+                changed_text,
                 dragging: None,
                 scroll_offsets: Vec::new(),
             };
@@ -1513,7 +1642,14 @@ impl Ui {
             }
         }
 
-        if input.is_key_pressed(KeyCode::ArrowUp) || input.is_key_pressed(KeyCode::KeyW) {
+        let focus_is_text_input = self.widgets.iter().any(|widget| match widget {
+            Widget::TextInput { id, .. } => *id == self.focusable_ids[self.focus_index],
+            _ => false,
+        });
+
+        if input.is_key_pressed(KeyCode::ArrowUp)
+            || (!focus_is_text_input && input.is_key_pressed(KeyCode::KeyW))
+        {
             self.mouse_focus = false;
             if self.focus_index == 0 {
                 self.focus_index = count - 1;
@@ -1521,7 +1657,9 @@ impl Ui {
                 self.focus_index -= 1;
             }
         }
-        if input.is_key_pressed(KeyCode::ArrowDown) || input.is_key_pressed(KeyCode::KeyS) {
+        if input.is_key_pressed(KeyCode::ArrowDown)
+            || (!focus_is_text_input && input.is_key_pressed(KeyCode::KeyS))
+        {
             self.mouse_focus = false;
             self.focus_index = (self.focus_index + 1) % count;
         }
@@ -1547,7 +1685,15 @@ impl Ui {
             }
         }
 
-        if input.is_key_pressed(KeyCode::ArrowLeft) || input.is_key_pressed(KeyCode::ArrowRight) {
+        let focused_text_input = self.widgets.iter().find_map(|widget| match widget {
+            Widget::TextInput { id, text, .. } if *id == focused_id => Some((*id, text.as_str())),
+            _ => None,
+        });
+
+        if focused_text_input.is_none()
+            && (input.is_key_pressed(KeyCode::ArrowLeft)
+                || input.is_key_pressed(KeyCode::ArrowRight))
+        {
             let delta = if input.is_key_pressed(KeyCode::ArrowRight) {
                 0.05
             } else {
@@ -1568,6 +1714,52 @@ impl Ui {
                         changed_values.push((*id, new_val));
                     }
                 }
+            }
+        }
+
+        if let Some((text_id, text)) = focused_text_input {
+            let mut cursor_map = self.text_input_cursor.borrow_mut();
+            let cursor = cursor_map.entry(text_id).or_insert(text.len());
+            *cursor = clamp_char_boundary(text, *cursor);
+
+            if mouse_activate && hovered == Some(text_id) {
+                *cursor = text.len();
+            }
+
+            let mut edited = text.to_string();
+            let mut text_changed = false;
+
+            if input.is_key_pressed(KeyCode::Home) {
+                *cursor = 0;
+            }
+            if input.is_key_pressed(KeyCode::End) {
+                *cursor = edited.len();
+            }
+            if input.is_key_pressed(KeyCode::ArrowLeft) {
+                *cursor = prev_char_boundary(&edited, *cursor);
+            }
+            if input.is_key_pressed(KeyCode::ArrowRight) {
+                *cursor = next_char_boundary(&edited, *cursor);
+            }
+            if input.is_key_pressed(KeyCode::Backspace) && *cursor > 0 {
+                let start = prev_char_boundary(&edited, *cursor);
+                edited.replace_range(start..*cursor, "");
+                *cursor = start;
+                text_changed = true;
+            }
+            if input.is_key_pressed(KeyCode::Delete) && *cursor < edited.len() {
+                let end = next_char_boundary(&edited, *cursor);
+                edited.replace_range(*cursor..end, "");
+                text_changed = true;
+            }
+            if !input.committed_text().is_empty() {
+                edited.insert_str(*cursor, input.committed_text());
+                *cursor += input.committed_text().len();
+                text_changed = true;
+            }
+
+            if text_changed {
+                changed_text.push((text_id, edited));
             }
         }
 
@@ -1663,6 +1855,7 @@ impl Ui {
             hovered,
             toggled,
             changed_values,
+            changed_text,
             dragging: self.dragging_slider,
             scroll_offsets,
         }
@@ -1930,6 +2123,156 @@ impl Ui {
                     }
 
                     cursor_y -= btn_h + self.style.spacing;
+                }
+                Widget::TextInput {
+                    id,
+                    text,
+                    placeholder,
+                } => {
+                    let is_focused = focused_id == Some(*id);
+                    let text_size = self.style.text_size;
+                    let pad = self.style.text_input_padding;
+                    let lh = atlas.line_height(text_size);
+                    let field_h = lh + pad * 2.0;
+                    let field_y = cursor_y - field_h + pad;
+                    let field_rect = UiRect {
+                        x: base_x,
+                        y: field_y,
+                        w: current_width,
+                        h: field_h,
+                    };
+                    let bg = if is_focused {
+                        self.style.text_input_focused_bg
+                    } else {
+                        self.style.text_input_bg
+                    };
+
+                    let cursor_index = self
+                        .text_input_cursor
+                        .borrow()
+                        .get(id)
+                        .copied()
+                        .map(|cursor| clamp_char_boundary(text, cursor))
+                        .unwrap_or(text.len());
+                    let mut rendered_text = text.clone();
+                    let mut render_cursor = cursor_index;
+                    if is_focused {
+                        if let Some((preedit, cursor)) = input.ime_preedit() {
+                            if !preedit.is_empty() {
+                                rendered_text.insert_str(cursor_index, preedit);
+                                let preedit_cursor = cursor
+                                    .map(|(_, end)| clamp_char_boundary(preedit, end))
+                                    .unwrap_or(preedit.len());
+                                render_cursor = cursor_index + preedit_cursor.min(preedit.len());
+                            }
+                        }
+                    }
+                    let display_text = if rendered_text.is_empty() {
+                        placeholder.as_str()
+                    } else {
+                        rendered_text.as_str()
+                    };
+                    let fg = if rendered_text.is_empty() {
+                        self.style.text_input_placeholder_color
+                    } else {
+                        self.style.text_input_text_color
+                    };
+
+                    if has_tooltip {
+                        tooltip_focus_id = Some(*id);
+                    }
+
+                    if let Some(animation_options) = animation {
+                        let render_animation = resolve_widget_animation(
+                            animation_options,
+                            &self.animation_runtime,
+                            &self.widgets[i],
+                            i,
+                            field_rect,
+                            Some(*id),
+                            focused_id,
+                            mouse,
+                            &clip_stack,
+                            input,
+                            animation_frame,
+                            dt,
+                        );
+                        let render_rect = animated_rect(field_rect, field_rect, render_animation);
+                        let scaled_pad = pad * render_animation.scale.max(0.0);
+                        if has_tooltip {
+                            tooltip_rect = Some(render_rect);
+                        }
+                        canvas.rect(
+                            render_rect.x,
+                            render_rect.y,
+                            render_rect.w,
+                            render_rect.h,
+                            scale_alpha(bg, render_animation.alpha),
+                        );
+                        canvas.push_clip(
+                            render_rect.x + scaled_pad,
+                            render_rect.y + scaled_pad,
+                            (render_rect.w - scaled_pad * 2.0).max(1.0),
+                            (render_rect.h - scaled_pad * 2.0).max(1.0),
+                        );
+                        let text_pos = animated_point(
+                            Vec2::new(base_x + pad, cursor_y),
+                            field_rect,
+                            render_animation,
+                        );
+                        canvas.text(
+                            text_pos.x,
+                            text_pos.y,
+                            display_text,
+                            animated_size(text_size, render_animation),
+                            scale_alpha(fg, render_animation.alpha),
+                        );
+                        if is_focused {
+                            let caret_prefix = atlas
+                                .measure_text(&rendered_text[..render_cursor], text_size)
+                                .0
+                                * render_animation.scale.max(0.0);
+                            let caret_w = (2.0 * render_animation.scale.max(0.5)).max(1.0);
+                            canvas.rect(
+                                text_pos.x + caret_prefix,
+                                render_rect.y + scaled_pad,
+                                caret_w,
+                                (render_rect.h - scaled_pad * 2.0).max(1.0),
+                                scale_alpha(
+                                    self.style.text_input_caret_color,
+                                    render_animation.alpha,
+                                ),
+                            );
+                        }
+                        canvas.pop_clip();
+                    } else {
+                        if has_tooltip {
+                            tooltip_rect = Some(field_rect);
+                        }
+                        canvas.rect(base_x, field_y, current_width, field_h, bg);
+                        canvas.push_clip(
+                            base_x + pad,
+                            field_y + pad,
+                            (current_width - pad * 2.0).max(1.0),
+                            (field_h - pad * 2.0).max(1.0),
+                        );
+                        canvas.text(base_x + pad, cursor_y, display_text, text_size, fg);
+                        if is_focused {
+                            let caret_prefix = atlas
+                                .measure_text(&rendered_text[..render_cursor], text_size)
+                                .0;
+                            canvas.rect(
+                                base_x + pad + caret_prefix,
+                                field_y + pad,
+                                2.0,
+                                (field_h - pad * 2.0).max(1.0),
+                                self.style.text_input_caret_color,
+                            );
+                        }
+                        canvas.pop_clip();
+                    }
+
+                    cursor_y -= field_h + self.style.spacing;
                 }
                 Widget::Separator { height } => {
                     cursor_y -= *height;
