@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use winit::event::ElementState;
+use winit::event::{ElementState, Ime};
 use winit::keyboard::KeyCode;
 
 pub struct InputState {
@@ -12,6 +12,8 @@ pub struct InputState {
     mouse_buttons_pressed: [bool; 3],
     mouse_buttons_released: [bool; 3],
     scroll_delta: (f32, f32),
+    committed_text: String,
+    ime_preedit: Option<(String, Option<(usize, usize)>)>,
 }
 
 impl InputState {
@@ -26,6 +28,8 @@ impl InputState {
             mouse_buttons_pressed: [false; 3],
             mouse_buttons_released: [false; 3],
             scroll_delta: (0.0, 0.0),
+            committed_text: String::new(),
+            ime_preedit: None,
         }
     }
 
@@ -69,6 +73,16 @@ impl InputState {
 
     pub fn scroll_delta(&self) -> (f32, f32) {
         self.scroll_delta
+    }
+
+    pub fn committed_text(&self) -> &str {
+        &self.committed_text
+    }
+
+    pub fn ime_preedit(&self) -> Option<(&str, Option<(usize, usize)>)> {
+        self.ime_preedit
+            .as_ref()
+            .map(|(text, cursor)| (text.as_str(), *cursor))
     }
 
     pub(crate) fn handle_key_event(&mut self, key: KeyCode, state: ElementState) {
@@ -116,6 +130,38 @@ impl InputState {
         self.scroll_delta.1 += dy;
     }
 
+    pub(crate) fn handle_committed_text(&mut self, text: &str) {
+        for ch in text.chars() {
+            if ch == '\u{7f}' || (ch.is_control() && ch != '\n' && ch != '\t') {
+                continue;
+            }
+            if ch == '\r' || ch == '\n' || ch == '\t' {
+                continue;
+            }
+            self.committed_text.push(ch);
+        }
+    }
+
+    pub(crate) fn handle_ime_event(&mut self, ime: Ime) {
+        match ime {
+            Ime::Enabled => {}
+            Ime::Preedit(text, cursor) => {
+                if text.is_empty() {
+                    self.ime_preedit = None;
+                } else {
+                    self.ime_preedit = Some((text, cursor));
+                }
+            }
+            Ime::Commit(text) => {
+                self.ime_preedit = None;
+                self.handle_committed_text(&text);
+            }
+            Ime::Disabled => {
+                self.ime_preedit = None;
+            }
+        }
+    }
+
     pub(crate) fn end_frame(&mut self) {
         self.keys_pressed.clear();
         self.keys_released.clear();
@@ -123,5 +169,6 @@ impl InputState {
         self.mouse_buttons_pressed = [false; 3];
         self.mouse_buttons_released = [false; 3];
         self.scroll_delta = (0.0, 0.0);
+        self.committed_text.clear();
     }
 }
