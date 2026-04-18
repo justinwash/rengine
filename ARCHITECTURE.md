@@ -895,10 +895,11 @@ impl Scene for MyScene {
 - **`Ui::begin(engine, x, top, width)`** — Reset widgets and position for the current frame. `top` is the offset from the top of the screen; the engine provides the screen height. Preserves `style`, `focus_index`, and `dragging_slider` state.
 - **`Ui::begin_at(x, y, width)`** — Same as `begin()` but with an absolute y coordinate instead of a top-offset. Use when you need raw positioning.
 - **`Ui::with_style(style) -> Self`** — Apply a custom `UiStyle` (colors, sizes, padding).
+- **`Ui::style()` / `style_mut()`** — Read or mutate the current `UiStyle` after construction. This is the main runtime path for things like tooltip delay or animation tuning.
 - **`Ui::with_focus(index) -> Self`** — Override the focused button index.
 - **`Ui::label(text, size, color)`** / **`label_centered(text, size, color)`** — Static text (left-aligned or centered).
 - **`Ui::image(texture, size)`** / **`image_colored(texture, size, color)`** / **`image_region(texture, size, uv_rect)`** — Non-interactive image widgets backed by the canvas image API. These render centered within the current layout width and participate in panels, rows, grids, and scroll regions like any other widget.
-- **`Ui::tooltip(text)`** / **`tooltip_sized(text, width)`** — Attach a text tooltip to the most recently added widget. Tooltips render automatically in `Ui::render()`, show on mouse hover for any visible widget, and also appear for keyboard-focused controls when mouse focus is not active.
+- **`Ui::tooltip(text)`** / **`tooltip_sized(text, width)`** / **`tooltip_with(text, options)`** — Attach a tooltip to the most recently added widget. `tooltip_with()` takes a `TooltipOptions` builder for per-widget overrides like delay, fixed size, placement, animation, advanced expanded text, and custom expand triggers.
 - **`Ui::button(id, text)`** — Interactive button identified by a numeric `id`.
 - **`Ui::panel(color, padding, children)`** — Background panel that wraps the next `children` widgets with a colored rect and inward padding.
 - **`Ui::row(children)`** / **`row_spaced(spacing, children)`** — Horizontal layout container. The next `children` widgets are placed side-by-side, each getting an equal share of the available width. `row_spaced` adds horizontal gaps between columns.
@@ -914,8 +915,15 @@ impl Scene for MyScene {
   - Mouse hover sets focus; mouse click activates.
   - Returns `UiResponse { focused, activated, hovered, toggled, changed_values, scroll_offsets }`.
   - Convenience: `response.was_activated(id)`, `was_toggled(id)`, `value_for(id) -> Option<f32>`, `scroll_for(id) -> Option<f32>`.
-- **`Ui::render(canvas, engine)`** — Draw all widgets into a `Canvas` layer (font atlas fetched from engine internally) and emit any active tooltip after the rest of the UI so it stays on top.
-- **`UiStyle`** — Configurable struct with fields for text, button, panel, progress bar, checkbox, slider, and tooltip colors/sizes/padding.
+- **`Ui::render(canvas, engine)`** — Draw all widgets into a `Canvas` layer (font atlas fetched from engine internally) and emit any active tooltip after the rest of the UI so it stays on top. Tooltip visibility is driven by persistent UI runtime state, which is what enables delayed popups and prevents stale tooltips from lingering after the active widget clears.
+- **`UiStyle`** — Configurable struct with fields for text, button, panel, progress bar, checkbox, slider, and tooltip colors/sizes/padding, plus default tooltip delay, placement, animation, and expand-trigger behavior.
+
+Supporting tooltip types:
+
+- **`TooltipOptions`** — Builder-style per-tooltip overrides: `with_max_width()`, `with_fixed_width()`, `with_fixed_height()`, `with_delay()`, `with_placement()`, `with_offset()`, `with_animation()`, `with_advanced_text()`, `with_expand_trigger()`.
+- **`TooltipPlacement`** — `Mouse`, `Widget`, or `Screen(Vec2)` placement modes.
+- **`TooltipAnimation`** — `None`, `Fade`, or `FadeSlide`.
+- **`TooltipExpandTrigger`** — `Shift` or a specific `KeyCode`.
 
 ### 6.8 Remaining UI-Heavy Gaps
 
