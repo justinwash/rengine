@@ -1012,7 +1012,9 @@ impl Ui {
             .iter()
             .find_map(|widget| match widget {
                 Widget::TextInput {
-                    id: widget_id, text, ..
+                    id: widget_id,
+                    text,
+                    ..
                 } if *widget_id == id => Some(clamp_char_boundary(text, cursor)),
                 _ => None,
             })
@@ -2161,8 +2163,7 @@ impl Ui {
                                 let preedit_cursor = cursor
                                     .map(|(_, end)| clamp_char_boundary(preedit, end))
                                     .unwrap_or(preedit.len());
-                                render_cursor = cursor_index
-                                    + preedit_cursor.min(preedit.len());
+                                render_cursor = cursor_index + preedit_cursor.min(preedit.len());
                             }
                         }
                     }
