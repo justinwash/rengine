@@ -897,11 +897,14 @@ impl Scene for MyScene {
 - **`Ui::with_style(style) -> Self`** — Apply a custom `UiStyle` (colors, sizes, padding).
 - **`Ui::style()` / `style_mut()`** — Read or mutate the current `UiStyle` after construction. This is the main runtime path for things like tooltip delay or animation tuning.
 - **`Ui::with_focus(index) -> Self`** — Override the focused button index.
+- **`Ui::set_focus(index)`** — Override the focused slot index without reconstructing the `Ui`. Useful when game code wants to drive focus explicitly (for example, from a gamepad-specific navigation layer).
 - **`Ui::label(text, size, color)`** / **`label_centered(text, size, color)`** — Static text (left-aligned or centered).
 - **`Ui::image(texture, size)`** / **`image_colored(texture, size, color)`** / **`image_region(texture, size, uv_rect)`** — Non-interactive image widgets backed by the canvas image API. These render centered within the current layout width and participate in panels, rows, grids, and scroll regions like any other widget.
-- **`Ui::tooltip(text)`** / **`tooltip_sized(text, width)`** / **`tooltip_with(text, options)`** — Attach a tooltip to the most recently added widget. `tooltip_with()` takes a `TooltipOptions` builder for per-widget overrides like delay, fixed size, placement, animation, advanced expanded text, and custom expand triggers. Tooltips currently attach only to widgets that emit a concrete rect during render: labels, images, buttons, panels, progress bars, checkboxes, sliders, and scroll regions.
-- **`Ui::animate_with(options)`** — Attach draw-time animation hooks to the most recently added widget. `UiAnimationOptions` exposes `with_hover()`, `with_focus()`, `with_press()`, and `with_appear()` builders, each taking a `UiAnimation` with duration, easing, offset, scale, and alpha. Hooks currently support labels, images, buttons, progress bars, checkboxes, and sliders.
+- **`Ui::tooltip(text)`** / **`tooltip_sized(text, width)`** / **`tooltip_with(text, options)`** — Attach a tooltip to the most recently added widget. `tooltip_with()` takes a `TooltipOptions` builder for per-widget overrides like delay, fixed size, placement, animation, advanced expanded text, and custom expand triggers. Tooltips currently attach only to widgets that emit a concrete rect during render: labels, images, buttons, text inputs, panels, progress bars, checkboxes, sliders, and scroll regions.
+- **`Ui::animate_with(options)`** — Attach draw-time animation hooks to the most recently added widget. `UiAnimationOptions` exposes `with_hover()`, `with_focus()`, `with_press()`, and `with_appear()` builders, each taking a `UiAnimation` with duration, easing, offset, scale, and alpha. Hooks currently support labels, images, buttons, text inputs, progress bars, checkboxes, and sliders.
 - **`Ui::button(id, text)`** — Interactive button identified by a numeric `id`.
+- **`Ui::text_input(id, text, placeholder)`** — Single-line text field. The string is owned by game code; the widget consumes committed text plus IME preedit state from `InputState`, supports caret movement with Left/Right/Home/End, Backspace/Delete editing, placeholder text, and reports changes via `UiResponse::text_for(id)`.
+- **`Ui::text_cursor(id)`** / **`set_text_cursor(id, cursor)`** — Read or override a text field caret position from game code. This is primarily useful for sample/game-layer compositions like an on-screen keyboard that inserts text into the engine-level field.
 - **`Ui::panel(color, padding, children)`** — Background panel that wraps the next `children` widgets with a colored rect and inward padding.
 - **`Ui::row(children)`** / **`row_spaced(spacing, children)`** — Horizontal layout container. The next `children` widgets are placed side-by-side, each getting an equal share of the available width. `row_spaced` adds horizontal gaps between columns.
 - **`Ui::grid(columns, children)`** / **`grid_spaced(columns, spacing, children)`** — Grid layout container. The next `children` widgets wrap into rows of `columns` columns. Each row's height is the tallest child in that row. `grid_spaced` adds horizontal gaps between columns.
@@ -910,14 +913,15 @@ impl Scene for MyScene {
 - **`Ui::slider(id, label, value, min, max)`** — Horizontal slider. Arrow keys adjust by 5% of range; mouse drag maps x position to value.
 - **`Ui::scroll(id, height, scroll_offset, children)`** — Scrollable container. The next `children` widgets are rendered inside a clipped region of the given `height`. Content is offset vertically by `scroll_offset` (0.0 = top). Mouse wheel scrolling updates the offset, returned via `UiResponse::scroll_for(id)`. Uses Canvas `push_clip`/`pop_clip` for GPU scissor-rect clipping. Focusable rects inside the region are clipped to the visible area.
 - **`Ui::separator(height)`** — Vertical gap between widgets.
-- **`Ui::update(engine) -> UiResponse`** — Process keyboard/gamepad/mouse input (fetched from engine internally):
-  - Arrow Up / W → focus previous; Arrow Down / S → focus next (wraps).
-  - Enter / Space → activate focused button, toggle checkbox, or confirm slider.
-  - Mouse hover sets focus; mouse click activates.
-  - Returns `UiResponse { focused, activated, hovered, toggled, changed_values, scroll_offsets }`.
-  - Convenience: `response.was_activated(id)`, `was_toggled(id)`, `value_for(id) -> Option<f32>`, `scroll_for(id) -> Option<f32>`.
-- **`Ui::render(canvas, engine)`** — Draw all widgets into a `Canvas` layer (font atlas fetched from engine internally) and emit any active tooltip after the rest of the UI so it stays on top. Tooltip visibility is driven by persistent UI runtime state, which is what enables delayed popups and prevents stale tooltips from lingering after the active widget clears. Widget animation hooks also run here: render combines appear, hover, focus, and press transforms each frame, reusing persistent per-widget runtime state so animated widgets remain stable across frames and tooltip hit rects follow the transformed widget.
-- **`UiStyle`** — Configurable struct with fields for text, button, panel, progress bar, checkbox, slider, and tooltip colors/sizes/padding, plus default tooltip delay, placement, animation, and expand-trigger behavior.
+- **`Ui::update(engine) -> UiResponse`** — Process keyboard and mouse input (fetched from engine internally):
+  - Arrow Up / W → focus previous; Arrow Down / S → focus next (wraps). When a text input is focused, `W` and `S` are treated as text instead of focus-navigation shortcuts.
+  - Enter / Space → activate focused buttons or toggle focused checkboxes.
+  - Focused text inputs consume `InputState::committed_text()`, show `InputState::ime_preedit()` during composition, and support Left/Right/Home/End plus Backspace/Delete editing.
+  - Mouse hover sets focus; mouse click activates buttons, sliders, and checkboxes or focuses a text field.
+  - Returns `UiResponse { focused, activated, hovered, toggled, changed_values, changed_text, scroll_offsets }`, where `focused` is the current focusable slot index rather than a widget id.
+  - Convenience: `response.was_activated(id)`, `was_toggled(id)`, `value_for(id) -> Option<f32>`, `text_for(id) -> Option<&str>`, `scroll_for(id) -> Option<f32>`.
+- **`Ui::render(canvas, engine)`** — Draw all widgets into a `Canvas` layer (font atlas fetched from engine internally) and emit any active tooltip after the rest of the UI so it stays on top. Tooltip visibility is driven by persistent UI runtime state, which is what enables delayed popups and prevents stale tooltips from lingering after the active widget clears. Widget animation hooks also run here: render combines appear, hover, focus, and press transforms each frame, reusing persistent per-widget runtime state so animated widgets remain stable across frames, text-input carets inherit the same transforms, and tooltip hit rects follow the transformed widget.
+- **`UiStyle`** — Configurable struct with fields for text, text input, button, panel, progress bar, checkbox, slider, and tooltip colors/sizes/padding, plus default tooltip delay, placement, animation, and expand-trigger behavior.
 
 Supporting tooltip types:
 
@@ -935,8 +939,8 @@ Supporting animation types:
 
 The current UI/canvas stack is strong enough for menus, HUDs, stat panels, scrollable management screens, screen-space card art/iconography, inline hover explanations, and light widget motion, but a few gaps still matter for card-heavy management games:
 
-- **No container-level or exit animation hooks** — `Ui::animate_with()` now covers draw-time appear, hover, focus, and press motion for labels, images, buttons, progress bars, checkboxes, and sliders, but panels, layout containers, scroll regions, and removal transitions are still static.
-- **No text input widget** — and more importantly, the input layer still does not expose typed-character / IME events, so text entry is not just a missing widget.
+- **No container-level or exit animation hooks** — `Ui::animate_with()` now covers draw-time appear, hover, focus, and press motion for labels, images, buttons, text inputs, progress bars, checkboxes, and sliders, but panels, layout containers, scroll regions, and removal transitions are still static.
+- **No built-in on-screen keyboard** — intentionally. The engine now exposes text fields, explicit focus control, and caret accessors, while layout, localization, and confirmation flow stay game-specific. `feature-text-input` demonstrates the intended layering with a sample-level gamepad-friendly keyboard built entirely from regular Ui buttons.
 - **No general drag-and-drop** — only slider dragging is built into `Ui` right now.
 
 ---
@@ -956,13 +960,19 @@ pub struct InputState {
     mouse_buttons_pressed: [bool; 3],  // Pressed this frame
     mouse_buttons_released: [bool; 3], // Released this frame
     scroll_delta: (f32, f32),          // Accumulated mouse wheel delta this frame
+    committed_text: String,            // Per-frame committed text input from keyboard / IME
+    ime_preedit: Option<(String, Option<(usize, usize)>)>, // Active IME composition text + cursor range
 }
 ```
+
+All four windowed runners (`run`, `run_with_scenes`, `run3d`, and `run3d_with_scenes`) enable IME on their windows with `window.set_ime_allowed(true)` and forward both `KeyEvent.text` and `WindowEvent::Ime` into `InputState`, so text entry works consistently across 2D/3D and scene/non-scene entry points.
 
 **Three-state key model:**
 
 - [`is_key_down(key)`](https://github.com/justinwash/rengine/blob/master/engine/src/input/keyboard.rs#L30) — True every frame the key is held.
 - [`is_key_pressed(key)`](https://github.com/justinwash/rengine/blob/master/engine/src/input/keyboard.rs#L35) — True only the first frame of a press (edge trigger).
+- [`committed_text()`](https://github.com/justinwash/rengine/blob/master/engine/src/input/keyboard.rs) — Per-frame committed text. This is fed by `KeyEvent.text` and `Ime::Commit`, with control characters filtered out so widgets can insert printable text directly.
+- [`ime_preedit()`](https://github.com/justinwash/rengine/blob/master/engine/src/input/keyboard.rs) — Current IME composition preview and optional cursor range, used by `Ui::text_input()` to render preedit text before the commit arrives.
 - [`is_key_released(key)`](https://github.com/justinwash/rengine/blob/master/engine/src/input/keyboard.rs#L40) — True only the frame the key is released.
 
 [`handle_key_event()`](https://github.com/justinwash/rengine/blob/master/engine/src/input/keyboard.rs#L70) logic:

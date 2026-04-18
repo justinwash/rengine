@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use serde::de::DeserializeOwned;
 use winit::dpi::LogicalSize;
-use winit::event::{DeviceEvent, Event, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
+use winit::event::{DeviceEvent, Event, Ime, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::EventLoop;
 use winit::keyboard::PhysicalKey;
 use winit::window::{CursorGrabMode, WindowBuilder};
@@ -22,6 +22,20 @@ use crate::renderer::{Frame, Renderer, TextureId};
 use crate::renderer3d::{Frame3D, MeshId, Renderer3D, Vertex3D};
 use crate::scene::{Globals, Scene, Scene2D, Scene3D, SceneOp, SceneOp3D};
 use crate::text;
+
+fn handle_text_event(input: &mut InputState, event: &KeyEvent) {
+    if event.state != winit::event::ElementState::Pressed {
+        return;
+    }
+
+    if let Some(text) = event.text.as_deref() {
+        input.handle_committed_text(text);
+    }
+}
+
+fn handle_ime_event(input: &mut InputState, event: Ime) {
+    input.handle_ime_event(event);
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ScaleMode {
@@ -571,6 +585,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
             .with_visible(!headless)
             .build(&event_loop)?,
     );
+    window.set_ime_allowed(true);
 
     let present_mode = if config.vsync {
         wgpu::PresentMode::AutoVsync
@@ -633,16 +648,15 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
                     engine.renderer.resize(new_size.width, new_size.height);
                 }
 
-                WindowEvent::KeyboardInput {
-                    event:
-                        KeyEvent {
-                            physical_key: PhysicalKey::Code(key),
-                            state,
-                            ..
-                        },
-                    ..
-                } => {
-                    engine.input.handle_key_event(key, state);
+                WindowEvent::KeyboardInput { event, .. } => {
+                    handle_text_event(&mut engine.input, &event);
+                    if let PhysicalKey::Code(key) = event.physical_key {
+                        engine.input.handle_key_event(key, event.state);
+                    }
+                }
+
+                WindowEvent::Ime(event) => {
+                    handle_ime_event(&mut engine.input, event);
                 }
 
                 WindowEvent::CursorMoved { position, .. } => {
@@ -741,6 +755,7 @@ where
             .with_visible(!headless)
             .build(&event_loop)?,
     );
+    window.set_ime_allowed(true);
 
     let present_mode = if config.vsync {
         wgpu::PresentMode::AutoVsync
@@ -821,16 +836,15 @@ where
                     engine.renderer.resize(new_size.width, new_size.height);
                 }
 
-                WindowEvent::KeyboardInput {
-                    event:
-                        KeyEvent {
-                            physical_key: PhysicalKey::Code(key),
-                            state,
-                            ..
-                        },
-                    ..
-                } => {
-                    engine.input.handle_key_event(key, state);
+                WindowEvent::KeyboardInput { event, .. } => {
+                    handle_text_event(&mut engine.input, &event);
+                    if let PhysicalKey::Code(key) = event.physical_key {
+                        engine.input.handle_key_event(key, event.state);
+                    }
+                }
+
+                WindowEvent::Ime(event) => {
+                    handle_ime_event(&mut engine.input, event);
                 }
 
                 WindowEvent::CursorMoved { position, .. } => {
@@ -1457,6 +1471,7 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
             .with_visible(!headless)
             .build(&event_loop)?,
     );
+    window.set_ime_allowed(true);
 
     let present_mode = if config.vsync {
         wgpu::PresentMode::AutoVsync
@@ -1545,27 +1560,26 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
                     engine.renderer.resize(new_size.width, new_size.height);
                 }
 
-                WindowEvent::KeyboardInput {
-                    event:
-                        KeyEvent {
-                            physical_key: PhysicalKey::Code(key),
-                            state,
-                            ..
-                        },
-                    ..
-                } => {
-                    if key == winit::keyboard::KeyCode::Escape
-                        && state == winit::event::ElementState::Pressed
-                    {
-                        if engine.mouse_captured {
-                            let _ = window.set_cursor_grab(CursorGrabMode::None);
-                            window.set_cursor_visible(true);
-                            engine.mouse_captured = false;
-                        } else {
-                            target.exit();
+                WindowEvent::KeyboardInput { event, .. } => {
+                    handle_text_event(&mut engine.input, &event);
+                    if let PhysicalKey::Code(key) = event.physical_key {
+                        if key == winit::keyboard::KeyCode::Escape
+                            && event.state == winit::event::ElementState::Pressed
+                        {
+                            if engine.mouse_captured {
+                                let _ = window.set_cursor_grab(CursorGrabMode::None);
+                                window.set_cursor_visible(true);
+                                engine.mouse_captured = false;
+                            } else {
+                                target.exit();
+                            }
                         }
+                        engine.input.handle_key_event(key, event.state);
                     }
-                    engine.input.handle_key_event(key, state);
+                }
+
+                WindowEvent::Ime(event) => {
+                    handle_ime_event(&mut engine.input, event);
                 }
 
                 WindowEvent::MouseInput { button, state, .. } => {
@@ -1678,6 +1692,7 @@ where
             .with_visible(!headless)
             .build(&event_loop)?,
     );
+    window.set_ime_allowed(true);
 
     let present_mode = if config.vsync {
         wgpu::PresentMode::AutoVsync
@@ -1783,27 +1798,26 @@ where
                     engine.renderer.resize(new_size.width, new_size.height);
                 }
 
-                WindowEvent::KeyboardInput {
-                    event:
-                        KeyEvent {
-                            physical_key: PhysicalKey::Code(key),
-                            state,
-                            ..
-                        },
-                    ..
-                } => {
-                    if key == winit::keyboard::KeyCode::Escape
-                        && state == winit::event::ElementState::Pressed
-                    {
-                        if engine.mouse_captured {
-                            let _ = window.set_cursor_grab(CursorGrabMode::None);
-                            window.set_cursor_visible(true);
-                            engine.mouse_captured = false;
-                        } else {
-                            target.exit();
+                WindowEvent::KeyboardInput { event, .. } => {
+                    handle_text_event(&mut engine.input, &event);
+                    if let PhysicalKey::Code(key) = event.physical_key {
+                        if key == winit::keyboard::KeyCode::Escape
+                            && event.state == winit::event::ElementState::Pressed
+                        {
+                            if engine.mouse_captured {
+                                let _ = window.set_cursor_grab(CursorGrabMode::None);
+                                window.set_cursor_visible(true);
+                                engine.mouse_captured = false;
+                            } else {
+                                target.exit();
+                            }
                         }
+                        engine.input.handle_key_event(key, event.state);
                     }
-                    engine.input.handle_key_event(key, state);
+                }
+
+                WindowEvent::Ime(event) => {
+                    handle_ime_event(&mut engine.input, event);
                 }
 
                 WindowEvent::MouseInput { button, state, .. } => {
