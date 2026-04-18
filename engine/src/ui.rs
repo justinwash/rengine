@@ -420,9 +420,7 @@ fn draw_tooltip(
     let min_box_height = (style.tooltip_padding * 2.0 + 1.0).min(max_box_height);
     let max_text_width = (max_box_width - style.tooltip_padding * 2.0).max(1.0);
     let fixed_box_width = if let Some(width) = tooltip.fixed_width {
-        width
-            .min(max_box_width)
-            .max(min_box_width)
+        width.min(max_box_width).max(min_box_width)
     } else {
         0.0
     };

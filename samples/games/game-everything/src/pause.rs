@@ -60,7 +60,11 @@ impl Scene for PauseOverlay {
             for x in 5..19 {
                 icon.set(x, 19, Color::from_rgba8(40, 40, 55, 255));
             }
-            globals.set(PauseBadge(engine.create_texture(24, 24, &icon.into_bytes())));
+            globals.set(PauseBadge(engine.create_texture(
+                24,
+                24,
+                &icon.into_bytes(),
+            )));
         }
 
         self.badge = globals.get::<PauseBadge>().map(|badge| badge.0);
