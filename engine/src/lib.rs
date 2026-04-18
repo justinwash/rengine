@@ -54,7 +54,10 @@ pub use scene::{
 };
 pub use text::FontAtlas;
 pub use text::FontId;
-pub use ui::{Ui, UiResponse, UiStyle};
+pub use ui::{
+    TooltipAnimation, TooltipExpandTrigger, TooltipOptions, TooltipPlacement, Ui, UiResponse,
+    UiStyle,
+};
 
 pub use particle::{EmitShape, EmitterConfig, ParticleEmitter, RangeF32};
 
