@@ -1,10 +1,97 @@
+use std::cell::Cell;
+
 use crate::app::Engine;
 use crate::assets::Color;
-use crate::canvas::{Canvas, TextAlign};
+use crate::canvas::{wrap_text, Canvas, TextAlign};
+use crate::input::InputState;
 use crate::text::FontAtlas;
 use crate::TextureId;
 use glam::Vec2;
 use winit::keyboard::KeyCode;
+
+#[derive(Clone, Copy)]
+pub enum TooltipPlacement {
+    Mouse,
+    Widget,
+    Screen(Vec2),
+}
+
+#[derive(Clone, Copy)]
+pub enum TooltipAnimation {
+    None,
+    Fade { duration: f32 },
+    FadeSlide { duration: f32, offset: Vec2 },
+}
+
+#[derive(Clone, Copy)]
+pub enum TooltipExpandTrigger {
+    Shift,
+    Key(KeyCode),
+}
+
+#[derive(Clone, Default)]
+pub struct TooltipOptions {
+    pub max_width: Option<f32>,
+    pub fixed_width: Option<f32>,
+    pub fixed_height: Option<f32>,
+    pub delay: Option<f32>,
+    pub placement: Option<TooltipPlacement>,
+    pub offset: Option<Vec2>,
+    pub animation: Option<TooltipAnimation>,
+    pub advanced_text: Option<String>,
+    pub expand_trigger: Option<TooltipExpandTrigger>,
+}
+
+impl TooltipOptions {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_max_width(mut self, width: f32) -> Self {
+        self.max_width = Some(width.max(1.0));
+        self
+    }
+
+    pub fn with_fixed_width(mut self, width: f32) -> Self {
+        self.fixed_width = Some(width.max(1.0));
+        self
+    }
+
+    pub fn with_fixed_height(mut self, height: f32) -> Self {
+        self.fixed_height = Some(height.max(1.0));
+        self
+    }
+
+    pub fn with_delay(mut self, delay: f32) -> Self {
+        self.delay = Some(delay.max(0.0));
+        self
+    }
+
+    pub fn with_placement(mut self, placement: TooltipPlacement) -> Self {
+        self.placement = Some(placement);
+        self
+    }
+
+    pub fn with_offset(mut self, offset: Vec2) -> Self {
+        self.offset = Some(offset);
+        self
+    }
+
+    pub fn with_animation(mut self, animation: TooltipAnimation) -> Self {
+        self.animation = Some(animation);
+        self
+    }
+
+    pub fn with_advanced_text(mut self, text: impl Into<String>) -> Self {
+        self.advanced_text = Some(text.into());
+        self
+    }
+
+    pub fn with_expand_trigger(mut self, trigger: TooltipExpandTrigger) -> Self {
+        self.expand_trigger = Some(trigger);
+        self
+    }
+}
 
 #[derive(Clone)]
 pub struct UiStyle {
@@ -29,6 +116,16 @@ pub struct UiStyle {
     pub slider_fill_color: Color,
     pub slider_thumb_color: Color,
     pub slider_height: f32,
+    pub tooltip_bg: Color,
+    pub tooltip_text_color: Color,
+    pub tooltip_text_size: f32,
+    pub tooltip_padding: f32,
+    pub tooltip_delay: f32,
+    pub tooltip_width: f32,
+    pub tooltip_placement: TooltipPlacement,
+    pub tooltip_offset: Vec2,
+    pub tooltip_animation: TooltipAnimation,
+    pub tooltip_expand_trigger: TooltipExpandTrigger,
 }
 
 impl Default for UiStyle {
@@ -55,6 +152,16 @@ impl Default for UiStyle {
             slider_fill_color: Color::from_rgba8(80, 140, 200, 255),
             slider_thumb_color: Color::WHITE,
             slider_height: 16.0,
+            tooltip_bg: Color::from_rgba8(12, 14, 22, 235),
+            tooltip_text_color: Color::from_rgba8(235, 235, 245, 255),
+            tooltip_text_size: 14.0,
+            tooltip_padding: 8.0,
+            tooltip_delay: 0.0,
+            tooltip_width: 220.0,
+            tooltip_placement: TooltipPlacement::Mouse,
+            tooltip_offset: Vec2::new(16.0, 16.0),
+            tooltip_animation: TooltipAnimation::Fade { duration: 0.12 },
+            tooltip_expand_trigger: TooltipExpandTrigger::Shift,
         }
     }
 }
@@ -118,6 +225,296 @@ enum Widget {
     },
 }
 
+struct TooltipSpec {
+    widget_index: usize,
+    text: String,
+    options: TooltipOptions,
+}
+
+#[derive(Clone, Copy)]
+struct UiRect {
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+}
+
+impl UiRect {
+    fn contains(self, point: Vec2) -> bool {
+        point.x >= self.x
+            && point.x <= self.x + self.w
+            && point.y >= self.y
+            && point.y <= self.y + self.h
+    }
+}
+
+struct ActiveTooltip<'a> {
+    widget_index: usize,
+    text: &'a str,
+    rect: UiRect,
+    hovered: bool,
+    mouse_anchor: Vec2,
+    max_width: f32,
+    fixed_width: Option<f32>,
+    fixed_height: Option<f32>,
+    delay: f32,
+    placement: TooltipPlacement,
+    offset: Vec2,
+    animation: TooltipAnimation,
+}
+
+#[derive(Clone, Copy, Default)]
+struct TooltipRuntime {
+    widget_index: Option<usize>,
+    elapsed: f32,
+}
+
+fn widget_supports_tooltip(widget: &Widget) -> bool {
+    matches!(
+        widget,
+        Widget::Label { .. }
+            | Widget::Image { .. }
+            | Widget::Button { .. }
+            | Widget::Panel { .. }
+            | Widget::ProgressBar { .. }
+            | Widget::Checkbox { .. }
+            | Widget::Slider { .. }
+            | Widget::ScrollRegion { .. }
+    )
+}
+
+fn point_visible(point: Vec2, rect: UiRect, clip_stack: &[UiRect]) -> bool {
+    rect.contains(point) && clip_stack.iter().all(|clip| clip.contains(point))
+}
+
+fn rect_visible(mut rect: UiRect, clip_stack: &[UiRect]) -> bool {
+    if rect.w <= 0.0 || rect.h <= 0.0 {
+        return false;
+    }
+
+    for clip in clip_stack {
+        let x0 = rect.x.max(clip.x);
+        let y0 = rect.y.max(clip.y);
+        let x1 = (rect.x + rect.w).min(clip.x + clip.w);
+        let y1 = (rect.y + rect.h).min(clip.y + clip.h);
+        if x1 <= x0 || y1 <= y0 {
+            return false;
+        }
+        rect = UiRect {
+            x: x0,
+            y: y0,
+            w: x1 - x0,
+            h: y1 - y0,
+        };
+    }
+
+    true
+}
+
+fn expand_trigger_active(input: &InputState, trigger: TooltipExpandTrigger) -> bool {
+    match trigger {
+        TooltipExpandTrigger::Shift => {
+            input.is_key_down(KeyCode::ShiftLeft) || input.is_key_down(KeyCode::ShiftRight)
+        }
+        TooltipExpandTrigger::Key(key) => input.is_key_down(key),
+    }
+}
+
+fn scale_alpha(color: Color, alpha: f32) -> Color {
+    Color::new(color.r, color.g, color.b, color.a * alpha.clamp(0.0, 1.0))
+}
+
+fn resolve_tooltip_text<'a>(
+    tooltip: &'a TooltipSpec,
+    input: &InputState,
+    style: &UiStyle,
+) -> &'a str {
+    if let Some(advanced) = tooltip.options.advanced_text.as_deref() {
+        let trigger = tooltip
+            .options
+            .expand_trigger
+            .unwrap_or(style.tooltip_expand_trigger);
+        if expand_trigger_active(input, trigger) {
+            return advanced;
+        }
+    }
+
+    &tooltip.text
+}
+
+fn resolve_active_tooltip<'a>(
+    tooltip: &'a TooltipSpec,
+    rect: UiRect,
+    hovered: bool,
+    mouse_anchor: Vec2,
+    input: &InputState,
+    style: &UiStyle,
+) -> ActiveTooltip<'a> {
+    ActiveTooltip {
+        widget_index: tooltip.widget_index,
+        text: resolve_tooltip_text(tooltip, input, style),
+        rect,
+        hovered,
+        mouse_anchor,
+        max_width: tooltip
+            .options
+            .max_width
+            .unwrap_or(style.tooltip_width)
+            .max(1.0),
+        fixed_width: tooltip.options.fixed_width.map(|width| width.max(1.0)),
+        fixed_height: tooltip.options.fixed_height.map(|height| height.max(1.0)),
+        delay: tooltip
+            .options
+            .delay
+            .unwrap_or(style.tooltip_delay)
+            .max(0.0),
+        placement: tooltip.options.placement.unwrap_or(style.tooltip_placement),
+        offset: tooltip.options.offset.unwrap_or(style.tooltip_offset),
+        animation: tooltip.options.animation.unwrap_or(style.tooltip_animation),
+    }
+}
+
+fn capture_tooltip<'a>(
+    tooltip: &'a TooltipSpec,
+    rect: UiRect,
+    focus_id: Option<usize>,
+    focused_id: Option<usize>,
+    mouse: Vec2,
+    clip_stack: &[UiRect],
+    mouse_focus: bool,
+    input: &InputState,
+    style: &UiStyle,
+    hovered_tooltip: &mut Option<ActiveTooltip<'a>>,
+    focused_tooltip: &mut Option<ActiveTooltip<'a>>,
+) {
+    if point_visible(mouse, rect, clip_stack) {
+        *hovered_tooltip = Some(resolve_active_tooltip(
+            tooltip, rect, true, mouse, input, style,
+        ));
+        return;
+    }
+
+    if !rect_visible(rect, clip_stack) {
+        return;
+    }
+
+    if !mouse_focus && hovered_tooltip.is_none() && focus_id.is_some() && focus_id == focused_id {
+        *focused_tooltip = Some(resolve_active_tooltip(
+            tooltip, rect, false, mouse, input, style,
+        ));
+    }
+}
+
+fn draw_tooltip(
+    canvas: &mut Canvas,
+    atlas: &FontAtlas,
+    style: &UiStyle,
+    tooltip: ActiveTooltip<'_>,
+    screen_size: (u32, u32),
+    visibility: f32,
+) {
+    let margin = 8.0;
+    let max_box_width = (screen_size.0 as f32 - margin * 2.0).max(1.0);
+    let max_box_height = (screen_size.1 as f32 - margin * 2.0).max(1.0);
+    let min_box_width = (style.tooltip_padding * 2.0 + 1.0).min(max_box_width);
+    let min_box_height = (style.tooltip_padding * 2.0 + 1.0).min(max_box_height);
+    let max_text_width = (max_box_width - style.tooltip_padding * 2.0).max(1.0);
+    let fixed_box_width = if let Some(width) = tooltip.fixed_width {
+        width
+            .min(max_box_width)
+            .max(min_box_width)
+    } else {
+        0.0
+    };
+    let text_wrap_width = if fixed_box_width > 0.0 {
+        (fixed_box_width - style.tooltip_padding * 2.0).max(1.0)
+    } else {
+        tooltip.max_width.max(1.0).min(max_text_width)
+    };
+    let lines = wrap_text(
+        tooltip.text,
+        style.tooltip_text_size,
+        text_wrap_width,
+        atlas,
+    );
+    let line_height = atlas.line_height(style.tooltip_text_size);
+    let text_width = lines
+        .iter()
+        .map(|line| atlas.measure_text(line, style.tooltip_text_size).0)
+        .fold(0.0, f32::max);
+    let content_height = line_height * lines.len() as f32;
+    let box_width = if fixed_box_width > 0.0 {
+        fixed_box_width
+    } else {
+        (text_width + style.tooltip_padding * 2.0).min(max_box_width)
+    }
+    .max(min_box_width);
+    let box_height = tooltip
+        .fixed_height
+        .unwrap_or(content_height + style.tooltip_padding * 2.0)
+        .min(max_box_height)
+        .max(min_box_height);
+    let half_width = screen_size.0 as f32 / 2.0;
+    let half_height = screen_size.1 as f32 / 2.0;
+    let animation_t = visibility.clamp(0.0, 1.0);
+    let (alpha, animation_offset) = match tooltip.animation {
+        TooltipAnimation::None => (1.0, Vec2::ZERO),
+        TooltipAnimation::Fade { .. } => (animation_t, Vec2::ZERO),
+        TooltipAnimation::FadeSlide { offset, .. } => (animation_t, offset * (1.0 - animation_t)),
+    };
+    let offset = tooltip.offset + animation_offset;
+    let widget_anchor = Vec2::new(
+        tooltip.rect.x + tooltip.rect.w,
+        tooltip.rect.y + tooltip.rect.h,
+    );
+    let (raw_x, raw_top) = match tooltip.placement {
+        TooltipPlacement::Mouse => {
+            let anchor = if tooltip.hovered {
+                tooltip.mouse_anchor
+            } else {
+                widget_anchor
+            };
+            (anchor.x + offset.x, anchor.y + offset.y)
+        }
+        TooltipPlacement::Widget => (widget_anchor.x + offset.x, widget_anchor.y + offset.y),
+        TooltipPlacement::Screen(position) => (position.x + offset.x, position.y + offset.y),
+    };
+    let min_x = -half_width + margin;
+    let max_x = half_width - margin - box_width;
+    let min_top = -half_height + margin + box_height;
+    let max_top = half_height - margin;
+    let x = if min_x <= max_x {
+        raw_x.clamp(min_x, max_x)
+    } else {
+        min_x
+    };
+    let top = if min_top <= max_top {
+        raw_top.clamp(min_top, max_top)
+    } else {
+        min_top
+    };
+    let text_clip_height = (box_height - style.tooltip_padding * 2.0).max(1.0);
+    let bg = scale_alpha(style.tooltip_bg, alpha);
+    let fg = scale_alpha(style.tooltip_text_color, alpha);
+
+    canvas.rect(x, top - box_height, box_width, box_height, bg);
+    canvas.push_clip(
+        x + style.tooltip_padding,
+        top - box_height + style.tooltip_padding,
+        (box_width - style.tooltip_padding * 2.0).max(1.0),
+        text_clip_height,
+    );
+    canvas.text_block_lines(
+        x + style.tooltip_padding,
+        top - style.tooltip_padding,
+        &lines,
+        style.tooltip_text_size,
+        fg,
+        TextAlign::Left,
+    );
+    canvas.pop_clip();
+}
+
 pub struct UiResponse {
     pub focused: Option<usize>,
     pub activated: Option<usize>,
@@ -158,11 +555,13 @@ pub struct Ui {
     width: f32,
     style: UiStyle,
     widgets: Vec<Widget>,
+    tooltips: Vec<TooltipSpec>,
     focusable_ids: Vec<usize>,
     focus_index: usize,
     activated: Option<usize>,
     mouse_focus: bool,
     dragging_slider: Option<usize>,
+    tooltip_runtime: Cell<TooltipRuntime>,
 }
 
 impl Default for Ui {
@@ -173,11 +572,13 @@ impl Default for Ui {
             width: 200.0,
             style: UiStyle::default(),
             widgets: Vec::new(),
+            tooltips: Vec::new(),
             focusable_ids: Vec::new(),
             focus_index: 0,
             activated: None,
             mouse_focus: false,
             dragging_slider: None,
+            tooltip_runtime: Cell::new(TooltipRuntime::default()),
         }
     }
 }
@@ -189,6 +590,7 @@ impl Ui {
         self.y = (sh as f32 / 2.0) - top;
         self.width = width;
         self.widgets.clear();
+        self.tooltips.clear();
         self.focusable_ids.clear();
         self.activated = None;
         self.mouse_focus = false;
@@ -199,6 +601,7 @@ impl Ui {
         self.y = y;
         self.width = width;
         self.widgets.clear();
+        self.tooltips.clear();
         self.focusable_ids.clear();
         self.activated = None;
         self.mouse_focus = false;
@@ -207,6 +610,14 @@ impl Ui {
     pub fn with_style(mut self, style: UiStyle) -> Self {
         self.style = style;
         self
+    }
+
+    pub fn style(&self) -> &UiStyle {
+        &self.style
+    }
+
+    pub fn style_mut(&mut self) -> &mut UiStyle {
+        &mut self.style
     }
 
     pub fn with_focus(mut self, focus: usize) -> Self {
@@ -262,6 +673,34 @@ impl Ui {
             color: Color::WHITE,
             uv_rect,
         });
+    }
+
+    pub fn tooltip(&mut self, text: &str) {
+        self.tooltip_sized(text, self.style.tooltip_width);
+    }
+
+    pub fn tooltip_sized(&mut self, text: &str, width: f32) {
+        self.tooltip_with(text, TooltipOptions::new().with_max_width(width));
+    }
+
+    pub fn tooltip_with(&mut self, text: &str, options: TooltipOptions) {
+        if text.is_empty() {
+            return;
+        }
+
+        if let Some(widget) = self.widgets.last() {
+            if !widget_supports_tooltip(widget) {
+                return;
+            }
+        }
+
+        if let Some(widget_index) = self.widgets.len().checked_sub(1) {
+            self.tooltips.push(TooltipSpec {
+                widget_index,
+                text: text.to_string(),
+                options,
+            });
+        }
     }
 
     pub fn button(&mut self, id: usize, text: &str) {
@@ -888,15 +1327,26 @@ impl Ui {
 
     pub fn render(&self, canvas: &mut Canvas, engine: &Engine) {
         let atlas = engine.font_atlas();
+        let input = engine.input();
         let mut cursor_y = self.y;
         let mut base_x = self.x;
         let mut current_width = self.width;
+        let mouse = engine.mouse_screen_pos();
         let focused_id =
             if !self.focusable_ids.is_empty() && self.focus_index < self.focusable_ids.len() {
                 Some(self.focusable_ids[self.focus_index])
             } else {
                 None
             };
+        let mut clip_stack: Vec<UiRect> = Vec::new();
+        let mut hovered_tooltip: Option<ActiveTooltip<'_>> = None;
+        let mut focused_tooltip: Option<ActiveTooltip<'_>> = None;
+        let mut tooltip_indices = vec![None; self.widgets.len()];
+        for (tooltip_index, tooltip) in self.tooltips.iter().enumerate() {
+            if tooltip.widget_index < tooltip_indices.len() {
+                tooltip_indices[tooltip.widget_index] = Some(tooltip_index);
+            }
+        }
 
         struct RenderContainer {
             kind: u8,
@@ -917,6 +1367,10 @@ impl Ui {
         let mut i = 0;
         while i < self.widgets.len() {
             let mut pending: Option<RenderContainer> = None;
+            let mut tooltip_rect = None;
+            let mut tooltip_focus_id = None;
+            let tooltip = tooltip_indices[i].map(|tooltip_index| &self.tooltips[tooltip_index]);
+            let has_tooltip = tooltip.is_some();
 
             match &self.widgets[i] {
                 Widget::Label {
@@ -931,6 +1385,20 @@ impl Ui {
                         TextAlign::Center => base_x + current_width / 2.0,
                         TextAlign::Right => base_x + current_width,
                     };
+                    if has_tooltip {
+                        let text_width = atlas.measure_text(text, *size).0;
+                        let left = match align {
+                            TextAlign::Left => ax,
+                            TextAlign::Center => ax - text_width / 2.0,
+                            TextAlign::Right => ax - text_width,
+                        };
+                        tooltip_rect = Some(UiRect {
+                            x: left,
+                            y: cursor_y - lh,
+                            w: text_width,
+                            h: lh,
+                        });
+                    }
                     canvas.text_aligned(ax, cursor_y, text, *size, *color, *align);
                     cursor_y -= lh + self.style.spacing;
                 }
@@ -942,7 +1410,16 @@ impl Ui {
                 } => {
                     let image_x = base_x + (current_width - size.x).max(0.0) * 0.5;
                     let image_y = cursor_y - size.y;
-                    canvas.image_region(*texture, image_x, image_y, size.x, size.y, *uv_rect, *color);
+                    if has_tooltip {
+                        tooltip_rect = Some(UiRect {
+                            x: image_x,
+                            y: image_y,
+                            w: size.x,
+                            h: size.y,
+                        });
+                    }
+                    canvas
+                        .image_region(*texture, image_x, image_y, size.x, size.y, *uv_rect, *color);
                     cursor_y -= size.y + self.style.spacing;
                 }
                 Widget::Button { id, text } => {
@@ -966,8 +1443,19 @@ impl Ui {
                     let pad = self.style.button_padding;
                     let lh = atlas.line_height(text_size);
                     let btn_h = lh + pad * 2.0;
+                    let btn_y = cursor_y - btn_h + pad;
 
-                    canvas.rect(base_x, cursor_y - btn_h + pad, current_width, btn_h, bg);
+                    if has_tooltip {
+                        tooltip_rect = Some(UiRect {
+                            x: base_x,
+                            y: btn_y,
+                            w: current_width,
+                            h: btn_h,
+                        });
+                        tooltip_focus_id = Some(*id);
+                    }
+
+                    canvas.rect(base_x, btn_y, current_width, btn_h, bg);
 
                     let label = if is_focused && !self.mouse_focus {
                         format!("> {}", text)
@@ -1003,6 +1491,14 @@ impl Ui {
                     };
 
                     let panel_h = total_h + *padding * 2.0;
+                    if has_tooltip {
+                        tooltip_rect = Some(UiRect {
+                            x: base_x,
+                            y: cursor_y - panel_h + *padding,
+                            w: current_width,
+                            h: panel_h,
+                        });
+                    }
                     canvas.rect(
                         base_x,
                         cursor_y - panel_h + *padding,
@@ -1073,6 +1569,7 @@ impl Ui {
                     value,
                     color,
                 } => {
+                    let top_y = cursor_y;
                     let text_size = self.style.text_size;
                     let lh = atlas.line_height(text_size);
                     let bar_h = self.style.progress_height;
@@ -1100,6 +1597,14 @@ impl Ui {
                             fill_color,
                         );
                     }
+                    if has_tooltip {
+                        tooltip_rect = Some(UiRect {
+                            x: base_x,
+                            y: cursor_y - bar_h,
+                            w: current_width,
+                            h: top_y - (cursor_y - bar_h),
+                        });
+                    }
                     cursor_y -= bar_h + self.style.spacing;
                 }
                 Widget::Checkbox { id, label, checked } => {
@@ -1117,6 +1622,15 @@ impl Ui {
 
                     let bx = base_x;
                     let by = cursor_y - row_h + (row_h - box_size) / 2.0;
+                    if has_tooltip {
+                        tooltip_rect = Some(UiRect {
+                            x: base_x,
+                            y: cursor_y - row_h,
+                            w: current_width,
+                            h: row_h,
+                        });
+                        tooltip_focus_id = Some(*id);
+                    }
                     canvas.rect(bx, by, box_size, box_size, box_bg);
 
                     if *checked {
@@ -1173,6 +1687,7 @@ impl Ui {
                     min,
                     max,
                 } => {
+                    let top_y = cursor_y;
                     let is_focused = focused_id == Some(*id);
                     let text_size = self.style.text_size;
                     let bar_h = self.style.slider_height;
@@ -1244,6 +1759,15 @@ impl Ui {
                         );
                     }
 
+                    if has_tooltip {
+                        tooltip_rect = Some(UiRect {
+                            x: base_x,
+                            y: cursor_y - bar_h - 2.0,
+                            w: current_width,
+                            h: top_y - (cursor_y - bar_h - 2.0),
+                        });
+                        tooltip_focus_id = Some(*id);
+                    }
                     cursor_y -= bar_h + self.style.spacing;
                 }
                 Widget::ScrollRegion {
@@ -1252,6 +1776,14 @@ impl Ui {
                     children,
                     ..
                 } => {
+                    if has_tooltip {
+                        tooltip_rect = Some(UiRect {
+                            x: base_x,
+                            y: cursor_y - *height,
+                            w: current_width,
+                            h: *height,
+                        });
+                    }
                     canvas.push_clip(base_x, cursor_y - *height, current_width, *height);
                     pending = Some(RenderContainer {
                         kind: 3,
@@ -1269,6 +1801,22 @@ impl Ui {
                     });
                     cursor_y += *scroll_offset;
                 }
+            }
+
+            if let (Some(tooltip), Some(rect)) = (tooltip, tooltip_rect) {
+                capture_tooltip(
+                    tooltip,
+                    rect,
+                    tooltip_focus_id,
+                    focused_id,
+                    mouse,
+                    &clip_stack,
+                    self.mouse_focus,
+                    input,
+                    &self.style,
+                    &mut hovered_tooltip,
+                    &mut focused_tooltip,
+                );
             }
 
             let mut pop_idx = None;
@@ -1316,6 +1864,7 @@ impl Ui {
                     }
                     3 => {
                         canvas.pop_clip();
+                        clip_stack.pop();
                         cursor_y = cont.row_start_y - cont.scroll_height;
                         base_x = cont.saved_x;
                         current_width = cont.saved_width;
@@ -1343,6 +1892,12 @@ impl Ui {
                         stack.push(cont);
                     }
                     3 => {
+                        clip_stack.push(UiRect {
+                            x: cont.saved_x,
+                            y: cont.row_start_y - cont.scroll_height,
+                            w: cont.saved_width,
+                            h: cont.scroll_height,
+                        });
                         stack.push(cont);
                     }
                     _ => {
@@ -1355,6 +1910,43 @@ impl Ui {
             }
 
             i += 1;
+        }
+
+        let mut runtime = self.tooltip_runtime.get();
+        if let Some(tooltip) = hovered_tooltip.or(focused_tooltip) {
+            if runtime.widget_index == Some(tooltip.widget_index) {
+                runtime.elapsed += engine.dt();
+            } else {
+                runtime.widget_index = Some(tooltip.widget_index);
+                runtime.elapsed = 0.0;
+            }
+
+            let visible_elapsed = (runtime.elapsed - tooltip.delay).max(0.0);
+            let visibility = match tooltip.animation {
+                TooltipAnimation::None => 1.0,
+                TooltipAnimation::Fade { duration }
+                | TooltipAnimation::FadeSlide { duration, .. } => {
+                    if duration <= 0.0 {
+                        1.0
+                    } else {
+                        (visible_elapsed / duration).clamp(0.0, 1.0)
+                    }
+                }
+            };
+
+            self.tooltip_runtime.set(runtime);
+            if runtime.elapsed >= tooltip.delay {
+                draw_tooltip(
+                    canvas,
+                    atlas,
+                    &self.style,
+                    tooltip,
+                    engine.window_size(),
+                    visibility,
+                );
+            }
+        } else {
+            self.tooltip_runtime.set(TooltipRuntime::default());
         }
     }
 }
