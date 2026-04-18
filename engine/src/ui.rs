@@ -1,9 +1,11 @@
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 
 use crate::app::Engine;
 use crate::assets::Color;
 use crate::canvas::{wrap_text, Canvas, TextAlign};
 use crate::input::InputState;
+use crate::math::Easing;
 use crate::text::FontAtlas;
 use crate::TextureId;
 use glam::Vec2;
@@ -27,6 +29,97 @@ pub enum TooltipAnimation {
 pub enum TooltipExpandTrigger {
     Shift,
     Key(KeyCode),
+}
+
+#[derive(Clone, Copy)]
+pub struct UiAnimation {
+    pub duration: f32,
+    pub easing: Easing,
+    pub offset: Vec2,
+    pub scale: f32,
+    pub alpha: f32,
+}
+
+impl Default for UiAnimation {
+    fn default() -> Self {
+        Self {
+            duration: 0.18,
+            easing: Easing::OutQuad,
+            offset: Vec2::ZERO,
+            scale: 1.0,
+            alpha: 1.0,
+        }
+    }
+}
+
+impl UiAnimation {
+    pub fn new(duration: f32) -> Self {
+        Self {
+            duration: duration.max(0.0),
+            ..Self::default()
+        }
+    }
+
+    pub fn with_easing(mut self, easing: Easing) -> Self {
+        self.easing = easing;
+        self
+    }
+
+    pub fn with_offset(mut self, offset: Vec2) -> Self {
+        self.offset = offset;
+        self
+    }
+
+    pub fn with_scale(mut self, scale: f32) -> Self {
+        self.scale = scale.max(0.0);
+        self
+    }
+
+    pub fn with_alpha(mut self, alpha: f32) -> Self {
+        self.alpha = alpha.max(0.0);
+        self
+    }
+}
+
+#[derive(Clone, Copy, Default)]
+pub struct UiAnimationOptions {
+    pub hover: Option<UiAnimation>,
+    pub focus: Option<UiAnimation>,
+    pub press: Option<UiAnimation>,
+    pub appear: Option<UiAnimation>,
+}
+
+impl UiAnimationOptions {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_hover(mut self, animation: UiAnimation) -> Self {
+        self.hover = Some(animation);
+        self
+    }
+
+    pub fn with_focus(mut self, animation: UiAnimation) -> Self {
+        self.focus = Some(animation);
+        self
+    }
+
+    pub fn with_press(mut self, animation: UiAnimation) -> Self {
+        self.press = Some(animation);
+        self
+    }
+
+    pub fn with_appear(mut self, animation: UiAnimation) -> Self {
+        self.appear = Some(animation);
+        self
+    }
+
+    fn is_empty(self) -> bool {
+        self.hover.is_none()
+            && self.focus.is_none()
+            && self.press.is_none()
+            && self.appear.is_none()
+    }
 }
 
 #[derive(Clone, Default)]
@@ -231,6 +324,11 @@ struct TooltipSpec {
     options: TooltipOptions,
 }
 
+struct UiAnimationSpec {
+    widget_index: usize,
+    options: UiAnimationOptions,
+}
+
 #[derive(Clone, Copy)]
 struct UiRect {
     x: f32,
@@ -269,6 +367,41 @@ struct TooltipRuntime {
     elapsed: f32,
 }
 
+#[derive(Clone, Copy, Default)]
+struct WidgetAnimationRuntime {
+    hover: f32,
+    focus: f32,
+    press: f32,
+    appear: f32,
+    last_seen_frame: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum WidgetRuntimeKey {
+    Indexed(usize),
+    Button(usize),
+    Checkbox(usize),
+    Slider(usize),
+    ScrollRegion(usize),
+}
+
+#[derive(Clone, Copy)]
+struct WidgetRenderAnimation {
+    offset: Vec2,
+    scale: f32,
+    alpha: f32,
+}
+
+impl Default for WidgetRenderAnimation {
+    fn default() -> Self {
+        Self {
+            offset: Vec2::ZERO,
+            scale: 1.0,
+            alpha: 1.0,
+        }
+    }
+}
+
 fn widget_supports_tooltip(widget: &Widget) -> bool {
     matches!(
         widget,
@@ -280,6 +413,18 @@ fn widget_supports_tooltip(widget: &Widget) -> bool {
             | Widget::Checkbox { .. }
             | Widget::Slider { .. }
             | Widget::ScrollRegion { .. }
+    )
+}
+
+fn widget_supports_animation(widget: &Widget) -> bool {
+    matches!(
+        widget,
+        Widget::Label { .. }
+            | Widget::Image { .. }
+            | Widget::Button { .. }
+            | Widget::ProgressBar { .. }
+            | Widget::Checkbox { .. }
+            | Widget::Slider { .. }
     )
 }
 
@@ -322,6 +467,175 @@ fn expand_trigger_active(input: &InputState, trigger: TooltipExpandTrigger) -> b
 
 fn scale_alpha(color: Color, alpha: f32) -> Color {
     Color::new(color.r, color.g, color.b, color.a * alpha.clamp(0.0, 1.0))
+}
+
+fn widget_runtime_key(widget: &Widget, widget_index: usize) -> WidgetRuntimeKey {
+    match widget {
+        Widget::Button { id, .. } => WidgetRuntimeKey::Button(*id),
+        Widget::Checkbox { id, .. } => WidgetRuntimeKey::Checkbox(*id),
+        Widget::Slider { id, .. } => WidgetRuntimeKey::Slider(*id),
+        Widget::ScrollRegion { id, .. } => WidgetRuntimeKey::ScrollRegion(*id),
+        _ => WidgetRuntimeKey::Indexed(widget_index),
+    }
+}
+
+fn animation_duration(animation: Option<UiAnimation>) -> f32 {
+    animation.map(|animation| animation.duration).unwrap_or(0.0)
+}
+
+fn advance_animation_progress(progress: &mut f32, target: f32, duration: f32, dt: f32) {
+    if duration <= 0.0 {
+        *progress = target;
+        return;
+    }
+
+    let step = (dt / duration).clamp(0.0, 1.0);
+    if target > *progress {
+        *progress = (*progress + step).min(target);
+    } else {
+        *progress = (*progress - step).max(target);
+    }
+}
+
+fn apply_widget_animation(
+    render_animation: &mut WidgetRenderAnimation,
+    animation: UiAnimation,
+    progress: f32,
+) {
+    if progress <= 0.0 {
+        return;
+    }
+
+    let eased = animation.easing.apply(progress);
+    render_animation.offset += animation.offset * eased;
+    render_animation.scale *= 1.0 + (animation.scale - 1.0) * eased;
+    render_animation.alpha *= 1.0 + (animation.alpha - 1.0) * eased;
+}
+
+fn resolve_widget_animation(
+    animation_options: UiAnimationOptions,
+    animation_runtime: &RefCell<HashMap<WidgetRuntimeKey, WidgetAnimationRuntime>>,
+    widget: &Widget,
+    widget_index: usize,
+    rect: UiRect,
+    focus_id: Option<usize>,
+    focused_id: Option<usize>,
+    mouse: Vec2,
+    clip_stack: &[UiRect],
+    input: &InputState,
+    frame_index: u64,
+    dt: f32,
+) -> WidgetRenderAnimation {
+    let hovered = point_visible(mouse, rect, clip_stack);
+    let focused = focus_id.is_some() && focus_id == focused_id && rect_visible(rect, clip_stack);
+    let pressed = (hovered && input.is_mouse_pressed(0))
+        || (focused
+            && (input.is_key_pressed(KeyCode::Enter) || input.is_key_pressed(KeyCode::Space)));
+
+    let mut runtimes = animation_runtime.borrow_mut();
+    let runtime = runtimes
+        .entry(widget_runtime_key(widget, widget_index))
+        .or_default();
+    let is_new = runtime.last_seen_frame == 0 || runtime.last_seen_frame + 1 != frame_index;
+    if is_new {
+        runtime.hover = 0.0;
+        runtime.focus = 0.0;
+        runtime.press = 0.0;
+        runtime.appear = 0.0;
+    }
+    runtime.last_seen_frame = frame_index;
+
+    if animation_options.hover.is_some() {
+        advance_animation_progress(
+            &mut runtime.hover,
+            if hovered { 1.0 } else { 0.0 },
+            animation_duration(animation_options.hover),
+            dt,
+        );
+    } else {
+        runtime.hover = 0.0;
+    }
+
+    if animation_options.focus.is_some() {
+        advance_animation_progress(
+            &mut runtime.focus,
+            if focused { 1.0 } else { 0.0 },
+            animation_duration(animation_options.focus),
+            dt,
+        );
+    } else {
+        runtime.focus = 0.0;
+    }
+
+    if animation_options.press.is_some() {
+        if pressed {
+            runtime.press = 1.0;
+        } else {
+            advance_animation_progress(
+                &mut runtime.press,
+                0.0,
+                animation_duration(animation_options.press),
+                dt,
+            );
+        }
+    } else {
+        runtime.press = 0.0;
+    }
+
+    if animation_options.appear.is_some() {
+        advance_animation_progress(
+            &mut runtime.appear,
+            1.0,
+            animation_duration(animation_options.appear),
+            dt,
+        );
+    } else {
+        runtime.appear = 1.0;
+    }
+
+    let runtime = *runtime;
+    drop(runtimes);
+
+    let mut render_animation = WidgetRenderAnimation::default();
+    if let Some(animation) = animation_options.appear {
+        apply_widget_animation(&mut render_animation, animation, 1.0 - runtime.appear);
+    }
+    if let Some(animation) = animation_options.hover {
+        apply_widget_animation(&mut render_animation, animation, runtime.hover);
+    }
+    if let Some(animation) = animation_options.focus {
+        apply_widget_animation(&mut render_animation, animation, runtime.focus);
+    }
+    if let Some(animation) = animation_options.press {
+        apply_widget_animation(&mut render_animation, animation, runtime.press);
+    }
+
+    render_animation
+}
+
+fn animated_rect(rect: UiRect, anchor: UiRect, animation: WidgetRenderAnimation) -> UiRect {
+    let scale = animation.scale.max(0.0);
+    let anchor_center = Vec2::new(anchor.x + anchor.w * 0.5, anchor.y + anchor.h * 0.5);
+    let rect_center = Vec2::new(rect.x + rect.w * 0.5, rect.y + rect.h * 0.5);
+    let animated_center = anchor_center + animation.offset + (rect_center - anchor_center) * scale;
+    let width = rect.w * scale;
+    let height = rect.h * scale;
+    UiRect {
+        x: animated_center.x - width * 0.5,
+        y: animated_center.y - height * 0.5,
+        w: width,
+        h: height,
+    }
+}
+
+fn animated_point(point: Vec2, anchor: UiRect, animation: WidgetRenderAnimation) -> Vec2 {
+    let scale = animation.scale.max(0.0);
+    let anchor_center = Vec2::new(anchor.x + anchor.w * 0.5, anchor.y + anchor.h * 0.5);
+    anchor_center + animation.offset + (point - anchor_center) * scale
+}
+
+fn animated_size(size: f32, animation: WidgetRenderAnimation) -> f32 {
+    (size * animation.scale.max(0.0)).max(1.0)
 }
 
 fn resolve_tooltip_text<'a>(
@@ -554,12 +868,15 @@ pub struct Ui {
     style: UiStyle,
     widgets: Vec<Widget>,
     tooltips: Vec<TooltipSpec>,
+    animations: Vec<UiAnimationSpec>,
     focusable_ids: Vec<usize>,
     focus_index: usize,
     activated: Option<usize>,
     mouse_focus: bool,
     dragging_slider: Option<usize>,
     tooltip_runtime: Cell<TooltipRuntime>,
+    animation_runtime: RefCell<HashMap<WidgetRuntimeKey, WidgetAnimationRuntime>>,
+    animation_frame: Cell<u64>,
 }
 
 impl Default for Ui {
@@ -571,35 +888,44 @@ impl Default for Ui {
             style: UiStyle::default(),
             widgets: Vec::new(),
             tooltips: Vec::new(),
+            animations: Vec::new(),
             focusable_ids: Vec::new(),
             focus_index: 0,
             activated: None,
             mouse_focus: false,
             dragging_slider: None,
             tooltip_runtime: Cell::new(TooltipRuntime::default()),
+            animation_runtime: RefCell::new(HashMap::new()),
+            animation_frame: Cell::new(0),
         }
     }
 }
 
 impl Ui {
     pub fn begin(&mut self, engine: &Engine, x: f32, top: f32, width: f32) {
+        self.animation_frame
+            .set(self.animation_frame.get().wrapping_add(1));
         let (_, sh) = engine.window_size();
         self.x = x;
         self.y = (sh as f32 / 2.0) - top;
         self.width = width;
         self.widgets.clear();
         self.tooltips.clear();
+        self.animations.clear();
         self.focusable_ids.clear();
         self.activated = None;
         self.mouse_focus = false;
     }
 
     pub fn begin_at(&mut self, x: f32, y: f32, width: f32) {
+        self.animation_frame
+            .set(self.animation_frame.get().wrapping_add(1));
         self.x = x;
         self.y = y;
         self.width = width;
         self.widgets.clear();
         self.tooltips.clear();
+        self.animations.clear();
         self.focusable_ids.clear();
         self.activated = None;
         self.mouse_focus = false;
@@ -696,6 +1022,25 @@ impl Ui {
             self.tooltips.push(TooltipSpec {
                 widget_index,
                 text: text.to_string(),
+                options,
+            });
+        }
+    }
+
+    pub fn animate_with(&mut self, options: UiAnimationOptions) {
+        if options.is_empty() {
+            return;
+        }
+
+        if let Some(widget) = self.widgets.last() {
+            if !widget_supports_animation(widget) {
+                return;
+            }
+        }
+
+        if let Some(widget_index) = self.widgets.len().checked_sub(1) {
+            self.animations.push(UiAnimationSpec {
+                widget_index,
                 options,
             });
         }
@@ -1326,10 +1671,12 @@ impl Ui {
     pub fn render(&self, canvas: &mut Canvas, engine: &Engine) {
         let atlas = engine.font_atlas();
         let input = engine.input();
+        let dt = engine.dt();
         let mut cursor_y = self.y;
         let mut base_x = self.x;
         let mut current_width = self.width;
         let mouse = engine.mouse_screen_pos();
+        let animation_frame = self.animation_frame.get();
         let focused_id =
             if !self.focusable_ids.is_empty() && self.focus_index < self.focusable_ids.len() {
                 Some(self.focusable_ids[self.focus_index])
@@ -1343,6 +1690,12 @@ impl Ui {
         for (tooltip_index, tooltip) in self.tooltips.iter().enumerate() {
             if tooltip.widget_index < tooltip_indices.len() {
                 tooltip_indices[tooltip.widget_index] = Some(tooltip_index);
+            }
+        }
+        let mut animation_indices = vec![None; self.widgets.len()];
+        for animation in &self.animations {
+            if animation.widget_index < animation_indices.len() {
+                animation_indices[animation.widget_index] = Some(animation.options);
             }
         }
 
@@ -1368,7 +1721,9 @@ impl Ui {
             let mut tooltip_rect = None;
             let mut tooltip_focus_id = None;
             let tooltip = tooltip_indices[i].map(|tooltip_index| &self.tooltips[tooltip_index]);
+            let animation = animation_indices[i];
             let has_tooltip = tooltip.is_some();
+            let has_animation = animation.is_some();
 
             match &self.widgets[i] {
                 Widget::Label {
@@ -1383,21 +1738,58 @@ impl Ui {
                         TextAlign::Center => base_x + current_width / 2.0,
                         TextAlign::Right => base_x + current_width,
                     };
-                    if has_tooltip {
+                    let label_rect = if has_tooltip || has_animation {
                         let text_width = atlas.measure_text(text, *size).0;
                         let left = match align {
                             TextAlign::Left => ax,
                             TextAlign::Center => ax - text_width / 2.0,
                             TextAlign::Right => ax - text_width,
                         };
-                        tooltip_rect = Some(UiRect {
+                        Some(UiRect {
                             x: left,
                             y: cursor_y - lh,
                             w: text_width,
                             h: lh,
-                        });
+                        })
+                    } else {
+                        None
+                    };
+
+                    if let (Some(animation_options), Some(label_rect)) = (animation, label_rect) {
+                        let render_animation = resolve_widget_animation(
+                            animation_options,
+                            &self.animation_runtime,
+                            &self.widgets[i],
+                            i,
+                            label_rect,
+                            None,
+                            focused_id,
+                            mouse,
+                            &clip_stack,
+                            input,
+                            animation_frame,
+                            dt,
+                        );
+                        if has_tooltip {
+                            tooltip_rect =
+                                Some(animated_rect(label_rect, label_rect, render_animation));
+                        }
+                        let label_pos =
+                            animated_point(Vec2::new(ax, cursor_y), label_rect, render_animation);
+                        canvas.text_aligned(
+                            label_pos.x,
+                            label_pos.y,
+                            text,
+                            animated_size(*size, render_animation),
+                            scale_alpha(*color, render_animation.alpha),
+                            *align,
+                        );
+                    } else {
+                        if has_tooltip {
+                            tooltip_rect = label_rect;
+                        }
+                        canvas.text_aligned(ax, cursor_y, text, *size, *color, *align);
                     }
-                    canvas.text_aligned(ax, cursor_y, text, *size, *color, *align);
                     cursor_y -= lh + self.style.spacing;
                 }
                 Widget::Image {
@@ -1408,16 +1800,48 @@ impl Ui {
                 } => {
                     let image_x = base_x + (current_width - size.x).max(0.0) * 0.5;
                     let image_y = cursor_y - size.y;
-                    if has_tooltip {
-                        tooltip_rect = Some(UiRect {
-                            x: image_x,
-                            y: image_y,
-                            w: size.x,
-                            h: size.y,
-                        });
+                    let image_rect = UiRect {
+                        x: image_x,
+                        y: image_y,
+                        w: size.x,
+                        h: size.y,
+                    };
+                    if let Some(animation_options) = animation {
+                        let render_animation = resolve_widget_animation(
+                            animation_options,
+                            &self.animation_runtime,
+                            &self.widgets[i],
+                            i,
+                            image_rect,
+                            None,
+                            focused_id,
+                            mouse,
+                            &clip_stack,
+                            input,
+                            animation_frame,
+                            dt,
+                        );
+                        let render_rect = animated_rect(image_rect, image_rect, render_animation);
+                        if has_tooltip {
+                            tooltip_rect = Some(render_rect);
+                        }
+                        canvas.image_region(
+                            *texture,
+                            render_rect.x,
+                            render_rect.y,
+                            render_rect.w,
+                            render_rect.h,
+                            *uv_rect,
+                            scale_alpha(*color, render_animation.alpha),
+                        );
+                    } else {
+                        if has_tooltip {
+                            tooltip_rect = Some(image_rect);
+                        }
+                        canvas.image_region(
+                            *texture, image_x, image_y, size.x, size.y, *uv_rect, *color,
+                        );
                     }
-                    canvas
-                        .image_region(*texture, image_x, image_y, size.x, size.y, *uv_rect, *color);
                     cursor_y -= size.y + self.style.spacing;
                 }
                 Widget::Button { id, text } => {
@@ -1442,25 +1866,68 @@ impl Ui {
                     let lh = atlas.line_height(text_size);
                     let btn_h = lh + pad * 2.0;
                     let btn_y = cursor_y - btn_h + pad;
+                    let button_rect = UiRect {
+                        x: base_x,
+                        y: btn_y,
+                        w: current_width,
+                        h: btn_h,
+                    };
 
                     if has_tooltip {
-                        tooltip_rect = Some(UiRect {
-                            x: base_x,
-                            y: btn_y,
-                            w: current_width,
-                            h: btn_h,
-                        });
                         tooltip_focus_id = Some(*id);
                     }
-
-                    canvas.rect(base_x, btn_y, current_width, btn_h, bg);
 
                     let label = if is_focused && !self.mouse_focus {
                         format!("> {}", text)
                     } else {
                         format!("  {}", text)
                     };
-                    canvas.text(base_x + pad, cursor_y, &label, text_size, fg);
+
+                    if let Some(animation_options) = animation {
+                        let render_animation = resolve_widget_animation(
+                            animation_options,
+                            &self.animation_runtime,
+                            &self.widgets[i],
+                            i,
+                            button_rect,
+                            Some(*id),
+                            focused_id,
+                            mouse,
+                            &clip_stack,
+                            input,
+                            animation_frame,
+                            dt,
+                        );
+                        let render_rect = animated_rect(button_rect, button_rect, render_animation);
+                        if has_tooltip {
+                            tooltip_rect = Some(render_rect);
+                        }
+                        let label_pos = animated_point(
+                            Vec2::new(base_x + pad, cursor_y),
+                            button_rect,
+                            render_animation,
+                        );
+                        canvas.rect(
+                            render_rect.x,
+                            render_rect.y,
+                            render_rect.w,
+                            render_rect.h,
+                            scale_alpha(bg, render_animation.alpha),
+                        );
+                        canvas.text(
+                            label_pos.x,
+                            label_pos.y,
+                            &label,
+                            animated_size(text_size, render_animation),
+                            scale_alpha(fg, render_animation.alpha),
+                        );
+                    } else {
+                        if has_tooltip {
+                            tooltip_rect = Some(button_rect);
+                        }
+                        canvas.rect(base_x, btn_y, current_width, btn_h, bg);
+                        canvas.text(base_x + pad, cursor_y, &label, text_size, fg);
+                    }
 
                     cursor_y -= btn_h + self.style.spacing;
                 }
@@ -1572,36 +2039,166 @@ impl Ui {
                     let lh = atlas.line_height(text_size);
                     let bar_h = self.style.progress_height;
                     let fill_color = color.unwrap_or(self.style.progress_fill);
+                    let display = if !label.is_empty() {
+                        Some(format!("{} ({}%)", label, (*value * 100.0) as u32))
+                    } else {
+                        None
+                    };
 
-                    if !label.is_empty() {
-                        let display = format!("{} ({}%)", label, (*value * 100.0) as u32);
-                        canvas.text(base_x, cursor_y, &display, text_size, self.style.text_color);
-                        cursor_y -= lh + self.style.spacing;
+                    if let Some(display) = &display {
+                        if let Some(animation_options) = animation {
+                            let progress_rect = UiRect {
+                                x: base_x,
+                                y: cursor_y - (lh + self.style.spacing + bar_h),
+                                w: current_width,
+                                h: lh + self.style.spacing + bar_h,
+                            };
+                            let bar_rect = UiRect {
+                                x: base_x,
+                                y: cursor_y - lh - self.style.spacing - bar_h,
+                                w: current_width,
+                                h: bar_h,
+                            };
+                            let render_animation = resolve_widget_animation(
+                                animation_options,
+                                &self.animation_runtime,
+                                &self.widgets[i],
+                                i,
+                                progress_rect,
+                                None,
+                                focused_id,
+                                mouse,
+                                &clip_stack,
+                                input,
+                                animation_frame,
+                                dt,
+                            );
+                            let render_bar =
+                                animated_rect(bar_rect, progress_rect, render_animation);
+                            if has_tooltip {
+                                tooltip_rect = Some(animated_rect(
+                                    progress_rect,
+                                    progress_rect,
+                                    render_animation,
+                                ));
+                            }
+                            let label_pos = animated_point(
+                                Vec2::new(base_x, cursor_y),
+                                progress_rect,
+                                render_animation,
+                            );
+                            canvas.text(
+                                label_pos.x,
+                                label_pos.y,
+                                display,
+                                animated_size(text_size, render_animation),
+                                scale_alpha(self.style.text_color, render_animation.alpha),
+                            );
+                            canvas.rect(
+                                render_bar.x,
+                                render_bar.y,
+                                render_bar.w,
+                                render_bar.h,
+                                scale_alpha(self.style.progress_bg, render_animation.alpha),
+                            );
+                            if *value > 0.0 {
+                                canvas.rect(
+                                    render_bar.x,
+                                    render_bar.y,
+                                    render_bar.w * *value,
+                                    render_bar.h,
+                                    scale_alpha(fill_color, render_animation.alpha),
+                                );
+                            }
+                            cursor_y -= lh + self.style.spacing;
+                        } else {
+                            canvas.text(
+                                base_x,
+                                cursor_y,
+                                display,
+                                text_size,
+                                self.style.text_color,
+                            );
+                            cursor_y -= lh + self.style.spacing;
+                        }
                     }
 
-                    canvas.rect(
-                        base_x,
-                        cursor_y - bar_h,
-                        current_width,
-                        bar_h,
-                        self.style.progress_bg,
-                    );
-                    if *value > 0.0 {
-                        canvas.rect(
-                            base_x,
-                            cursor_y - bar_h,
-                            current_width * *value,
-                            bar_h,
-                            fill_color,
-                        );
-                    }
-                    if has_tooltip {
-                        tooltip_rect = Some(UiRect {
-                            x: base_x,
-                            y: cursor_y - bar_h,
-                            w: current_width,
-                            h: top_y - (cursor_y - bar_h),
-                        });
+                    let progress_rect = UiRect {
+                        x: base_x,
+                        y: cursor_y - bar_h,
+                        w: current_width,
+                        h: top_y - (cursor_y - bar_h),
+                    };
+                    let bar_rect = UiRect {
+                        x: base_x,
+                        y: cursor_y - bar_h,
+                        w: current_width,
+                        h: bar_h,
+                    };
+                    if display.is_none() {
+                        if let Some(animation_options) = animation {
+                            let render_animation = resolve_widget_animation(
+                                animation_options,
+                                &self.animation_runtime,
+                                &self.widgets[i],
+                                i,
+                                progress_rect,
+                                None,
+                                focused_id,
+                                mouse,
+                                &clip_stack,
+                                input,
+                                animation_frame,
+                                dt,
+                            );
+                            let render_bar =
+                                animated_rect(bar_rect, progress_rect, render_animation);
+                            if has_tooltip {
+                                tooltip_rect = Some(animated_rect(
+                                    progress_rect,
+                                    progress_rect,
+                                    render_animation,
+                                ));
+                            }
+                            canvas.rect(
+                                render_bar.x,
+                                render_bar.y,
+                                render_bar.w,
+                                render_bar.h,
+                                scale_alpha(self.style.progress_bg, render_animation.alpha),
+                            );
+                            if *value > 0.0 {
+                                canvas.rect(
+                                    render_bar.x,
+                                    render_bar.y,
+                                    render_bar.w * *value,
+                                    render_bar.h,
+                                    scale_alpha(fill_color, render_animation.alpha),
+                                );
+                            }
+                        } else {
+                            if has_tooltip {
+                                tooltip_rect = Some(progress_rect);
+                            }
+                            canvas.rect(
+                                base_x,
+                                cursor_y - bar_h,
+                                current_width,
+                                bar_h,
+                                self.style.progress_bg,
+                            );
+                            if *value > 0.0 {
+                                canvas.rect(
+                                    base_x,
+                                    cursor_y - bar_h,
+                                    current_width * *value,
+                                    bar_h,
+                                    fill_color,
+                                );
+                            }
+                        }
+                    } else if has_tooltip && animation.is_none() {
+                        tooltip_rect = Some(progress_rect);
                     }
                     cursor_y -= bar_h + self.style.spacing;
                 }
@@ -1620,51 +2217,20 @@ impl Ui {
 
                     let bx = base_x;
                     let by = cursor_y - row_h + (row_h - box_size) / 2.0;
+                    let row_rect = UiRect {
+                        x: base_x,
+                        y: cursor_y - row_h,
+                        w: current_width,
+                        h: row_h,
+                    };
+                    let box_rect = UiRect {
+                        x: bx,
+                        y: by,
+                        w: box_size,
+                        h: box_size,
+                    };
                     if has_tooltip {
-                        tooltip_rect = Some(UiRect {
-                            x: base_x,
-                            y: cursor_y - row_h,
-                            w: current_width,
-                            h: row_h,
-                        });
                         tooltip_focus_id = Some(*id);
-                    }
-                    canvas.rect(bx, by, box_size, box_size, box_bg);
-
-                    if *checked {
-                        let inset = box_size * 0.25;
-                        canvas.rect(
-                            bx + inset,
-                            by + inset,
-                            box_size - inset * 2.0,
-                            box_size - inset * 2.0,
-                            Color::WHITE,
-                        );
-                    }
-
-                    if is_focused {
-                        let border = 2.0;
-                        let outline = if self.mouse_focus {
-                            self.style.button_focused_bg
-                        } else {
-                            Color::WHITE
-                        };
-                        canvas.rect(
-                            bx - border,
-                            by - border,
-                            box_size + border * 2.0,
-                            border,
-                            outline,
-                        );
-                        canvas.rect(
-                            bx - border,
-                            by + box_size,
-                            box_size + border * 2.0,
-                            border,
-                            outline,
-                        );
-                        canvas.rect(bx - border, by, border, box_size, outline);
-                        canvas.rect(bx + box_size, by, border, box_size, outline);
                     }
 
                     let text_x = base_x + box_size + 8.0;
@@ -1674,7 +2240,137 @@ impl Ui {
                     } else {
                         self.style.text_color
                     };
-                    canvas.text(text_x, text_y, label, text_size, fg);
+
+                    if let Some(animation_options) = animation {
+                        let render_animation = resolve_widget_animation(
+                            animation_options,
+                            &self.animation_runtime,
+                            &self.widgets[i],
+                            i,
+                            row_rect,
+                            Some(*id),
+                            focused_id,
+                            mouse,
+                            &clip_stack,
+                            input,
+                            animation_frame,
+                            dt,
+                        );
+                        let render_box = animated_rect(box_rect, row_rect, render_animation);
+                        if has_tooltip {
+                            tooltip_rect =
+                                Some(animated_rect(row_rect, row_rect, render_animation));
+                        }
+                        canvas.rect(
+                            render_box.x,
+                            render_box.y,
+                            render_box.w,
+                            render_box.h,
+                            scale_alpha(box_bg, render_animation.alpha),
+                        );
+
+                        if *checked {
+                            let inset = render_box.w.min(render_box.h) * 0.25;
+                            canvas.rect(
+                                render_box.x + inset,
+                                render_box.y + inset,
+                                (render_box.w - inset * 2.0).max(0.0),
+                                (render_box.h - inset * 2.0).max(0.0),
+                                scale_alpha(Color::WHITE, render_animation.alpha),
+                            );
+                        }
+
+                        if is_focused {
+                            let border = (2.0 * render_animation.scale.max(0.5)).max(1.0);
+                            let outline = if self.mouse_focus {
+                                self.style.button_focused_bg
+                            } else {
+                                Color::WHITE
+                            };
+                            let outline = scale_alpha(outline, render_animation.alpha);
+                            canvas.rect(
+                                render_box.x - border,
+                                render_box.y - border,
+                                render_box.w + border * 2.0,
+                                border,
+                                outline,
+                            );
+                            canvas.rect(
+                                render_box.x - border,
+                                render_box.y + render_box.h,
+                                render_box.w + border * 2.0,
+                                border,
+                                outline,
+                            );
+                            canvas.rect(
+                                render_box.x - border,
+                                render_box.y,
+                                border,
+                                render_box.h,
+                                outline,
+                            );
+                            canvas.rect(
+                                render_box.x + render_box.w,
+                                render_box.y,
+                                border,
+                                render_box.h,
+                                outline,
+                            );
+                        }
+
+                        let text_pos =
+                            animated_point(Vec2::new(text_x, text_y), row_rect, render_animation);
+                        canvas.text(
+                            text_pos.x,
+                            text_pos.y,
+                            label,
+                            animated_size(text_size, render_animation),
+                            scale_alpha(fg, render_animation.alpha),
+                        );
+                    } else {
+                        if has_tooltip {
+                            tooltip_rect = Some(row_rect);
+                        }
+                        canvas.rect(bx, by, box_size, box_size, box_bg);
+
+                        if *checked {
+                            let inset = box_size * 0.25;
+                            canvas.rect(
+                                bx + inset,
+                                by + inset,
+                                box_size - inset * 2.0,
+                                box_size - inset * 2.0,
+                                Color::WHITE,
+                            );
+                        }
+
+                        if is_focused {
+                            let border = 2.0;
+                            let outline = if self.mouse_focus {
+                                self.style.button_focused_bg
+                            } else {
+                                Color::WHITE
+                            };
+                            canvas.rect(
+                                bx - border,
+                                by - border,
+                                box_size + border * 2.0,
+                                border,
+                                outline,
+                            );
+                            canvas.rect(
+                                bx - border,
+                                by + box_size,
+                                box_size + border * 2.0,
+                                border,
+                                outline,
+                            );
+                            canvas.rect(bx - border, by, border, box_size, outline);
+                            canvas.rect(bx + box_size, by, border, box_size, outline);
+                        }
+
+                        canvas.text(text_x, text_y, label, text_size, fg);
+                    }
 
                     cursor_y -= row_h + self.style.spacing;
                 }
@@ -1689,20 +2385,39 @@ impl Ui {
                     let is_focused = focused_id == Some(*id);
                     let text_size = self.style.text_size;
                     let bar_h = self.style.slider_height;
+                    let had_label = !label.is_empty();
 
-                    if !label.is_empty() {
-                        let display = format!("{}: {:.1}", label, value);
-                        canvas.text(base_x, cursor_y, &display, text_size, self.style.text_color);
+                    let display = if had_label {
+                        Some(format!("{}: {:.1}", label, value))
+                    } else {
+                        None
+                    };
+
+                    if let Some(display) = &display {
+                        if animation.is_none() {
+                            canvas.text(
+                                base_x,
+                                cursor_y,
+                                display,
+                                text_size,
+                                self.style.text_color,
+                            );
+                        }
                         cursor_y -= atlas.line_height(text_size) + self.style.spacing;
                     }
 
-                    canvas.rect(
-                        base_x,
-                        cursor_y - bar_h,
-                        current_width,
-                        bar_h,
-                        self.style.slider_track_color,
-                    );
+                    let slider_rect = UiRect {
+                        x: base_x,
+                        y: cursor_y - bar_h - 2.0,
+                        w: current_width,
+                        h: top_y - (cursor_y - bar_h - 2.0),
+                    };
+                    let track_rect = UiRect {
+                        x: base_x,
+                        y: cursor_y - bar_h,
+                        w: current_width,
+                        h: bar_h,
+                    };
 
                     let range = max - min;
                     let t = if range > 0.0 {
@@ -1710,61 +2425,166 @@ impl Ui {
                     } else {
                         0.0
                     };
-                    if t > 0.0 {
-                        canvas.rect(
-                            base_x,
-                            cursor_y - bar_h,
-                            current_width * t,
-                            bar_h,
-                            self.style.slider_fill_color,
-                        );
-                    }
 
                     let thumb_w = 8.0;
                     let thumb_x = base_x + current_width * t - thumb_w / 2.0;
-                    canvas.rect(
-                        thumb_x,
-                        cursor_y - bar_h - 2.0,
-                        thumb_w,
-                        bar_h + 4.0,
-                        self.style.slider_thumb_color,
-                    );
-
-                    if is_focused {
-                        let border = 2.0;
-                        let outline = self.style.button_focused_bg;
-                        canvas.rect(
-                            base_x - border,
-                            cursor_y - bar_h - border,
-                            current_width + border * 2.0,
-                            border,
-                            outline,
-                        );
-                        canvas.rect(
-                            base_x - border,
-                            cursor_y,
-                            current_width + border * 2.0,
-                            border,
-                            outline,
-                        );
-                        canvas.rect(base_x - border, cursor_y - bar_h, border, bar_h, outline);
-                        canvas.rect(
-                            base_x + current_width,
-                            cursor_y - bar_h,
-                            border,
-                            bar_h,
-                            outline,
-                        );
-                    }
+                    let thumb_rect = UiRect {
+                        x: thumb_x,
+                        y: cursor_y - bar_h - 2.0,
+                        w: thumb_w,
+                        h: bar_h + 4.0,
+                    };
 
                     if has_tooltip {
-                        tooltip_rect = Some(UiRect {
-                            x: base_x,
-                            y: cursor_y - bar_h - 2.0,
-                            w: current_width,
-                            h: top_y - (cursor_y - bar_h - 2.0),
-                        });
                         tooltip_focus_id = Some(*id);
+                    }
+
+                    if let Some(animation_options) = animation {
+                        let render_animation = resolve_widget_animation(
+                            animation_options,
+                            &self.animation_runtime,
+                            &self.widgets[i],
+                            i,
+                            slider_rect,
+                            Some(*id),
+                            focused_id,
+                            mouse,
+                            &clip_stack,
+                            input,
+                            animation_frame,
+                            dt,
+                        );
+                        let render_track = animated_rect(track_rect, slider_rect, render_animation);
+                        let render_thumb = animated_rect(thumb_rect, slider_rect, render_animation);
+                        if has_tooltip {
+                            tooltip_rect =
+                                Some(animated_rect(slider_rect, slider_rect, render_animation));
+                        }
+                        if let Some(display) = &display {
+                            let label_pos = animated_point(
+                                Vec2::new(base_x, top_y),
+                                slider_rect,
+                                render_animation,
+                            );
+                            canvas.text(
+                                label_pos.x,
+                                label_pos.y,
+                                display,
+                                animated_size(text_size, render_animation),
+                                scale_alpha(self.style.text_color, render_animation.alpha),
+                            );
+                        }
+                        canvas.rect(
+                            render_track.x,
+                            render_track.y,
+                            render_track.w,
+                            render_track.h,
+                            scale_alpha(self.style.slider_track_color, render_animation.alpha),
+                        );
+                        if t > 0.0 {
+                            canvas.rect(
+                                render_track.x,
+                                render_track.y,
+                                render_track.w * t,
+                                render_track.h,
+                                scale_alpha(self.style.slider_fill_color, render_animation.alpha),
+                            );
+                        }
+                        canvas.rect(
+                            render_thumb.x,
+                            render_thumb.y,
+                            render_thumb.w,
+                            render_thumb.h,
+                            scale_alpha(self.style.slider_thumb_color, render_animation.alpha),
+                        );
+
+                        if is_focused {
+                            let border = (2.0 * render_animation.scale.max(0.5)).max(1.0);
+                            let outline =
+                                scale_alpha(self.style.button_focused_bg, render_animation.alpha);
+                            canvas.rect(
+                                render_track.x - border,
+                                render_track.y - border,
+                                render_track.w + border * 2.0,
+                                border,
+                                outline,
+                            );
+                            canvas.rect(
+                                render_track.x - border,
+                                render_track.y + render_track.h,
+                                render_track.w + border * 2.0,
+                                border,
+                                outline,
+                            );
+                            canvas.rect(
+                                render_track.x - border,
+                                render_track.y,
+                                border,
+                                render_track.h,
+                                outline,
+                            );
+                            canvas.rect(
+                                render_track.x + render_track.w,
+                                render_track.y,
+                                border,
+                                render_track.h,
+                                outline,
+                            );
+                        }
+                    } else {
+                        if has_tooltip {
+                            tooltip_rect = Some(slider_rect);
+                        }
+                        canvas.rect(
+                            base_x,
+                            cursor_y - bar_h,
+                            current_width,
+                            bar_h,
+                            self.style.slider_track_color,
+                        );
+                        if t > 0.0 {
+                            canvas.rect(
+                                base_x,
+                                cursor_y - bar_h,
+                                current_width * t,
+                                bar_h,
+                                self.style.slider_fill_color,
+                            );
+                        }
+                        canvas.rect(
+                            thumb_x,
+                            cursor_y - bar_h - 2.0,
+                            thumb_w,
+                            bar_h + 4.0,
+                            self.style.slider_thumb_color,
+                        );
+
+                        if is_focused {
+                            let border = 2.0;
+                            let outline = self.style.button_focused_bg;
+                            canvas.rect(
+                                base_x - border,
+                                cursor_y - bar_h - border,
+                                current_width + border * 2.0,
+                                border,
+                                outline,
+                            );
+                            canvas.rect(
+                                base_x - border,
+                                cursor_y,
+                                current_width + border * 2.0,
+                                border,
+                                outline,
+                            );
+                            canvas.rect(base_x - border, cursor_y - bar_h, border, bar_h, outline);
+                            canvas.rect(
+                                base_x + current_width,
+                                cursor_y - bar_h,
+                                border,
+                                bar_h,
+                                outline,
+                            );
+                        }
                     }
                     cursor_y -= bar_h + self.style.spacing;
                 }
@@ -1909,6 +2729,10 @@ impl Ui {
 
             i += 1;
         }
+
+        self.animation_runtime
+            .borrow_mut()
+            .retain(|_, runtime| runtime.last_seen_frame == animation_frame);
 
         let mut runtime = self.tooltip_runtime.get();
         if let Some(tooltip) = hovered_tooltip.or(focused_tooltip) {
