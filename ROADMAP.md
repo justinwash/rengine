@@ -79,6 +79,12 @@ Recently completed or partially completed:
 - Completed: screen-space images — `Canvas::image()`, `image_colored()`, and `image_region()` for textured screen-space quads, generalized canvas draw segments that switch between font atlases and texture bind groups, `Ui::image()` / `image_colored()` / `image_region()` widget support, `feature-images` sample, kitchen-sink pause overlay integration, and matching Engine3D texture helpers for HUD canvases
 - Completed: tooltip widget — `Ui::tooltip()`, `tooltip_sized()`, and `tooltip_with()` attach explanatory text to the most recently added widget, with engine-level delay, fixed or auto sizing, mouse/widget/screen placement modes, built-in fade/fade-slide animation options, Shift-or-custom-key expansion for advanced text, and a runtime-state fix so tooltips disappear cleanly when no widget is active; includes `feature-tooltips` and kitchen-sink pause overlay coverage
 
+Tooltip follow-up backlog after the current tooltip PR lands:
+
+- Add richer tooltip anchor presets beyond the current widget top-right and explicit screen-position modes.
+- Add a true custom tooltip animation/render hook instead of only the built-in fade and fade-slide options.
+- Revisit tooltip support for layout-only widgets if real game UI ends up needing row, grid, or container-level targets.
+
 ---
 
 ## Tier 1: Highest Priority
