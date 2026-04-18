@@ -1,5 +1,5 @@
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::app::Engine;
 use crate::assets::Color;
@@ -523,6 +523,15 @@ fn next_char_boundary(text: &str, index: usize) -> usize {
     }
 }
 
+fn clamp_char_boundary(text: &str, index: usize) -> usize {
+    let clamped = index.min(text.len());
+    if text.is_char_boundary(clamped) {
+        clamped
+    } else {
+        prev_char_boundary(text, clamped)
+    }
+}
+
 fn animation_duration(animation: Option<UiAnimation>) -> f32 {
     animation.map(|animation| animation.duration).unwrap_or(0.0)
 }
@@ -998,11 +1007,28 @@ impl Ui {
         &mut self.style
     }
 
+    fn normalize_text_cursor(&self, id: usize, cursor: usize) -> usize {
+        self.widgets
+            .iter()
+            .find_map(|widget| match widget {
+                Widget::TextInput {
+                    id: widget_id, text, ..
+                } if *widget_id == id => Some(clamp_char_boundary(text, cursor)),
+                _ => None,
+            })
+            .unwrap_or(cursor)
+    }
+
     pub fn text_cursor(&self, id: usize) -> Option<usize> {
-        self.text_input_cursor.borrow().get(&id).copied()
+        self.text_input_cursor
+            .borrow()
+            .get(&id)
+            .copied()
+            .map(|cursor| self.normalize_text_cursor(id, cursor))
     }
 
     pub fn set_text_cursor(&self, id: usize, cursor: usize) {
+        let cursor = self.normalize_text_cursor(id, cursor);
         self.text_input_cursor.borrow_mut().insert(id, cursor);
     }
 
@@ -1571,6 +1597,18 @@ impl Ui {
         let mut changed_values = Vec::new();
         let mut changed_text = Vec::new();
         let mut hovered = None;
+        let active_text_input_ids: HashSet<usize> = self
+            .widgets
+            .iter()
+            .filter_map(|widget| match widget {
+                Widget::TextInput { id, .. } => Some(*id),
+                _ => None,
+            })
+            .collect();
+
+        self.text_input_cursor
+            .borrow_mut()
+            .retain(|id, _| active_text_input_ids.contains(id));
 
         if self.focusable_ids.is_empty() {
             return UiResponse {
@@ -1590,12 +1628,6 @@ impl Ui {
             self.focus_index = 0;
         }
 
-        let current_focus_id = self.focusable_ids[self.focus_index];
-        let focus_is_text_input = self.widgets.iter().any(|widget| match widget {
-            Widget::TextInput { id, .. } => *id == current_focus_id,
-            _ => false,
-        });
-
         let rects = self.compute_focusable_rects(atlas);
         let (mx, my) = input.mouse_position();
 
@@ -1607,6 +1639,11 @@ impl Ui {
                 break;
             }
         }
+
+        let focus_is_text_input = self.widgets.iter().any(|widget| match widget {
+            Widget::TextInput { id, .. } => *id == self.focusable_ids[self.focus_index],
+            _ => false,
+        });
 
         if input.is_key_pressed(KeyCode::ArrowUp)
             || (!focus_is_text_input && input.is_key_pressed(KeyCode::KeyW))
@@ -1681,7 +1718,7 @@ impl Ui {
         if let Some((text_id, text)) = focused_text_input {
             let mut cursor_map = self.text_input_cursor.borrow_mut();
             let cursor = cursor_map.entry(text_id).or_insert(text.len());
-            *cursor = (*cursor).min(text.len());
+            *cursor = clamp_char_boundary(text, *cursor);
 
             if mouse_activate && hovered == Some(text_id) {
                 *cursor = text.len();
@@ -2113,19 +2150,19 @@ impl Ui {
                         .borrow()
                         .get(id)
                         .copied()
-                        .unwrap_or(text.len())
-                        .min(text.len());
+                        .map(|cursor| clamp_char_boundary(text, cursor))
+                        .unwrap_or(text.len());
                     let mut rendered_text = text.clone();
                     let mut render_cursor = cursor_index;
                     if is_focused {
                         if let Some((preedit, cursor)) = input.ime_preedit() {
                             if !preedit.is_empty() {
                                 rendered_text.insert_str(cursor_index, preedit);
+                                let preedit_cursor = cursor
+                                    .map(|(_, end)| clamp_char_boundary(preedit, end))
+                                    .unwrap_or(preedit.len());
                                 render_cursor = cursor_index
-                                    + cursor
-                                        .map(|(_, end)| end)
-                                        .unwrap_or(preedit.len())
-                                        .min(preedit.len());
+                                    + preedit_cursor.min(preedit.len());
                             }
                         }
                     }
