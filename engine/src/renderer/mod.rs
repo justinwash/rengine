@@ -12,7 +12,7 @@ pub use texture::TextureId;
 
 use crate::app::ScaleMode;
 use crate::assets::Color;
-use crate::canvas::{self, Canvas};
+use crate::canvas::{self, Canvas, DrawTexture};
 use crate::text;
 use crate::text::FontAtlas;
 
@@ -27,7 +27,7 @@ const MAX_SPRITES: usize = 10_000;
 const MAX_VERTICES: usize = MAX_SPRITES * 4;
 const MAX_INDICES: usize = MAX_SPRITES * 6;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct RenderTarget {
     id: usize,
     texture: TextureId,
@@ -36,13 +36,19 @@ pub struct RenderTarget {
 }
 
 impl RenderTarget {
-    pub fn texture_id(self) -> TextureId {
+    pub fn texture_id(&self) -> TextureId {
         self.texture
     }
 
-    pub fn size(self) -> (u32, u32) {
+    pub fn size(&self) -> (u32, u32) {
         (self.width, self.height)
     }
+}
+
+struct TargetFrame {
+    target_id: usize,
+    texture: TextureId,
+    frame: Frame,
 }
 
 pub struct Frame {
@@ -51,7 +57,7 @@ pub struct Frame {
     pub clear_color: Color,
 
     pub(crate) canvases: Vec<Canvas>,
-    pub(crate) render_targets: Vec<(RenderTarget, Frame)>,
+    render_targets: Vec<TargetFrame>,
     screen_size: (u32, u32),
     atlas: *const FontAtlas,
 }
@@ -123,7 +129,7 @@ impl Frame {
         &mut self.canvases[index]
     }
 
-    pub fn render_target(&mut self, target: RenderTarget) -> &mut Frame {
+    pub fn render_target(&mut self, target: &RenderTarget) -> &mut Frame {
         assert!(
             !self.atlas.is_null(),
             "Frame font atlas not initialized; call begin() before render_target()"
@@ -132,17 +138,58 @@ impl Frame {
         if let Some(index) = self
             .render_targets
             .iter()
-            .position(|(existing, _)| existing.id == target.id)
+            .position(|existing| existing.target_id == target.id)
         {
-            return &mut self.render_targets[index].1;
+            return &mut self.render_targets[index].frame;
         }
 
         let atlas = unsafe { &*self.atlas };
         let mut frame = Frame::new();
         frame.begin(target.size(), atlas);
-        self.render_targets.push((target, frame));
-        &mut self.render_targets.last_mut().unwrap().1
+        self.render_targets.push(TargetFrame {
+            target_id: target.id,
+            texture: target.texture,
+            frame,
+        });
+        &mut self.render_targets.last_mut().unwrap().frame
     }
+}
+
+fn push_active_render_target(active_targets: &mut Vec<usize>, texture_index: usize) {
+    assert!(
+        !active_targets.contains(&texture_index),
+        "render target cycle detected while rendering texture {:?}",
+        TextureId(texture_index)
+    );
+    active_targets.push(texture_index);
+}
+
+fn validate_render_target_frame(frame: &mut Frame, texture_index: usize) {
+    let target_texture = TextureId(texture_index);
+    assert!(
+        frame
+            .sprites
+            .iter()
+            .all(|sprite| sprite.texture != target_texture),
+        "render target {:?} cannot sample itself in the sprite pass",
+        target_texture
+    );
+
+    for canvas in &mut frame.canvases {
+        canvas.finalize();
+    }
+
+    let uses_target_texture = frame.canvases.iter().any(|canvas| {
+        canvas
+            .segments
+            .iter()
+            .any(|segment| segment.texture == DrawTexture::Texture(texture_index))
+    });
+    assert!(
+        !uses_target_texture,
+        "render target {:?} cannot sample itself in the canvas pass",
+        target_texture
+    );
 }
 
 struct GpuTexture {
@@ -642,8 +689,11 @@ impl Renderer {
         encoder: &mut wgpu::CommandEncoder,
         frame: &mut Frame,
         texture_index: usize,
+        active_targets: &mut Vec<usize>,
     ) {
-        self.render_nested_targets(encoder, frame);
+        push_active_render_target(active_targets, texture_index);
+        self.render_nested_targets(encoder, frame, active_targets);
+        validate_render_target_frame(frame, texture_index);
         let batches = self.upload_frame_batches(
             frame,
             frame.screen_size.0 as f32,
@@ -701,11 +751,24 @@ impl Renderer {
                     .map(|texture| &texture.bind_group)
             },
         );
+
+        let popped = active_targets.pop();
+        debug_assert_eq!(popped, Some(texture_index));
     }
 
-    fn render_nested_targets(&mut self, encoder: &mut wgpu::CommandEncoder, frame: &mut Frame) {
-        for (target, target_frame) in &mut frame.render_targets {
-            self.render_frame_to_texture(encoder, target_frame, target.texture.0);
+    fn render_nested_targets(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        frame: &mut Frame,
+        active_targets: &mut Vec<usize>,
+    ) {
+        for target_frame in &mut frame.render_targets {
+            self.render_frame_to_texture(
+                encoder,
+                &mut target_frame.frame,
+                target_frame.texture.0,
+                active_targets,
+            );
         }
     }
 
@@ -765,7 +828,8 @@ impl Renderer {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("frame_encoder"),
             });
-        self.render_nested_targets(&mut encoder, frame);
+        let mut active_targets = Vec::new();
+        self.render_nested_targets(&mut encoder, frame, &mut active_targets);
 
         let (proj_w, proj_h) = match self.offscreen {
             Some(ref ofs) => (ofs.width as f32, ofs.height as f32),
@@ -1056,7 +1120,11 @@ pub(crate) fn blit_viewport(
 
 #[cfg(test)]
 mod tests {
-    use super::{RenderTarget, TextureId};
+    use super::{
+        push_active_render_target, validate_render_target_frame, DrawParams, Frame, RenderTarget,
+        TextureId,
+    };
+    use crate::canvas::Canvas;
 
     #[test]
     fn render_target_exposes_texture_and_size() {
@@ -1069,5 +1137,34 @@ mod tests {
 
         assert_eq!(target.texture_id(), TextureId(7));
         assert_eq!(target.size(), (320, 180));
+    }
+
+    #[test]
+    #[should_panic(expected = "render target cycle detected")]
+    fn render_target_cycle_detection_panics() {
+        let mut active_targets = vec![7];
+        push_active_render_target(&mut active_targets, 7);
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot sample itself in the sprite pass")]
+    fn render_target_validation_rejects_sprite_feedback() {
+        let mut frame = Frame::new();
+        frame.sprites.push(DrawParams::new(
+            TextureId(7),
+            glam::Vec2::ZERO,
+            glam::Vec2::new(16.0, 16.0),
+        ));
+        validate_render_target_frame(&mut frame, 7);
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot sample itself in the canvas pass")]
+    fn render_target_validation_rejects_canvas_feedback() {
+        let mut frame = Frame::new();
+        let mut canvas = Canvas::new((320, 180), std::ptr::null());
+        canvas.image(TextureId(7), -16.0, -16.0, 32.0, 32.0);
+        frame.canvases.push(canvas);
+        validate_render_target_frame(&mut frame, 7);
     }
 }
