@@ -7,7 +7,9 @@ struct UiAnimationDemo {
     tire_grip: f32,
     aggressive_undercut: bool,
     brake_bias: f32,
-    note: &'static str,
+    show_strategy_tray: bool,
+    pit_call_order: [usize; 3],
+    note: String,
 }
 
 impl UiAnimationDemo {
@@ -65,6 +67,21 @@ impl UiAnimationDemo {
             .with_easing(Easing::OutQuad)
             .with_scale(0.96)
             .with_alpha(0.9)
+    }
+
+    fn container_slide(offset_y: f32) -> UiContainerAnimation {
+        UiContainerAnimation::new(0.26)
+            .with_easing(Easing::OutQuad)
+            .with_offset(Vec2::new(0.0, offset_y))
+    }
+
+    fn pit_call_label(id: usize) -> &'static str {
+        match id {
+            10 => "Soft Start",
+            11 => "Cover Undercut",
+            12 => "Late Fuel Save",
+            _ => "Unknown Call",
+        }
     }
 
     fn build_ui(&mut self, engine: &Engine) {
@@ -135,6 +152,49 @@ impl UiAnimationDemo {
         );
         self.ui.button(4, "Swap Note");
         self.ui.animate_with(button_animation);
+
+        self.ui.separator(12.0);
+        self.ui.button(
+            5,
+            if self.show_strategy_tray {
+                "Hide Strategy Tray"
+            } else {
+                "Show Strategy Tray"
+            },
+        );
+        self.ui.animate_with(button_animation);
+        self.ui.tooltip(
+            "Container transitions keep a full panel alive while it slides out, instead of forcing game code to special-case the exit frame.",
+        );
+
+        if self.ui.animate_container_with(
+            200,
+            self.show_strategy_tray,
+            UiContainerAnimationOptions::new()
+                .with_appear(Self::container_slide(-28.0))
+                .with_exit(Self::container_slide(28.0)),
+        ) {
+            self.ui.panel(7);
+            self.ui
+                .label_centered("Strategy Tray", 18.0, Color::from_rgba8(220, 220, 240, 255));
+            self.ui.label_centered(
+                "Drag a call onto another call to reorder the tray.",
+                12.0,
+                Color::from_rgba8(165, 174, 196, 255),
+            );
+            self.ui.row_spaced(10.0, 3);
+            for id in self.pit_call_order {
+                self.ui.button(id, Self::pit_call_label(id));
+                self.ui.animate_with(button_animation);
+                self.ui.draggable();
+                self.ui.drop_target();
+            }
+            self.ui.label_centered(
+                "Mouse drag works directly; keyboard focus plus Enter/Space also carries a call between targets.",
+                11.0,
+                Color::from_rgba8(132, 142, 160, 255),
+            );
+        }
     }
 }
 
@@ -147,8 +207,11 @@ impl Game for UiAnimationDemo {
             tire_grip: 0.64,
             aggressive_undercut: false,
             brake_bias: 54.5,
+            show_strategy_tray: true,
+            pit_call_order: [10, 11, 12],
             note:
-                "Hover the badge and bars, then use arrow keys plus Enter on the focusable widgets.",
+                "Hover the badge and bars, then use arrow keys plus Enter on the focusable widgets."
+                    .into(),
         }
     }
 
@@ -162,7 +225,8 @@ impl Game for UiAnimationDemo {
                 "Focus and press hooks make keyboard-first flows feel less dead in management menus."
             } else {
                 "Hover hooks are useful even on passive readouts like badges and stat bars."
-            };
+            }
+            .into();
         }
         if let Some(value) = response.value_for(2) {
             self.brake_bias = value;
@@ -174,14 +238,38 @@ impl Game for UiAnimationDemo {
                 "Press hooks fire on mouse clicks and keyboard confirmation alike."
             } else {
                 "Appear hooks handle the first-frame slide-in without a separate tween system in game code."
-            };
+            }
+            .into();
         }
         if response.was_activated(4) {
             self.note = if self.note.contains("Hover") {
                 "Focus hooks give tabbed or d-pad navigation the same sense of motion as mouse hover."
             } else {
                 "Hover the badge and bars, then use arrow keys plus Enter on the focusable widgets."
-            };
+            }
+            .into();
+        }
+        if response.was_activated(5) {
+            self.show_strategy_tray = !self.show_strategy_tray;
+            self.note = if self.show_strategy_tray {
+                "Container transitions keep the strategy tray alive long enough to animate cleanly out and back in."
+            } else {
+                "Exit hooks now cover full containers, not just individual widgets."
+            }
+            .into();
+        }
+        if let Some((source, target)) = response.dropped {
+            if let (Some(source_index), Some(target_index)) = (
+                self.pit_call_order.iter().position(|id| *id == source),
+                self.pit_call_order.iter().position(|id| *id == target),
+            ) {
+                self.pit_call_order.swap(source_index, target_index);
+                self.note = format!(
+                    "Moved '{}' onto '{}'. Drag/drop responses are regular widget ids, so game code can remap them however it wants.",
+                    Self::pit_call_label(source),
+                    Self::pit_call_label(target),
+                );
+            }
         }
     }
 
@@ -194,7 +282,7 @@ impl Game for UiAnimationDemo {
         canvas.text_aligned(
             0.0,
             -hh + 34.0,
-            self.note,
+            &self.note,
             12.0,
             Color::from_rgba8(184, 192, 208, 255),
             TextAlign::Center,
@@ -202,7 +290,7 @@ impl Game for UiAnimationDemo {
         canvas.text_aligned(
             0.0,
             -hh + 16.0,
-            "Hover shows passive widget hooks; arrow keys plus Enter show focus and press hooks.",
+            "Hover shows passive widget hooks; the lower tray demonstrates container exit motion and drag/drop responses.",
             10.0,
             Color::from_rgba8(132, 142, 160, 255),
             TextAlign::Center,
