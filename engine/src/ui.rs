@@ -858,6 +858,11 @@ struct ContainerAnimationRuntime {
     last_seen_frame: u64,
 }
 
+struct ResolvedStyleCache {
+    resolved_styles: Vec<UiStyle>,
+    widget_style_overrides: Vec<Option<UiWidgetStyle>>,
+}
+
 #[derive(Clone, Copy, Default)]
 struct WidgetAnimationRuntime {
     hover: f32,
@@ -1563,6 +1568,7 @@ pub struct Ui {
     tooltip_runtime: Cell<TooltipRuntime>,
     animation_runtime: RefCell<HashMap<WidgetRuntimeKey, WidgetAnimationRuntime>>,
     container_animation_runtime: RefCell<HashMap<usize, ContainerAnimationRuntime>>,
+    resolved_style_cache: RefCell<Option<ResolvedStyleCache>>,
     animation_frame: Cell<u64>,
     text_input_cursor: RefCell<HashMap<usize, usize>>,
 }
@@ -1591,6 +1597,7 @@ impl Default for Ui {
             tooltip_runtime: Cell::new(TooltipRuntime::default()),
             animation_runtime: RefCell::new(HashMap::new()),
             container_animation_runtime: RefCell::new(HashMap::new()),
+            resolved_style_cache: RefCell::new(None),
             animation_frame: Cell::new(0),
             text_input_cursor: RefCell::new(HashMap::new()),
         }
@@ -1598,6 +1605,50 @@ impl Default for Ui {
 }
 
 impl Ui {
+    fn invalidate_resolved_style_cache(&mut self) {
+        *self.resolved_style_cache.get_mut() = None;
+    }
+
+    fn build_resolved_style_cache(&self) -> ResolvedStyleCache {
+        let mut resolved_styles = vec![self.style.clone(); self.widgets.len()];
+        let mut widget_style_overrides: Vec<Option<UiWidgetStyle>> = vec![None; self.widgets.len()];
+
+        for spec in &self.widget_styles {
+            if spec.widget_index >= resolved_styles.len() {
+                continue;
+            }
+            spec.style.apply_to(&mut resolved_styles[spec.widget_index]);
+            if let Some(existing) = widget_style_overrides[spec.widget_index].as_mut() {
+                existing.merge(&spec.style);
+            } else {
+                widget_style_overrides[spec.widget_index] = Some(spec.style.clone());
+            }
+        }
+
+        ResolvedStyleCache {
+            resolved_styles,
+            widget_style_overrides,
+        }
+    }
+
+    fn take_or_build_resolved_style_cache(&mut self) -> ResolvedStyleCache {
+        self.resolved_style_cache
+            .get_mut()
+            .take()
+            .unwrap_or_else(|| self.build_resolved_style_cache())
+    }
+
+    fn store_resolved_style_cache(&mut self, cache: ResolvedStyleCache) {
+        *self.resolved_style_cache.get_mut() = Some(cache);
+    }
+
+    fn ensure_resolved_style_cache(&self) {
+        let mut cache = self.resolved_style_cache.borrow_mut();
+        if cache.is_none() {
+            *cache = Some(self.build_resolved_style_cache());
+        }
+    }
+
     pub fn begin(&mut self, engine: &Engine, x: f32, top: f32, width: f32) {
         self.animation_frame
             .set(self.animation_frame.get().wrapping_add(1));
@@ -1610,6 +1661,7 @@ impl Ui {
         self.animations.clear();
         self.widget_styles.clear();
         self.container_animations.clear();
+        self.invalidate_resolved_style_cache();
         self.pending_container_animation = None;
         self.focusable_ids.clear();
         self.drag_sources.clear();
@@ -1627,7 +1679,9 @@ impl Ui {
         self.widgets.clear();
         self.tooltips.clear();
         self.animations.clear();
+        self.widget_styles.clear();
         self.container_animations.clear();
+        self.invalidate_resolved_style_cache();
         self.pending_container_animation = None;
         self.focusable_ids.clear();
         self.drag_sources.clear();
@@ -1646,11 +1700,13 @@ impl Ui {
     }
 
     pub fn style_mut(&mut self) -> &mut UiStyle {
+        self.invalidate_resolved_style_cache();
         &mut self.style
     }
 
     fn push_widget(&mut self, widget: Widget) {
         let supports_container_animation = widget_supports_container_animation(&widget);
+        self.invalidate_resolved_style_cache();
         self.widgets.push(widget);
         if supports_container_animation {
             if let (Some(widget_index), Some(pending)) = (
@@ -1819,6 +1875,7 @@ impl Ui {
         }
 
         if let Some(widget_index) = self.widgets.len().checked_sub(1) {
+            self.invalidate_resolved_style_cache();
             self.widget_styles.push(UiWidgetStyleSpec {
                 widget_index,
                 style,
@@ -1971,25 +2028,6 @@ impl Ui {
         }
     }
 
-    fn resolve_widget_styles(&self) -> (Vec<UiStyle>, Vec<Option<UiWidgetStyle>>) {
-        let mut resolved = vec![self.style.clone(); self.widgets.len()];
-        let mut overrides: Vec<Option<UiWidgetStyle>> = vec![None; self.widgets.len()];
-
-        for spec in &self.widget_styles {
-            if spec.widget_index >= resolved.len() {
-                continue;
-            }
-            spec.style.apply_to(&mut resolved[spec.widget_index]);
-            if let Some(existing) = overrides[spec.widget_index].as_mut() {
-                existing.merge(&spec.style);
-            } else {
-                overrides[spec.widget_index] = Some(spec.style.clone());
-            }
-        }
-
-        (resolved, overrides)
-    }
-
     fn compute_widget_height(
         &self,
         widget_index: usize,
@@ -2116,6 +2154,7 @@ impl Ui {
             kind: u8,
             saved_x: f32,
             saved_width: f32,
+            spacing: f32,
             remaining: usize,
             padding: f32,
             col_index: usize,
@@ -2171,6 +2210,7 @@ impl Ui {
                         kind: 0,
                         saved_x: base_x,
                         saved_width: current_width,
+                        spacing: style.spacing,
                         remaining: *children,
                         padding: panel_padding,
                         col_index: 0,
@@ -2191,6 +2231,7 @@ impl Ui {
                         kind: 1,
                         saved_x: base_x,
                         saved_width: current_width,
+                        spacing: style.spacing,
                         remaining: *children,
                         padding: 0.0,
                         col_index: 0,
@@ -2215,6 +2256,7 @@ impl Ui {
                         kind: 2,
                         saved_x: base_x,
                         saved_width: current_width,
+                        spacing: style.spacing,
                         remaining: *children,
                         padding: 0.0,
                         col_index: 0,
@@ -2258,6 +2300,7 @@ impl Ui {
                         kind: 3,
                         saved_x: base_x,
                         saved_width: current_width,
+                        spacing: style.spacing,
                         remaining: *children,
                         padding: 0.0,
                         col_index: 0,
@@ -2314,7 +2357,7 @@ impl Ui {
                         cursor_y -= cont.padding;
                         base_x = cont.saved_x;
                         current_width = cont.saved_width;
-                        cursor_y -= style.spacing;
+                        cursor_y -= cont.spacing;
                     }
                     3 => {
                         cursor_y = cont.scroll_clip_bottom;
@@ -2331,12 +2374,12 @@ impl Ui {
                                 r.4 = 0.0;
                             }
                         }
-                        cursor_y -= style.spacing;
+                        cursor_y -= cont.spacing;
                     }
                     _ => {
                         base_x = cont.saved_x;
                         current_width = cont.saved_width;
-                        cursor_y -= style.spacing;
+                        cursor_y -= cont.spacing;
                     }
                 }
             }
@@ -2377,7 +2420,9 @@ impl Ui {
     pub fn update(&mut self, engine: &Engine) -> UiResponse {
         let input = engine.input();
         let atlas = engine.font_atlas();
-        let (resolved_styles, widget_style_overrides) = self.resolve_widget_styles();
+        let resolved_style_cache = self.take_or_build_resolved_style_cache();
+        let resolved_styles = &resolved_style_cache.resolved_styles;
+        let widget_style_overrides = &resolved_style_cache.widget_style_overrides;
         let mut toggled = Vec::new();
         let mut changed_values = Vec::new();
         let mut changed_text = Vec::new();
@@ -2403,7 +2448,7 @@ impl Ui {
 
         if self.focusable_ids.is_empty() {
             self.active_drag = None;
-            return UiResponse {
+            let response = UiResponse {
                 focused: None,
                 activated: None,
                 hovered: None,
@@ -2415,6 +2460,8 @@ impl Ui {
                 dropped: None,
                 scroll_offsets: Vec::new(),
             };
+            self.store_resolved_style_cache(resolved_style_cache);
+            return response;
         }
 
         let count = self.focusable_ids.len();
@@ -2700,7 +2747,7 @@ impl Ui {
             let _ = scroll_dx;
         }
 
-        UiResponse {
+        let response = UiResponse {
             focused: Some(self.focus_index),
             activated: self.activated,
             hovered,
@@ -2711,7 +2758,9 @@ impl Ui {
             drag_target,
             dropped,
             scroll_offsets,
-        }
+        };
+        self.store_resolved_style_cache(resolved_style_cache);
+        response
     }
 
     pub fn render(&self, canvas: &mut Canvas, engine: &Engine) {
@@ -2744,7 +2793,11 @@ impl Ui {
                 animation_indices[animation.widget_index] = Some(animation.options);
             }
         }
-        let (resolved_styles, widget_style_overrides) = self.resolve_widget_styles();
+        self.ensure_resolved_style_cache();
+        let resolved_style_cache = self.resolved_style_cache.borrow();
+        let resolved_style_cache = resolved_style_cache.as_ref().unwrap();
+        let resolved_styles = &resolved_style_cache.resolved_styles;
+        let widget_style_overrides = &resolved_style_cache.widget_style_overrides;
         let mut container_animation_indices = vec![None; self.widgets.len()];
         for animation in &self.container_animations {
             if animation.widget_index < container_animation_indices.len() {
@@ -2756,6 +2809,7 @@ impl Ui {
             kind: u8,
             saved_x: f32,
             saved_width: f32,
+            spacing: f32,
             remaining: usize,
             padding: f32,
             col_index: usize,
@@ -3201,6 +3255,7 @@ impl Ui {
                         kind: 0,
                         saved_x: base_x,
                         saved_width: current_width,
+                        spacing: style.spacing,
                         remaining: *children,
                         padding: panel_padding,
                         col_index: 0,
@@ -3233,6 +3288,7 @@ impl Ui {
                         kind: 1,
                         saved_x: base_x,
                         saved_width: current_width,
+                        spacing: style.spacing,
                         remaining: *children,
                         padding: 0.0,
                         col_index: 0,
@@ -3269,6 +3325,7 @@ impl Ui {
                         kind: 2,
                         saved_x: base_x,
                         saved_width: current_width,
+                        spacing: style.spacing,
                         remaining: *children,
                         padding: 0.0,
                         col_index: 0,
@@ -3864,6 +3921,7 @@ impl Ui {
                         kind: 3,
                         saved_x: base_x,
                         saved_width: current_width,
+                        spacing: style.spacing,
                         remaining: *children,
                         padding: 0.0,
                         col_index: 0,
@@ -3937,7 +3995,7 @@ impl Ui {
                         cursor_y -= cont.padding;
                         base_x = cont.saved_x;
                         current_width = cont.saved_width;
-                        cursor_y -= style.spacing;
+                        cursor_y -= cont.spacing;
                     }
                     3 => {
                         canvas.pop_clip();
@@ -3945,13 +4003,13 @@ impl Ui {
                         cursor_y = cont.row_start_y - cont.scroll_height - cont.offset.y;
                         base_x = cont.saved_x;
                         current_width = cont.saved_width;
-                        cursor_y -= style.spacing;
+                        cursor_y -= cont.spacing;
                     }
                     _ => {
                         cursor_y -= cont.offset.y;
                         base_x = cont.saved_x;
                         current_width = cont.saved_width;
-                        cursor_y -= style.spacing;
+                        cursor_y -= cont.spacing;
                     }
                 }
             }
