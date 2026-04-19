@@ -333,6 +333,391 @@ impl Default for UiStyle {
     }
 }
 
+#[derive(Clone, Default)]
+pub struct UiWidgetStyle {
+    pub text_color: Option<Color>,
+    pub text_size: Option<f32>,
+    pub text_input_bg: Option<Color>,
+    pub text_input_focused_bg: Option<Color>,
+    pub text_input_text_color: Option<Color>,
+    pub text_input_placeholder_color: Option<Color>,
+    pub text_input_caret_color: Option<Color>,
+    pub text_input_padding: Option<f32>,
+    pub button_bg: Option<Color>,
+    pub button_focused_bg: Option<Color>,
+    pub button_pressed_bg: Option<Color>,
+    pub button_text_color: Option<Color>,
+    pub button_focused_text_color: Option<Color>,
+    pub button_padding: Option<f32>,
+    pub spacing: Option<f32>,
+    pub panel_bg: Option<Color>,
+    pub panel_padding: Option<f32>,
+    pub progress_bg: Option<Color>,
+    pub progress_fill: Option<Color>,
+    pub progress_height: Option<f32>,
+    pub checkbox_size: Option<f32>,
+    pub checkbox_bg: Option<Color>,
+    pub checkbox_checked_bg: Option<Color>,
+    pub slider_track_color: Option<Color>,
+    pub slider_fill_color: Option<Color>,
+    pub slider_thumb_color: Option<Color>,
+    pub slider_height: Option<f32>,
+    pub tooltip_bg: Option<Color>,
+    pub tooltip_text_color: Option<Color>,
+    pub tooltip_text_size: Option<f32>,
+    pub tooltip_padding: Option<f32>,
+    pub tooltip_delay: Option<f32>,
+    pub tooltip_width: Option<f32>,
+    pub tooltip_placement: Option<TooltipPlacement>,
+    pub tooltip_offset: Option<Vec2>,
+    pub tooltip_animation: Option<TooltipAnimation>,
+    pub tooltip_expand_trigger: Option<TooltipExpandTrigger>,
+}
+
+impl UiWidgetStyle {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_text_color(mut self, color: Color) -> Self {
+        self.text_color = Some(color);
+        self
+    }
+
+    pub fn with_text_size(mut self, size: f32) -> Self {
+        self.text_size = Some(size.max(1.0));
+        self
+    }
+
+    pub fn with_button_colors(mut self, bg: Color, focused: Color, pressed: Color) -> Self {
+        self.button_bg = Some(bg);
+        self.button_focused_bg = Some(focused);
+        self.button_pressed_bg = Some(pressed);
+        self
+    }
+
+    pub fn with_button_text_colors(mut self, normal: Color, focused: Color) -> Self {
+        self.button_text_color = Some(normal);
+        self.button_focused_text_color = Some(focused);
+        self
+    }
+
+    pub fn with_panel(mut self, bg: Color, padding: f32) -> Self {
+        self.panel_bg = Some(bg);
+        self.panel_padding = Some(padding.max(0.0));
+        self
+    }
+
+    pub fn with_progress_colors(mut self, bg: Color, fill: Color) -> Self {
+        self.progress_bg = Some(bg);
+        self.progress_fill = Some(fill);
+        self
+    }
+
+    pub fn with_checkbox_colors(mut self, bg: Color, checked: Color) -> Self {
+        self.checkbox_bg = Some(bg);
+        self.checkbox_checked_bg = Some(checked);
+        self
+    }
+
+    pub fn with_slider_colors(mut self, track: Color, fill: Color, thumb: Color) -> Self {
+        self.slider_track_color = Some(track);
+        self.slider_fill_color = Some(fill);
+        self.slider_thumb_color = Some(thumb);
+        self
+    }
+
+    pub fn with_text_input_colors(
+        mut self,
+        bg: Color,
+        focused: Color,
+        text: Color,
+        placeholder: Color,
+        caret: Color,
+    ) -> Self {
+        self.text_input_bg = Some(bg);
+        self.text_input_focused_bg = Some(focused);
+        self.text_input_text_color = Some(text);
+        self.text_input_placeholder_color = Some(placeholder);
+        self.text_input_caret_color = Some(caret);
+        self
+    }
+
+    pub fn with_tooltip_colors(mut self, bg: Color, text: Color) -> Self {
+        self.tooltip_bg = Some(bg);
+        self.tooltip_text_color = Some(text);
+        self
+    }
+
+    fn is_empty(&self) -> bool {
+        self.text_color.is_none()
+            && self.text_size.is_none()
+            && self.text_input_bg.is_none()
+            && self.text_input_focused_bg.is_none()
+            && self.text_input_text_color.is_none()
+            && self.text_input_placeholder_color.is_none()
+            && self.text_input_caret_color.is_none()
+            && self.text_input_padding.is_none()
+            && self.button_bg.is_none()
+            && self.button_focused_bg.is_none()
+            && self.button_pressed_bg.is_none()
+            && self.button_text_color.is_none()
+            && self.button_focused_text_color.is_none()
+            && self.button_padding.is_none()
+            && self.spacing.is_none()
+            && self.panel_bg.is_none()
+            && self.panel_padding.is_none()
+            && self.progress_bg.is_none()
+            && self.progress_fill.is_none()
+            && self.progress_height.is_none()
+            && self.checkbox_size.is_none()
+            && self.checkbox_bg.is_none()
+            && self.checkbox_checked_bg.is_none()
+            && self.slider_track_color.is_none()
+            && self.slider_fill_color.is_none()
+            && self.slider_thumb_color.is_none()
+            && self.slider_height.is_none()
+            && self.tooltip_bg.is_none()
+            && self.tooltip_text_color.is_none()
+            && self.tooltip_text_size.is_none()
+            && self.tooltip_padding.is_none()
+            && self.tooltip_delay.is_none()
+            && self.tooltip_width.is_none()
+            && self.tooltip_placement.is_none()
+            && self.tooltip_offset.is_none()
+            && self.tooltip_animation.is_none()
+            && self.tooltip_expand_trigger.is_none()
+    }
+
+    fn merge(&mut self, other: &UiWidgetStyle) {
+        if other.text_color.is_some() {
+            self.text_color = other.text_color;
+        }
+        if other.text_size.is_some() {
+            self.text_size = other.text_size;
+        }
+        if other.text_input_bg.is_some() {
+            self.text_input_bg = other.text_input_bg;
+        }
+        if other.text_input_focused_bg.is_some() {
+            self.text_input_focused_bg = other.text_input_focused_bg;
+        }
+        if other.text_input_text_color.is_some() {
+            self.text_input_text_color = other.text_input_text_color;
+        }
+        if other.text_input_placeholder_color.is_some() {
+            self.text_input_placeholder_color = other.text_input_placeholder_color;
+        }
+        if other.text_input_caret_color.is_some() {
+            self.text_input_caret_color = other.text_input_caret_color;
+        }
+        if other.text_input_padding.is_some() {
+            self.text_input_padding = other.text_input_padding;
+        }
+        if other.button_bg.is_some() {
+            self.button_bg = other.button_bg;
+        }
+        if other.button_focused_bg.is_some() {
+            self.button_focused_bg = other.button_focused_bg;
+        }
+        if other.button_pressed_bg.is_some() {
+            self.button_pressed_bg = other.button_pressed_bg;
+        }
+        if other.button_text_color.is_some() {
+            self.button_text_color = other.button_text_color;
+        }
+        if other.button_focused_text_color.is_some() {
+            self.button_focused_text_color = other.button_focused_text_color;
+        }
+        if other.button_padding.is_some() {
+            self.button_padding = other.button_padding;
+        }
+        if other.spacing.is_some() {
+            self.spacing = other.spacing;
+        }
+        if other.panel_bg.is_some() {
+            self.panel_bg = other.panel_bg;
+        }
+        if other.panel_padding.is_some() {
+            self.panel_padding = other.panel_padding;
+        }
+        if other.progress_bg.is_some() {
+            self.progress_bg = other.progress_bg;
+        }
+        if other.progress_fill.is_some() {
+            self.progress_fill = other.progress_fill;
+        }
+        if other.progress_height.is_some() {
+            self.progress_height = other.progress_height;
+        }
+        if other.checkbox_size.is_some() {
+            self.checkbox_size = other.checkbox_size;
+        }
+        if other.checkbox_bg.is_some() {
+            self.checkbox_bg = other.checkbox_bg;
+        }
+        if other.checkbox_checked_bg.is_some() {
+            self.checkbox_checked_bg = other.checkbox_checked_bg;
+        }
+        if other.slider_track_color.is_some() {
+            self.slider_track_color = other.slider_track_color;
+        }
+        if other.slider_fill_color.is_some() {
+            self.slider_fill_color = other.slider_fill_color;
+        }
+        if other.slider_thumb_color.is_some() {
+            self.slider_thumb_color = other.slider_thumb_color;
+        }
+        if other.slider_height.is_some() {
+            self.slider_height = other.slider_height;
+        }
+        if other.tooltip_bg.is_some() {
+            self.tooltip_bg = other.tooltip_bg;
+        }
+        if other.tooltip_text_color.is_some() {
+            self.tooltip_text_color = other.tooltip_text_color;
+        }
+        if other.tooltip_text_size.is_some() {
+            self.tooltip_text_size = other.tooltip_text_size;
+        }
+        if other.tooltip_padding.is_some() {
+            self.tooltip_padding = other.tooltip_padding;
+        }
+        if other.tooltip_delay.is_some() {
+            self.tooltip_delay = other.tooltip_delay;
+        }
+        if other.tooltip_width.is_some() {
+            self.tooltip_width = other.tooltip_width;
+        }
+        if other.tooltip_placement.is_some() {
+            self.tooltip_placement = other.tooltip_placement;
+        }
+        if other.tooltip_offset.is_some() {
+            self.tooltip_offset = other.tooltip_offset;
+        }
+        if other.tooltip_animation.is_some() {
+            self.tooltip_animation = other.tooltip_animation;
+        }
+        if other.tooltip_expand_trigger.is_some() {
+            self.tooltip_expand_trigger = other.tooltip_expand_trigger;
+        }
+    }
+
+    fn apply_to(&self, style: &mut UiStyle) {
+        if let Some(value) = self.text_color {
+            style.text_color = value;
+        }
+        if let Some(value) = self.text_size {
+            style.text_size = value;
+        }
+        if let Some(value) = self.text_input_bg {
+            style.text_input_bg = value;
+        }
+        if let Some(value) = self.text_input_focused_bg {
+            style.text_input_focused_bg = value;
+        }
+        if let Some(value) = self.text_input_text_color {
+            style.text_input_text_color = value;
+        }
+        if let Some(value) = self.text_input_placeholder_color {
+            style.text_input_placeholder_color = value;
+        }
+        if let Some(value) = self.text_input_caret_color {
+            style.text_input_caret_color = value;
+        }
+        if let Some(value) = self.text_input_padding {
+            style.text_input_padding = value;
+        }
+        if let Some(value) = self.button_bg {
+            style.button_bg = value;
+        }
+        if let Some(value) = self.button_focused_bg {
+            style.button_focused_bg = value;
+        }
+        if let Some(value) = self.button_pressed_bg {
+            style.button_pressed_bg = value;
+        }
+        if let Some(value) = self.button_text_color {
+            style.button_text_color = value;
+        }
+        if let Some(value) = self.button_focused_text_color {
+            style.button_focused_text_color = value;
+        }
+        if let Some(value) = self.button_padding {
+            style.button_padding = value;
+        }
+        if let Some(value) = self.spacing {
+            style.spacing = value;
+        }
+        if let Some(value) = self.panel_bg {
+            style.panel_bg = value;
+        }
+        if let Some(value) = self.panel_padding {
+            style.panel_padding = value;
+        }
+        if let Some(value) = self.progress_bg {
+            style.progress_bg = value;
+        }
+        if let Some(value) = self.progress_fill {
+            style.progress_fill = value;
+        }
+        if let Some(value) = self.progress_height {
+            style.progress_height = value;
+        }
+        if let Some(value) = self.checkbox_size {
+            style.checkbox_size = value;
+        }
+        if let Some(value) = self.checkbox_bg {
+            style.checkbox_bg = value;
+        }
+        if let Some(value) = self.checkbox_checked_bg {
+            style.checkbox_checked_bg = value;
+        }
+        if let Some(value) = self.slider_track_color {
+            style.slider_track_color = value;
+        }
+        if let Some(value) = self.slider_fill_color {
+            style.slider_fill_color = value;
+        }
+        if let Some(value) = self.slider_thumb_color {
+            style.slider_thumb_color = value;
+        }
+        if let Some(value) = self.slider_height {
+            style.slider_height = value;
+        }
+        if let Some(value) = self.tooltip_bg {
+            style.tooltip_bg = value;
+        }
+        if let Some(value) = self.tooltip_text_color {
+            style.tooltip_text_color = value;
+        }
+        if let Some(value) = self.tooltip_text_size {
+            style.tooltip_text_size = value;
+        }
+        if let Some(value) = self.tooltip_padding {
+            style.tooltip_padding = value;
+        }
+        if let Some(value) = self.tooltip_delay {
+            style.tooltip_delay = value;
+        }
+        if let Some(value) = self.tooltip_width {
+            style.tooltip_width = value;
+        }
+        if let Some(value) = self.tooltip_placement {
+            style.tooltip_placement = value;
+        }
+        if let Some(value) = self.tooltip_offset {
+            style.tooltip_offset = value;
+        }
+        if let Some(value) = self.tooltip_animation {
+            style.tooltip_animation = value;
+        }
+        if let Some(value) = self.tooltip_expand_trigger {
+            style.tooltip_expand_trigger = value;
+        }
+    }
+}
+
 enum Widget {
     Label {
         text: String,
@@ -406,6 +791,12 @@ struct TooltipSpec {
 struct UiAnimationSpec {
     widget_index: usize,
     options: UiAnimationOptions,
+}
+
+#[derive(Clone)]
+struct UiWidgetStyleSpec {
+    widget_index: usize,
+    style: UiWidgetStyle,
 }
 
 #[derive(Clone, Copy)]
@@ -525,6 +916,18 @@ fn widget_supports_animation(widget: &Widget) -> bool {
             | Widget::Image { .. }
             | Widget::Button { .. }
             | Widget::TextInput { .. }
+            | Widget::ProgressBar { .. }
+            | Widget::Checkbox { .. }
+            | Widget::Slider { .. }
+    )
+}
+
+fn widget_supports_style(widget: &Widget) -> bool {
+    matches!(
+        widget,
+        Widget::Button { .. }
+            | Widget::TextInput { .. }
+            | Widget::Panel { .. }
             | Widget::ProgressBar { .. }
             | Widget::Checkbox { .. }
             | Widget::Slider { .. }
@@ -1146,6 +1549,7 @@ pub struct Ui {
     widgets: Vec<Widget>,
     tooltips: Vec<TooltipSpec>,
     animations: Vec<UiAnimationSpec>,
+    widget_styles: Vec<UiWidgetStyleSpec>,
     container_animations: Vec<UiContainerAnimationSpec>,
     pending_container_animation: Option<PendingContainerAnimation>,
     focusable_ids: Vec<usize>,
@@ -1173,6 +1577,7 @@ impl Default for Ui {
             widgets: Vec::new(),
             tooltips: Vec::new(),
             animations: Vec::new(),
+            widget_styles: Vec::new(),
             container_animations: Vec::new(),
             pending_container_animation: None,
             focusable_ids: Vec::new(),
@@ -1203,6 +1608,7 @@ impl Ui {
         self.widgets.clear();
         self.tooltips.clear();
         self.animations.clear();
+        self.widget_styles.clear();
         self.container_animations.clear();
         self.pending_container_animation = None;
         self.focusable_ids.clear();
@@ -1401,6 +1807,25 @@ impl Ui {
         }
     }
 
+    pub fn style_with(&mut self, style: UiWidgetStyle) {
+        if style.is_empty() {
+            return;
+        }
+
+        if let Some(widget) = self.widgets.last() {
+            if !widget_supports_style(widget) {
+                return;
+            }
+        }
+
+        if let Some(widget_index) = self.widgets.len().checked_sub(1) {
+            self.widget_styles.push(UiWidgetStyleSpec {
+                widget_index,
+                style,
+            });
+        }
+    }
+
     pub fn animate_container_with(
         &mut self,
         id: usize,
@@ -1546,49 +1971,83 @@ impl Ui {
         }
     }
 
+    fn resolve_widget_styles(&self) -> (Vec<UiStyle>, Vec<Option<UiWidgetStyle>>) {
+        let mut resolved = vec![self.style.clone(); self.widgets.len()];
+        let mut overrides: Vec<Option<UiWidgetStyle>> = vec![None; self.widgets.len()];
+
+        for spec in &self.widget_styles {
+            if spec.widget_index >= resolved.len() {
+                continue;
+            }
+            spec.style.apply_to(&mut resolved[spec.widget_index]);
+            if let Some(existing) = overrides[spec.widget_index].as_mut() {
+                existing.merge(&spec.style);
+            } else {
+                overrides[spec.widget_index] = Some(spec.style.clone());
+            }
+        }
+
+        (resolved, overrides)
+    }
+
     fn compute_widget_height(
         &self,
+        widget_index: usize,
         widget: &Widget,
         remaining: &[Widget],
+        resolved_styles: &[UiStyle],
+        widget_style_overrides: &[Option<UiWidgetStyle>],
         atlas: &FontAtlas,
     ) -> f32 {
+        let style = &resolved_styles[widget_index];
+        let style_override = widget_style_overrides[widget_index].as_ref();
         match widget {
-            Widget::Label { size, .. } => atlas.line_height(*size) + self.style.spacing,
-            Widget::Image { size, .. } => size.y + self.style.spacing,
+            Widget::Label { size, .. } => atlas.line_height(*size) + style.spacing,
+            Widget::Image { size, .. } => size.y + style.spacing,
             Widget::Button { .. } => {
-                let lh = atlas.line_height(self.style.text_size);
-                lh + self.style.button_padding * 2.0 + self.style.spacing
+                let lh = atlas.line_height(style.text_size);
+                lh + style.button_padding * 2.0 + style.spacing
             }
             Widget::TextInput { .. } => {
-                let lh = atlas.line_height(self.style.text_size);
-                lh + self.style.text_input_padding * 2.0 + self.style.spacing
+                let lh = atlas.line_height(style.text_size);
+                lh + style.text_input_padding * 2.0 + style.spacing
             }
             Widget::Separator { height } => *height,
             Widget::Panel {
                 padding, children, ..
             } => {
-                let mut h = padding * 2.0;
+                let panel_padding = style_override
+                    .and_then(|override_style| override_style.panel_padding)
+                    .unwrap_or(*padding);
+                let mut h = panel_padding * 2.0;
                 let n = (*children).min(remaining.len());
                 let child_slice = &remaining[..n];
                 let mut i = 0;
                 while i < child_slice.len() {
-                    h += self.compute_widget_height(&child_slice[i], &child_slice[i + 1..], atlas);
+                    h += self.compute_widget_height(
+                        widget_index + i + 1,
+                        &child_slice[i],
+                        &child_slice[i + 1..],
+                        resolved_styles,
+                        widget_style_overrides,
+                        atlas,
+                    );
                     i += 1;
                 }
-                h + self.style.spacing
+                h + style.spacing
             }
             Widget::ProgressBar { .. } => {
-                let lh = atlas.line_height(self.style.text_size);
-                lh + self.style.progress_height + self.style.spacing * 2.0
+                let lh = atlas.line_height(style.text_size);
+                lh + style.progress_height + style.spacing * 2.0
             }
             Widget::Checkbox { .. } => {
-                let lh = atlas.line_height(self.style.text_size);
-                lh.max(self.style.checkbox_size) + self.style.spacing
+                let lh = atlas.line_height(style.text_size);
+                lh.max(style.checkbox_size) + style.spacing
             }
             Widget::Slider { label, .. } => {
-                let mut h = self.style.slider_height + self.style.spacing;
+                let mut h = style.slider_height + style.spacing;
                 if !label.is_empty() {
-                    h += atlas.line_height(self.style.text_size) + self.style.spacing;
+                    h += atlas.line_height(style.text_size) + style.spacing;
                 }
                 h
             }
@@ -1598,12 +2057,18 @@ impl Ui {
                 let mut max_h: f32 = 0.0;
                 let mut ci = 0;
                 while ci < child_slice.len() {
-                    let ch =
-                        self.compute_widget_height(&child_slice[ci], &child_slice[ci + 1..], atlas);
+                    let ch = self.compute_widget_height(
+                        widget_index + ci + 1,
+                        &child_slice[ci],
+                        &child_slice[ci + 1..],
+                        resolved_styles,
+                        widget_style_overrides,
+                        atlas,
+                    );
                     max_h = max_h.max(ch);
                     ci += 1;
                 }
-                max_h + self.style.spacing
+                max_h + style.spacing
             }
             Widget::Grid {
                 columns, children, ..
@@ -1615,8 +2080,14 @@ impl Ui {
                 let mut row_max: f32 = 0.0;
                 let mut ci = 0;
                 while ci < child_slice.len() {
-                    let ch =
-                        self.compute_widget_height(&child_slice[ci], &child_slice[ci + 1..], atlas);
+                    let ch = self.compute_widget_height(
+                        widget_index + ci + 1,
+                        &child_slice[ci],
+                        &child_slice[ci + 1..],
+                        resolved_styles,
+                        widget_style_overrides,
+                        atlas,
+                    );
                     row_max = row_max.max(ch);
                     if (ci + 1) % cols == 0 || ci + 1 == child_slice.len() {
                         total_h += row_max;
@@ -1624,13 +2095,18 @@ impl Ui {
                     }
                     ci += 1;
                 }
-                total_h + self.style.spacing
+                total_h + style.spacing
             }
-            Widget::ScrollRegion { height, .. } => *height + self.style.spacing,
+            Widget::ScrollRegion { height, .. } => *height + style.spacing,
         }
     }
 
-    fn compute_focusable_rects(&self, atlas: &FontAtlas) -> Vec<(usize, f32, f32, f32, f32)> {
+    fn compute_focusable_rects(
+        &self,
+        atlas: &FontAtlas,
+        resolved_styles: &[UiStyle],
+        widget_style_overrides: &[Option<UiWidgetStyle>],
+    ) -> Vec<(usize, f32, f32, f32, f32)> {
         let mut rects = Vec::new();
         let mut cursor_y = self.y;
         let mut base_x = self.x;
@@ -1656,29 +2132,31 @@ impl Ui {
         let mut i = 0;
         while i < self.widgets.len() {
             let mut pending: Option<Container> = None;
+            let style = &resolved_styles[i];
+            let style_override = widget_style_overrides[i].as_ref();
 
             match &self.widgets[i] {
                 Widget::Label { size, .. } => {
-                    cursor_y -= atlas.line_height(*size) + self.style.spacing;
+                    cursor_y -= atlas.line_height(*size) + style.spacing;
                 }
                 Widget::Image { size, .. } => {
-                    cursor_y -= size.y + self.style.spacing;
+                    cursor_y -= size.y + style.spacing;
                 }
                 Widget::Button { id, .. } => {
-                    let lh = atlas.line_height(self.style.text_size);
-                    let pad = self.style.button_padding;
+                    let lh = atlas.line_height(style.text_size);
+                    let pad = style.button_padding;
                     let btn_h = lh + pad * 2.0;
                     let btn_y = cursor_y - btn_h + pad;
                     rects.push((*id, base_x, btn_y, current_width, btn_h));
-                    cursor_y -= btn_h + self.style.spacing;
+                    cursor_y -= btn_h + style.spacing;
                 }
                 Widget::TextInput { id, .. } => {
-                    let lh = atlas.line_height(self.style.text_size);
-                    let pad = self.style.text_input_padding;
+                    let lh = atlas.line_height(style.text_size);
+                    let pad = style.text_input_padding;
                     let field_h = lh + pad * 2.0;
                     let field_y = cursor_y - field_h + pad;
                     rects.push((*id, base_x, field_y, current_width, field_h));
-                    cursor_y -= field_h + self.style.spacing;
+                    cursor_y -= field_h + style.spacing;
                 }
                 Widget::Separator { height } => {
                     cursor_y -= *height;
@@ -1686,12 +2164,15 @@ impl Ui {
                 Widget::Panel {
                     padding, children, ..
                 } => {
+                    let panel_padding = style_override
+                        .and_then(|override_style| override_style.panel_padding)
+                        .unwrap_or(*padding);
                     pending = Some(Container {
                         kind: 0,
                         saved_x: base_x,
                         saved_width: current_width,
                         remaining: *children,
-                        padding: *padding,
+                        padding: panel_padding,
                         col_index: 0,
                         col_count: 0,
                         col_width: 0.0,
@@ -1747,23 +2228,23 @@ impl Ui {
                     });
                 }
                 Widget::ProgressBar { .. } => {
-                    let lh = atlas.line_height(self.style.text_size);
-                    cursor_y -= lh + self.style.progress_height + self.style.spacing * 2.0;
+                    let lh = atlas.line_height(style.text_size);
+                    cursor_y -= lh + style.progress_height + style.spacing * 2.0;
                 }
                 Widget::Checkbox { id, .. } => {
-                    let lh = atlas.line_height(self.style.text_size);
-                    let row_h = lh.max(self.style.checkbox_size);
+                    let lh = atlas.line_height(style.text_size);
+                    let row_h = lh.max(style.checkbox_size);
                     rects.push((*id, base_x, cursor_y - row_h, current_width, row_h));
-                    cursor_y -= row_h + self.style.spacing;
+                    cursor_y -= row_h + style.spacing;
                 }
                 Widget::Slider { id, label, .. } => {
-                    let h = self.style.slider_height;
+                    let h = style.slider_height;
                     if !label.is_empty() {
-                        let lh = atlas.line_height(self.style.text_size);
-                        cursor_y -= lh + self.style.spacing;
+                        let lh = atlas.line_height(style.text_size);
+                        cursor_y -= lh + style.spacing;
                     }
                     rects.push((*id, base_x, cursor_y - h, current_width, h));
-                    cursor_y -= h + self.style.spacing;
+                    cursor_y -= h + style.spacing;
                 }
                 Widget::ScrollRegion {
                     id: _,
@@ -1833,7 +2314,7 @@ impl Ui {
                         cursor_y -= cont.padding;
                         base_x = cont.saved_x;
                         current_width = cont.saved_width;
-                        cursor_y -= self.style.spacing;
+                        cursor_y -= style.spacing;
                     }
                     3 => {
                         cursor_y = cont.scroll_clip_bottom;
@@ -1850,12 +2331,12 @@ impl Ui {
                                 r.4 = 0.0;
                             }
                         }
-                        cursor_y -= self.style.spacing;
+                        cursor_y -= style.spacing;
                     }
                     _ => {
                         base_x = cont.saved_x;
                         current_width = cont.saved_width;
-                        cursor_y -= self.style.spacing;
+                        cursor_y -= style.spacing;
                     }
                 }
             }
@@ -1896,6 +2377,7 @@ impl Ui {
     pub fn update(&mut self, engine: &Engine) -> UiResponse {
         let input = engine.input();
         let atlas = engine.font_atlas();
+        let (resolved_styles, widget_style_overrides) = self.resolve_widget_styles();
         let mut toggled = Vec::new();
         let mut changed_values = Vec::new();
         let mut changed_text = Vec::new();
@@ -1940,7 +2422,7 @@ impl Ui {
             self.focus_index = 0;
         }
 
-        let rects = self.compute_focusable_rects(atlas);
+        let rects = self.compute_focusable_rects(atlas, &resolved_styles, &widget_style_overrides);
         let (mx, my) = input.mouse_position();
 
         for (rect_idx, &(_, rx, ry, rw, rh)) in rects.iter().enumerate() {
@@ -2177,20 +2659,33 @@ impl Ui {
                             let child_slice = &self.widgets[si + 1..si + 1 + n];
                             let mut content_h: f32 = 0.0;
                             for (ci, cw) in child_slice.iter().enumerate() {
-                                content_h +=
-                                    self.compute_widget_height(cw, &child_slice[ci + 1..], atlas);
+                                content_h += self.compute_widget_height(
+                                    si + ci + 1,
+                                    cw,
+                                    &child_slice[ci + 1..],
+                                    &resolved_styles,
+                                    &widget_style_overrides,
+                                    atlas,
+                                );
                             }
                             let max_scroll = (content_h - *height).max(0.0);
                             let new_offset =
                                 (*scroll_offset - scroll_dy * 30.0).clamp(0.0, max_scroll);
                             scroll_offsets.push((*id, new_offset));
                         }
-                        sy -= *height + self.style.spacing;
+                        sy -= *height + resolved_styles[si].spacing;
                         si += 1 + *children;
                         continue;
                     }
                     other => {
-                        sy -= self.compute_widget_height(other, &self.widgets[si + 1..], atlas);
+                        sy -= self.compute_widget_height(
+                            si,
+                            other,
+                            &self.widgets[si + 1..],
+                            &resolved_styles,
+                            &widget_style_overrides,
+                            atlas,
+                        );
                         let skip = match other {
                             Widget::Panel { children, .. }
                             | Widget::Row { children, .. }
@@ -2249,6 +2744,7 @@ impl Ui {
                 animation_indices[animation.widget_index] = Some(animation.options);
             }
         }
+        let (resolved_styles, widget_style_overrides) = self.resolve_widget_styles();
         let mut container_animation_indices = vec![None; self.widgets.len()];
         for animation in &self.container_animations {
             if animation.widget_index < container_animation_indices.len() {
@@ -2281,6 +2777,8 @@ impl Ui {
             let tooltip = tooltip_indices[i].map(|tooltip_index| &self.tooltips[tooltip_index]);
             let animation = animation_indices[i];
             let container_animation = container_animation_indices[i];
+            let style = &resolved_styles[i];
+            let style_override = widget_style_overrides[i].as_ref();
             let has_tooltip = tooltip.is_some();
             let has_animation = animation.is_some();
 
@@ -2349,7 +2847,7 @@ impl Ui {
                         }
                         canvas.text_aligned(ax, cursor_y, text, *size, *color, *align);
                     }
-                    cursor_y -= lh + self.style.spacing;
+                    cursor_y -= lh + style.spacing;
                 }
                 Widget::Image {
                     texture,
@@ -2401,27 +2899,27 @@ impl Ui {
                             *texture, image_x, image_y, size.x, size.y, *uv_rect, *color,
                         );
                     }
-                    cursor_y -= size.y + self.style.spacing;
+                    cursor_y -= size.y + style.spacing;
                 }
                 Widget::Button { id, text } => {
                     let is_focused = focused_id == Some(*id);
                     let is_pressed = is_focused && self.activated == Some(*id);
 
                     let bg = if is_pressed {
-                        self.style.button_pressed_bg
+                        style.button_pressed_bg
                     } else if is_focused {
-                        self.style.button_focused_bg
+                        style.button_focused_bg
                     } else {
-                        self.style.button_bg
+                        style.button_bg
                     };
                     let fg = if is_focused {
-                        self.style.button_focused_text_color
+                        style.button_focused_text_color
                     } else {
-                        self.style.button_text_color
+                        style.button_text_color
                     };
 
-                    let text_size = self.style.text_size;
-                    let pad = self.style.button_padding;
+                    let text_size = style.text_size;
+                    let pad = style.button_padding;
                     let lh = atlas.line_height(text_size);
                     let btn_h = lh + pad * 2.0;
                     let btn_y = cursor_y - btn_h + pad;
@@ -2488,7 +2986,7 @@ impl Ui {
                         canvas.text(base_x + pad, cursor_y, &label, text_size, fg);
                     }
 
-                    cursor_y -= btn_h + self.style.spacing;
+                    cursor_y -= btn_h + style.spacing;
                 }
                 Widget::TextInput {
                     id,
@@ -2496,8 +2994,8 @@ impl Ui {
                     placeholder,
                 } => {
                     let is_focused = focused_id == Some(*id);
-                    let text_size = self.style.text_size;
-                    let pad = self.style.text_input_padding;
+                    let text_size = style.text_size;
+                    let pad = style.text_input_padding;
                     let lh = atlas.line_height(text_size);
                     let field_h = lh + pad * 2.0;
                     let field_y = cursor_y - field_h + pad;
@@ -2508,9 +3006,9 @@ impl Ui {
                         h: field_h,
                     };
                     let bg = if is_focused {
-                        self.style.text_input_focused_bg
+                        style.text_input_focused_bg
                     } else {
-                        self.style.text_input_bg
+                        style.text_input_bg
                     };
 
                     let cursor_index = self
@@ -2539,9 +3037,9 @@ impl Ui {
                         rendered_text.as_str()
                     };
                     let fg = if rendered_text.is_empty() {
-                        self.style.text_input_placeholder_color
+                        style.text_input_placeholder_color
                     } else {
-                        self.style.text_input_text_color
+                        style.text_input_text_color
                     };
 
                     if has_tooltip {
@@ -2604,10 +3102,7 @@ impl Ui {
                                 render_rect.y + scaled_pad,
                                 caret_w,
                                 (render_rect.h - scaled_pad * 2.0).max(1.0),
-                                scale_alpha(
-                                    self.style.text_input_caret_color,
-                                    render_animation.alpha,
-                                ),
+                                scale_alpha(style.text_input_caret_color, render_animation.alpha),
                             );
                         }
                         canvas.pop_clip();
@@ -2632,13 +3127,13 @@ impl Ui {
                                 field_y + pad,
                                 2.0,
                                 (field_h - pad * 2.0).max(1.0),
-                                self.style.text_input_caret_color,
+                                style.text_input_caret_color,
                             );
                         }
                         canvas.pop_clip();
                     }
 
-                    cursor_y -= field_h + self.style.spacing;
+                    cursor_y -= field_h + style.spacing;
                 }
                 Widget::Separator { height } => {
                     cursor_y -= *height;
@@ -2648,6 +3143,12 @@ impl Ui {
                     padding,
                     children,
                 } => {
+                    let panel_padding = style_override
+                        .and_then(|override_style| override_style.panel_padding)
+                        .unwrap_or(*padding);
+                    let panel_color = style_override
+                        .and_then(|override_style| override_style.panel_bg)
+                        .unwrap_or(*color);
                     let container_offset = container_animation
                         .map(|animation| {
                             resolve_container_animation(
@@ -2667,8 +3168,11 @@ impl Ui {
                         let mut ci = 0;
                         while ci < child_slice.len() {
                             h += self.compute_widget_height(
+                                i + ci + 1,
                                 &child_slice[ci],
                                 &child_slice[ci + 1..],
+                                &resolved_styles,
+                                &widget_style_overrides,
                                 atlas,
                             );
                             ci += 1;
@@ -2676,21 +3180,21 @@ impl Ui {
                         h
                     };
 
-                    let panel_h = total_h + *padding * 2.0;
+                    let panel_h = total_h + panel_padding * 2.0;
                     if has_tooltip {
                         tooltip_rect = Some(UiRect {
                             x: base_x + container_offset.x,
-                            y: cursor_y + container_offset.y - panel_h + *padding,
+                            y: cursor_y + container_offset.y - panel_h + panel_padding,
                             w: current_width,
                             h: panel_h,
                         });
                     }
                     canvas.rect(
                         base_x + container_offset.x,
-                        cursor_y + container_offset.y - panel_h + *padding,
+                        cursor_y + container_offset.y - panel_h + panel_padding,
                         current_width,
                         panel_h,
-                        *color,
+                        panel_color,
                     );
 
                     pending = Some(RenderContainer {
@@ -2698,7 +3202,7 @@ impl Ui {
                         saved_x: base_x,
                         saved_width: current_width,
                         remaining: *children,
-                        padding: *padding,
+                        padding: panel_padding,
                         col_index: 0,
                         col_count: 0,
                         col_width: 0.0,
@@ -2783,10 +3287,10 @@ impl Ui {
                     color,
                 } => {
                     let top_y = cursor_y;
-                    let text_size = self.style.text_size;
+                    let text_size = style.text_size;
                     let lh = atlas.line_height(text_size);
-                    let bar_h = self.style.progress_height;
-                    let fill_color = color.unwrap_or(self.style.progress_fill);
+                    let bar_h = style.progress_height;
+                    let fill_color = color.unwrap_or(style.progress_fill);
                     let display = if !label.is_empty() {
                         Some(format!("{} ({}%)", label, (*value * 100.0) as u32))
                     } else {
@@ -2797,13 +3301,13 @@ impl Ui {
                         if let Some(animation_options) = animation {
                             let progress_rect = UiRect {
                                 x: base_x,
-                                y: cursor_y - (lh + self.style.spacing + bar_h),
+                                y: cursor_y - (lh + style.spacing + bar_h),
                                 w: current_width,
-                                h: lh + self.style.spacing + bar_h,
+                                h: lh + style.spacing + bar_h,
                             };
                             let bar_rect = UiRect {
                                 x: base_x,
-                                y: cursor_y - lh - self.style.spacing - bar_h,
+                                y: cursor_y - lh - style.spacing - bar_h,
                                 w: current_width,
                                 h: bar_h,
                             };
@@ -2840,14 +3344,14 @@ impl Ui {
                                 label_pos.y,
                                 display,
                                 animated_size(text_size, render_animation),
-                                scale_alpha(self.style.text_color, render_animation.alpha),
+                                scale_alpha(style.text_color, render_animation.alpha),
                             );
                             canvas.rect(
                                 render_bar.x,
                                 render_bar.y,
                                 render_bar.w,
                                 render_bar.h,
-                                scale_alpha(self.style.progress_bg, render_animation.alpha),
+                                scale_alpha(style.progress_bg, render_animation.alpha),
                             );
                             if *value > 0.0 {
                                 canvas.rect(
@@ -2858,16 +3362,10 @@ impl Ui {
                                     scale_alpha(fill_color, render_animation.alpha),
                                 );
                             }
-                            cursor_y -= lh + self.style.spacing;
+                            cursor_y -= lh + style.spacing;
                         } else {
-                            canvas.text(
-                                base_x,
-                                cursor_y,
-                                display,
-                                text_size,
-                                self.style.text_color,
-                            );
-                            cursor_y -= lh + self.style.spacing;
+                            canvas.text(base_x, cursor_y, display, text_size, style.text_color);
+                            cursor_y -= lh + style.spacing;
                         }
                     }
 
@@ -2913,7 +3411,7 @@ impl Ui {
                                 render_bar.y,
                                 render_bar.w,
                                 render_bar.h,
-                                scale_alpha(self.style.progress_bg, render_animation.alpha),
+                                scale_alpha(style.progress_bg, render_animation.alpha),
                             );
                             if *value > 0.0 {
                                 canvas.rect(
@@ -2933,7 +3431,7 @@ impl Ui {
                                 cursor_y - bar_h,
                                 current_width,
                                 bar_h,
-                                self.style.progress_bg,
+                                style.progress_bg,
                             );
                             if *value > 0.0 {
                                 canvas.rect(
@@ -2948,19 +3446,19 @@ impl Ui {
                     } else if has_tooltip && animation.is_none() {
                         tooltip_rect = Some(progress_rect);
                     }
-                    cursor_y -= bar_h + self.style.spacing;
+                    cursor_y -= bar_h + style.spacing;
                 }
                 Widget::Checkbox { id, label, checked } => {
                     let is_focused = focused_id == Some(*id);
-                    let text_size = self.style.text_size;
-                    let box_size = self.style.checkbox_size;
+                    let text_size = style.text_size;
+                    let box_size = style.checkbox_size;
                     let lh = atlas.line_height(text_size);
                     let row_h = lh.max(box_size);
 
                     let box_bg = if *checked {
-                        self.style.checkbox_checked_bg
+                        style.checkbox_checked_bg
                     } else {
-                        self.style.checkbox_bg
+                        style.checkbox_bg
                     };
 
                     let bx = base_x;
@@ -2984,9 +3482,9 @@ impl Ui {
                     let text_x = base_x + box_size + 8.0;
                     let text_y = cursor_y - (row_h - lh) / 2.0;
                     let fg = if is_focused {
-                        self.style.button_focused_text_color
+                        style.button_focused_text_color
                     } else {
-                        self.style.text_color
+                        style.text_color
                     };
 
                     if let Some(animation_options) = animation {
@@ -3031,7 +3529,7 @@ impl Ui {
                         if is_focused {
                             let border = (2.0 * render_animation.scale.max(0.5)).max(1.0);
                             let outline = if self.mouse_focus {
-                                self.style.button_focused_bg
+                                style.button_focused_bg
                             } else {
                                 Color::WHITE
                             };
@@ -3095,7 +3593,7 @@ impl Ui {
                         if is_focused {
                             let border = 2.0;
                             let outline = if self.mouse_focus {
-                                self.style.button_focused_bg
+                                style.button_focused_bg
                             } else {
                                 Color::WHITE
                             };
@@ -3120,7 +3618,7 @@ impl Ui {
                         canvas.text(text_x, text_y, label, text_size, fg);
                     }
 
-                    cursor_y -= row_h + self.style.spacing;
+                    cursor_y -= row_h + style.spacing;
                 }
                 Widget::Slider {
                     id,
@@ -3131,8 +3629,8 @@ impl Ui {
                 } => {
                     let top_y = cursor_y;
                     let is_focused = focused_id == Some(*id);
-                    let text_size = self.style.text_size;
-                    let bar_h = self.style.slider_height;
+                    let text_size = style.text_size;
+                    let bar_h = style.slider_height;
                     let had_label = !label.is_empty();
 
                     let display = if had_label {
@@ -3143,15 +3641,9 @@ impl Ui {
 
                     if let Some(display) = &display {
                         if animation.is_none() {
-                            canvas.text(
-                                base_x,
-                                cursor_y,
-                                display,
-                                text_size,
-                                self.style.text_color,
-                            );
+                            canvas.text(base_x, cursor_y, display, text_size, style.text_color);
                         }
-                        cursor_y -= atlas.line_height(text_size) + self.style.spacing;
+                        cursor_y -= atlas.line_height(text_size) + style.spacing;
                     }
 
                     let slider_rect = UiRect {
@@ -3219,7 +3711,7 @@ impl Ui {
                                 label_pos.y,
                                 display,
                                 animated_size(text_size, render_animation),
-                                scale_alpha(self.style.text_color, render_animation.alpha),
+                                scale_alpha(style.text_color, render_animation.alpha),
                             );
                         }
                         canvas.rect(
@@ -3227,7 +3719,7 @@ impl Ui {
                             render_track.y,
                             render_track.w,
                             render_track.h,
-                            scale_alpha(self.style.slider_track_color, render_animation.alpha),
+                            scale_alpha(style.slider_track_color, render_animation.alpha),
                         );
                         if t > 0.0 {
                             canvas.rect(
@@ -3235,7 +3727,7 @@ impl Ui {
                                 render_track.y,
                                 render_track.w * t,
                                 render_track.h,
-                                scale_alpha(self.style.slider_fill_color, render_animation.alpha),
+                                scale_alpha(style.slider_fill_color, render_animation.alpha),
                             );
                         }
                         canvas.rect(
@@ -3243,13 +3735,13 @@ impl Ui {
                             render_thumb.y,
                             render_thumb.w,
                             render_thumb.h,
-                            scale_alpha(self.style.slider_thumb_color, render_animation.alpha),
+                            scale_alpha(style.slider_thumb_color, render_animation.alpha),
                         );
 
                         if is_focused {
                             let border = (2.0 * render_animation.scale.max(0.5)).max(1.0);
                             let outline =
-                                scale_alpha(self.style.button_focused_bg, render_animation.alpha);
+                                scale_alpha(style.button_focused_bg, render_animation.alpha);
                             canvas.rect(
                                 render_track.x - border,
                                 render_track.y - border,
@@ -3288,7 +3780,7 @@ impl Ui {
                             cursor_y - bar_h,
                             current_width,
                             bar_h,
-                            self.style.slider_track_color,
+                            style.slider_track_color,
                         );
                         if t > 0.0 {
                             canvas.rect(
@@ -3296,7 +3788,7 @@ impl Ui {
                                 cursor_y - bar_h,
                                 current_width * t,
                                 bar_h,
-                                self.style.slider_fill_color,
+                                style.slider_fill_color,
                             );
                         }
                         canvas.rect(
@@ -3304,12 +3796,12 @@ impl Ui {
                             cursor_y - bar_h - 2.0,
                             thumb_w,
                             bar_h + 4.0,
-                            self.style.slider_thumb_color,
+                            style.slider_thumb_color,
                         );
 
                         if is_focused {
                             let border = 2.0;
-                            let outline = self.style.button_focused_bg;
+                            let outline = style.button_focused_bg;
                             canvas.rect(
                                 base_x - border,
                                 cursor_y - bar_h - border,
@@ -3334,7 +3826,7 @@ impl Ui {
                             );
                         }
                     }
-                    cursor_y -= bar_h + self.style.spacing;
+                    cursor_y -= bar_h + style.spacing;
                 }
                 Widget::ScrollRegion {
                     height,
@@ -3397,7 +3889,7 @@ impl Ui {
                     &clip_stack,
                     self.mouse_focus,
                     input,
-                    &self.style,
+                    style,
                     &mut hovered_tooltip,
                     &mut focused_tooltip,
                 );
@@ -3445,7 +3937,7 @@ impl Ui {
                         cursor_y -= cont.padding;
                         base_x = cont.saved_x;
                         current_width = cont.saved_width;
-                        cursor_y -= self.style.spacing;
+                        cursor_y -= style.spacing;
                     }
                     3 => {
                         canvas.pop_clip();
@@ -3453,13 +3945,13 @@ impl Ui {
                         cursor_y = cont.row_start_y - cont.scroll_height - cont.offset.y;
                         base_x = cont.saved_x;
                         current_width = cont.saved_width;
-                        cursor_y -= self.style.spacing;
+                        cursor_y -= style.spacing;
                     }
                     _ => {
                         cursor_y -= cont.offset.y;
                         base_x = cont.saved_x;
                         current_width = cont.saved_width;
-                        cursor_y -= self.style.spacing;
+                        cursor_y -= style.spacing;
                     }
                 }
             }
@@ -3536,7 +4028,7 @@ impl Ui {
                 draw_tooltip(
                     canvas,
                     atlas,
-                    &self.style,
+                    &resolved_styles[tooltip.widget_index],
                     tooltip,
                     engine.window_size(),
                     visibility,
