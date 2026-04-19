@@ -1193,6 +1193,12 @@ impl Default for Ui {
 }
 
 impl Ui {
+    fn clamp_focus_index(&mut self) {
+        if self.focusable_ids.is_empty() || self.focus_index >= self.focusable_ids.len() {
+            self.focus_index = 0;
+        }
+    }
+
     fn reset_layout(&mut self, x: f32, y: f32, width: f32, advance_frame: bool, reset_input: bool) {
         if advance_frame {
             self.animation_frame
@@ -1221,6 +1227,7 @@ impl Ui {
     {
         self.reset_layout(self.x, self.y, self.width, false, false);
         build(self, state);
+        self.clamp_focus_index();
     }
 
     pub fn begin(&mut self, engine: &Engine, x: f32, top: f32, width: f32) {
