@@ -1136,7 +1136,7 @@ An `AssetManifest` is a JSON file declaring assets by alias:
 
 ```json
 {
-    "fonts": { "body": "fonts/body.ttf", "mono": "fonts/mono.ttf" },
+  "fonts": { "body": "fonts/body.ttf", "mono": "fonts/mono.ttf" },
   "textures": { "player": "sprites/player.png", "tiles": "sprites/tiles.png" },
   "sprite_sheets": { "walk": { "path": "sprites/walk.png", "cell_width": 32, "cell_height": 32 } },
   "audio": { "jump": "audio/jump.wav", "music": "audio/bgm.ogg" },
