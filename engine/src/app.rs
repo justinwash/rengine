@@ -43,6 +43,20 @@ fn normalize_asset_bundle_dependencies(mut deps: Vec<PathBuf>) -> Vec<PathBuf> {
     deps
 }
 
+fn evict_released_asset_paths(
+    assets: &mut AssetPipeline,
+    audio: &mut AudioSystem,
+    released_paths: Vec<PathBuf>,
+) {
+    for path in released_paths {
+        audio.unload_clip(&path);
+        assets.unload_texture(&path);
+        assets.unload_mesh(&path);
+        assets.unload_data(&path);
+        assets.unload_manifest(&path);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::normalize_asset_bundle_dependencies;
@@ -359,20 +373,41 @@ impl Engine {
         let deps = normalize_asset_bundle_dependencies(deps);
         self.assets
             .record_manifest_deps(manifest_path.clone(), deps.clone());
+        self.assets.retain_bundle(&manifest_path, &deps);
         Ok(AssetBundle::new(manifest_path, deps, pack))
     }
 
     pub fn reload_asset_bundle(&mut self, bundle: &mut AssetBundle) -> Result<(), AssetError> {
         let manifest_path = bundle.manifest_path().to_path_buf();
-        *bundle = self.load_asset_bundle(&manifest_path)?;
+        let old_deps = bundle.dependencies().to_vec();
+        let (pack, deps) = self.load_asset_pack_from_manifest_path(&manifest_path)?;
+        let deps = normalize_asset_bundle_dependencies(deps);
+        self.assets
+            .record_manifest_deps(manifest_path.clone(), deps.clone());
+        let released = self
+            .assets
+            .sync_retained_bundle(&manifest_path, &old_deps, &deps);
+        evict_released_asset_paths(&mut self.assets, &mut self.audio, released);
+        *bundle = AssetBundle::new(manifest_path, deps, pack);
         Ok(())
+    }
+
+    pub fn unload_asset_bundle(&mut self, bundle: &AssetBundle) {
+        let released = self
+            .assets
+            .release_bundle(bundle.manifest_path(), bundle.dependencies());
+        evict_released_asset_paths(&mut self.assets, &mut self.audio, released);
     }
 
     pub fn load_asset_manifest<P: AsRef<Path>>(
         &mut self,
         path: P,
     ) -> Result<AssetPack, AssetError> {
-        self.load_asset_bundle(path).map(AssetBundle::into_inner)
+        let manifest_path = self.assets.resolve_path(path.as_ref());
+        let (pack, deps) = self.load_asset_pack_from_manifest_path(&manifest_path)?;
+        self.assets
+            .record_manifest_deps(manifest_path, normalize_asset_bundle_dependencies(deps));
+        Ok(pack)
     }
 
     pub fn load_texture<P: AsRef<Path>>(&mut self, path: P) -> Result<TextureAsset, AssetError> {
@@ -1303,20 +1338,41 @@ impl Engine3D {
         let deps = normalize_asset_bundle_dependencies(deps);
         self.assets
             .record_manifest_deps(manifest_path.clone(), deps.clone());
+        self.assets.retain_bundle(&manifest_path, &deps);
         Ok(AssetBundle::new(manifest_path, deps, pack))
     }
 
     pub fn reload_asset_bundle(&mut self, bundle: &mut AssetBundle) -> Result<(), AssetError> {
         let manifest_path = bundle.manifest_path().to_path_buf();
-        *bundle = self.load_asset_bundle(&manifest_path)?;
+        let old_deps = bundle.dependencies().to_vec();
+        let (pack, deps) = self.load_asset_pack_from_manifest_path(&manifest_path)?;
+        let deps = normalize_asset_bundle_dependencies(deps);
+        self.assets
+            .record_manifest_deps(manifest_path.clone(), deps.clone());
+        let released = self
+            .assets
+            .sync_retained_bundle(&manifest_path, &old_deps, &deps);
+        evict_released_asset_paths(&mut self.assets, &mut self.audio, released);
+        *bundle = AssetBundle::new(manifest_path, deps, pack);
         Ok(())
+    }
+
+    pub fn unload_asset_bundle(&mut self, bundle: &AssetBundle) {
+        let released = self
+            .assets
+            .release_bundle(bundle.manifest_path(), bundle.dependencies());
+        evict_released_asset_paths(&mut self.assets, &mut self.audio, released);
     }
 
     pub fn load_asset_manifest<P: AsRef<Path>>(
         &mut self,
         path: P,
     ) -> Result<AssetPack, AssetError> {
-        self.load_asset_bundle(path).map(AssetBundle::into_inner)
+        let manifest_path = self.assets.resolve_path(path.as_ref());
+        let (pack, deps) = self.load_asset_pack_from_manifest_path(&manifest_path)?;
+        self.assets
+            .record_manifest_deps(manifest_path, normalize_asset_bundle_dependencies(deps));
+        Ok(pack)
     }
 
     pub fn load_obj_mesh<P: AsRef<Path>>(&mut self, path: P) -> Result<MeshAsset, AssetError> {

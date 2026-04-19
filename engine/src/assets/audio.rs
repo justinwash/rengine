@@ -143,6 +143,17 @@ impl AudioSystem {
         clip
     }
 
+    pub fn unload_clip<P: AsRef<Path>>(&mut self, path: P) {
+        let path = path.as_ref();
+        let clip = self.cache.remove(path);
+        self.timestamps.remove(path);
+        if let Some(clip) = clip {
+            if let Some(slot) = self.clips.get_mut(clip.id.0) {
+                slot.bytes = Arc::<[u8]>::from(&[][..]);
+            }
+        }
+    }
+
     pub fn play(&self, clip: &AudioClip) -> Result<(), AssetError> {
         self.play_on_bus(AudioBus::Effects, clip, 1.0)
     }
@@ -610,4 +621,27 @@ fn default_bus_volumes() -> HashMap<AudioBus, f32> {
 
 fn file_modified_time(path: &Path) -> Result<SystemTime, std::io::Error> {
     fs::metadata(path)?.modified()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+    use std::sync::Arc;
+
+    use super::AudioSystem;
+
+    #[test]
+    fn unload_clip_clears_cached_audio_bytes() {
+        let mut audio = AudioSystem::new(true);
+        let path = PathBuf::from("ui-click.wav");
+        let clip = audio.register_clip(path.clone(), Arc::<[u8]>::from(&[1u8, 2, 3][..]));
+
+        assert_eq!(audio.cache.len(), 1);
+        assert_eq!(audio.clips[clip.id.0].bytes.len(), 3);
+
+        audio.unload_clip(&path);
+
+        assert!(audio.cache.is_empty());
+        assert!(audio.clips[clip.id.0].bytes.is_empty());
+    }
 }
