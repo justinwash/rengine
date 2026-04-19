@@ -37,6 +37,39 @@ fn handle_ime_event(input: &mut InputState, event: Ime) {
     input.handle_ime_event(event);
 }
 
+fn normalize_asset_bundle_dependencies(mut deps: Vec<PathBuf>) -> Vec<PathBuf> {
+    deps.sort();
+    deps.dedup();
+    deps
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_asset_bundle_dependencies;
+    use std::path::PathBuf;
+
+    #[test]
+    fn asset_bundle_dependencies_are_sorted_and_deduplicated() {
+        let deps = vec![
+            PathBuf::from("z.txt"),
+            PathBuf::from("a.txt"),
+            PathBuf::from("z.txt"),
+            PathBuf::from("m.txt"),
+        ];
+
+        let normalized = normalize_asset_bundle_dependencies(deps);
+
+        assert_eq!(
+            normalized,
+            vec![
+                PathBuf::from("a.txt"),
+                PathBuf::from("m.txt"),
+                PathBuf::from("z.txt"),
+            ]
+        );
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ScaleMode {
     Stretch,
@@ -323,6 +356,7 @@ impl Engine {
     ) -> Result<AssetBundle, AssetError> {
         let manifest_path = self.assets.resolve_path(path.as_ref());
         let (pack, deps) = self.load_asset_pack_from_manifest_path(&manifest_path)?;
+        let deps = normalize_asset_bundle_dependencies(deps);
         self.assets
             .record_manifest_deps(manifest_path.clone(), deps.clone());
         Ok(AssetBundle::new(manifest_path, deps, pack))
@@ -1266,6 +1300,7 @@ impl Engine3D {
     ) -> Result<AssetBundle, AssetError> {
         let manifest_path = self.assets.resolve_path(path.as_ref());
         let (pack, deps) = self.load_asset_pack_from_manifest_path(&manifest_path)?;
+        let deps = normalize_asset_bundle_dependencies(deps);
         self.assets
             .record_manifest_deps(manifest_path.clone(), deps.clone());
         Ok(AssetBundle::new(manifest_path, deps, pack))
