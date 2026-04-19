@@ -382,6 +382,7 @@ pub(crate) struct AssetPipeline {
     mesh_timestamps: HashMap<PathBuf, SystemTime>,
     manifest_timestamps: HashMap<PathBuf, SystemTime>,
     manifest_deps: HashMap<PathBuf, Vec<PathBuf>>,
+    retained_paths: HashMap<PathBuf, usize>,
 }
 
 impl AssetPipeline {
@@ -399,6 +400,7 @@ impl AssetPipeline {
             mesh_timestamps: HashMap::new(),
             manifest_timestamps: HashMap::new(),
             manifest_deps: HashMap::new(),
+            retained_paths: HashMap::new(),
         }
     }
 
@@ -862,11 +864,81 @@ impl AssetPipeline {
         })
     }
 
+    pub(crate) fn retain_bundle(&mut self, manifest_path: &Path, dependencies: &[PathBuf]) {
+        let manifest_path = self.resolve_path(manifest_path);
+        self.retain_path(manifest_path);
+        for dependency in dependencies {
+            self.retain_path(dependency.clone());
+        }
+    }
+
+    pub(crate) fn sync_retained_bundle(
+        &mut self,
+        _manifest_path: &Path,
+        old_dependencies: &[PathBuf],
+        new_dependencies: &[PathBuf],
+    ) -> Vec<PathBuf> {
+        for dependency in new_dependencies {
+            if !old_dependencies.contains(dependency) {
+                self.retain_path(dependency.clone());
+            }
+        }
+
+        let mut released = Vec::new();
+        for dependency in old_dependencies {
+            if !new_dependencies.contains(dependency) {
+                if let Some(path) = self.release_path(dependency.clone()) {
+                    released.push(path);
+                }
+            }
+        }
+        released.sort();
+        released.dedup();
+        released
+    }
+
+    pub(crate) fn release_bundle(
+        &mut self,
+        manifest_path: &Path,
+        dependencies: &[PathBuf],
+    ) -> Vec<PathBuf> {
+        let mut released = Vec::new();
+        if let Some(path) = self.release_path(self.resolve_path(manifest_path)) {
+            released.push(path);
+        }
+        for dependency in dependencies {
+            if let Some(path) = self.release_path(dependency.clone()) {
+                released.push(path);
+            }
+        }
+        released.sort();
+        released.dedup();
+        released
+    }
+
     pub(crate) fn record_manifest_deps(&mut self, manifest_path: PathBuf, mut deps: Vec<PathBuf>) {
         deps.push(manifest_path.clone());
         deps.sort();
         deps.dedup();
         self.manifest_deps.insert(manifest_path, deps);
+    }
+
+    fn retain_path(&mut self, path: PathBuf) {
+        *self.retained_paths.entry(path).or_insert(0) += 1;
+    }
+
+    fn release_path(&mut self, path: PathBuf) -> Option<PathBuf> {
+        let Some(count) = self.retained_paths.get_mut(&path) else {
+            return None;
+        };
+
+        if *count > 1 {
+            *count -= 1;
+            return None;
+        }
+
+        self.retained_paths.remove(&path);
+        Some(path)
     }
 
     pub fn manifest_dependencies<P: AsRef<Path>>(&self, path: P) -> Option<&[PathBuf]> {
@@ -898,6 +970,13 @@ impl AssetPipeline {
         self.textures.remove(&resolved);
         self.texture_timestamps.remove(&resolved);
         self.sprite_sheets.retain(|key, _| key.path != resolved);
+    }
+
+    pub fn unload_manifest<P: AsRef<Path>>(&mut self, path: P) {
+        let resolved = self.resolve_path(path.as_ref());
+        self.manifests.remove(&resolved);
+        self.manifest_timestamps.remove(&resolved);
+        self.manifest_deps.remove(&resolved);
     }
 
     pub fn unload_mesh<P: AsRef<Path>>(&mut self, path: P) {
@@ -1131,9 +1210,9 @@ fn file_modified_time(path: &Path) -> Result<SystemTime, std::io::Error> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
-    use super::{compute_flat_normals, AssetBundle, AssetPack, FontAsset};
+    use super::{compute_flat_normals, AssetBundle, AssetPack, AssetPipeline, FontAsset};
     use crate::assets::Color;
     use crate::renderer3d::Vertex3D;
     use crate::text::FontId;
@@ -1188,6 +1267,51 @@ mod tests {
         assert_eq!(bundle.dependencies(), deps.as_slice());
         assert_eq!(bundle.font_id("body"), Some(FontId(2)));
         assert_eq!(bundle.assets().font_id("body"), Some(FontId(2)));
+    }
+
+    #[test]
+    fn retained_bundle_release_waits_for_last_owner() {
+        let mut pipeline = AssetPipeline::default();
+        let shared = pipeline.resolve_path(Path::new("shared.png"));
+        let menu_only = pipeline.resolve_path(Path::new("menu.txt"));
+        let menu_manifest = pipeline.resolve_path(Path::new("menu.assets.json"));
+        let hud_manifest = pipeline.resolve_path(Path::new("hud.assets.json"));
+
+        pipeline.retain_bundle(&menu_manifest, &[shared.clone(), menu_only.clone()]);
+        pipeline.retain_bundle(&hud_manifest, std::slice::from_ref(&shared));
+
+        assert_eq!(
+            pipeline.release_bundle(&menu_manifest, &[shared.clone(), menu_only.clone()]),
+            vec![menu_manifest.clone(), menu_only.clone()]
+        );
+        assert_eq!(
+            pipeline.release_bundle(&hud_manifest, std::slice::from_ref(&shared)),
+            vec![hud_manifest.clone(), shared]
+        );
+    }
+
+    #[test]
+    fn retained_bundle_reload_only_releases_removed_dependencies() {
+        let mut pipeline = AssetPipeline::default();
+        let manifest = pipeline.resolve_path(Path::new("garage.assets.json"));
+        let old_shared = pipeline.resolve_path(Path::new("old_shared.png"));
+        let old_only = pipeline.resolve_path(Path::new("old_only.txt"));
+        let new_shared = pipeline.resolve_path(Path::new("new_shared.png"));
+
+        pipeline.retain_bundle(&manifest, &[old_shared.clone(), old_only.clone()]);
+
+        assert_eq!(
+            pipeline.sync_retained_bundle(
+                &manifest,
+                &[old_shared.clone(), old_only.clone()],
+                &[old_shared.clone(), new_shared.clone()],
+            ),
+            vec![old_only.clone()]
+        );
+        assert_eq!(
+            pipeline.release_bundle(&manifest, &[old_shared.clone(), new_shared.clone()]),
+            vec![manifest, new_shared, old_shared]
+        );
     }
 }
 
