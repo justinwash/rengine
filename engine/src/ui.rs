@@ -1193,28 +1193,11 @@ impl Default for Ui {
 }
 
 impl Ui {
-    pub fn begin(&mut self, engine: &Engine, x: f32, top: f32, width: f32) {
-        self.animation_frame
-            .set(self.animation_frame.get().wrapping_add(1));
-        let (_, sh) = engine.window_size();
-        self.x = x;
-        self.y = (sh as f32 / 2.0) - top;
-        self.width = width;
-        self.widgets.clear();
-        self.tooltips.clear();
-        self.animations.clear();
-        self.container_animations.clear();
-        self.pending_container_animation = None;
-        self.focusable_ids.clear();
-        self.drag_sources.clear();
-        self.drop_targets.clear();
-        self.activated = None;
-        self.mouse_focus = false;
-    }
-
-    pub fn begin_at(&mut self, x: f32, y: f32, width: f32) {
-        self.animation_frame
-            .set(self.animation_frame.get().wrapping_add(1));
+    fn reset_layout(&mut self, x: f32, y: f32, width: f32, advance_frame: bool, reset_input: bool) {
+        if advance_frame {
+            self.animation_frame
+                .set(self.animation_frame.get().wrapping_add(1));
+        }
         self.x = x;
         self.y = y;
         self.width = width;
@@ -1226,8 +1209,181 @@ impl Ui {
         self.focusable_ids.clear();
         self.drag_sources.clear();
         self.drop_targets.clear();
-        self.activated = None;
-        self.mouse_focus = false;
+        if reset_input {
+            self.activated = None;
+            self.mouse_focus = false;
+        }
+    }
+
+    fn rebuild_with<State, Build>(&mut self, state: &State, build: &mut Build)
+    where
+        Build: FnMut(&mut Ui, &State),
+    {
+        self.reset_layout(self.x, self.y, self.width, false, false);
+        build(self, state);
+    }
+
+    pub fn begin(&mut self, engine: &Engine, x: f32, top: f32, width: f32) {
+        let (_, sh) = engine.window_size();
+        self.reset_layout(x, (sh as f32 / 2.0) - top, width, true, true);
+    }
+
+    pub fn begin_at(&mut self, x: f32, y: f32, width: f32) {
+        self.reset_layout(x, y, width, true, true);
+    }
+
+    pub fn run<Build>(
+        &mut self,
+        engine: &Engine,
+        x: f32,
+        top: f32,
+        width: f32,
+        mut build: Build,
+    ) -> UiResponse
+    where
+        Build: FnMut(&mut Ui),
+    {
+        self.run_with(engine, x, top, width, &(), |ui, _| build(ui))
+    }
+
+    pub fn run_with<State, Build>(
+        &mut self,
+        engine: &Engine,
+        x: f32,
+        top: f32,
+        width: f32,
+        state: &State,
+        mut build: Build,
+    ) -> UiResponse
+    where
+        Build: FnMut(&mut Ui, &State),
+    {
+        self.begin(engine, x, top, width);
+        build(self, state);
+        self.update(engine)
+    }
+
+    pub fn run_at<Build>(
+        &mut self,
+        engine: &Engine,
+        x: f32,
+        y: f32,
+        width: f32,
+        mut build: Build,
+    ) -> UiResponse
+    where
+        Build: FnMut(&mut Ui),
+    {
+        self.run_at_with(engine, x, y, width, &(), |ui, _| build(ui))
+    }
+
+    pub fn run_at_with<State, Build>(
+        &mut self,
+        engine: &Engine,
+        x: f32,
+        y: f32,
+        width: f32,
+        state: &State,
+        mut build: Build,
+    ) -> UiResponse
+    where
+        Build: FnMut(&mut Ui, &State),
+    {
+        self.begin_at(x, y, width);
+        build(self, state);
+        self.update(engine)
+    }
+
+    pub fn sync<Build, Handle, Result>(
+        &mut self,
+        engine: &Engine,
+        x: f32,
+        top: f32,
+        width: f32,
+        mut build: Build,
+        handle: Handle,
+    ) -> Result
+    where
+        Build: FnMut(&mut Ui),
+        Handle: FnOnce(UiResponse) -> Result,
+    {
+        self.sync_with(
+            engine,
+            x,
+            top,
+            width,
+            &mut (),
+            |ui, _| build(ui),
+            |response, _| handle(response),
+        )
+    }
+
+    pub fn sync_with<State, Build, Handle, Result>(
+        &mut self,
+        engine: &Engine,
+        x: f32,
+        top: f32,
+        width: f32,
+        state: &mut State,
+        mut build: Build,
+        handle: Handle,
+    ) -> Result
+    where
+        Build: FnMut(&mut Ui, &State),
+        Handle: FnOnce(UiResponse, &mut State) -> Result,
+    {
+        self.begin(engine, x, top, width);
+        build(self, state);
+        let response = self.update(engine);
+        let result = handle(response, state);
+        self.rebuild_with(state, &mut build);
+        result
+    }
+
+    pub fn sync_at<Build, Handle, Result>(
+        &mut self,
+        engine: &Engine,
+        x: f32,
+        y: f32,
+        width: f32,
+        mut build: Build,
+        handle: Handle,
+    ) -> Result
+    where
+        Build: FnMut(&mut Ui),
+        Handle: FnOnce(UiResponse) -> Result,
+    {
+        self.sync_at_with(
+            engine,
+            x,
+            y,
+            width,
+            &mut (),
+            |ui, _| build(ui),
+            |response, _| handle(response),
+        )
+    }
+
+    pub fn sync_at_with<State, Build, Handle, Result>(
+        &mut self,
+        engine: &Engine,
+        x: f32,
+        y: f32,
+        width: f32,
+        state: &mut State,
+        mut build: Build,
+        handle: Handle,
+    ) -> Result
+    where
+        Build: FnMut(&mut Ui, &State),
+        Handle: FnOnce(UiResponse, &mut State) -> Result,
+    {
+        self.begin_at(x, y, width);
+        build(self, state);
+        let response = self.update(engine);
+        let result = handle(response, state);
+        self.rebuild_with(state, &mut build);
+        result
     }
 
     pub fn with_style(mut self, style: UiStyle) -> Self {
