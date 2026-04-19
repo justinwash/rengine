@@ -122,6 +122,68 @@ impl UiAnimationOptions {
     }
 }
 
+#[derive(Clone, Copy)]
+pub struct UiContainerAnimation {
+    pub duration: f32,
+    pub easing: Easing,
+    pub offset: Vec2,
+}
+
+impl Default for UiContainerAnimation {
+    fn default() -> Self {
+        Self {
+            duration: 0.2,
+            easing: Easing::OutQuad,
+            offset: Vec2::ZERO,
+        }
+    }
+}
+
+impl UiContainerAnimation {
+    pub fn new(duration: f32) -> Self {
+        Self {
+            duration: duration.max(0.0),
+            ..Self::default()
+        }
+    }
+
+    pub fn with_easing(mut self, easing: Easing) -> Self {
+        self.easing = easing;
+        self
+    }
+
+    pub fn with_offset(mut self, offset: Vec2) -> Self {
+        self.offset = offset;
+        self
+    }
+}
+
+#[derive(Clone, Copy, Default)]
+pub struct UiContainerAnimationOptions {
+    pub appear: Option<UiContainerAnimation>,
+    pub exit: Option<UiContainerAnimation>,
+}
+
+impl UiContainerAnimationOptions {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_appear(mut self, animation: UiContainerAnimation) -> Self {
+        self.appear = Some(animation);
+        self
+    }
+
+    pub fn with_exit(mut self, animation: UiContainerAnimation) -> Self {
+        self.exit = Some(animation);
+        self
+    }
+
+    fn is_empty(self) -> bool {
+        self.appear.is_none() && self.exit.is_none()
+    }
+}
+
 #[derive(Clone, Default)]
 pub struct TooltipOptions {
     pub max_width: Option<f32>,
@@ -347,6 +409,21 @@ struct UiAnimationSpec {
 }
 
 #[derive(Clone, Copy)]
+struct UiContainerAnimationSpec {
+    widget_index: usize,
+    id: usize,
+    visible: bool,
+    options: UiContainerAnimationOptions,
+}
+
+#[derive(Clone, Copy)]
+struct PendingContainerAnimation {
+    id: usize,
+    visible: bool,
+    options: UiContainerAnimationOptions,
+}
+
+#[derive(Clone, Copy)]
 struct UiRect {
     x: f32,
     y: f32,
@@ -382,6 +459,12 @@ struct ActiveTooltip<'a> {
 struct TooltipRuntime {
     widget_index: Option<usize>,
     elapsed: f32,
+}
+
+#[derive(Clone, Copy, Default)]
+struct ContainerAnimationRuntime {
+    progress: f32,
+    last_seen_frame: u64,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -446,6 +529,27 @@ fn widget_supports_animation(widget: &Widget) -> bool {
             | Widget::Checkbox { .. }
             | Widget::Slider { .. }
     )
+}
+
+fn widget_supports_container_animation(widget: &Widget) -> bool {
+    matches!(
+        widget,
+        Widget::Panel { .. }
+            | Widget::Row { .. }
+            | Widget::Grid { .. }
+            | Widget::ScrollRegion { .. }
+    )
+}
+
+fn widget_focus_id(widget: &Widget) -> Option<usize> {
+    match widget {
+        Widget::Button { id, .. }
+        | Widget::TextInput { id, .. }
+        | Widget::Checkbox { id, .. }
+        | Widget::Slider { id, .. }
+        | Widget::ScrollRegion { id, .. } => Some(*id),
+        _ => None,
+    }
 }
 
 fn point_visible(point: Vec2, rect: UiRect, clip_stack: &[UiRect]) -> bool {
@@ -563,6 +667,70 @@ fn apply_widget_animation(
     render_animation.offset += animation.offset * eased;
     render_animation.scale *= 1.0 + (animation.scale - 1.0) * eased;
     render_animation.alpha *= 1.0 + (animation.alpha - 1.0) * eased;
+}
+
+fn container_animation_duration(animation: Option<UiContainerAnimation>) -> f32 {
+    animation.map(|animation| animation.duration).unwrap_or(0.0)
+}
+
+fn apply_container_animation_offset(
+    offset: &mut Vec2,
+    animation: UiContainerAnimation,
+    progress: f32,
+) {
+    if progress <= 0.0 {
+        return;
+    }
+
+    let eased = animation.easing.apply(progress);
+    *offset += animation.offset * eased;
+}
+
+fn resolve_container_animation(
+    id: usize,
+    visible: bool,
+    options: UiContainerAnimationOptions,
+    animation_runtime: &RefCell<HashMap<usize, ContainerAnimationRuntime>>,
+    frame_index: u64,
+    dt: f32,
+) -> Vec2 {
+    let mut runtimes = animation_runtime.borrow_mut();
+    let runtime = runtimes.entry(id).or_default();
+    let is_new = runtime.last_seen_frame == 0 || runtime.last_seen_frame + 1 != frame_index;
+    if is_new {
+        runtime.progress = 0.0;
+    }
+    runtime.last_seen_frame = frame_index;
+
+    if visible {
+        advance_animation_progress(
+            &mut runtime.progress,
+            1.0,
+            container_animation_duration(options.appear),
+            dt,
+        );
+    } else {
+        advance_animation_progress(
+            &mut runtime.progress,
+            0.0,
+            container_animation_duration(options.exit),
+            dt,
+        );
+    }
+
+    let progress = runtime.progress;
+    drop(runtimes);
+
+    let mut offset = Vec2::ZERO;
+    if visible {
+        if let Some(animation) = options.appear {
+            apply_container_animation_offset(&mut offset, animation, 1.0 - progress);
+        }
+    } else if let Some(animation) = options.exit {
+        apply_container_animation_offset(&mut offset, animation, 1.0 - progress);
+    }
+
+    offset
 }
 
 fn resolve_widget_animation(
@@ -880,6 +1048,47 @@ fn draw_tooltip(
     canvas.pop_clip();
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn container_animation_offsets_enter_and_exit() {
+        let runtime = RefCell::new(HashMap::new());
+        let options = UiContainerAnimationOptions::new()
+            .with_appear(UiContainerAnimation::new(0.4).with_offset(Vec2::new(0.0, -24.0)))
+            .with_exit(UiContainerAnimation::new(0.4).with_offset(Vec2::new(0.0, 24.0)));
+
+        let entering = resolve_container_animation(7, true, options, &runtime, 1, 0.1);
+        assert!(entering.y < 0.0);
+
+        let settled = resolve_container_animation(7, true, options, &runtime, 2, 1.0);
+        assert_eq!(settled, Vec2::ZERO);
+
+        let exiting = resolve_container_animation(7, false, options, &runtime, 3, 0.1);
+        assert!(exiting.y > 0.0);
+    }
+
+    #[test]
+    fn drop_for_reports_matching_source() {
+        let response = UiResponse {
+            focused: None,
+            activated: None,
+            hovered: None,
+            toggled: Vec::new(),
+            changed_values: Vec::new(),
+            changed_text: Vec::new(),
+            dragging: Some(3),
+            drag_target: Some(9),
+            dropped: Some((3, 9)),
+            scroll_offsets: Vec::new(),
+        };
+
+        assert_eq!(response.drop_for(9), Some(3));
+        assert_eq!(response.drop_for(2), None);
+    }
+}
+
 pub struct UiResponse {
     pub focused: Option<usize>,
     pub activated: Option<usize>,
@@ -888,6 +1097,8 @@ pub struct UiResponse {
     pub changed_values: Vec<(usize, f32)>,
     pub changed_text: Vec<(usize, String)>,
     pub dragging: Option<usize>,
+    pub drag_target: Option<usize>,
+    pub dropped: Option<(usize, usize)>,
     pub scroll_offsets: Vec<(usize, f32)>,
 }
 
@@ -920,6 +1131,11 @@ impl UiResponse {
             .find(|(sid, _)| *sid == id)
             .map(|(_, v)| *v)
     }
+
+    pub fn drop_for(&self, target: usize) -> Option<usize> {
+        self.dropped
+            .and_then(|(source, drop_target)| (drop_target == target).then_some(source))
+    }
 }
 
 pub struct Ui {
@@ -930,13 +1146,19 @@ pub struct Ui {
     widgets: Vec<Widget>,
     tooltips: Vec<TooltipSpec>,
     animations: Vec<UiAnimationSpec>,
+    container_animations: Vec<UiContainerAnimationSpec>,
+    pending_container_animation: Option<PendingContainerAnimation>,
     focusable_ids: Vec<usize>,
+    drag_sources: HashSet<usize>,
+    drop_targets: HashSet<usize>,
     focus_index: usize,
     activated: Option<usize>,
     mouse_focus: bool,
     dragging_slider: Option<usize>,
+    active_drag: Option<usize>,
     tooltip_runtime: Cell<TooltipRuntime>,
     animation_runtime: RefCell<HashMap<WidgetRuntimeKey, WidgetAnimationRuntime>>,
+    container_animation_runtime: RefCell<HashMap<usize, ContainerAnimationRuntime>>,
     animation_frame: Cell<u64>,
     text_input_cursor: RefCell<HashMap<usize, usize>>,
 }
@@ -951,13 +1173,19 @@ impl Default for Ui {
             widgets: Vec::new(),
             tooltips: Vec::new(),
             animations: Vec::new(),
+            container_animations: Vec::new(),
+            pending_container_animation: None,
             focusable_ids: Vec::new(),
+            drag_sources: HashSet::new(),
+            drop_targets: HashSet::new(),
             focus_index: 0,
             activated: None,
             mouse_focus: false,
             dragging_slider: None,
+            active_drag: None,
             tooltip_runtime: Cell::new(TooltipRuntime::default()),
             animation_runtime: RefCell::new(HashMap::new()),
+            container_animation_runtime: RefCell::new(HashMap::new()),
             animation_frame: Cell::new(0),
             text_input_cursor: RefCell::new(HashMap::new()),
         }
@@ -975,7 +1203,11 @@ impl Ui {
         self.widgets.clear();
         self.tooltips.clear();
         self.animations.clear();
+        self.container_animations.clear();
+        self.pending_container_animation = None;
         self.focusable_ids.clear();
+        self.drag_sources.clear();
+        self.drop_targets.clear();
         self.activated = None;
         self.mouse_focus = false;
     }
@@ -989,7 +1221,11 @@ impl Ui {
         self.widgets.clear();
         self.tooltips.clear();
         self.animations.clear();
+        self.container_animations.clear();
+        self.pending_container_animation = None;
         self.focusable_ids.clear();
+        self.drag_sources.clear();
+        self.drop_targets.clear();
         self.activated = None;
         self.mouse_focus = false;
     }
@@ -1005,6 +1241,30 @@ impl Ui {
 
     pub fn style_mut(&mut self) -> &mut UiStyle {
         &mut self.style
+    }
+
+    fn push_widget(&mut self, widget: Widget) {
+        let supports_container_animation = widget_supports_container_animation(&widget);
+        self.widgets.push(widget);
+        if supports_container_animation {
+            if let (Some(widget_index), Some(pending)) = (
+                self.widgets.len().checked_sub(1),
+                self.pending_container_animation.take(),
+            ) {
+                self.container_animations.push(UiContainerAnimationSpec {
+                    widget_index,
+                    id: pending.id,
+                    visible: pending.visible,
+                    options: pending.options,
+                });
+            }
+        } else {
+            self.pending_container_animation = None;
+        }
+    }
+
+    fn last_widget_focus_id(&self) -> Option<usize> {
+        self.widgets.last().and_then(widget_focus_id)
     }
 
     fn normalize_text_cursor(&self, id: usize, cursor: usize) -> usize {
@@ -1045,11 +1305,12 @@ impl Ui {
 
     pub fn with_dragging(mut self, dragging: Option<usize>) -> Self {
         self.dragging_slider = dragging;
+        self.active_drag = dragging;
         self
     }
 
     pub fn label(&mut self, text: &str, size: f32, color: Color) {
-        self.widgets.push(Widget::Label {
+        self.push_widget(Widget::Label {
             text: text.to_string(),
             size,
             color,
@@ -1058,7 +1319,7 @@ impl Ui {
     }
 
     pub fn label_centered(&mut self, text: &str, size: f32, color: Color) {
-        self.widgets.push(Widget::Label {
+        self.push_widget(Widget::Label {
             text: text.to_string(),
             size,
             color,
@@ -1067,7 +1328,7 @@ impl Ui {
     }
 
     pub fn image(&mut self, texture: TextureId, size: Vec2) {
-        self.widgets.push(Widget::Image {
+        self.push_widget(Widget::Image {
             texture,
             size,
             color: Color::WHITE,
@@ -1076,7 +1337,7 @@ impl Ui {
     }
 
     pub fn image_colored(&mut self, texture: TextureId, size: Vec2, color: Color) {
-        self.widgets.push(Widget::Image {
+        self.push_widget(Widget::Image {
             texture,
             size,
             color,
@@ -1085,7 +1346,7 @@ impl Ui {
     }
 
     pub fn image_region(&mut self, texture: TextureId, size: Vec2, uv_rect: [f32; 4]) {
-        self.widgets.push(Widget::Image {
+        self.push_widget(Widget::Image {
             texture,
             size,
             color: Color::WHITE,
@@ -1140,9 +1401,37 @@ impl Ui {
         }
     }
 
+    pub fn animate_container_with(
+        &mut self,
+        id: usize,
+        visible: bool,
+        options: UiContainerAnimationOptions,
+    ) -> bool {
+        self.pending_container_animation = None;
+        if options.is_empty() {
+            return visible;
+        }
+
+        let progress = self
+            .container_animation_runtime
+            .borrow()
+            .get(&id)
+            .map(|runtime| runtime.progress)
+            .unwrap_or(if visible { 1.0 } else { 0.0 });
+        let should_render = visible || progress > 0.0;
+        if should_render {
+            self.pending_container_animation = Some(PendingContainerAnimation {
+                id,
+                visible,
+                options,
+            });
+        }
+        should_render
+    }
+
     pub fn button(&mut self, id: usize, text: &str) {
         self.focusable_ids.push(id);
-        self.widgets.push(Widget::Button {
+        self.push_widget(Widget::Button {
             id,
             text: text.to_string(),
         });
@@ -1150,7 +1439,7 @@ impl Ui {
 
     pub fn text_input(&mut self, id: usize, text: &str, placeholder: &str) {
         self.focusable_ids.push(id);
-        self.widgets.push(Widget::TextInput {
+        self.push_widget(Widget::TextInput {
             id,
             text: text.to_string(),
             placeholder: placeholder.to_string(),
@@ -1158,7 +1447,7 @@ impl Ui {
     }
 
     pub fn separator(&mut self, height: f32) {
-        self.widgets.push(Widget::Separator { height });
+        self.push_widget(Widget::Separator { height });
     }
 
     pub fn panel(&mut self, children: usize) {
@@ -1166,7 +1455,7 @@ impl Ui {
     }
 
     pub fn panel_colored(&mut self, color: Color, padding: f32, children: usize) {
-        self.widgets.push(Widget::Panel {
+        self.push_widget(Widget::Panel {
             color,
             padding,
             children,
@@ -1174,7 +1463,7 @@ impl Ui {
     }
 
     pub fn progress_bar(&mut self, label: &str, value: f32) {
-        self.widgets.push(Widget::ProgressBar {
+        self.push_widget(Widget::ProgressBar {
             label: label.to_string(),
             value: value.clamp(0.0, 1.0),
             color: None,
@@ -1182,7 +1471,7 @@ impl Ui {
     }
 
     pub fn progress_bar_colored(&mut self, label: &str, value: f32, fill_color: Color) {
-        self.widgets.push(Widget::ProgressBar {
+        self.push_widget(Widget::ProgressBar {
             label: label.to_string(),
             value: value.clamp(0.0, 1.0),
             color: Some(fill_color),
@@ -1191,7 +1480,7 @@ impl Ui {
 
     pub fn checkbox(&mut self, id: usize, label: &str, checked: bool) {
         self.focusable_ids.push(id);
-        self.widgets.push(Widget::Checkbox {
+        self.push_widget(Widget::Checkbox {
             id,
             label: label.to_string(),
             checked,
@@ -1200,7 +1489,7 @@ impl Ui {
 
     pub fn slider(&mut self, id: usize, label: &str, value: f32, min: f32, max: f32) {
         self.focusable_ids.push(id);
-        self.widgets.push(Widget::Slider {
+        self.push_widget(Widget::Slider {
             id,
             label: label.to_string(),
             value: value.clamp(min, max),
@@ -1210,18 +1499,18 @@ impl Ui {
     }
 
     pub fn row(&mut self, children: usize) {
-        self.widgets.push(Widget::Row {
+        self.push_widget(Widget::Row {
             spacing: self.style.spacing,
             children,
         });
     }
 
     pub fn row_spaced(&mut self, spacing: f32, children: usize) {
-        self.widgets.push(Widget::Row { spacing, children });
+        self.push_widget(Widget::Row { spacing, children });
     }
 
     pub fn grid(&mut self, columns: usize, children: usize) {
-        self.widgets.push(Widget::Grid {
+        self.push_widget(Widget::Grid {
             columns: columns.max(1),
             spacing: self.style.spacing,
             children,
@@ -1229,7 +1518,7 @@ impl Ui {
     }
 
     pub fn grid_spaced(&mut self, columns: usize, spacing: f32, children: usize) {
-        self.widgets.push(Widget::Grid {
+        self.push_widget(Widget::Grid {
             columns: columns.max(1),
             spacing,
             children,
@@ -1237,12 +1526,24 @@ impl Ui {
     }
 
     pub fn scroll(&mut self, id: usize, height: f32, scroll_offset: f32, children: usize) {
-        self.widgets.push(Widget::ScrollRegion {
+        self.push_widget(Widget::ScrollRegion {
             id,
             height,
             scroll_offset,
             children,
         });
+    }
+
+    pub fn draggable(&mut self) {
+        if let Some(id) = self.last_widget_focus_id() {
+            self.drag_sources.insert(id);
+        }
+    }
+
+    pub fn drop_target(&mut self) {
+        if let Some(id) = self.last_widget_focus_id() {
+            self.drop_targets.insert(id);
+        }
     }
 
     fn compute_widget_height(
@@ -1612,7 +1913,14 @@ impl Ui {
             .borrow_mut()
             .retain(|id, _| active_text_input_ids.contains(id));
 
+        if let Some(source) = self.active_drag {
+            if !self.drag_sources.contains(&source) {
+                self.active_drag = None;
+            }
+        }
+
         if self.focusable_ids.is_empty() {
+            self.active_drag = None;
             return UiResponse {
                 focused: None,
                 activated: None,
@@ -1621,6 +1929,8 @@ impl Ui {
                 changed_values,
                 changed_text,
                 dragging: None,
+                drag_target: None,
+                dropped: None,
                 scroll_offsets: Vec::new(),
             };
         }
@@ -1669,8 +1979,54 @@ impl Ui {
         let keyboard_activate =
             input.is_key_pressed(KeyCode::Enter) || input.is_key_pressed(KeyCode::Space);
         let mouse_activate = input.is_mouse_pressed(0) && hovered.is_some();
+        let release_drag = input.is_mouse_released(0)
+            || input.is_key_released(KeyCode::Enter)
+            || input.is_key_released(KeyCode::Space);
+        let keyboard_drag_candidate = (!self.mouse_focus && keyboard_activate)
+            .then_some(focused_id)
+            .filter(|id| self.drag_sources.contains(id));
+        let mouse_drag_candidate =
+            hovered.filter(|id| mouse_activate && self.drag_sources.contains(id));
+        let mut drag_target = self.active_drag.and_then(|_| {
+            if self.mouse_focus {
+                hovered.filter(|id| self.drop_targets.contains(id))
+            } else {
+                self.drop_targets
+                    .contains(&focused_id)
+                    .then_some(focused_id)
+            }
+        });
+        let mut dropped = None;
+        let mut started_drag = false;
 
-        if keyboard_activate || mouse_activate {
+        if let Some(source) = self.active_drag {
+            if input.is_key_pressed(KeyCode::Escape) {
+                self.active_drag = None;
+                drag_target = None;
+            } else if release_drag {
+                if let Some(target) = drag_target.filter(|target| *target != source) {
+                    dropped = Some((source, target));
+                }
+                self.active_drag = None;
+                drag_target = None;
+            }
+        }
+
+        if self.active_drag.is_none() {
+            if let Some(source) = mouse_drag_candidate.or(keyboard_drag_candidate) {
+                self.active_drag = Some(source);
+                drag_target = if self.mouse_focus {
+                    hovered.filter(|id| self.drop_targets.contains(id))
+                } else {
+                    self.drop_targets
+                        .contains(&focused_id)
+                        .then_some(focused_id)
+                };
+                started_drag = true;
+            }
+        }
+
+        if (keyboard_activate || mouse_activate) && !started_drag {
             for widget in &self.widgets {
                 match widget {
                     Widget::Checkbox { id, checked, .. } if *id == focused_id => {
@@ -1856,7 +2212,9 @@ impl Ui {
             toggled,
             changed_values,
             changed_text,
-            dragging: self.dragging_slider,
+            dragging: self.active_drag.or(self.dragging_slider),
+            drag_target,
+            dropped,
             scroll_offsets,
         }
     }
@@ -1891,6 +2249,12 @@ impl Ui {
                 animation_indices[animation.widget_index] = Some(animation.options);
             }
         }
+        let mut container_animation_indices = vec![None; self.widgets.len()];
+        for animation in &self.container_animations {
+            if animation.widget_index < container_animation_indices.len() {
+                container_animation_indices[animation.widget_index] = Some(*animation);
+            }
+        }
 
         struct RenderContainer {
             kind: u8,
@@ -1905,6 +2269,7 @@ impl Ui {
             row_start_y: f32,
             row_max_h: f32,
             scroll_height: f32,
+            offset: Vec2,
         }
         let mut stack: Vec<RenderContainer> = Vec::new();
 
@@ -1915,6 +2280,7 @@ impl Ui {
             let mut tooltip_focus_id = None;
             let tooltip = tooltip_indices[i].map(|tooltip_index| &self.tooltips[tooltip_index]);
             let animation = animation_indices[i];
+            let container_animation = container_animation_indices[i];
             let has_tooltip = tooltip.is_some();
             let has_animation = animation.is_some();
 
@@ -2282,6 +2648,18 @@ impl Ui {
                     padding,
                     children,
                 } => {
+                    let container_offset = container_animation
+                        .map(|animation| {
+                            resolve_container_animation(
+                                animation.id,
+                                animation.visible,
+                                animation.options,
+                                &self.container_animation_runtime,
+                                animation_frame,
+                                dt,
+                            )
+                        })
+                        .unwrap_or(Vec2::ZERO);
                     let total_h = {
                         let end = (i + 1 + *children).min(self.widgets.len());
                         let child_slice = &self.widgets[i + 1..end];
@@ -2301,15 +2679,15 @@ impl Ui {
                     let panel_h = total_h + *padding * 2.0;
                     if has_tooltip {
                         tooltip_rect = Some(UiRect {
-                            x: base_x,
-                            y: cursor_y - panel_h + *padding,
+                            x: base_x + container_offset.x,
+                            y: cursor_y + container_offset.y - panel_h + *padding,
                             w: current_width,
                             h: panel_h,
                         });
                     }
                     canvas.rect(
-                        base_x,
-                        cursor_y - panel_h + *padding,
+                        base_x + container_offset.x,
+                        cursor_y + container_offset.y - panel_h + *padding,
                         current_width,
                         panel_h,
                         *color,
@@ -2328,9 +2706,22 @@ impl Ui {
                         row_start_y: 0.0,
                         row_max_h: 0.0,
                         scroll_height: 0.0,
+                        offset: container_offset,
                     });
                 }
                 Widget::Row { spacing, children } => {
+                    let container_offset = container_animation
+                        .map(|animation| {
+                            resolve_container_animation(
+                                animation.id,
+                                animation.visible,
+                                animation.options,
+                                &self.container_animation_runtime,
+                                animation_frame,
+                                dt,
+                            )
+                        })
+                        .unwrap_or(Vec2::ZERO);
                     let cols = (*children).max(1);
                     let total_gap = *spacing * (cols as f32 - 1.0).max(0.0);
                     let cw = (current_width - total_gap) / cols as f32;
@@ -2344,9 +2735,10 @@ impl Ui {
                         col_count: cols,
                         col_width: cw,
                         col_spacing: *spacing,
-                        row_start_y: cursor_y,
+                        row_start_y: cursor_y + container_offset.y,
                         row_max_h: 0.0,
                         scroll_height: 0.0,
+                        offset: container_offset,
                     });
                 }
                 Widget::Grid {
@@ -2354,6 +2746,18 @@ impl Ui {
                     spacing,
                     children,
                 } => {
+                    let container_offset = container_animation
+                        .map(|animation| {
+                            resolve_container_animation(
+                                animation.id,
+                                animation.visible,
+                                animation.options,
+                                &self.container_animation_runtime,
+                                animation_frame,
+                                dt,
+                            )
+                        })
+                        .unwrap_or(Vec2::ZERO);
                     let cols = (*columns).max(1);
                     let total_gap = *spacing * (cols as f32 - 1.0).max(0.0);
                     let cw = (current_width - total_gap) / cols as f32;
@@ -2367,9 +2771,10 @@ impl Ui {
                         col_count: cols,
                         col_width: cw,
                         col_spacing: *spacing,
-                        row_start_y: cursor_y,
+                        row_start_y: cursor_y + container_offset.y,
                         row_max_h: 0.0,
                         scroll_height: 0.0,
+                        offset: container_offset,
                     });
                 }
                 Widget::ProgressBar {
@@ -2937,15 +3342,32 @@ impl Ui {
                     children,
                     ..
                 } => {
+                    let container_offset = container_animation
+                        .map(|animation| {
+                            resolve_container_animation(
+                                animation.id,
+                                animation.visible,
+                                animation.options,
+                                &self.container_animation_runtime,
+                                animation_frame,
+                                dt,
+                            )
+                        })
+                        .unwrap_or(Vec2::ZERO);
                     if has_tooltip {
                         tooltip_rect = Some(UiRect {
-                            x: base_x,
-                            y: cursor_y - *height,
+                            x: base_x + container_offset.x,
+                            y: cursor_y + container_offset.y - *height,
                             w: current_width,
                             h: *height,
                         });
                     }
-                    canvas.push_clip(base_x, cursor_y - *height, current_width, *height);
+                    canvas.push_clip(
+                        base_x + container_offset.x,
+                        cursor_y + container_offset.y - *height,
+                        current_width,
+                        *height,
+                    );
                     pending = Some(RenderContainer {
                         kind: 3,
                         saved_x: base_x,
@@ -2956,11 +3378,12 @@ impl Ui {
                         col_count: 0,
                         col_width: 0.0,
                         col_spacing: 0.0,
-                        row_start_y: cursor_y,
+                        row_start_y: cursor_y + container_offset.y,
                         row_max_h: 0.0,
                         scroll_height: *height,
+                        offset: container_offset,
                     });
-                    cursor_y += *scroll_offset;
+                    cursor_y += container_offset.y + *scroll_offset;
                 }
             }
 
@@ -3000,7 +3423,7 @@ impl Ui {
                             cont.row_max_h = 0.0;
                             cont.col_index = 0;
                             cont.row_start_y = cursor_y;
-                            base_x = cont.saved_x;
+                            base_x = cont.saved_x + cont.offset.x;
                             current_width = cont.col_width;
                         } else {
                             cursor_y = cont.row_start_y;
@@ -3018,6 +3441,7 @@ impl Ui {
                 let cont = stack.remove(si);
                 match cont.kind {
                     0 => {
+                        cursor_y -= cont.offset.y;
                         cursor_y -= cont.padding;
                         base_x = cont.saved_x;
                         current_width = cont.saved_width;
@@ -3026,12 +3450,13 @@ impl Ui {
                     3 => {
                         canvas.pop_clip();
                         clip_stack.pop();
-                        cursor_y = cont.row_start_y - cont.scroll_height;
+                        cursor_y = cont.row_start_y - cont.scroll_height - cont.offset.y;
                         base_x = cont.saved_x;
                         current_width = cont.saved_width;
                         cursor_y -= self.style.spacing;
                     }
                     _ => {
+                        cursor_y -= cont.offset.y;
                         base_x = cont.saved_x;
                         current_width = cont.saved_width;
                         cursor_y -= self.style.spacing;
@@ -3042,19 +3467,21 @@ impl Ui {
             if let Some(mut cont) = pending {
                 match cont.kind {
                     0 => {
+                        cursor_y += cont.offset.y;
                         cursor_y -= cont.padding;
                         let pad = cont.padding;
                         let old_x = base_x;
                         let old_w = current_width;
-                        base_x += pad;
+                        base_x += cont.offset.x + pad;
                         current_width -= pad * 2.0;
                         cont.saved_x = old_x;
                         cont.saved_width = old_w;
                         stack.push(cont);
                     }
                     3 => {
+                        base_x += cont.offset.x;
                         clip_stack.push(UiRect {
-                            x: cont.saved_x,
+                            x: cont.saved_x + cont.offset.x,
                             y: cont.row_start_y - cont.scroll_height,
                             w: cont.saved_width,
                             h: cont.scroll_height,
@@ -3063,7 +3490,7 @@ impl Ui {
                     }
                     _ => {
                         cont.row_start_y = cursor_y;
-                        base_x = cont.saved_x;
+                        base_x = cont.saved_x + cont.offset.x;
                         current_width = cont.col_width;
                         stack.push(cont);
                     }
@@ -3076,6 +3503,11 @@ impl Ui {
         self.animation_runtime
             .borrow_mut()
             .retain(|_, runtime| runtime.last_seen_frame == animation_frame);
+        self.container_animation_runtime
+            .borrow_mut()
+            .retain(|_, runtime| {
+                runtime.last_seen_frame == animation_frame || runtime.progress > 0.0
+            });
 
         let mut runtime = self.tooltip_runtime.get();
         if let Some(tooltip) = hovered_tooltip.or(focused_tooltip) {
