@@ -106,6 +106,8 @@ impl Scene for PauseOverlay {
         }
 
         self.badge = globals.get::<PauseBadge>().map(|badge| badge.0);
+        self.ui.begin(engine, -100.0, 40.0, 200.0);
+        Self::build_pause_ui(&mut self.ui, self.badge);
     }
 
     fn update(&mut self, engine: &Engine, globals: &mut Globals, _frame: &mut Frame) -> SceneOp {
