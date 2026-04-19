@@ -70,7 +70,11 @@ impl TooltipDemo {
                 .with_placement(TooltipPlacement::Widget)
                 .with_offset(Vec2::new(18.0, 8.0)),
         );
-        self.ui.label_centered("Race Weekend Briefing", 18.0, Color::from_rgba8(220, 220, 240, 255));
+        self.ui.label_centered(
+            "Race Weekend Briefing",
+            18.0,
+            Color::from_rgba8(220, 220, 240, 255),
+        );
         self.ui.tooltip("This is the kind of heading that usually needs a little contextual explanation in a management UI.");
         self.ui.progress_bar("Driver Morale", self.morale);
         self.ui.tooltip_with(
@@ -81,7 +85,11 @@ impl TooltipDemo {
                     "Advanced stats: morale is currently +6 from a clean qualifying run, -2 from tire allocation, and +4 from engineer confidence. Hold Shift to reveal this block.",
                 ),
         );
-        self.ui.progress_bar_colored("Tire Wear", self.tire_wear, Color::from_rgba8(236, 174, 72, 255));
+        self.ui.progress_bar_colored(
+            "Tire Wear",
+            self.tire_wear,
+            Color::from_rgba8(236, 174, 72, 255),
+        );
         self.ui.tooltip_with(
             "High tire wear would normally increase pit pressure and reduce late-stint pace.",
             TooltipOptions::new()
@@ -90,19 +98,23 @@ impl TooltipDemo {
                 .with_placement(TooltipPlacement::Screen(Vec2::new(140.0, 230.0)))
                 .with_animation(TooltipAnimation::None),
         );
-        self.ui.checkbox(1, "Aggressive Pit Calls", self.aggressive_calls);
+        self.ui
+            .checkbox(1, "Aggressive Pit Calls", self.aggressive_calls);
         self.ui.tooltip("Checkbox tooltips also appear for keyboard focus, so gamepad and keyboard flows still surface explanations.");
-        self.ui.slider(2, "Fuel Saving", self.fuel_saving, 0.0, 100.0);
+        self.ui
+            .slider(2, "Fuel Saving", self.fuel_saving, 0.0, 100.0);
         self.ui.tooltip_with(
             "This slider demonstrates the focused-control fallback: tabbing through the menu with keys still reveals the explanation even when the mouse is idle.",
             TooltipOptions::new().with_max_width(260.0),
         );
-        self.ui.slider(4, "Tooltip Delay", self.tooltip_delay, 0.0, 1.25);
+        self.ui
+            .slider(4, "Tooltip Delay", self.tooltip_delay, 0.0, 1.25);
         self.ui.tooltip_with(
             "Live-adjust the global tooltip delay. This uses engine-level style state, not demo-local timing hacks.",
             TooltipOptions::new().with_max_width(250.0),
         );
-        self.ui.checkbox(5, "Animated Tooltips", self.animated_tooltips);
+        self.ui
+            .checkbox(5, "Animated Tooltips", self.animated_tooltips);
         self.ui.tooltip_with(
             "Toggle the built-in fade/slide animation. Disable it to verify tooltips still appear and disappear instantly without lingering.",
             TooltipOptions::new().with_max_width(260.0),

@@ -1,15 +1,22 @@
+use std::path::PathBuf;
+
 use rengine::*;
 
 struct FontsDemo {
-    mono: FontId,
+    assets: AssetBundle,
     quit: bool,
 }
 
 impl Game for FontsDemo {
     fn new(engine: &mut Engine) -> Self {
-        let mono_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/mono.ttf");
-        let mono = engine.load_font(&mono_path).expect("failed to load mono font");
-        Self { mono, quit: false }
+        engine.set_asset_root(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets"));
+        let assets = engine
+            .load_asset_bundle("fonts.assets.json")
+            .expect("failed to load font asset bundle");
+        Self {
+            assets,
+            quit: false,
+        }
     }
 
     fn update(&mut self, engine: &Engine, _frame: &mut Frame) {
@@ -24,7 +31,17 @@ impl Game for FontsDemo {
         let hh = sh as f32 / 2.0;
 
         let default = engine.font(FontId::DEFAULT);
-        let mono = engine.font(self.mono);
+        let mono = engine.font(
+            self.assets
+                .font_id("mono")
+                .expect("font bundle missing mono font"),
+        );
+        let manifest_name = self
+            .assets
+            .manifest_path()
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("fonts.assets.json");
 
         frame.clear_color = Color::from_rgba8(30, 30, 40, 255);
         let canvas = frame.canvas(0);
@@ -43,23 +60,74 @@ impl Game for FontsDemo {
 
         canvas.text(col_x, y, "Default font (built-in):", body, dim_color);
         y -= 24.0;
-        canvas.text(col_x + 10.0, y, "The quick brown fox jumps over the lazy dog.", body, text_color);
+        canvas.text(
+            col_x + 10.0,
+            y,
+            "The quick brown fox jumps over the lazy dog.",
+            body,
+            text_color,
+        );
         y -= 24.0;
-        canvas.text(col_x + 10.0, y, "ABCDEFGHIJKLMNOPQRSTUVWXYZ 0123456789", body, text_color);
+        canvas.text(
+            col_x + 10.0,
+            y,
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZ 0123456789",
+            body,
+            text_color,
+        );
         y -= 40.0;
 
-        canvas.text(col_x, y, "Mono font (JetBrains Mono, loaded from file):", body, dim_color);
+        canvas.text(
+            col_x,
+            y,
+            "Mono font (JetBrains Mono, loaded from retained asset bundle):",
+            body,
+            dim_color,
+        );
         y -= 24.0;
-        canvas.text_with_font(col_x + 10.0, y, "The quick brown fox jumps over the lazy dog.", body, text_color, mono);
+        canvas.text_with_font(
+            col_x + 10.0,
+            y,
+            "The quick brown fox jumps over the lazy dog.",
+            body,
+            text_color,
+            mono,
+        );
         y -= 24.0;
-        canvas.text_with_font(col_x + 10.0, y, "ABCDEFGHIJKLMNOPQRSTUVWXYZ 0123456789", body, text_color, mono);
+        canvas.text_with_font(
+            col_x + 10.0,
+            y,
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZ 0123456789",
+            body,
+            text_color,
+            mono,
+        );
         y -= 40.0;
 
-        canvas.text(col_x, y, "Mixed fonts on the same canvas:", heading, label_color);
+        canvas.text(
+            col_x,
+            y,
+            "Mixed fonts on the same canvas:",
+            heading,
+            label_color,
+        );
         y -= 30.0;
-        canvas.text(col_x + 10.0, y, "This is the default font, ", body, text_color);
+        canvas.text(
+            col_x + 10.0,
+            y,
+            "This is the default font, ",
+            body,
+            text_color,
+        );
         let w = default.measure_text("This is the default font, ", body).0;
-        canvas.text_with_font(col_x + 10.0 + w, y, "and this is mono.", body, Color::from_rgba8(120, 255, 120, 255), mono);
+        canvas.text_with_font(
+            col_x + 10.0 + w,
+            y,
+            "and this is mono.",
+            body,
+            Color::from_rgba8(120, 255, 120, 255),
+            mono,
+        );
         y -= 40.0;
 
         canvas.text(col_x, y, "Size comparison:", heading, label_color);
@@ -82,15 +150,37 @@ impl Game for FontsDemo {
         let (dw, dh) = default.measure_text(sample, sz);
         let (mw, mh) = mono.measure_text(sample, sz);
         canvas.text(
-            col_x + 10.0, y,
-            &format!("Default \"{}\" @ {}px: {:.0}x{:.0}", sample, sz as u32, dw, dh),
-            14.0, text_color,
+            col_x + 10.0,
+            y,
+            &format!(
+                "Default \"{}\" @ {}px: {:.0}x{:.0}",
+                sample, sz as u32, dw, dh
+            ),
+            14.0,
+            text_color,
         );
         y -= 20.0;
         canvas.text(
-            col_x + 10.0, y,
-            &format!("Mono    \"{}\" @ {}px: {:.0}x{:.0}", sample, sz as u32, mw, mh),
-            14.0, text_color,
+            col_x + 10.0,
+            y,
+            &format!(
+                "Mono    \"{}\" @ {}px: {:.0}x{:.0}",
+                sample, sz as u32, mw, mh
+            ),
+            14.0,
+            text_color,
+        );
+        y -= 30.0;
+        canvas.text(
+            col_x,
+            y,
+            &format!(
+                "Bundle: {} ({} dependencies)",
+                manifest_name,
+                self.assets.dependencies().len()
+            ),
+            14.0,
+            label_color,
         );
     }
 

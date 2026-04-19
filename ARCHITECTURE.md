@@ -750,7 +750,7 @@ pub struct Camera3D {
 
 ### 6.1 [`FontAtlas`](https://github.com/justinwash/rengine/blob/master/engine/src/text.rs#L17) Construction
 
-The engine embeds `assets/font.ttf` at compile time via `include_bytes!()` and builds it as the default font (`FontId::DEFAULT`). Additional fonts can be loaded at runtime with `Engine::load_font(path)`, which returns a `FontId` handle. Each font produces its own `FontAtlas` with an independent GPU texture and bind group.
+The engine embeds `assets/font.ttf` at compile time via `include_bytes!()` and builds it as the default font (`FontId::DEFAULT`). Additional fonts can be loaded at runtime with `Engine::load_font(path)`, which returns a `FontId` handle. Fonts can also be declared in `AssetManifest` files and retrieved from an `AssetPack` by alias. Each font produces its own `FontAtlas` with an independent GPU texture and bind group.
 
 Atlas construction (`build_atlas_from_bytes`):
 
@@ -765,7 +765,7 @@ Atlas construction (`build_atlas_from_bytes`):
 
 The `Renderer` and `Renderer3D` store a `Vec<FontAtlas>` (index 0 is always the default) and use the same texture/sampler bind-group layout for both font atlases and ordinary textures, which lets the shared canvas pass switch between text and images without changing pipelines.
 
-**API**: `engine.load_font("path/to/font.ttf") -> FontId`, `engine.font(id) -> &FontAtlas`, `engine.font_atlas() -> &FontAtlas` (default font shorthand).
+**API**: `engine.load_font("path/to/font.ttf") -> FontId`, `engine.font(id) -> &FontAtlas`, `engine.font_atlas() -> &FontAtlas` (default font shorthand), `engine.load_asset_manifest("assets.json") -> AssetPack`, `pack.font("body") -> Option<&FontAsset>`, `pack.font_id("body") -> Option<FontId>`.
 
 **Rendering**: `Canvas` tracks the currently bound draw texture for each segment. Text segments record a font atlas id; image segments record a `TextureId`. During `render_pass`, the renderer binds the correct font atlas or texture bind group per segment and only switches when the backing GPU resource changes.
 
@@ -1124,18 +1124,19 @@ struct AssetPipeline {
 
 **Caching:** All `load_*` methods check the cache first. This means calling `load_texture("player.png")` twice returns the same `TextureId` without re-uploading.
 
-**Dependency tracking:** When `load_asset_manifest()` is called, the engine records every file path loaded by that manifest in `manifest_deps`. Query with `engine.manifest_dependencies("assets.json")`.
+**Dependency tracking:** When `load_asset_manifest()` or `load_asset_bundle()` is called, the engine records every file path loaded by that manifest in `manifest_deps`. Query with `engine.manifest_dependencies("assets.json")`. `AssetBundle::dependencies()` carries the same resolved dependency list on the retained bundle, sorted and de-duplicated for stable inspection.
 
 **Manifest validation:** `engine.validate_manifest("assets.json")` parses the manifest JSON and checks that every referenced file exists on disk. Returns `Vec<AssetError>` with all problems found rather than failing on the first. Useful for build-time or startup validation.
 
-**Cache management:** `engine.loaded_asset_summary()` returns an `AssetSummary` with counts and paths. Use `unload_texture()`, `unload_mesh()`, or `unload_data()` to evict cached assets.
+**Cache management:** `engine.loaded_asset_summary()` returns an `AssetSummary` with counts and paths, including cached fonts. `unload_texture()` evicts cached textures (and derived sprite sheets), `unload_mesh()` evicts cached meshes, and `unload_data()` evicts cached bytes/text entries. Loaded fonts currently remain cached for the life of the engine; there is no font-unload API yet.
 
-### 8.2 [`AssetManifest`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pipeline.rs#L158) and [`AssetPack`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pipeline.rs#L174)
+### 8.2 [`AssetManifest`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pipeline.rs#L158), [`AssetPack`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pipeline.rs#L174), and `AssetBundle`
 
 An `AssetManifest` is a JSON file declaring assets by alias:
 
 ```json
 {
+  "fonts": { "body": "fonts/body.ttf", "mono": "fonts/mono.ttf" },
   "textures": { "player": "sprites/player.png", "tiles": "sprites/tiles.png" },
   "sprite_sheets": { "walk": { "path": "sprites/walk.png", "cell_width": 32, "cell_height": 32 } },
   "audio": { "jump": "audio/jump.wav", "music": "audio/bgm.ogg" },
@@ -1145,20 +1146,29 @@ An `AssetManifest` is a JSON file declaring assets by alias:
 }
 ```
 
-`Engine::load_asset_manifest(path)` loads the JSON, then loads each entry through the pipeline, producing an `AssetPack`:
+`Engine::load_asset_manifest(path)` loads the JSON, then loads each entry through the pipeline, producing an `AssetPack`. `Engine::load_asset_bundle(path)` does the same work but retains the resolved manifest path and dependency list alongside the pack so gameplay code can keep and reload the bundle as a single object:
 
 ```rust
 pub struct AssetPack {
     bytes: HashMap<String, Arc<[u8]>>,
     text: HashMap<String, Arc<str>>,
+    fonts: HashMap<String, FontAsset>,
     textures: HashMap<String, TextureAsset>,
     sprite_sheets: HashMap<String, SpriteSheet>,
     meshes: HashMap<String, MeshAsset>,
     audio: HashMap<String, AudioClip>,
 }
+
+pub struct AssetBundle {
+    manifest_path: PathBuf,
+    dependencies: Vec<PathBuf>,
+    pack: AssetPack,
+}
 ```
 
-The `AssetPack` provides typed accessors by alias: [`pack.texture("player")`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pipeline.rs#L192), [`pack.sprite_sheet("walk")`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pipeline.rs#L196), [`pack.audio("jump")`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pipeline.rs#L204), etc. It also provides [`texture_id(alias)`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pipeline.rs#L208) which checks both textures and sprite sheets.
+The `AssetPack` provides typed accessors by alias: [`pack.font("body")`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pipeline.rs#L192), [`pack.texture("player")`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pipeline.rs#L200), [`pack.sprite_sheet("walk")`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pipeline.rs#L204), [`pack.audio("jump")`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pipeline.rs#L212), etc. It also provides [`font_id(alias)`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pipeline.rs#L196) and [`texture_id(alias)`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pipeline.rs#L216) for handle lookup.
+
+`AssetBundle` dereferences to `AssetPack`, so existing asset lookups still read naturally (`bundle.texture_id("player")`, `bundle.mesh("enemy")`, and so on). It additionally exposes `manifest_path()`, `dependencies()`, `assets()`, and `into_inner()`. The dependency list is resolved, sorted, and de-duplicated to match `engine.manifest_dependencies()`. `Engine::reload_asset_bundle(&mut bundle)` rebuilds the retained bundle from its original manifest path.
 
 ### 8.3 Texture Loading
 

@@ -43,9 +43,9 @@ pub use world::{
 
 pub use assets::pixelart;
 pub use assets::{
-    Animation, AnimationState, AnimationStateMachine, AnimationTransition, AssetError,
-    AssetManifest, AssetPack, AssetSummary, AudioBus, AudioClip, AudioId, MeshAsset, SpriteSheet,
-    SpriteSheetAssetDef, TextureAsset,
+    Animation, AnimationState, AnimationStateMachine, AnimationTransition, AssetBundle, AssetError,
+    AssetManifest, AssetPack, AssetSummary, AudioBus, AudioClip, AudioId, FontAsset, MeshAsset,
+    SpriteSheet, SpriteSheetAssetDef, TextureAsset,
 };
 
 pub use canvas::{screen_to_ndc, wrap_text, Canvas, CanvasVertex, TextAlign};
