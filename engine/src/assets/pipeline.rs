@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::assets::{AudioClip, Color, SpriteSheet};
 use crate::renderer::TextureId;
 use crate::renderer3d::{MeshId, Vertex3D};
+use crate::text::FontId;
 
 #[derive(Debug)]
 pub enum AssetError {
@@ -179,6 +180,18 @@ impl MeshAsset {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct FontAsset {
+    pub id: FontId,
+    pub path: PathBuf,
+}
+
+impl FontAsset {
+    pub fn font(&self) -> FontId {
+        self.id
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpriteSheetAssetDef {
     pub path: String,
@@ -193,6 +206,8 @@ pub struct AssetManifest {
     #[serde(default)]
     pub text: HashMap<String, String>,
     #[serde(default)]
+    pub fonts: HashMap<String, String>,
+    #[serde(default)]
     pub textures: HashMap<String, String>,
     #[serde(default)]
     pub sprite_sheets: HashMap<String, SpriteSheetAssetDef>,
@@ -206,12 +221,14 @@ pub struct AssetManifest {
 pub struct AssetSummary {
     pub bytes_count: usize,
     pub text_count: usize,
+    pub font_count: usize,
     pub texture_count: usize,
     pub sprite_sheet_count: usize,
     pub mesh_count: usize,
     pub manifest_count: usize,
     pub bytes_paths: Vec<PathBuf>,
     pub text_paths: Vec<PathBuf>,
+    pub font_paths: Vec<PathBuf>,
     pub texture_paths: Vec<PathBuf>,
     pub sprite_sheet_paths: Vec<PathBuf>,
     pub mesh_paths: Vec<PathBuf>,
@@ -222,6 +239,7 @@ pub struct AssetSummary {
 pub struct AssetPack {
     bytes: HashMap<String, Arc<[u8]>>,
     text: HashMap<String, Arc<str>>,
+    fonts: HashMap<String, FontAsset>,
     textures: HashMap<String, TextureAsset>,
     sprite_sheets: HashMap<String, SpriteSheet>,
     meshes: HashMap<String, MeshAsset>,
@@ -235,6 +253,14 @@ impl AssetPack {
 
     pub fn text(&self, alias: &str) -> Option<&Arc<str>> {
         self.text.get(alias)
+    }
+
+    pub fn font(&self, alias: &str) -> Option<&FontAsset> {
+        self.fonts.get(alias)
+    }
+
+    pub fn font_id(&self, alias: &str) -> Option<FontId> {
+        self.fonts.get(alias).map(|asset| asset.id)
     }
 
     pub fn texture(&self, alias: &str) -> Option<&TextureAsset> {
@@ -268,6 +294,10 @@ impl AssetPack {
         self.text.insert(alias, text);
     }
 
+    pub(crate) fn insert_font(&mut self, alias: String, font: FontAsset) {
+        self.fonts.insert(alias, font);
+    }
+
     pub(crate) fn insert_texture(&mut self, alias: String, texture: TextureAsset) {
         self.textures.insert(alias, texture);
     }
@@ -285,6 +315,53 @@ impl AssetPack {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct AssetBundle {
+    manifest_path: PathBuf,
+    dependencies: Vec<PathBuf>,
+    pack: AssetPack,
+}
+
+impl AssetBundle {
+    pub(crate) fn new(manifest_path: PathBuf, dependencies: Vec<PathBuf>, pack: AssetPack) -> Self {
+        Self {
+            manifest_path,
+            dependencies,
+            pack,
+        }
+    }
+
+    pub fn manifest_path(&self) -> &Path {
+        &self.manifest_path
+    }
+
+    pub fn dependencies(&self) -> &[PathBuf] {
+        &self.dependencies
+    }
+
+    pub fn assets(&self) -> &AssetPack {
+        &self.pack
+    }
+
+    pub fn into_inner(self) -> AssetPack {
+        self.pack
+    }
+}
+
+impl AsRef<AssetPack> for AssetBundle {
+    fn as_ref(&self) -> &AssetPack {
+        &self.pack
+    }
+}
+
+impl std::ops::Deref for AssetBundle {
+    type Target = AssetPack;
+
+    fn deref(&self) -> &Self::Target {
+        &self.pack
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct SpriteSheetKey {
     path: PathBuf,
@@ -297,6 +374,7 @@ pub(crate) struct AssetPipeline {
     bytes: HashMap<PathBuf, Arc<[u8]>>,
     text: HashMap<PathBuf, Arc<str>>,
     manifests: HashMap<PathBuf, AssetManifest>,
+    fonts: HashMap<PathBuf, FontAsset>,
     textures: HashMap<PathBuf, TextureAsset>,
     sprite_sheets: HashMap<SpriteSheetKey, SpriteSheet>,
     meshes: HashMap<PathBuf, MeshAsset>,
@@ -313,6 +391,7 @@ impl AssetPipeline {
             bytes: HashMap::new(),
             text: HashMap::new(),
             manifests: HashMap::new(),
+            fonts: HashMap::new(),
             textures: HashMap::new(),
             sprite_sheets: HashMap::new(),
             meshes: HashMap::new(),
@@ -370,6 +449,25 @@ impl AssetPipeline {
         let text: Arc<str> = Arc::from(text);
         self.text.insert(resolved, text.clone());
         Ok(text)
+    }
+
+    pub fn load_font<P, F>(&mut self, path: P, create_font: F) -> Result<FontAsset, AssetError>
+    where
+        P: AsRef<Path>,
+        F: FnOnce(&[u8]) -> FontId,
+    {
+        let resolved = self.resolve_path(path.as_ref());
+        if let Some(font) = self.fonts.get(&resolved) {
+            return Ok(font.clone());
+        }
+
+        let bytes = self.load_bytes(&resolved)?;
+        let asset = FontAsset {
+            id: create_font(bytes.as_ref()),
+            path: resolved.clone(),
+        };
+        self.fonts.insert(resolved, asset.clone());
+        Ok(asset)
     }
 
     pub fn load_manifest<P: AsRef<Path>>(&mut self, path: P) -> Result<AssetManifest, AssetError> {
@@ -677,6 +775,12 @@ impl AssetPipeline {
             )
             .chain(
                 manifest
+                    .fonts
+                    .iter()
+                    .map(|(alias, p)| (alias.as_str(), p.as_str())),
+            )
+            .chain(
+                manifest
                     .textures
                     .iter()
                     .map(|(alias, p)| (alias.as_str(), p.as_str())),
@@ -774,12 +878,14 @@ impl AssetPipeline {
         AssetSummary {
             bytes_count: self.bytes.len(),
             text_count: self.text.len(),
+            font_count: self.fonts.len(),
             texture_count: self.textures.len(),
             sprite_sheet_count: self.sprite_sheets.len(),
             mesh_count: self.meshes.len(),
             manifest_count: self.manifests.len(),
             bytes_paths: self.bytes.keys().cloned().collect(),
             text_paths: self.text.keys().cloned().collect(),
+            font_paths: self.fonts.keys().cloned().collect(),
             texture_paths: self.textures.keys().cloned().collect(),
             sprite_sheet_paths: self.sprite_sheets.keys().map(|k| k.path.clone()).collect(),
             mesh_paths: self.meshes.keys().cloned().collect(),
@@ -1025,9 +1131,12 @@ fn file_modified_time(path: &Path) -> Result<SystemTime, std::io::Error> {
 
 #[cfg(test)]
 mod tests {
-    use super::compute_flat_normals;
+    use std::path::PathBuf;
+
+    use super::{compute_flat_normals, AssetBundle, AssetPack, FontAsset};
     use crate::assets::Color;
     use crate::renderer3d::Vertex3D;
+    use crate::text::FontId;
 
     #[test]
     fn computes_normals_for_triangle() {
@@ -1043,6 +1152,42 @@ mod tests {
         for vertex in vertices {
             assert_eq!(vertex.normal, [0.0, 0.0, 1.0]);
         }
+    }
+
+    #[test]
+    fn asset_pack_returns_manifest_font_handles() {
+        let mut pack = AssetPack::default();
+        pack.insert_font(
+            "mono".into(),
+            FontAsset {
+                id: FontId(1),
+                path: PathBuf::from("mono.ttf"),
+            },
+        );
+
+        assert_eq!(pack.font_id("mono"), Some(FontId(1)));
+        assert_eq!(pack.font("mono").map(|font| font.font()), Some(FontId(1)));
+    }
+
+    #[test]
+    fn asset_bundle_exposes_pack_and_metadata() {
+        let mut pack = AssetPack::default();
+        pack.insert_font(
+            "body".into(),
+            FontAsset {
+                id: FontId(2),
+                path: PathBuf::from("body.ttf"),
+            },
+        );
+
+        let manifest_path = PathBuf::from("ui.assets.json");
+        let deps = vec![PathBuf::from("body.ttf"), PathBuf::from("panel.png")];
+        let bundle = AssetBundle::new(manifest_path.clone(), deps.clone(), pack);
+
+        assert_eq!(bundle.manifest_path(), manifest_path.as_path());
+        assert_eq!(bundle.dependencies(), deps.as_slice());
+        assert_eq!(bundle.font_id("body"), Some(FontId(2)));
+        assert_eq!(bundle.assets().font_id("body"), Some(FontId(2)));
     }
 }
 

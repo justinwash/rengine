@@ -21,12 +21,7 @@ impl ImagesDemo {
         canvas.fill(navy);
         for y in 0..height as i32 {
             let t = y as f32 / (height - 1) as f32;
-            let stripe = Color::new(
-                0.10 + 0.18 * t,
-                0.14 + 0.22 * t,
-                0.25 + 0.28 * t,
-                1.0,
-            );
+            let stripe = Color::new(0.10 + 0.18 * t, 0.14 + 0.22 * t, 0.25 + 0.28 * t, 1.0);
             for x in 0..width as i32 {
                 canvas.set(x, y, stripe);
             }
@@ -109,15 +104,19 @@ impl ImagesDemo {
 
     fn build_ui(&mut self, engine: &Engine) {
         self.ui.begin(engine, -320.0, 48.0, 220.0);
-        self.ui.label_centered("UI Image Widget", 24.0, Color::WHITE);
+        self.ui
+            .label_centered("UI Image Widget", 24.0, Color::WHITE);
         self.ui.separator(8.0);
         self.ui.panel(7);
         self.ui.image(self.card, Vec2::new(120.0, 160.0));
         self.ui.separator(6.0);
-        self.ui.label_centered("Pit Crew Card", 14.0, Color::from_rgba8(220, 220, 220, 255));
+        self.ui
+            .label_centered("Pit Crew Card", 14.0, Color::from_rgba8(220, 220, 220, 255));
         self.ui.row(2);
-        self.ui.image_region(self.icons, Vec2::new(44.0, 44.0), [0.0, 0.0, 0.5, 1.0]);
-        self.ui.image_region(self.icons, Vec2::new(44.0, 44.0), [0.5, 0.0, 0.5, 1.0]);
+        self.ui
+            .image_region(self.icons, Vec2::new(44.0, 44.0), [0.0, 0.0, 0.5, 1.0]);
+        self.ui
+            .image_region(self.icons, Vec2::new(44.0, 44.0), [0.5, 0.0, 0.5, 1.0]);
         self.ui.button(0, "Cycle Accent");
     }
 }
