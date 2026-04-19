@@ -181,9 +181,12 @@ impl UiStylingScene {
         );
         self.ui.separator(16.0);
 
-        self.ui.row_spaced(12.0, 3);
-        for card in Self::cards() {
-            Self::build_offer_card(&mut self.ui, card);
+        let cards = Self::cards();
+        for (index, card) in cards.iter().enumerate() {
+            Self::build_offer_card(&mut self.ui, *card);
+            if index + 1 != cards.len() {
+                self.ui.separator(12.0);
+            }
         }
 
         self.ui.separator(14.0);
