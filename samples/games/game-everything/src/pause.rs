@@ -53,9 +53,27 @@ impl PauseOverlay {
             ui.separator(8.0);
         }
         ui.button(0, "Resume");
+        ui.style_with(
+            UiWidgetStyle::new()
+                .with_button_colors(
+                    Color::from_rgba8(32, 112, 84, 235),
+                    Color::from_rgba8(48, 148, 108, 255),
+                    Color::from_rgba8(28, 88, 68, 255),
+                )
+                .with_button_text_colors(Color::from_rgba8(235, 255, 244, 255), Color::WHITE),
+        );
         ui.animate_with(button_animation);
         ui.tooltip("Return to the current run without losing any state.");
         ui.button(1, "Quit");
+        ui.style_with(
+            UiWidgetStyle::new()
+                .with_button_colors(
+                    Color::from_rgba8(136, 42, 50, 235),
+                    Color::from_rgba8(180, 56, 66, 255),
+                    Color::from_rgba8(96, 24, 32, 255),
+                )
+                .with_button_text_colors(Color::from_rgba8(255, 236, 236, 255), Color::WHITE),
+        );
         ui.animate_with(button_animation);
         ui.tooltip("Exit the kitchen-sink demo immediately.");
     }
@@ -74,6 +92,7 @@ impl Scene for PauseOverlay {
             demo.log_feature("Ui::image");
             demo.log_feature("Ui::tooltip");
             demo.log_feature("Ui::animate_with");
+            demo.log_feature("Ui::style_with");
         }
 
         if !globals.contains::<PauseBadge>() {
