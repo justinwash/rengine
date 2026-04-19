@@ -18,7 +18,7 @@ use crate::input::{ActionMap, GamepadAssignMode, GamepadSystem, InputState};
 use crate::math::tween::Easing;
 use crate::math::{Rng, TimeState};
 use crate::renderer::postfx::PostFxChain;
-use crate::renderer::{Frame, Renderer, TextureId};
+use crate::renderer::{Frame, RenderTarget, Renderer, TextureId};
 use crate::renderer3d::{Frame3D, MeshId, Renderer3D, Vertex3D};
 use crate::scene::{Globals, Scene, Scene2D, Scene3D, SceneOp, SceneOp3D};
 use crate::text;
@@ -275,6 +275,14 @@ impl Engine {
 
     pub fn create_texture(&mut self, width: u32, height: u32, pixels: &[u8]) -> TextureId {
         self.renderer.create_texture(width, height, pixels)
+    }
+
+    pub fn create_render_target(&mut self, width: u32, height: u32) -> RenderTarget {
+        self.renderer.create_render_target(width, height)
+    }
+
+    pub fn resize_render_target(&mut self, target: &mut RenderTarget, width: u32, height: u32) {
+        self.renderer.resize_render_target(target, width, height);
     }
 
     pub fn load_bytes<P: AsRef<Path>>(&mut self, path: P) -> Result<Arc<[u8]>, AssetError> {

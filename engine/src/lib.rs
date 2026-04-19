@@ -31,8 +31,8 @@ pub use math::TimeState;
 pub use math::{ease, lerp, Easing, LoopMode, Tween};
 pub use math::{EventQueue, Timer};
 pub use renderer::{
-    Camera2D, CameraBounds, DrawParams, Frame, NineSlice, PostEffect, PostFxChain, Sprite,
-    TextureId,
+    Camera2D, CameraBounds, DrawParams, Frame, NineSlice, PostEffect, PostFxChain, RenderTarget,
+    Sprite, TextureId,
 };
 
 pub use world::tilemap;
