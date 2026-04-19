@@ -108,14 +108,16 @@ impl Animation {
         }
 
         self.elapsed += dt;
-        while self.elapsed >= self.frame_time {
-            self.elapsed -= self.frame_time;
-            if !self.advance_frame() {
-                self.elapsed = 0.0;
-                break;
-            }
+        let steps = (self.elapsed / self.frame_time) as usize;
+        if steps == 0 {
+            return self.current_frame();
         }
-        self.frames[self.current]
+
+        self.elapsed = self.elapsed.rem_euclid(self.frame_time);
+        if !self.advance_steps(steps) {
+            self.elapsed = 0.0;
+        }
+        self.current_frame()
     }
 
     pub fn current_frame(&self) -> (u32, u32) {
@@ -129,24 +131,21 @@ impl Animation {
         self.finished = false;
     }
 
-    fn advance_frame(&mut self) -> bool {
+    fn advance_steps(&mut self, steps: usize) -> bool {
         match self.loop_mode {
             LoopMode::Loop => {
-                self.current = (self.current + 1) % self.frames.len();
+                self.current = (self.current + steps % self.frames.len()) % self.frames.len();
                 true
             }
             LoopMode::Once => {
                 let last_frame = self.frames.len() - 1;
-                if self.current >= last_frame {
-                    self.current = last_frame;
-                    self.finished = true;
-                    false
-                } else if self.current + 1 == last_frame {
+                let remaining = last_frame.saturating_sub(self.current);
+                if steps >= remaining {
                     self.current = last_frame;
                     self.finished = true;
                     false
                 } else {
-                    self.current += 1;
+                    self.current += steps;
                     true
                 }
             }
@@ -155,18 +154,31 @@ impl Animation {
                     return false;
                 }
 
-                if self.direction >= 0 {
-                    if self.current + 1 >= self.frames.len() {
-                        self.direction = -1;
-                        self.current = self.frames.len().saturating_sub(2);
-                    } else {
-                        self.current += 1;
-                    }
-                } else if self.current == 0 {
+                let mut remaining = steps;
+                let cycle_len = 2 * (self.frames.len() - 1);
+
+                if self.current == 0 && self.direction >= 0 {
+                    self.current = 1;
                     self.direction = 1;
-                    self.current = 1.min(self.frames.len() - 1);
+                    remaining = remaining.saturating_sub(1);
+                    if remaining == 0 {
+                        return true;
+                    }
+                }
+
+                let phase = if self.direction >= 0 {
+                    self.current - 1
                 } else {
-                    self.current -= 1;
+                    cycle_len - 1 - self.current
+                };
+                let phase = (phase + remaining % cycle_len) % cycle_len;
+
+                if phase < self.frames.len() - 1 {
+                    self.current = phase + 1;
+                    self.direction = 1;
+                } else {
+                    self.current = cycle_len - 1 - phase;
+                    self.direction = -1;
                 }
 
                 true
@@ -352,8 +364,7 @@ where
             .or_else(|| self.global_transitions.get(&trigger).cloned());
 
         if let Some(transition) = transition {
-            self.apply_transition(transition);
-            true
+            self.apply_transition(transition)
         } else {
             false
         }
@@ -383,7 +394,12 @@ where
         }
     }
 
-    fn apply_transition(&mut self, transition: AnimationTransition<State>) {
+    fn apply_transition(&mut self, transition: AnimationTransition<State>) -> bool {
+        if !self.states.contains_key(&transition.target) {
+            log::warn!("AnimationStateMachine ignoring transition to missing state");
+            return false;
+        }
+
         let should_reset = transition.reset || transition.target != self.current_state;
         self.current_state = transition.target.clone();
 
@@ -394,6 +410,8 @@ where
                 .animation
                 .reset();
         }
+
+        true
     }
 }
 
@@ -406,6 +424,7 @@ mod tests {
         Idle,
         Hit,
         Recover,
+        Missing,
     }
 
     #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -434,6 +453,13 @@ mod tests {
     }
 
     #[test]
+    fn loop_animation_skips_large_dt() {
+        let mut animation = Animation::new(vec![(0, 0), (1, 0), (2, 0)], 10.0);
+
+        assert_eq!(animation.update(0.85), (2, 0));
+    }
+
+    #[test]
     fn state_machine_uses_trigger_and_completion_transition() {
         let mut machine =
             AnimationStateMachine::new(TestState::Idle, Animation::new(vec![(0, 0)], 4.0));
@@ -452,5 +478,30 @@ mod tests {
 
         assert_eq!(machine.current_state(), &TestState::Recover);
         assert_eq!(machine.current_frame(), (3, 0));
+    }
+
+    #[test]
+    fn missing_transition_target_is_ignored() {
+        let mut machine =
+            AnimationStateMachine::new(TestState::Idle, Animation::new(vec![(0, 0)], 4.0));
+        machine.add_global_transition(TestTrigger::Hit, TestState::Missing);
+
+        assert!(!machine.trigger(TestTrigger::Hit));
+        assert_eq!(machine.current_state(), &TestState::Idle);
+    }
+
+    #[test]
+    fn missing_on_complete_target_is_ignored() {
+        let mut machine: AnimationStateMachine<TestState, TestTrigger> = AnimationStateMachine::new(
+            TestState::Idle,
+            Animation::once(vec![(0, 0), (1, 0)], 10.0),
+        );
+        machine.set_on_complete(TestState::Idle, TestState::Missing);
+
+        machine.update(0.1);
+
+        assert_eq!(machine.current_state(), &TestState::Idle);
+        assert_eq!(machine.current_frame(), (1, 0));
+        assert!(machine.is_finished());
     }
 }
