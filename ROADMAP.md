@@ -82,6 +82,7 @@ Recently completed or partially completed:
 - Completed: widget animation hooks — `Ui::animate_with()` attaches `UiAnimationOptions` to the most recently added widget, with reusable `UiAnimation` builders for hover, focus, press, and appear states built on top of existing `Easing` curves. Hooks currently support labels, images, buttons, text inputs, progress bars, checkboxes, and sliders, compose offset/scale/alpha at render time, keep tooltip hit rects aligned with transformed widgets, and ship with the new `feature-ui-animations` sample plus kitchen-sink pause overlay coverage
 - Completed: UI polish follow-through — `Ui::animate_container_with(id, visible, options)` now gives panels, rows, grids, and scroll regions enter/exit slide hooks that keep a container alive until its exit animation finishes, while `Ui::draggable()` / `drop_target()` attach reusable drag/drop metadata to focusable widgets and expand `UiResponse` with `drag_target`, `dropped`, and `drop_for()`. `feature-ui-animations` now demonstrates both the container transition path and drag/drop reordering flow.
 - Completed: widget styling variants — `Ui::style_with(UiWidgetStyle)` attaches per-widget overrides after a widget is emitted, so card rarities, warning states, or primary call-to-action buttons can diverge from the shared `UiStyle` without forking a separate theme. Supported overrides currently cover buttons, text inputs, panels, progress bars, checkboxes, sliders, and tooltip colors, and they feed layout, hit-testing, render, and tooltip presentation from the same resolved style data. Includes the new `feature-ui-styling` sample plus kitchen-sink pause overlay variants.
+- Completed: UI flow helpers — `Ui::run()` / `run_with()` now collapse the common begin-build-update sequence into one call for static menus, while `Ui::sync()` / `sync_with()` rebuild the widget tree automatically after handling a `UiResponse` so stateful flows can keep labels, button text, panels, and summary widgets in sync on the same frame without duplicating the layout function in game code. Includes the new `feature-ui-flow` sample and kitchen-sink pause overlay usage.
 - Completed: render targets and offscreen textures — the 2D renderer now exposes a public `RenderTarget` handle, `Engine::create_render_target()`, `Engine::resize_render_target()`, and `Frame::render_target()` for nested offscreen drawing into a texture that can immediately be reused as a sprite, UI image, or secondary preview surface later in the same frame. Added `feature-render-targets` as the reference sample for monitor/preview composition.
 - Completed: text input widget — `InputState` now carries per-frame committed text plus persistent IME preedit state from winit text events, `Ui::text_input()` adds a single-line editable field with caret movement and placeholder rendering, `UiResponse::text_for()` reports changed strings, and `feature-text-input` demonstrates both direct keyboard entry and a game/sample-layer gamepad-friendly on-screen keyboard built from regular Ui buttons
 - Completed: animation state machines — `Animation` now supports `Loop`, `Once`, and `PingPong` playback, while `AnimationStateMachine<State, Trigger>` layers named states, trigger-driven transitions, global transitions, and one-shot completion fallthrough on top of sprite-sheet clips. Includes the new `feature-animation-state-machines` sample with car launch, cruise, brake, and spin-out states
@@ -565,17 +566,16 @@ Tracked against the build order. Crossed-off items are done.
 22. ~~Rebindable controls — player key remapping~~ ✓
 23. ~~Widget styling variants — per-widget visual overrides for card rarities, warnings, and CTA emphasis~~ ✓
 
-Items 1-23 are done. The motorsport management game has the low-level UI primitives it was missing; the remaining gaps are now mostly ergonomics and composition helpers.
+Items 1-23 are done, and the first two motorsport-specific follow-up items after that audit are now done too.
 
 Current priority engine issues for this game:
 
-1. UI flow helpers — same-frame rebuild/sync helpers for menus that need to react to responses without duplicating layout code.
-2. Data-driven UI templates — card/list/form descriptors or prefab-like builders to reduce hand-authored widget trees.
-3. Lightweight UI state organization helpers — keep larger menu state manageable without forcing a retained-mode rewrite.
-4. Form/workflow helpers — repeated patterns for validation, confirm/cancel flows, and multi-step dialogs.
-5. Deferred rollback follow-up — animation/timer/tween/RNG helpers remain the main systemic gap once gameplay justifies them.
+1. Data-driven UI templates and repeated management panels — driver cards, sponsor offers, facility upgrades, and standings rows still want a cleaner repeated-layout story.
+2. Lightweight game-state organization patterns — the engine still lacks an opinionated but simple way to structure teams, drivers, contracts, suppliers, and season state.
+3. Form and workflow helpers — team creation, hiring, contracts, and setup screens still require hand-rolled validation and multi-step flow logic.
+4. Deferred rollback follow-up — animation/timer/tween/RNG helpers remain the main systemic gap once gameplay justifies them.
 
-Deferred rollback follow-up after those higher-priority items:
+Deferred rollback follow-up after those game-facing priorities:
 
 - Add built-in rollback-safe support or snapshot helpers for animation state, timers/tweens, and deterministic RNG progression.
 - Keep renderer, audio, and other presentation/runtime caches outside rollback while documenting the game-owned save/load boundary more explicitly.

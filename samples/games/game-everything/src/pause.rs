@@ -88,6 +88,7 @@ impl Scene for PauseOverlay {
         if let Some(demo) = globals.get_mut::<DemoConfig>() {
             demo.log_feature("Scene::on_enter");
             demo.log_feature("Ui (widget system)");
+            demo.log_feature("Ui::run");
             demo.log_feature("Ui::image");
             demo.log_feature("Ui::tooltip");
             demo.log_feature("Ui::animate_with");
@@ -124,14 +125,14 @@ impl Scene for PauseOverlay {
         }
 
         self.badge = globals.get::<PauseBadge>().map(|badge| badge.0);
-
         self.ui.begin(engine, -100.0, 40.0, 200.0);
         Self::build_pause_ui(&mut self.ui, self.badge);
     }
 
     fn update(&mut self, engine: &Engine, globals: &mut Globals, _frame: &mut Frame) -> SceneOp {
-        self.ui.begin(engine, -100.0, 40.0, 200.0);
-        Self::build_pause_ui(&mut self.ui, self.badge);
+        let resp = self.ui.run(engine, -100.0, 40.0, 200.0, |ui| {
+            Self::build_pause_ui(ui, self.badge)
+        });
 
         let is_demo = globals.get::<DemoConfig>().map_or(false, |d| d.enabled);
 
@@ -146,8 +147,6 @@ impl Scene for PauseOverlay {
             }
             return SceneOp::Continue;
         }
-
-        let resp = self.ui.update(engine);
 
         if let Some(id) = resp.activated {
             match id {
