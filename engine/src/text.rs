@@ -87,7 +87,13 @@ pub fn font_atlas(
     bind_group_layout: &wgpu::BindGroupLayout,
 ) -> FontAtlas {
     let font_bytes = include_bytes!("../assets/font.ttf");
-    build_atlas_from_bytes(device, queue, bind_group_layout, font_bytes, FontId::DEFAULT)
+    build_atlas_from_bytes(
+        device,
+        queue,
+        bind_group_layout,
+        font_bytes,
+        FontId::DEFAULT,
+    )
 }
 
 pub(crate) fn build_atlas_from_bytes(
