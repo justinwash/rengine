@@ -81,6 +81,7 @@ Recently completed or partially completed:
 - Completed: tooltip widget — `Ui::tooltip()`, `tooltip_sized()`, and `tooltip_with()` attach explanatory text to the most recently added widget, with engine-level delay, fixed or auto sizing, mouse/widget/screen placement modes, built-in fade/fade-slide animation options, Shift-or-custom-key expansion for advanced text, and a runtime-state fix so tooltips disappear cleanly when no widget is active; includes `feature-tooltips` and kitchen-sink pause overlay coverage
 - Completed: widget animation hooks — `Ui::animate_with()` attaches `UiAnimationOptions` to the most recently added widget, with reusable `UiAnimation` builders for hover, focus, press, and appear states built on top of existing `Easing` curves. Hooks currently support labels, images, buttons, text inputs, progress bars, checkboxes, and sliders, compose offset/scale/alpha at render time, keep tooltip hit rects aligned with transformed widgets, and ship with the new `feature-ui-animations` sample plus kitchen-sink pause overlay coverage
 - Completed: UI polish follow-through — `Ui::animate_container_with(id, visible, options)` now gives panels, rows, grids, and scroll regions enter/exit slide hooks that keep a container alive until its exit animation finishes, while `Ui::draggable()` / `drop_target()` attach reusable drag/drop metadata to focusable widgets and expand `UiResponse` with `drag_target`, `dropped`, and `drop_for()`. `feature-ui-animations` now demonstrates both the container transition path and drag/drop reordering flow.
+- Completed: render targets and offscreen textures — the 2D renderer now exposes a public `RenderTarget` handle, `Engine::create_render_target()`, `Engine::resize_render_target()`, and `Frame::render_target()` for nested offscreen drawing into a texture that can immediately be reused as a sprite, UI image, or secondary preview surface later in the same frame. Added `feature-render-targets` as the reference sample for monitor/preview composition.
 - Completed: text input widget — `InputState` now carries per-frame committed text plus persistent IME preedit state from winit text events, `Ui::text_input()` adds a single-line editable field with caret movement and placeholder rendering, `UiResponse::text_for()` reports changed strings, and `feature-text-input` demonstrates both direct keyboard entry and a game/sample-layer gamepad-friendly on-screen keyboard built from regular Ui buttons
 - Completed: animation state machines — `Animation` now supports `Loop`, `Once`, and `PingPong` playback, while `AnimationStateMachine<State, Trigger>` layers named states, trigger-driven transitions, global transitions, and one-shot completion fallthrough on top of sprite-sheet clips. Includes the new `feature-animation-state-machines` sample with car launch, cruise, brake, and spin-out states
 
@@ -562,15 +563,15 @@ Tracked against the build order. Crossed-off items are done.
 21. ~~Animation state machines — car sprite states~~ ✓
 22. ~~Rebindable controls — player key remapping~~ ✓
 
-Items 1-22 are done. UI polish follow-through is now done too, so render targets and offscreen textures are the main remaining engine gap for the motorsport management game.
+Items 1-22 are done. The three top-priority engine follow-through items are now complete for the motorsport management game.
 
 Current priority engine issues for this game:
 
-1. Render targets and offscreen textures — useful once the management game wants composited monitors, preview panels, or richer layered presentation.
+1. Deferred rollback follow-up — animation/timer/tween/RNG helpers are now the main remaining systemic gap once a gameplay need justifies them.
 
 Deferred rollback follow-up after those higher-priority items:
 
 - Add built-in rollback-safe support or snapshot helpers for animation state, timers/tweens, and deterministic RNG progression.
 - Keep renderer, audio, and other presentation/runtime caches outside rollback while documenting the game-owned save/load boundary more explicitly.
 
-Unless a more urgent engine bug appears, the next engine work for the motorsport game should stay focused on render targets first and the deferred rollback follow-up after that.
+Unless a more urgent engine bug appears, the next engine work for the motorsport game should stay focused on the deferred rollback follow-up.

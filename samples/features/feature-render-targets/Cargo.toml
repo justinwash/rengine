@@ -1,0 +1,11 @@
+[package]
+name = "rengine-feature-render-targets"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "rengine-feature-render-targets"
+path = "src/main.rs"
+
+[dependencies]
+rengine = { path = "../../../engine" }

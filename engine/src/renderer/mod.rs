@@ -12,7 +12,7 @@ pub use texture::TextureId;
 
 use crate::app::ScaleMode;
 use crate::assets::Color;
-use crate::canvas::{self, Canvas};
+use crate::canvas::{self, Canvas, DrawTexture};
 use crate::text;
 use crate::text::FontAtlas;
 
@@ -27,12 +27,37 @@ const MAX_SPRITES: usize = 10_000;
 const MAX_VERTICES: usize = MAX_SPRITES * 4;
 const MAX_INDICES: usize = MAX_SPRITES * 6;
 
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub struct RenderTarget {
+    id: usize,
+    texture: TextureId,
+    width: u32,
+    height: u32,
+}
+
+impl RenderTarget {
+    pub fn texture_id(&self) -> TextureId {
+        self.texture
+    }
+
+    pub fn size(&self) -> (u32, u32) {
+        (self.width, self.height)
+    }
+}
+
+struct TargetFrame {
+    target_id: usize,
+    texture: TextureId,
+    frame: Frame,
+}
+
 pub struct Frame {
     pub(crate) sprites: Vec<DrawParams>,
     pub camera: Camera2D,
     pub clear_color: Color,
 
     pub(crate) canvases: Vec<Canvas>,
+    render_targets: Vec<TargetFrame>,
     screen_size: (u32, u32),
     atlas: *const FontAtlas,
 }
@@ -44,6 +69,7 @@ impl Frame {
             camera: Camera2D::new(),
             clear_color: Color::BLACK,
             canvases: Vec::new(),
+            render_targets: Vec::new(),
             screen_size: (1, 1),
             atlas: std::ptr::null(),
         }
@@ -84,6 +110,7 @@ impl Frame {
     pub fn begin(&mut self, screen_size: (u32, u32), atlas: &FontAtlas) {
         self.sprites.clear();
         self.canvases.clear();
+        self.render_targets.clear();
         self.clear_color = Color::BLACK;
         self.screen_size = screen_size;
         self.atlas = atlas as *const FontAtlas;
@@ -101,11 +128,73 @@ impl Frame {
         }
         &mut self.canvases[index]
     }
+
+    pub fn render_target(&mut self, target: &RenderTarget) -> &mut Frame {
+        assert!(
+            !self.atlas.is_null(),
+            "Frame font atlas not initialized; call begin() before render_target()"
+        );
+
+        if let Some(index) = self
+            .render_targets
+            .iter()
+            .position(|existing| existing.target_id == target.id)
+        {
+            return &mut self.render_targets[index].frame;
+        }
+
+        let atlas = unsafe { &*self.atlas };
+        let mut frame = Frame::new();
+        frame.begin(target.size(), atlas);
+        self.render_targets.push(TargetFrame {
+            target_id: target.id,
+            texture: target.texture,
+            frame,
+        });
+        &mut self.render_targets.last_mut().unwrap().frame
+    }
+}
+
+fn push_active_render_target(active_targets: &mut Vec<usize>, texture_index: usize) {
+    assert!(
+        !active_targets.contains(&texture_index),
+        "render target cycle detected while rendering texture {:?}",
+        TextureId(texture_index)
+    );
+    active_targets.push(texture_index);
+}
+
+fn validate_render_target_frame(frame: &mut Frame, texture_index: usize) {
+    let target_texture = TextureId(texture_index);
+    assert!(
+        frame
+            .sprites
+            .iter()
+            .all(|sprite| sprite.texture != target_texture),
+        "render target {:?} cannot sample itself in the sprite pass",
+        target_texture
+    );
+
+    for canvas in &mut frame.canvases {
+        canvas.finalize();
+    }
+
+    let uses_target_texture = frame.canvases.iter().any(|canvas| {
+        canvas
+            .segments
+            .iter()
+            .any(|segment| segment.texture == DrawTexture::Texture(texture_index))
+    });
+    assert!(
+        !uses_target_texture,
+        "render target {:?} cannot sample itself in the canvas pass",
+        target_texture
+    );
 }
 
 struct GpuTexture {
     _texture: wgpu::Texture,
-    _view: wgpu::TextureView,
+    view: wgpu::TextureView,
     bind_group: wgpu::BindGroup,
 }
 
@@ -133,6 +222,7 @@ pub(crate) struct Renderer {
     textures: Vec<GpuTexture>,
     sampler: wgpu::Sampler,
     pub(crate) white_texture: TextureId,
+    render_targets: Vec<TextureId>,
 
     canvas_pipeline: wgpu::RenderPipeline,
     canvas_vb: wgpu::Buffer,
@@ -347,6 +437,7 @@ impl Renderer {
             textures: Vec::new(),
             sampler,
             white_texture: TextureId(0),
+            render_targets: Vec::new(),
             canvas_pipeline,
             canvas_vb,
             fonts: vec![font_atlas],
@@ -369,48 +460,62 @@ impl Renderer {
         id
     }
 
-    pub fn create_texture(&mut self, width: u32, height: u32, pixels: &[u8]) -> TextureId {
-        assert_eq!(
-            pixels.len(),
-            (width * height * 4) as usize,
-            "pixel data length must match width × height × 4"
-        );
+    fn build_texture(
+        &self,
+        width: u32,
+        height: u32,
+        pixels: Option<&[u8]>,
+        render_target: bool,
+        label: &'static str,
+    ) -> GpuTexture {
+        if let Some(pixels) = pixels {
+            assert_eq!(
+                pixels.len(),
+                (width * height * 4) as usize,
+                "pixel data length must match width × height × 4"
+            );
+        }
 
         let size = wgpu::Extent3d {
             width,
             height,
             depth_or_array_layers: 1,
         };
+        let mut usage = wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST;
+        if render_target {
+            usage |= wgpu::TextureUsages::RENDER_ATTACHMENT;
+        }
 
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("sprite_texture"),
+            label: Some(label),
             size,
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            usage,
             view_formats: &[],
         });
 
-        self.queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            pixels,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(4 * width),
-                rows_per_image: Some(height),
-            },
-            size,
-        );
+        if let Some(pixels) = pixels {
+            self.queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                pixels,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(4 * width),
+                    rows_per_image: Some(height),
+                },
+                size,
+            );
+        }
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("texture_bg"),
             layout: &self.texture_bind_group_layout,
@@ -426,138 +531,73 @@ impl Renderer {
             ],
         });
 
-        let id = TextureId(self.textures.len());
-        self.textures.push(GpuTexture {
+        GpuTexture {
             _texture: texture,
-            _view: view,
+            view,
             bind_group,
-        });
+        }
+    }
+
+    pub fn create_texture(&mut self, width: u32, height: u32, pixels: &[u8]) -> TextureId {
+        let id = TextureId(self.textures.len());
+        self.textures.push(self.build_texture(
+            width,
+            height,
+            Some(pixels),
+            false,
+            "sprite_texture",
+        ));
         id
     }
 
     pub fn replace_texture(&mut self, id: TextureId, width: u32, height: u32, pixels: &[u8]) {
+        self.textures[id.0] =
+            self.build_texture(width, height, Some(pixels), false, "sprite_texture");
+    }
+
+    pub fn create_render_target(&mut self, width: u32, height: u32) -> RenderTarget {
+        let texture = TextureId(self.textures.len());
+        self.textures.push(self.build_texture(
+            width.max(1),
+            height.max(1),
+            None,
+            true,
+            "render_target_texture",
+        ));
+        let id = self.render_targets.len();
+        self.render_targets.push(texture);
+        RenderTarget {
+            id,
+            texture,
+            width: width.max(1),
+            height: height.max(1),
+        }
+    }
+
+    pub fn resize_render_target(&mut self, target: &mut RenderTarget, width: u32, height: u32) {
+        let width = width.max(1);
+        let height = height.max(1);
+        let known_texture = self
+            .render_targets
+            .get(target.id)
+            .copied()
+            .expect("invalid render target handle");
         assert_eq!(
-            pixels.len(),
-            (width * height * 4) as usize,
-            "pixel data length must match width × height × 4"
+            known_texture, target.texture,
+            "render target handle is stale"
         );
-
-        let size = wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        };
-
-        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("sprite_texture"),
-            size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-
-        self.queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            pixels,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(4 * width),
-                rows_per_image: Some(height),
-            },
-            size,
-        );
-
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("texture_bg"),
-            layout: &self.texture_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&self.sampler),
-                },
-            ],
-        });
-
-        self.textures[id.0] = GpuTexture {
-            _texture: texture,
-            _view: view,
-            bind_group,
-        };
+        self.textures[target.texture.0] =
+            self.build_texture(width, height, None, true, "render_target_texture");
+        target.width = width;
+        target.height = height;
     }
 
-    pub fn resize(&mut self, width: u32, height: u32) {
-        if width > 0 && height > 0 {
-            self.surface_config.width = width;
-            self.surface_config.height = height;
-            self.surface.configure(&self.device, &self.surface_config);
-        }
-    }
-
-    pub fn render_frame(&mut self, frame: &mut Frame, postfx_chain: &PostFxChain) {
-        let output = match self.surface.get_current_texture() {
-            Ok(t) => t,
-            Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                self.surface.configure(&self.device, &self.surface_config);
-                return;
-            }
-            Err(e) => {
-                log::error!("Surface error: {e:?}");
-                return;
-            }
-        };
-        let swap_view = output
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-
-        {
-            let effects = postfx_chain.effects.borrow();
-            let is_dirty = *postfx_chain.dirty.borrow();
-            if effects.is_empty() {
-                if is_dirty {
-                    self.postfx = None;
-                    *postfx_chain.dirty.borrow_mut() = false;
-                }
-            } else if self.offscreen.is_some() {
-                let ofs = self.offscreen.as_ref().unwrap();
-                let (w, h) = (ofs.width, ofs.height);
-                if self.postfx.is_none() {
-                    let mut pfx =
-                        PostFxPipeline::new(&self.device, w, h, self.surface_config.format);
-                    pfx.set_source_view(&self.device, &ofs.view);
-                    self.postfx = Some(pfx);
-                }
-                let pfx = self.postfx.as_mut().unwrap();
-                pfx.resize(&self.device, w, h);
-                if is_dirty {
-                    pfx.set_source_view(&self.device, &ofs.view);
-                    pfx.rebuild(&self.device, &effects);
-                    *postfx_chain.dirty.borrow_mut() = false;
-                }
-            }
-        }
-
-        let (sprite_target, proj_w, proj_h) = match self.offscreen {
-            Some(ref ofs) => (&ofs.view, ofs.width as f32, ofs.height as f32),
-            None => (
-                &swap_view,
-                self.surface_config.width as f32,
-                self.surface_config.height as f32,
-            ),
-        };
-
+    fn upload_frame_batches(
+        &mut self,
+        frame: &Frame,
+        proj_w: f32,
+        proj_h: f32,
+    ) -> Vec<(usize, u32)> {
         let projection = frame.camera.projection(proj_w, proj_h);
         self.queue.write_buffer(
             &self.projection_buffer,
@@ -611,10 +651,10 @@ impl Renderer {
 
             let uvs = [[ul, vt], [ur, vt], [ur, vb], [ul, vb]];
 
-            for i in 0..4 {
+            for index in 0..4 {
                 vertices.push(Vertex {
-                    position: corners[i],
-                    tex_coords: uvs[i],
+                    position: corners[index],
+                    tex_coords: uvs[index],
                     color,
                 });
             }
@@ -641,11 +681,168 @@ impl Renderer {
             batches.push((cur_tex, count));
         }
 
+        batches
+    }
+
+    fn render_frame_to_texture(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        frame: &mut Frame,
+        texture_index: usize,
+        active_targets: &mut Vec<usize>,
+    ) {
+        push_active_render_target(active_targets, texture_index);
+        self.render_nested_targets(encoder, frame, active_targets);
+        validate_render_target_frame(frame, texture_index);
+        let batches = self.upload_frame_batches(
+            frame,
+            frame.screen_size.0 as f32,
+            frame.screen_size.1 as f32,
+        );
+
+        {
+            let target_view = &self.textures[texture_index].view;
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("render_target_sprite_pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: target_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(frame.clear_color.to_wgpu()),
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+
+            if !batches.is_empty() {
+                pass.set_pipeline(&self.pipeline);
+                pass.set_bind_group(0, &self.projection_bind_group, &[]);
+                pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+                pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+
+                let mut sprite_offset: u32 = 0;
+                for &(tex_idx, count) in &batches {
+                    pass.set_bind_group(1, &self.textures[tex_idx].bind_group, &[]);
+                    let idx_start = sprite_offset * 6;
+                    let idx_count = count * 6;
+                    pass.draw_indexed(idx_start..idx_start + idx_count, 0, 0..1);
+                    sprite_offset += count;
+                }
+            }
+        }
+
+        let target_view = &self.textures[texture_index].view;
+        canvas::render_pass(
+            encoder,
+            target_view,
+            &self.canvas_pipeline,
+            &self.canvas_vb,
+            &self.queue,
+            &mut frame.canvases,
+            &self.fonts,
+            |texture_id| {
+                self.textures
+                    .get(texture_id)
+                    .map(|texture| &texture.bind_group)
+            },
+        );
+
+        let popped = active_targets.pop();
+        debug_assert_eq!(popped, Some(texture_index));
+    }
+
+    fn render_nested_targets(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        frame: &mut Frame,
+        active_targets: &mut Vec<usize>,
+    ) {
+        for target_frame in &mut frame.render_targets {
+            self.render_frame_to_texture(
+                encoder,
+                &mut target_frame.frame,
+                target_frame.texture.0,
+                active_targets,
+            );
+        }
+    }
+
+    pub fn resize(&mut self, width: u32, height: u32) {
+        if width > 0 && height > 0 {
+            self.surface_config.width = width;
+            self.surface_config.height = height;
+            self.surface.configure(&self.device, &self.surface_config);
+        }
+    }
+
+    pub fn render_frame(&mut self, frame: &mut Frame, postfx_chain: &PostFxChain) {
+        let output = match self.surface.get_current_texture() {
+            Ok(t) => t,
+            Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                self.surface.configure(&self.device, &self.surface_config);
+                return;
+            }
+            Err(e) => {
+                log::error!("Surface error: {e:?}");
+                return;
+            }
+        };
+        let swap_view = output
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+
+        {
+            let effects = postfx_chain.effects.borrow();
+            let is_dirty = *postfx_chain.dirty.borrow();
+            if effects.is_empty() {
+                if is_dirty {
+                    self.postfx = None;
+                    *postfx_chain.dirty.borrow_mut() = false;
+                }
+            } else if self.offscreen.is_some() {
+                let ofs = self.offscreen.as_ref().unwrap();
+                let (w, h) = (ofs.width, ofs.height);
+                if self.postfx.is_none() {
+                    let mut pfx =
+                        PostFxPipeline::new(&self.device, w, h, self.surface_config.format);
+                    pfx.set_source_view(&self.device, &ofs.view);
+                    self.postfx = Some(pfx);
+                }
+                let pfx = self.postfx.as_mut().unwrap();
+                pfx.resize(&self.device, w, h);
+                if is_dirty {
+                    pfx.set_source_view(&self.device, &ofs.view);
+                    pfx.rebuild(&self.device, &effects);
+                    *postfx_chain.dirty.borrow_mut() = false;
+                }
+            }
+        }
+
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("frame_encoder"),
             });
+        let mut active_targets = Vec::new();
+        self.render_nested_targets(&mut encoder, frame, &mut active_targets);
+
+        let (proj_w, proj_h) = match self.offscreen {
+            Some(ref ofs) => (ofs.width as f32, ofs.height as f32),
+            None => (
+                self.surface_config.width as f32,
+                self.surface_config.height as f32,
+            ),
+        };
+        let batches = self.upload_frame_batches(frame, proj_w, proj_h);
+        let sprite_target = match self.offscreen {
+            Some(ref ofs) => &ofs.view,
+            None => &swap_view,
+        };
 
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -918,5 +1115,56 @@ pub(crate) fn blit_viewport(
                 (x as f32, y as f32, w as f32, h as f32)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        push_active_render_target, validate_render_target_frame, DrawParams, Frame, RenderTarget,
+        TextureId,
+    };
+    use crate::canvas::Canvas;
+
+    #[test]
+    fn render_target_exposes_texture_and_size() {
+        let target = RenderTarget {
+            id: 3,
+            texture: TextureId(7),
+            width: 320,
+            height: 180,
+        };
+
+        assert_eq!(target.texture_id(), TextureId(7));
+        assert_eq!(target.size(), (320, 180));
+    }
+
+    #[test]
+    #[should_panic(expected = "render target cycle detected")]
+    fn render_target_cycle_detection_panics() {
+        let mut active_targets = vec![7];
+        push_active_render_target(&mut active_targets, 7);
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot sample itself in the sprite pass")]
+    fn render_target_validation_rejects_sprite_feedback() {
+        let mut frame = Frame::new();
+        frame.sprites.push(DrawParams::new(
+            TextureId(7),
+            glam::Vec2::ZERO,
+            glam::Vec2::new(16.0, 16.0),
+        ));
+        validate_render_target_frame(&mut frame, 7);
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot sample itself in the canvas pass")]
+    fn render_target_validation_rejects_canvas_feedback() {
+        let mut frame = Frame::new();
+        let mut canvas = Canvas::new((320, 180), std::ptr::null());
+        canvas.image(TextureId(7), -16.0, -16.0, 32.0, 32.0);
+        frame.canvases.push(canvas);
+        validate_render_target_frame(&mut frame, 7);
     }
 }

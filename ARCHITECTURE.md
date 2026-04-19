@@ -429,6 +429,7 @@ The `DeviceEvent::MouseMotion` handler accumulates deltas into `input.mouse_delt
 14. **Font atlas** — Built from the embedded `font.ttf` (see §6.1).
 
 15. **White texture** — A 1×1 white pixel texture created as `create_texture(1, 1, &[255, 255, 255, 255])`. Its `TextureId` is stored as `renderer.white_texture` and used when games want to draw solid-colored rectangles without loading a texture.
+16. **Render targets** — Additional GPU textures created with `Engine::create_render_target(width, height)`. Each target keeps a `TextureId` for sampling plus a renderable texture view so nested `Frame`s can draw into it before the main scene composites it back in.
 
 ### 4.2 The Sprite Pipeline ([`DrawParams`](https://github.com/justinwash/rengine/blob/master/engine/src/renderer/sprite.rs#L6))
 
@@ -453,7 +454,7 @@ Textures are stored in a `Vec<GpuTexture>`:
 ```rust
 struct GpuTexture {
     _texture: wgpu::Texture,
-    _view: wgpu::TextureView,
+    view: wgpu::TextureView,
     bind_group: wgpu::BindGroup,
 }
 ```
@@ -468,17 +469,21 @@ struct GpuTexture {
 
 [`replace_texture()`](https://github.com/justinwash/rengine/blob/master/engine/src/renderer/mod.rs#L373) follows the same process but writes to an existing slot, enabling hot reload.
 
+`RenderTarget` is the public wrapper around a renderable texture slot. `Engine::create_render_target(width, height)` allocates an RGBA texture with both `TEXTURE_BINDING` and `RENDER_ATTACHMENT` usage, returns a `RenderTarget`, and makes its `texture_id()` immediately usable with `frame.draw()` / `Canvas::image()`. `Engine::resize_render_target(&mut target, width, height)` rebuilds the underlying texture in place and updates the handle's cached size.
+
 ### 4.4 [`Frame`](https://github.com/justinwash/rengine/blob/master/engine/src/renderer/mod.rs#L21) Submission and Batched Rendering
 
 [`render_frame(&frame)`](https://github.com/justinwash/rengine/blob/master/engine/src/renderer/mod.rs#L444) performs the actual GPU work:
 
 1. **Surface acquire** — `self.surface.get_current_texture()`. On `Lost` or `Outdated`, reconfigures and returns early.
 
-2. **Projection upload** — Computes `frame.camera.projection(width, height)` and writes the 4×4 matrix to the projection uniform buffer.
+2. **Nested render targets** — Any `frame.render_target(target)` children are rendered first. Each child is its own `Frame`, using the target's size for projection and drawing directly into the target texture before the parent scene can sample that texture.
 
-3. **Sort sprites** — `frame.sprites` is sorted by `(z_order, texture_id)`. This ensures correct draw order and minimizes texture bind switches.
+3. **Projection upload** — Computes `frame.camera.projection(width, height)` and writes the 4×4 matrix to the projection uniform buffer.
 
-4. **Vertex generation** — For each sorted sprite, four vertices are generated:
+4. **Sort sprites** — `frame.sprites` is sorted by `(z_order, texture_id)`. This ensures correct draw order and minimizes texture bind switches.
+
+5. **Vertex generation** — For each sorted sprite, four vertices are generated:
 
    ```
    [bottom-left, bottom-right, top-right, top-left]
@@ -494,19 +499,19 @@ struct GpuTexture {
    [px + dx * cos - dy * sin, py + dx * sin + dy * cos]
    ```
 
-5. **Vertex upload** — All vertices are written to the GPU vertex buffer in one `write_buffer` call.
+6. **Vertex upload** — All vertices are written to the GPU vertex buffer in one `write_buffer` call.
 
-6. **Batching** — Consecutive sprites sharing the same `texture_id` are grouped into batches. Each batch is a `(texture_index, sprite_count)`.
+7. **Batching** — Consecutive sprites sharing the same `texture_id` are grouped into batches. Each batch is a `(texture_index, sprite_count)`.
 
-7. **Render pass** — A single render pass with:
+8. **Render pass** — A single render pass with:
    - Clear color from `frame.clear_color`
    - The sprite pipeline bound
    - Projection bind group at group 0
    - For each batch: texture bind group at group 1, `draw_indexed(start..end)`
 
-8. **Canvas pass** — After the sprite pass, `canvas::render_pass()` is called to draw the 2D canvas overlay (text, rectangles) on top of the scene.
+9. **Canvas pass** — After the sprite pass, `canvas::render_pass()` is called to draw the 2D canvas overlay (text, rectangles) on top of the scene. For render targets, this canvas pass writes into the target texture instead of the window.
 
-9. **Submit** — `queue.submit(encoder.finish())` + `output.present()`.
+10. **Submit** — `queue.submit(encoder.finish())` + `output.present()`.
 
 ### 4.5 [`Camera2D`](https://github.com/justinwash/rengine/blob/master/engine/src/renderer/camera.rs#L3) and Projection
 
@@ -1491,6 +1496,8 @@ Games typically store `SaveSystem` in `Globals` and derive `Serialize` + `Deseri
 ## 10.6 Resolution Scaling
 
 The engine supports rendering at a fixed "game resolution" that is independent of the window size. When `render_width` and `render_height` are set on `EngineConfig`, an offscreen render target is created at that resolution. Sprites render to the offscreen target, then a blit pass scales it to fit the window according to the chosen `ScaleMode`.
+
+This internal resolution target is separate from the public `RenderTarget` API. Resolution scaling always belongs to the engine's main scene presentation path, while `RenderTarget` handles are user-owned auxiliary textures for things like in-world monitors, previews, minimaps, or composited dashboard widgets.
 
 **`ScaleMode`** — controls how the game image maps to the window:
 
