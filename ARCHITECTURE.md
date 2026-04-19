@@ -1170,7 +1170,7 @@ The `AssetPack` provides typed accessors by alias: [`pack.texture("player")`](ht
 4. Store the `TextureAsset { id, width, height, path }` in the cache.
 5. Record the file's modification timestamp for hot reload.
 
-### 8.4 [`SpriteSheet`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/spritesheet.rs#L5) and [`Animation`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/spritesheet.rs#L56)
+### 8.4 [`SpriteSheet`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/spritesheet.rs#L5), [`Animation`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/spritesheet.rs#L56), and [`AnimationStateMachine`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/spritesheet.rs)
 
 ```rust
 pub struct SpriteSheet {
@@ -1194,15 +1194,17 @@ Loading validates that the texture dimensions are evenly divisible by cell dimen
 pub struct Animation {
     pub frames: Vec<(u32, u32)>,  // (col, row) pairs
     pub frame_time: f32,          // Seconds per frame
-    elapsed: f32,
-    current: usize,
+    ...
 }
 ```
 
-- [`Animation::new(frames, fps)`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/spritesheet.rs#L68) — Creates an animation with `frame_time = 1.0 / fps`.
-- [`update(dt)`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/spritesheet.rs#L78) — Advances the timer; when `elapsed >= frame_time`, cycles to the next frame (wrapping). Returns the current `(col, row)`.
-- [`current_frame()`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/spritesheet.rs#L88) — Returns current without advancing.
-- [`reset()`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/spritesheet.rs#L93) — Resets to frame 0.
+- [`Animation::new(frames, fps)`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/spritesheet.rs) — Creates a looping clip with `frame_time = 1.0 / fps`.
+- [`Animation::once(frames, fps)`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/spritesheet.rs) — Creates a one-shot clip that stops on the last frame.
+- [`with_loop_mode(LoopMode)`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/spritesheet.rs) — Switch playback between `Loop`, `Once`, and `PingPong`.
+- [`update(dt)`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/spritesheet.rs) — Advances the timer, consuming as many frame steps as needed for the accumulated `dt`, then returns the current `(col, row)`.
+- [`current_frame()`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/spritesheet.rs) — Returns current without advancing.
+- [`is_finished()`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/spritesheet.rs) — True when a `LoopMode::Once` clip has reached its final frame.
+- [`reset()`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/spritesheet.rs) — Resets playback to frame 0 and clears one-shot completion state.
 
 Usage pattern:
 
@@ -1210,6 +1212,52 @@ Usage pattern:
 let (col, row) = animation.update(engine.dt());
 let uv = sprite_sheet.uv_rect(col, row);
 frame.draw_sprite(DrawParams::new(sprite_sheet.texture, pos, size).with_uv_rect(uv));
+```
+
+**Animation state machines:**
+
+```rust
+pub struct AnimationState<State> {
+    pub animation: Animation,
+    pub on_complete: Option<State>,
+}
+
+pub struct AnimationStateMachine<State, Trigger> {
+    ...
+}
+```
+
+- `AnimationState::new(animation)` wraps a clip for use in a state machine.
+- `AnimationState::with_on_complete(next_state)` makes a one-shot or finite-feeling clip fall through automatically once it finishes.
+- `AnimationTransition::new(target)` describes a trigger result; `preserve_progress()` skips a reset when staying on the same state.
+- `AnimationStateMachine::new(initial_state, animation)` seeds the machine with its first state.
+- `add_state()` / `add_state_with()` register more clips.
+- `add_transition(from, trigger, to)` registers state-local transitions; `add_global_transition(trigger, to)` registers interrupts that can fire from any state.
+- `trigger(trigger)` applies a matching transition immediately.
+- `update(dt)` advances the current clip and also applies `on_complete` fallthrough when a one-shot state finishes.
+- `current_state()`, `current_frame()`, `current_uv_rect(&sheet)`, `animation()`, and `is_finished()` expose the active playback result to game code.
+
+Typical usage is an enum-backed state machine for sprite-driven gameplay states:
+
+```rust
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+enum CarState { Idle, Launch, Cruise, Brake }
+
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+enum CarEvent { Accelerate, Brake }
+
+let mut car = AnimationStateMachine::new(
+    CarState::Idle,
+    Animation::new(vec![(0, 0), (1, 0)], 3.0),
+);
+car.add_state_with(
+    CarState::Launch,
+    AnimationState::new(Animation::once(vec![(0, 1), (1, 1), (2, 1)], 10.0))
+        .with_on_complete(CarState::Cruise),
+);
+car.add_state(CarState::Cruise, Animation::new(vec![(0, 2), (1, 2)], 8.0));
+car.add_transition(CarState::Idle, CarEvent::Accelerate, CarState::Launch);
+car.add_transition(CarState::Cruise, CarEvent::Brake, CarState::Brake);
 ```
 
 ### 8.5 3D Mesh Loading (OBJ and glTF)
@@ -2103,7 +2151,7 @@ It is a 2D platformer with:
 - **Action mapping** — `ActionMap`, `Binding`, `AxisMapping`, `GamepadAxis`
 - **Serializable resources** — `load_resource::<GameConfig>()` from JSON
 - **Procedural textures** — `PixelCanvas` (fill, fill_rect, set, darken, lighten)
-- **Sprite sheet animation** — `SpriteSheet`, `Animation`, UV rects
+- **Sprite sheet animation** — `SpriteSheet`, `Animation`, `AnimationStateMachine`, UV rects
 - **Tilemap** — `TileMap`, `TileDef::solid()`, `collide_rect()`
 - **AABB collision** — `aabb_overlap()`
 - **Collision layers** — `CollisionLayer` bitmask filtering

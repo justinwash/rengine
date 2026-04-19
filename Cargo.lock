@@ -2464,6 +2464,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rengine-feature-animation-state-machines"
+version = "0.1.0"
+dependencies = [
+ "rengine",
+]
+
+[[package]]
 name = "rengine-feature-audio"
 version = "0.1.0"
 dependencies = [
