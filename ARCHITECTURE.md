@@ -1128,7 +1128,7 @@ struct AssetPipeline {
 
 **Manifest validation:** `engine.validate_manifest("assets.json")` parses the manifest JSON and checks that every referenced file exists on disk. Returns `Vec<AssetError>` with all problems found rather than failing on the first. Useful for build-time or startup validation.
 
-**Cache management:** `engine.loaded_asset_summary()` returns an `AssetSummary` with counts and paths, including cached fonts. `unload_texture()` evicts cached textures (and derived sprite sheets), `unload_mesh()` evicts cached meshes, and `unload_data()` evicts cached bytes/text entries. Loaded fonts currently remain cached for the life of the engine; there is no font-unload API yet.
+**Cache management:** `engine.loaded_asset_summary()` returns an `AssetSummary` with counts and paths, including cached fonts. `unload_texture()` evicts cached textures (and derived sprite sheets), `unload_mesh()` evicts cached meshes, `unload_data()` evicts cached bytes/text entries, and retained bundles can be released with `unload_asset_bundle()` so shared dependencies only drop once the last bundle stops retaining their resolved paths. Loaded fonts still keep their uploaded atlases for the life of the engine, even though their source bytes can now be evicted once no retained bundle needs them.
 
 ### 8.2 [`AssetManifest`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pipeline.rs#L158), [`AssetPack`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pipeline.rs#L174), and `AssetBundle`
 
@@ -1168,7 +1168,7 @@ pub struct AssetBundle {
 
 The `AssetPack` provides typed accessors by alias: [`pack.font("body")`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pipeline.rs#L192), [`pack.texture("player")`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pipeline.rs#L200), [`pack.sprite_sheet("walk")`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pipeline.rs#L204), [`pack.audio("jump")`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pipeline.rs#L212), etc. It also provides [`font_id(alias)`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pipeline.rs#L196) and [`texture_id(alias)`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pipeline.rs#L216) for handle lookup.
 
-`AssetBundle` dereferences to `AssetPack`, so existing asset lookups still read naturally (`bundle.texture_id("player")`, `bundle.mesh("enemy")`, and so on). It additionally exposes `manifest_path()`, `dependencies()`, `assets()`, and `into_inner()`. The dependency list is resolved, sorted, and de-duplicated to match `engine.manifest_dependencies()`. `Engine::reload_asset_bundle(&mut bundle)` rebuilds the retained bundle from its original manifest path.
+`AssetBundle` dereferences to `AssetPack`, so existing asset lookups still read naturally (`bundle.texture_id("player")`, `bundle.mesh("enemy")`, and so on). It additionally exposes `manifest_path()`, `dependencies()`, `assets()`, and `into_inner()`. The dependency list is resolved, sorted, and de-duplicated to match `engine.manifest_dependencies()`. `Engine::reload_asset_bundle(&mut bundle)` rebuilds the retained bundle from its original manifest path while updating the bundle's shared-retention bookkeeping, and `Engine::unload_asset_bundle(&bundle)` releases the manifest plus any dependencies that are no longer retained by another loaded bundle.
 
 ### 8.3 Texture Loading
 
