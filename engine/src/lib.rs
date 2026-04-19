@@ -58,6 +58,7 @@ pub use text::FontId;
 pub use ui::{
     TooltipAnimation, TooltipExpandTrigger, TooltipOptions, TooltipPlacement, Ui, UiAnimation,
     UiAnimationOptions, UiContainerAnimation, UiContainerAnimationOptions, UiResponse, UiStyle,
+    UiWidgetStyle,
 };
 
 pub use particle::{EmitShape, EmitterConfig, ParticleEmitter, RangeF32};
