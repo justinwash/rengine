@@ -12,4 +12,6 @@ pub use pipeline::{
     AssetError, AssetManifest, AssetPack, AssetSummary, MeshAsset, SpriteSheetAssetDef,
     TextureAsset,
 };
-pub use spritesheet::{Animation, SpriteSheet};
+pub use spritesheet::{
+    Animation, AnimationState, AnimationStateMachine, AnimationTransition, SpriteSheet,
+};
