@@ -30,7 +30,8 @@ impl Game for RenderTargetDemo {
 
     fn render(&mut self, engine: &Engine, frame: &mut Frame) {
         let white = engine.white_texture();
-        let target_frame = frame.render_target(self.monitor);
+        let monitor_texture = self.monitor.texture_id();
+        let target_frame = frame.render_target(&self.monitor);
         target_frame.clear_color = Color::new(0.0, 0.0, 0.0, 0.0);
 
         let road_y = -12.0;
@@ -108,7 +109,7 @@ impl Game for RenderTargetDemo {
             Color::from_rgba8(10, 12, 18, 255),
         );
         frame.draw(
-            self.monitor.texture_id(),
+            monitor_texture,
             Vec2::new(-192.0, -84.0),
             Vec2::new(384.0, 216.0),
         );
@@ -120,7 +121,7 @@ impl Game for RenderTargetDemo {
             Color::from_rgba8(24, 30, 38, 245),
         );
         frame.draw_colored(
-            self.monitor.texture_id(),
+            monitor_texture,
             Vec2::new(132.0, 54.0),
             Vec2::new(150.0, 84.0),
             Color::new(1.0, 1.0, 1.0, 0.88),
