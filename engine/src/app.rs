@@ -10,8 +10,8 @@ use winit::keyboard::PhysicalKey;
 use winit::window::{CursorGrabMode, WindowBuilder};
 
 use crate::assets::{
-    AssetError, AssetPack, AssetPipeline, AudioBus, AudioClip, AudioSystem, Color, MeshAsset,
-    SpriteSheet, TextureAsset,
+    AssetBundle, AssetError, AssetPack, AssetPipeline, AudioBus, AudioClip, AudioSystem, Color,
+    MeshAsset, SpriteSheet, TextureAsset,
 };
 use crate::canvas;
 use crate::input::{ActionMap, GamepadAssignMode, GamepadSystem, InputState};
@@ -35,6 +35,39 @@ fn handle_text_event(input: &mut InputState, event: &KeyEvent) {
 
 fn handle_ime_event(input: &mut InputState, event: Ime) {
     input.handle_ime_event(event);
+}
+
+fn normalize_asset_bundle_dependencies(mut deps: Vec<PathBuf>) -> Vec<PathBuf> {
+    deps.sort();
+    deps.dedup();
+    deps
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_asset_bundle_dependencies;
+    use std::path::PathBuf;
+
+    #[test]
+    fn asset_bundle_dependencies_are_sorted_and_deduplicated() {
+        let deps = vec![
+            PathBuf::from("z.txt"),
+            PathBuf::from("a.txt"),
+            PathBuf::from("z.txt"),
+            PathBuf::from("m.txt"),
+        ];
+
+        let normalized = normalize_asset_bundle_dependencies(deps);
+
+        assert_eq!(
+            normalized,
+            vec![
+                PathBuf::from("a.txt"),
+                PathBuf::from("m.txt"),
+                PathBuf::from("z.txt"),
+            ]
+        );
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -262,12 +295,11 @@ impl Engine {
         })
     }
 
-    pub fn load_asset_manifest<P: AsRef<Path>>(
+    fn load_asset_pack_from_manifest_path(
         &mut self,
-        path: P,
-    ) -> Result<AssetPack, AssetError> {
-        let manifest_path = self.assets.resolve_path(path.as_ref());
-        let manifest = self.assets.load_manifest(&manifest_path)?;
+        manifest_path: &Path,
+    ) -> Result<(AssetPack, Vec<PathBuf>), AssetError> {
+        let manifest = self.assets.load_manifest(manifest_path)?;
         let mut pack = AssetPack::default();
         let mut deps = Vec::new();
 
@@ -280,6 +312,15 @@ impl Engine {
             let resolved = self.assets.resolve_path(Path::new(&rel_path));
             deps.push(resolved);
             pack.insert_text(alias, self.assets.load_text(rel_path)?);
+        }
+        for (alias, rel_path) in manifest.fonts {
+            let resolved = self.assets.resolve_path(Path::new(&rel_path));
+            deps.push(resolved);
+            pack.insert_font(
+                alias,
+                self.assets
+                    .load_font(rel_path, |font_bytes| self.renderer.load_font(font_bytes))?,
+            );
         }
         for (alias, rel_path) in manifest.textures {
             let resolved = self.assets.resolve_path(Path::new(&rel_path));
@@ -306,8 +347,32 @@ impl Engine {
             ));
         }
 
-        self.assets.record_manifest_deps(manifest_path, deps);
-        Ok(pack)
+        Ok((pack, deps))
+    }
+
+    pub fn load_asset_bundle<P: AsRef<Path>>(
+        &mut self,
+        path: P,
+    ) -> Result<AssetBundle, AssetError> {
+        let manifest_path = self.assets.resolve_path(path.as_ref());
+        let (pack, deps) = self.load_asset_pack_from_manifest_path(&manifest_path)?;
+        let deps = normalize_asset_bundle_dependencies(deps);
+        self.assets
+            .record_manifest_deps(manifest_path.clone(), deps.clone());
+        Ok(AssetBundle::new(manifest_path, deps, pack))
+    }
+
+    pub fn reload_asset_bundle(&mut self, bundle: &mut AssetBundle) -> Result<(), AssetError> {
+        let manifest_path = bundle.manifest_path().to_path_buf();
+        *bundle = self.load_asset_bundle(&manifest_path)?;
+        Ok(())
+    }
+
+    pub fn load_asset_manifest<P: AsRef<Path>>(
+        &mut self,
+        path: P,
+    ) -> Result<AssetPack, AssetError> {
+        self.load_asset_bundle(path).map(AssetBundle::into_inner)
     }
 
     pub fn load_texture<P: AsRef<Path>>(&mut self, path: P) -> Result<TextureAsset, AssetError> {
@@ -532,8 +597,9 @@ impl Engine {
     }
 
     pub fn load_font<P: AsRef<Path>>(&mut self, path: P) -> Result<text::FontId, AssetError> {
-        let bytes = self.assets.load_bytes(path)?;
-        Ok(self.renderer.load_font(&bytes))
+        self.assets
+            .load_font(path, |font_bytes| self.renderer.load_font(font_bytes))
+            .map(|font| font.id)
     }
 
     pub fn font(&self, id: text::FontId) -> &text::FontAtlas {
@@ -1134,8 +1200,9 @@ impl Engine3D {
     }
 
     pub fn load_font<P: AsRef<Path>>(&mut self, path: P) -> Result<text::FontId, AssetError> {
-        let bytes = self.assets.load_bytes(path)?;
-        Ok(self.renderer.load_font(&bytes))
+        self.assets
+            .load_font(path, |font_bytes| self.renderer.load_font(font_bytes))
+            .map(|font| font.id)
     }
 
     pub fn font(&self, id: text::FontId) -> &text::FontAtlas {
@@ -1180,12 +1247,11 @@ impl Engine3D {
         })
     }
 
-    pub fn load_asset_manifest<P: AsRef<Path>>(
+    fn load_asset_pack_from_manifest_path(
         &mut self,
-        path: P,
-    ) -> Result<AssetPack, AssetError> {
-        let manifest_path = self.assets.resolve_path(path.as_ref());
-        let manifest = self.assets.load_manifest(&manifest_path)?;
+        manifest_path: &Path,
+    ) -> Result<(AssetPack, Vec<PathBuf>), AssetError> {
+        let manifest = self.assets.load_manifest(manifest_path)?;
         let mut pack = AssetPack::default();
         let mut deps = Vec::new();
 
@@ -1198,6 +1264,15 @@ impl Engine3D {
             let resolved = self.assets.resolve_path(Path::new(&rel_path));
             deps.push(resolved);
             pack.insert_text(alias, self.assets.load_text(rel_path)?);
+        }
+        for (alias, rel_path) in manifest.fonts {
+            let resolved = self.assets.resolve_path(Path::new(&rel_path));
+            deps.push(resolved);
+            pack.insert_font(
+                alias,
+                self.assets
+                    .load_font(rel_path, |font_bytes| self.renderer.load_font(font_bytes))?,
+            );
         }
         for (alias, rel_path) in manifest.audio {
             let resolved = self.assets.resolve_path(Path::new(&rel_path));
@@ -1216,8 +1291,32 @@ impl Engine3D {
             ));
         }
 
-        self.assets.record_manifest_deps(manifest_path, deps);
-        Ok(pack)
+        Ok((pack, deps))
+    }
+
+    pub fn load_asset_bundle<P: AsRef<Path>>(
+        &mut self,
+        path: P,
+    ) -> Result<AssetBundle, AssetError> {
+        let manifest_path = self.assets.resolve_path(path.as_ref());
+        let (pack, deps) = self.load_asset_pack_from_manifest_path(&manifest_path)?;
+        let deps = normalize_asset_bundle_dependencies(deps);
+        self.assets
+            .record_manifest_deps(manifest_path.clone(), deps.clone());
+        Ok(AssetBundle::new(manifest_path, deps, pack))
+    }
+
+    pub fn reload_asset_bundle(&mut self, bundle: &mut AssetBundle) -> Result<(), AssetError> {
+        let manifest_path = bundle.manifest_path().to_path_buf();
+        *bundle = self.load_asset_bundle(&manifest_path)?;
+        Ok(())
+    }
+
+    pub fn load_asset_manifest<P: AsRef<Path>>(
+        &mut self,
+        path: P,
+    ) -> Result<AssetPack, AssetError> {
+        self.load_asset_bundle(path).map(AssetBundle::into_inner)
     }
 
     pub fn load_obj_mesh<P: AsRef<Path>>(&mut self, path: P) -> Result<MeshAsset, AssetError> {
