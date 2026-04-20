@@ -152,7 +152,7 @@ impl Game for AudioDemo {
 
         c.text_aligned(
             0.0,
-            hh - 60.0,
+            hh - 70.0,
             "Audio Fades Demo",
             28.0,
             Color::WHITE,
@@ -161,9 +161,9 @@ impl Game for AudioDemo {
 
         c.text_aligned(
             0.0,
-            hh - 20.0,
+            hh - 112.0,
             &self.status,
-            20.0,
+            18.0,
             Color::YELLOW,
             TextAlign::Center,
         );
@@ -175,21 +175,22 @@ impl Game for AudioDemo {
         };
         c.text_aligned(
             0.0,
-            hh + 10.0,
+            hh - 138.0,
             fading,
-            16.0,
+            14.0,
             Color::from_rgba8(150, 150, 150, 255),
             TextAlign::Center,
         );
 
         if !self.demo_mode {
-            let help = "[F] crossfade  [I] fade in  [O] fade out  [Space] SFX  [Up/Down] bus vol";
-            c.text_aligned(
+            let help = "[F] crossfade   [I] fade in   [O] fade out\n[Space] play SFX   [Up/Down] fade music bus";
+            c.text_block(
                 0.0,
-                -hh + 30.0,
+                -hh + 54.0,
                 help,
-                14.0,
+                13.0,
                 Color::from_rgba8(120, 120, 120, 255),
+                560.0,
                 TextAlign::Center,
             );
         }
@@ -203,9 +204,9 @@ impl Game for AudioDemo {
 fn main() {
     let config = EngineConfig {
         title: "Feature: Audio Fades".into(),
-        width: 640,
-        height: 360,
-        show_fps: true,
+        width: 760,
+        height: 420,
+        show_fps: false,
         headless: std::env::args().any(|a| a == "--headless"),
         ..Default::default()
     };

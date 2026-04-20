@@ -35,7 +35,7 @@ const EASINGS: &[(Easing, &str)] = &[
 ];
 
 const DURATION: f32 = 2.0;
-const BAR_WIDTH: f32 = 300.0;
+const BAR_WIDTH: f32 = 240.0;
 
 impl Game for TweenDemo {
     fn new(_engine: &mut Engine) -> Self {
@@ -81,12 +81,12 @@ impl Game for TweenDemo {
             -hw + 20.0,
             hh - 24.0,
             "Tween / Easing Demo",
-            24.0,
+            22.0,
             Color::WHITE,
         );
 
         let label_x = -hw + 20.0;
-        let bar_x = -hw + 160.0;
+        let bar_x = -hw + 150.0;
         let row_h = 28.0;
         let bar_h = 16.0;
         let top = hh - 60.0;
@@ -111,25 +111,47 @@ impl Game for TweenDemo {
             canvas.rect(bar_x + val - 3.0, y - 4.0, 6.0, bar_h + 4.0, dot_color);
         }
 
-        let bounce_y = top - self.tweens.len() as f32 * row_h - 40.0;
+        let bounce_panel_x = hw - 180.0;
+        let bounce_panel_y = -120.0;
         let bounce_val = ease(
             0.0,
-            200.0,
+            118.0,
             (self.elapsed * 1.5 % 2.0) / 2.0,
             Easing::OutBounce,
         );
         canvas.rect(
-            -hw + 200.0,
-            bounce_y + bounce_val - 10.0,
+            bounce_panel_x,
+            bounce_panel_y,
+            150.0,
+            170.0,
+            Color::from_rgba8(32, 36, 50, 255),
+        );
+        canvas.text(
+            bounce_panel_x + 12.0,
+            bounce_panel_y + 146.0,
+            "OutBounce",
+            14.0,
+            Color::WHITE,
+        );
+        canvas.rect(
+            bounce_panel_x + 18.0,
+            bounce_panel_y + 18.0,
+            114.0,
+            2.0,
+            Color::from_rgba8(120, 120, 140, 255),
+        );
+        canvas.rect(
+            bounce_panel_x + 56.0,
+            bounce_panel_y + 20.0 + bounce_val,
             20.0,
             20.0,
             Color::from_rgba8(255, 100, 100, 255),
         );
         canvas.text(
-            -hw + 20.0,
-            bounce_y - 10.0,
-            "OutBounce ball:",
-            13.0,
+            bounce_panel_x + 12.0,
+            bounce_panel_y + 126.0,
+            "ease(0..118)",
+            11.0,
             Color::from_rgba8(180, 180, 180, 255),
         );
 
@@ -150,7 +172,7 @@ impl Game for TweenDemo {
 fn main() {
     let config = EngineConfig {
         title: "Feature: Tweening / Easing".into(),
-        width: 700,
+        width: 820,
         height: 860,
         show_fps: false,
         ..Default::default()

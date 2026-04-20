@@ -57,8 +57,8 @@ impl Game for FightGame {
                     KeyCode::KeyD,
                     KeyCode::KeyW,
                     KeyCode::KeyS,
-                    KeyCode::KeyF,
-                    KeyCode::KeyG,
+                    KeyCode::KeyV,
+                    KeyCode::KeyB,
                 ],
             ),
             (
@@ -68,8 +68,8 @@ impl Game for FightGame {
                     KeyCode::ArrowRight,
                     KeyCode::ArrowUp,
                     KeyCode::ArrowDown,
-                    KeyCode::KeyK,
-                    KeyCode::KeyL,
+                    KeyCode::Comma,
+                    KeyCode::Period,
                 ],
             ),
         ] {

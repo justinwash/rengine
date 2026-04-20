@@ -103,7 +103,7 @@ impl ImagesDemo {
     }
 
     fn build_ui(&mut self, engine: &Engine) {
-        self.ui.begin(engine, -320.0, 48.0, 220.0);
+        self.ui.begin(engine, -360.0, 56.0, 240.0);
         self.ui
             .label_centered("UI Image Widget", 24.0, Color::WHITE);
         self.ui.separator(8.0);
@@ -111,13 +111,13 @@ impl ImagesDemo {
         self.ui.image(self.card, Vec2::new(120.0, 160.0));
         self.ui.separator(6.0);
         self.ui
-            .label_centered("Pit Crew Card", 14.0, Color::from_rgba8(220, 220, 220, 255));
+            .label_centered("Profile Card", 14.0, Color::from_rgba8(220, 220, 220, 255));
         self.ui.row(2);
         self.ui
             .image_region(self.icons, Vec2::new(44.0, 44.0), [0.0, 0.0, 0.5, 1.0]);
         self.ui
             .image_region(self.icons, Vec2::new(44.0, 44.0), [0.5, 0.0, 0.5, 1.0]);
-        self.ui.button(0, "Cycle Accent");
+        self.ui.button(0, "Cycle Tint");
     }
 }
 
@@ -153,46 +153,51 @@ impl Game for ImagesDemo {
         let canvas = frame.canvas(0);
         self.ui.render(canvas, engine);
 
-        canvas.text(10.0, hh - 48.0, "Canvas Images", 26.0, Color::WHITE);
-        canvas.text(
-            10.0,
-            hh - 76.0,
-            "Screen-space textures now render in the same pass as UI and text.",
+        canvas.text(20.0, hh - 48.0, "Canvas Images", 26.0, Color::WHITE);
+        canvas.text_block(
+            20.0,
+            hh - 78.0,
+            "Screen-space textures can sit beside UI widgets without leaving the same 2D canvas pass.",
             14.0,
             Color::from_rgba8(190, 190, 205, 255),
+            420.0,
+            TextAlign::Left,
         );
 
         canvas.rect(
-            10.0,
+            20.0,
             hh - 430.0,
-            310.0,
-            330.0,
+            420.0,
+            320.0,
             Color::from_rgba8(24, 28, 44, 235),
         );
-        canvas.image(self.card, 44.0, hh - 390.0, 156.0, 208.0);
-        canvas.image_colored(self.icons, 228.0, hh - 214.0, 64.0, 64.0, accent);
+        canvas.image(self.card, 48.0, hh - 384.0, 156.0, 208.0);
+        canvas.text(236.0, hh - 152.0, "Tinted icon", 13.0, accent);
+        canvas.image_colored(self.icons, 252.0, hh - 214.0, 64.0, 64.0, accent);
+        canvas.text(
+            236.0,
+            hh - 232.0,
+            "Sprite region",
+            13.0,
+            Color::from_rgba8(160, 195, 255, 255),
+        );
         canvas.image_region(
             self.icons,
-            228.0,
-            hh - 292.0,
+            252.0,
+            hh - 302.0,
             64.0,
             64.0,
             [0.5, 0.0, 0.5, 1.0],
             Color::new(pulse, pulse, pulse, 1.0),
         );
-        canvas.text(
-            44.0,
-            hh - 198.0,
-            "Portrait, badges, and card art share the same screen-space API.",
-            14.0,
+        canvas.text_block(
+            236.0,
+            hh - 330.0,
+            "Full textures, sprite regions, and tinting all reuse the same screen-space image API.",
+            13.0,
             Color::from_rgba8(220, 220, 220, 255),
-        );
-        canvas.text(
-            44.0,
-            hh - 224.0,
-            "Use Canvas::image(...) directly or Ui::image(...) inside widgets.",
-            14.0,
-            Color::from_rgba8(160, 195, 255, 255),
+            168.0,
+            TextAlign::Left,
         );
     }
 }
@@ -200,8 +205,8 @@ impl Game for ImagesDemo {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     rengine::run::<ImagesDemo>(EngineConfig {
         title: "Feature: Screen-Space Images".into(),
-        width: 960,
-        height: 640,
+        width: 1040,
+        height: 700,
         ..Default::default()
     })
 }

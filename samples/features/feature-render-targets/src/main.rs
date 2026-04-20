@@ -136,12 +136,13 @@ impl Game for RenderTargetDemo {
             Color::from_rgba8(228, 234, 242, 255),
             TextAlign::Center,
         );
-        canvas.text_aligned(
+        canvas.text_block(
             0.0,
             262.0,
-            "The animated telemetry scene is rendered into a target texture first, then reused as a large monitor and a smaller preview in the main frame.",
+            "The telemetry scene renders into a target texture first, then gets reused as the main monitor and a smaller preview in the final frame.",
             12.0,
             Color::from_rgba8(158, 168, 186, 255),
+            760.0,
             TextAlign::Center,
         );
         canvas.text(
@@ -170,7 +171,7 @@ fn main() {
         title: "Feature: Render Targets".into(),
         width: 960,
         height: 640,
-        show_fps: true,
+        show_fps: false,
         ..Default::default()
     });
 }

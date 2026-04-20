@@ -102,6 +102,10 @@ impl Game for InputDemo {
         frame.clear_color = Color::new(0.12, 0.12, 0.15, 1.0);
 
         let (w, h) = engine.window_size();
+        let hw = w as f32 / 2.0;
+        let hh = h as f32 / 2.0;
+        frame.camera.position = Vec2::new(hw, hh);
+
         let grid_color = Color::new(0.2, 0.2, 0.24, 1.0);
         let mut x = 0.0;
         while x < w as f32 {
@@ -161,6 +165,47 @@ impl Game for InputDemo {
                 .with_color(Color::new(0.47, 1.0, 0.47, 0.78)),
             );
         }
+
+        let hud = frame.canvas(0);
+        hud.rect(
+            -hw,
+            hh - 58.0,
+            w as f32,
+            58.0,
+            Color::from_rgba8(20, 24, 32, 230),
+        );
+        hud.text(
+            -hw + 12.0,
+            hh - 14.0,
+            "Input Action Mapping",
+            18.0,
+            Color::WHITE,
+        );
+        hud.text_block(
+            -hw + 12.0,
+            hh - 36.0,
+            "WASD / Arrows move. Space triggers the jump flash. Mouse Left or gamepad West triggers the red shoot flash.",
+            11.0,
+            Color::from_rgba8(180, 190, 210, 255),
+            520.0,
+            TextAlign::Left,
+        );
+
+        hud.rect(-hw, -hh, w as f32, 48.0, Color::from_rgba8(20, 24, 32, 230));
+        hud.text(
+            -hw + 12.0,
+            -hh + 30.0,
+            &format!("move_x: {mx:.2}   move_y: {my:.2}"),
+            12.0,
+            Color::from_rgba8(150, 255, 190, 255),
+        );
+        hud.text(
+            -hw + 12.0,
+            -hh + 14.0,
+            "Green dot shows current axis direction. Blue = idle, yellow = jump, red = shoot.",
+            10.0,
+            Color::from_rgba8(165, 175, 195, 255),
+        );
     }
 }
 
