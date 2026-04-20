@@ -4,6 +4,7 @@ pub mod math;
 pub mod input;
 
 pub mod canvas;
+pub mod debug;
 pub mod particle;
 pub mod renderer;
 pub mod renderer3d;
@@ -23,6 +24,7 @@ pub use app::run;
 pub use app::run_with_scenes;
 pub use app::{Engine, EngineConfig, Game, ScaleMode};
 pub use assets::Color;
+pub use debug::{DebugLogEntry, DebugLogLevel};
 pub use input::InputState;
 pub use input::{ActionMap, AxisMapping, Binding, GamepadAxis};
 pub use math::Rect;
