@@ -76,7 +76,7 @@ impl Scene for TitleScene {
         let hh = sh as f32 / 2.0;
 
         if let Some(panel) = &self.panel {
-            frame.draw_nine_slice(panel, Vec2::new(-320.0, 40.0), Vec2::new(640.0, 280.0));
+            frame.draw_nine_slice(panel, Vec2::new(-290.0, 32.0), Vec2::new(580.0, 252.0));
             let tinted = panel.clone().with_color(Color::new(0.3, 1.0, 0.5, 0.8));
             frame.draw_nine_slice(
                 &tinted,
@@ -87,21 +87,23 @@ impl Scene for TitleScene {
 
         let canvas = frame.canvas(0);
 
-        canvas.text(
-            -hw + 200.0,
-            hh - 100.0,
+        canvas.text_aligned(
+            0.0,
+            hh - 104.0,
             "RENGINE KITCHEN SINK",
             32.0,
             Color::YELLOW,
+            TextAlign::Center,
         );
 
         if (self.blink_timer * 2.0).sin() > 0.0 {
-            canvas.text(
-                -hw + 220.0,
-                hh - 250.0,
+            canvas.text_aligned(
+                0.0,
+                hh - 212.0,
                 "Press ENTER to start",
                 18.0,
                 Color::WHITE,
+                TextAlign::Center,
             );
         }
 
@@ -115,12 +117,13 @@ impl Scene for TitleScene {
         );
 
         if engine.gamepads_connected() > 0 {
-            canvas.text(
-                -hw + 220.0,
-                hh - 300.0,
+            canvas.text_aligned(
+                0.0,
+                hh - 244.0,
                 "(Gamepad detected: press A)",
                 14.0,
                 Color::ORANGE,
+                TextAlign::Center,
             );
         }
 

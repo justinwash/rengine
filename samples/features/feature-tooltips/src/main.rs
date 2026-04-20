@@ -53,10 +53,10 @@ impl TooltipDemo {
             TooltipAnimation::None
         };
 
-        self.ui.begin(engine, -210.0, 40.0, 420.0);
+        self.ui.begin(engine, -230.0, 56.0, 460.0);
         self.ui.label_centered("Tooltip Demo", 28.0, Color::WHITE);
         self.ui.tooltip_with(
-            "Text-only widgets can now explain themselves without becoming buttons or sliders. This one uses the live delay/animation controls below.",
+            "Text-only widgets can explain themselves without becoming buttons or sliders. This header uses the live delay and animation controls below.",
             TooltipOptions::new().with_max_width(260.0),
         );
         self.ui.separator(10.0);
@@ -71,27 +71,24 @@ impl TooltipDemo {
                 .with_offset(Vec2::new(18.0, 8.0)),
         );
         self.ui.label_centered(
-            "Race Weekend Briefing",
+            "Project Briefing",
             18.0,
             Color::from_rgba8(220, 220, 240, 255),
         );
-        self.ui.tooltip("This is the kind of heading that usually needs a little contextual explanation in a management UI.");
-        self.ui.progress_bar("Driver Morale", self.morale);
+        self.ui.tooltip("This is the kind of heading that usually benefits from hover-only context in a dense dashboard.");
+        self.ui.progress_bar("Momentum", self.morale);
         self.ui.tooltip_with(
-            "Morale is a compact stand-in for any stat bar that benefits from hover-only explanation.",
+            "Momentum is a compact stand-in for any stat bar that benefits from hover-only explanation.",
             TooltipOptions::new()
                 .with_max_width(250.0)
                 .with_advanced_text(
-                    "Advanced stats: morale is currently +6 from a clean qualifying run, -2 from tire allocation, and +4 from engineer confidence. Hold Shift to reveal this block.",
+                    "Advanced stats: momentum is currently +6 from recent progress, -2 from interruptions, and +4 from review confidence. Hold Shift to reveal this block.",
                 ),
         );
-        self.ui.progress_bar_colored(
-            "Tire Wear",
-            self.tire_wear,
-            Color::from_rgba8(236, 174, 72, 255),
-        );
+        self.ui
+            .progress_bar_colored("Load", self.tire_wear, Color::from_rgba8(236, 174, 72, 255));
         self.ui.tooltip_with(
-            "High tire wear would normally increase pit pressure and reduce late-stint pace.",
+            "High load would normally reduce late-stage responsiveness and increase mistakes.",
             TooltipOptions::new()
                 .with_fixed_width(280.0)
                 .with_fixed_height(84.0)
@@ -99,10 +96,9 @@ impl TooltipDemo {
                 .with_animation(TooltipAnimation::None),
         );
         self.ui
-            .checkbox(1, "Aggressive Pit Calls", self.aggressive_calls);
+            .checkbox(1, "Aggressive Updates", self.aggressive_calls);
         self.ui.tooltip("Checkbox tooltips also appear for keyboard focus, so gamepad and keyboard flows still surface explanations.");
-        self.ui
-            .slider(2, "Fuel Saving", self.fuel_saving, 0.0, 100.0);
+        self.ui.slider(2, "Workload", self.fuel_saving, 0.0, 100.0);
         self.ui.tooltip_with(
             "This slider demonstrates the focused-control fallback: tabbing through the menu with keys still reveals the explanation even when the mouse is idle.",
             TooltipOptions::new().with_max_width(260.0),
@@ -119,7 +115,7 @@ impl TooltipDemo {
             "Toggle the built-in fade/slide animation. Disable it to verify tooltips still appear and disappear instantly without lingering.",
             TooltipOptions::new().with_max_width(260.0),
         );
-        self.ui.button(3, "Cycle Briefing");
+        self.ui.button(3, "Cycle Scenario");
         self.ui.tooltip("Rotate the sample values and footer note so the tooltip demo stays a little more alive.");
     }
 }
@@ -135,7 +131,7 @@ impl Game for TooltipDemo {
             fuel_saving: 42.0,
             tooltip_delay: 0.2,
             animated_tooltips: true,
-            note: "Hover widgets, adjust delay, or hold Shift on morale for advanced stats.",
+            note: "Hover widgets, adjust delay, or hold Shift on Momentum for advanced stats.",
         }
     }
 
@@ -172,20 +168,22 @@ impl Game for TooltipDemo {
 
         let canvas = frame.canvas(0);
         self.ui.render(canvas, engine);
-        canvas.text_aligned(
+        canvas.text_block(
             0.0,
-            -hh + 34.0,
+            -hh + 56.0,
             self.note,
             12.0,
             Color::from_rgba8(184, 192, 208, 255),
+            800.0,
             TextAlign::Center,
         );
-        canvas.text_aligned(
+        canvas.text_block(
             0.0,
-            -hh + 16.0,
-            "Mouse hover shows placement; arrow keys show focus fallback; hold Shift on morale for advanced stats.",
+            -hh + 26.0,
+            "Mouse hover shows placement. Arrow keys show focus fallback. Hold Shift on Momentum for advanced stats.",
             10.0,
             Color::from_rgba8(132, 142, 160, 255),
+            800.0,
             TextAlign::Center,
         );
     }
@@ -194,8 +192,8 @@ impl Game for TooltipDemo {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     rengine::run::<TooltipDemo>(EngineConfig {
         title: "Feature: Tooltips".into(),
-        width: 960,
-        height: 640,
+        width: 1020,
+        height: 760,
         ..Default::default()
     })
 }

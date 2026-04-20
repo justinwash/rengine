@@ -109,20 +109,20 @@ impl Game for PixelArtDemo {
         let hh = screen.1 as f32 / 2.0;
 
         let hud = frame.canvas(0);
-        hud.rect(-hw, hh - 40.0, sw, 40.0, Color::new(0.08, 0.07, 0.1, 0.95));
+        hud.rect(-hw, hh - 48.0, sw, 48.0, Color::new(0.08, 0.07, 0.1, 0.95));
         hud.text(
             -hw + 16.0,
-            hh - 10.0,
+            hh - 14.0,
             "PixelCanvas Procedural Textures",
-            18.0,
+            20.0,
             Color::WHITE,
         );
 
         let cols = 3;
-        let spacing = 180.0;
+        let spacing = 260.0;
         let scale = 6.0;
-        let start_x = -hw + 80.0;
-        let start_y = hh - 80.0;
+        let start_x = -hw + 72.0;
+        let start_y = hh - 110.0;
 
         for (i, (tex, label)) in self.textures.iter().enumerate() {
             let col = i % cols;
@@ -137,12 +137,20 @@ impl Game for PixelArtDemo {
                 Vec2::new(16.0 * scale, 16.0 * scale)
             };
 
-            let y = start_y - row as f32 * 220.0 - size.y;
+            let y = start_y - row as f32 * 230.0 - size.y;
 
             frame.draw(*tex, Vec2::new(x, y), size);
 
             let labels = frame.canvas(0);
-            labels.text(x, y - 8.0, label, 13.0, Color::new(0.7, 0.8, 0.9, 1.0));
+            labels.text_block(
+                x + size.x * 0.5,
+                y - 14.0,
+                label,
+                12.0,
+                Color::new(0.7, 0.8, 0.9, 1.0),
+                180.0,
+                TextAlign::Center,
+            );
         }
     }
 }
@@ -150,8 +158,8 @@ impl Game for PixelArtDemo {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     rengine::run::<PixelArtDemo>(EngineConfig {
         title: "Feature: PixelArt Procedural Textures".into(),
-        width: 640,
-        height: 560,
+        width: 900,
+        height: 620,
         ..Default::default()
     })
 }

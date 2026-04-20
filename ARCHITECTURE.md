@@ -139,6 +139,12 @@ rollback = ["dep:ggrs", "dep:bincode"]
 
 When `rollback` is enabled, the `netcode` module is compiled in, exposing [`RollbackSession`](https://github.com/justinwash/rengine/blob/master/engine/src/netcode/mod.rs#L86), [`Rollbackable`](https://github.com/justinwash/rengine/blob/master/engine/src/netcode/mod.rs#L73), [`OnlineConfig`](https://github.com/justinwash/rengine/blob/master/engine/src/netcode/mod.rs#L39), [`SessionMode`](https://github.com/justinwash/rengine/blob/master/engine/src/netcode/mod.rs#L45), and the [`fletcher64`](https://github.com/justinwash/rengine/blob/master/engine/src/netcode/mod.rs#L290) checksum function.
 
+Sample presentation conventions used across `samples/`:
+
+- Feature demos and game demos are expected to fit their key UI, labels, and help text at the default window size without manual resizing.
+- Generic engine feature samples should stay theme-neutral unless the sample is explicitly demonstrating game-specific art or copy.
+- Sample manifests now prefer explicit `show_fps: false` unless the FPS overlay itself is the subject of the example.
+
 **Key dependencies:**
 | Dependency | Purpose |
 |---|---|

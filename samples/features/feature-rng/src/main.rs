@@ -16,19 +16,21 @@ impl Game for RngDemo {
         let a_vals: Vec<u64> = (0..5).map(|_| rng_a.next_u64()).collect();
         let b_vals: Vec<u64> = (0..5).map(|_| rng_b.next_u64()).collect();
         assert_eq!(a_vals, b_vals, "Same seed must produce identical sequences");
-        results.push(format!("Deterministic: seed={seed}, first 5 match: OK"));
+        results.push(format!(
+            "Deterministic sequence\nseed={seed}, first 5 values match: OK"
+        ));
 
         let mut rng = Rng::new(seed);
         let dice: Vec<i32> = (0..10).map(|_| rng.range(1, 6)).collect();
-        results.push(format!("10 dice rolls (1-6): {:?}", dice));
+        results.push(format!("10 dice rolls (1-6)\n{:?}", dice));
 
         let floats: Vec<String> = (0..5).map(|_| format!("{:.3}", rng.f32())).collect();
-        results.push(format!("5 f32 [0,1): [{}]", floats.join(", ")));
+        results.push(format!("5 f32 values in [0,1)\n[{}]", floats.join(", ")));
 
         let coins: Vec<&str> = (0..10)
             .map(|_| if rng.chance(0.5) { "H" } else { "T" })
             .collect();
-        results.push(format!("10 coin flips: {}", coins.join("")));
+        results.push(format!("10 coin flips\n{}", coins.join("")));
 
         let options = ["Common", "Uncommon", "Rare", "Legendary"];
         let weights = [60.0, 25.0, 12.0, 3.0];
@@ -37,7 +39,7 @@ impl Game for RngDemo {
             counts[rng.weighted(&weights)] += 1;
         }
         results.push(format!(
-            "1000 weighted draws: {}={}, {}={}, {}={}, {}={}",
+            "1000 weighted draws\n{}={}  {}={}  {}={}  {}={}",
             options[0],
             counts[0],
             options[1],
@@ -50,24 +52,24 @@ impl Game for RngDemo {
 
         let mut deck: Vec<i32> = (1..=10).collect();
         rng.shuffle(&mut deck);
-        results.push(format!("Shuffled 1-10: {:?}", deck));
+        results.push(format!("Shuffled 1-10\n{:?}", deck));
 
         let names = ["Moss", "Clark", "Senna", "Prost", "Fangio"];
         let picked = rng.pick(&names);
-        results.push(format!("Random pick from legends: {}", picked));
+        results.push(format!("Random pick from legends\n{}", picked));
 
         let indices = rng.sample_indices(10, 3);
-        results.push(format!("3 of 10 indices: {:?}", indices));
+        results.push(format!("3 of 10 sampled indices\n{:?}", indices));
 
         let normals: Vec<String> = (0..8)
             .map(|_| format!("{:.1}", rng.normal(100.0, 15.0)))
             .collect();
-        results.push(format!("Normal(100,15): [{}]", normals.join(", ")));
+        results.push(format!("Normal(100,15) samples\n[{}]", normals.join(", ")));
 
         let point = rng.in_circle(50.0);
         let dir = rng.direction();
         results.push(format!(
-            "Random in circle(50): ({:.1}, {:.1}), direction: ({:.3}, {:.3})",
+            "Random point in circle(50)\n({:.1}, {:.1})  dir=({:.3}, {:.3})",
             point.x, point.y, dir.x, dir.y
         ));
 
@@ -75,12 +77,12 @@ impl Game for RngDemo {
         let parent_val = rng.next_u64();
         let child_val = child.next_u64();
         results.push(format!(
-            "Forked RNG: parent={parent_val}, child={child_val} (independent: {})",
+            "Forked RNG\nparent={parent_val}, child={child_val}, independent={}",
             parent_val != child_val
         ));
 
         let engine_roll = engine.rng().range(1, 100);
-        results.push(format!("engine.rng().range(1,100) = {engine_roll}"));
+        results.push(format!("engine.rng().range(1,100)\n{engine_roll}"));
 
         Self {
             seed,
@@ -124,16 +126,21 @@ impl Game for RngDemo {
             Color::from_rgba8(180, 180, 180, 255),
         );
 
-        let mut y = hh - 90.0;
+        let content_w = sw as f32 - 60.0;
+        let line_h = 18.0;
+        let mut y = hh - 92.0;
         for line in &self.results {
-            canvas.text(
+            let wrapped = wrap_text(line, 14.0, content_w, engine.font_atlas());
+            canvas.text_block(
                 -hw + 20.0,
                 y,
                 line,
-                16.0,
+                14.0,
                 Color::from_rgba8(200, 220, 255, 255),
+                content_w,
+                TextAlign::Left,
             );
-            y -= 22.0;
+            y -= wrapped.len().max(1) as f32 * line_h + 8.0;
         }
 
         canvas.text(
@@ -153,8 +160,8 @@ impl Game for RngDemo {
 fn main() {
     let config = EngineConfig {
         title: "Feature: RNG".into(),
-        width: 900,
-        height: 520,
+        width: 980,
+        height: 700,
         show_fps: false,
         ..Default::default()
     };

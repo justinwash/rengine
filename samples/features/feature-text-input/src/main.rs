@@ -58,7 +58,12 @@ impl TextInputDemo {
         self.ui
             .label_centered("Text Input Widget", 28.0, Color::WHITE);
         self.ui.label_centered(
-            "Keyboard and IME text are engine-level. The on-screen keyboard below is pure game/sample code built from Ui buttons.",
+            "Keyboard and IME text live at the engine layer.",
+            12.0,
+            Color::from_rgba8(176, 186, 210, 255),
+        );
+        self.ui.label_centered(
+            "The on-screen keyboard below is sample code built from Ui buttons.",
             12.0,
             Color::from_rgba8(176, 186, 210, 255),
         );
@@ -376,9 +381,9 @@ impl Game for TextInputDemo {
         );
         canvas.rect(
             -hw,
-            hh - 126.0,
+            hh - 24.0,
             hw * 2.0,
-            6.0,
+            4.0,
             Color::from_rgba8(242, 197, 98, 255),
         );
 
@@ -396,7 +401,7 @@ impl Game for TextInputDemo {
         let input_hint = if engine.gamepad(0).is_connected() {
             "Keyboard: type directly | Gamepad: d-pad moves focus, South confirms, East deletes"
         } else {
-            "Keyboard: type directly into the field, or click the on-screen keyboard buttons"
+            "Keyboard: type directly into the field, or click the on-screen keys"
         };
         canvas.text_aligned(
             0.0,

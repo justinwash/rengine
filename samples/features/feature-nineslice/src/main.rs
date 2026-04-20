@@ -103,26 +103,26 @@ impl Game for NineSliceDemo {
 
         let label_color = Color::from_rgba8(200, 200, 255, 255);
         let anim_label_color = Color::from_rgba8(150, 255, 220, 255);
-        let ls = 11.0;
+        let ls = 10.0;
 
         let r1_lbl_y = 66.0;
         let r1_top = 82.0;
         let panels1: &[(&str, f32, f32, f32)] = &[
             ("Small (60x40)", 20.0, 60.0, 40.0),
             ("Medium (150x100)", 120.0, 150.0, 100.0),
-            ("Wide (300x40)", 310.0, 300.0, 40.0),
+            ("Wide (300x40)", 320.0, 300.0, 40.0),
         ];
         for &(_, sx, w, h) in panels1 {
             frame.draw_nine_slice(&self.panel, world(sx, r1_top, h), Vec2::new(w, h));
         }
         frame.draw(
             self.panel.texture,
-            world(660.0, r1_top, 32.0),
+            world(700.0, r1_top, 32.0),
             Vec2::new(32.0, 32.0),
         );
         frame.draw(
             self.panel.texture,
-            world(740.0, r1_top, 50.0),
+            world(800.0, r1_top, 50.0),
             Vec2::new(100.0, 50.0),
         );
 
@@ -188,34 +188,56 @@ impl Game for NineSliceDemo {
             Color::from_rgba8(180, 180, 180, 255),
         );
 
-        for &(lbl, sx, _, _) in panels1 {
-            let (tx, ty) = p(sx, r1_lbl_y, ls);
-            canvas.text(tx, ty, lbl, ls, label_color);
+        for &(lbl, sx, w, _) in panels1 {
+            let (tx, ty) = p(sx + w * 0.5, r1_lbl_y, ls);
+            canvas.text_aligned(tx, ty, lbl, ls, label_color, TextAlign::Center);
         }
-        let (tx, ty) = p(660.0, r1_lbl_y, ls);
-        canvas.text(tx, ty, "Source (1:1)", ls, label_color);
-        let (tx, ty) = p(740.0, r1_lbl_y, ls);
-        canvas.text(tx, ty, "Naive stretch", ls, label_color);
+        let (tx, ty) = p(716.0, r1_lbl_y, ls);
+        canvas.text_aligned(tx, ty, "Source (1:1)", ls, label_color, TextAlign::Center);
+        let (tx, ty) = p(850.0, r1_lbl_y, ls);
+        canvas.text_aligned(tx, ty, "Naive stretch", ls, label_color, TextAlign::Center);
 
-        for &(lbl, sx, _, _) in panels2 {
-            let (tx, ty) = p(sx, r2_lbl_y, ls);
-            canvas.text(tx, ty, lbl, ls, label_color);
+        for &(lbl, sx, w, _) in panels2 {
+            let (tx, ty) = p(sx + w * 0.5, r2_lbl_y, ls);
+            canvas.text_aligned(tx, ty, lbl, ls, label_color, TextAlign::Center);
         }
-        let (tx, ty) = p(480.0, r2_lbl_y, ls);
-        canvas.text(
+        let (tx, ty) = p(560.0, r2_lbl_y, ls);
+        canvas.text_aligned(
             tx,
             ty,
             "Tinted (160x130)",
             ls,
             Color::from_rgba8(255, 200, 150, 255),
+            TextAlign::Center,
         );
 
-        let (tx, ty) = p(20.0, r3_lbl_y, ls);
-        canvas.text(tx, ty, "Animated (resizing)", ls, anim_label_color);
-        let (tx, ty) = p(220.0, r3_lbl_y, ls);
-        canvas.text(tx, ty, "Animated (width)", ls, anim_label_color);
-        let (tx, ty) = p(600.0, r3_lbl_y, ls);
-        canvas.text(tx, ty, "Animated (breathing)", ls, anim_label_color);
+        let (tx, ty) = p(20.0 + anim_w1 * 0.5, r3_lbl_y, ls);
+        canvas.text_aligned(
+            tx,
+            ty,
+            "Animated (resizing)",
+            ls,
+            anim_label_color,
+            TextAlign::Center,
+        );
+        let (tx, ty) = p(220.0 + anim_w2 * 0.5, r3_lbl_y, ls);
+        canvas.text_aligned(
+            tx,
+            ty,
+            "Animated (width)",
+            ls,
+            anim_label_color,
+            TextAlign::Center,
+        );
+        let (tx, ty) = p(600.0 + breath * 0.5, r3_lbl_y, ls);
+        canvas.text_aligned(
+            tx,
+            ty,
+            "Animated (breathing)",
+            ls,
+            anim_label_color,
+            TextAlign::Center,
+        );
 
         let (tx, ty) = p(20.0, sh as f32 - 24.0, 14.0);
         canvas.text(
@@ -235,8 +257,8 @@ impl Game for NineSliceDemo {
 fn main() {
     let config = EngineConfig {
         title: "Feature: Nine-Slice".into(),
-        width: 960,
-        height: 700,
+        width: 1080,
+        height: 760,
         show_fps: false,
         ..Default::default()
     };

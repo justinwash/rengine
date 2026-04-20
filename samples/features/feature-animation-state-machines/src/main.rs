@@ -352,7 +352,7 @@ impl Game for AnimationStateMachineDemo {
         frame.clear_color = Color::from_rgba8(13, 16, 24, 255);
         let (hw, hh) = engine.half_size();
         let track_left = -TRACK_WIDTH * 0.5;
-        let track_base_y = 72.0;
+        let track_base_y = 22.0;
         let track_center_y = track_base_y + TRACK_HEIGHT * 0.5;
         let car_state = *self.car.current_state();
         let car_x = track_left + 90.0 + self.distance;
@@ -422,18 +422,6 @@ impl Game for AnimationStateMachineDemo {
 
         {
             let canvas = frame.canvas(0);
-            let stats_x = -hw + 24.0;
-            let stats_y = track_base_y + TRACK_HEIGHT;
-            let stats_w = 318.0;
-            let stats_h = 110.0;
-
-            canvas.rect(
-                stats_x,
-                stats_y,
-                stats_w,
-                stats_h,
-                Color::from_rgba8(22, 28, 40, 235),
-            );
             canvas.text(
                 -hw + 28.0,
                 hh - 28.0,
@@ -441,45 +429,39 @@ impl Game for AnimationStateMachineDemo {
                 26.0,
                 Color::WHITE,
             );
-            canvas.text(
+            canvas.text_block(
                 -hw + 28.0,
                 hh - 56.0,
-                "SpriteSheet clips now support Loop, Once, and PingPong playback; state machines layer trigger-driven transitions on top.",
+                "SpriteSheet clips now support Loop, Once, and PingPong playback. State machines layer trigger-driven transitions on top.",
                 12.0,
                 Color::from_rgba8(178, 188, 208, 255),
+                520.0,
+                TextAlign::Left,
             );
+            let (col, row) = self.car.current_frame();
             canvas.text(
-                stats_x + 16.0,
-                stats_y + stats_h - 20.0,
+                -hw + 28.0,
+                hh - 104.0,
                 &format!("State: {}", Self::state_name(car_state)),
                 18.0,
                 Self::state_color(car_state),
             );
             canvas.text(
-                stats_x + 16.0,
-                stats_y + stats_h - 44.0,
-                &format!("Playback: {:?}", self.car.animation().loop_mode()),
+                -hw + 28.0,
+                hh - 126.0,
+                &format!(
+                    "Playback: {:?} | Speed: {:>5.1} px/s | Frame: ({}, {})",
+                    self.car.animation().loop_mode(),
+                    self.speed,
+                    col,
+                    row
+                ),
                 13.0,
                 Color::from_rgba8(188, 199, 216, 255),
             );
             canvas.text(
-                stats_x + 16.0,
-                stats_y + stats_h - 64.0,
-                &format!("Speed: {:>5.1} px/s", self.speed),
-                13.0,
-                Color::from_rgba8(188, 199, 216, 255),
-            );
-            let (col, row) = self.car.current_frame();
-            canvas.text(
-                stats_x + 16.0,
-                stats_y + stats_h - 84.0,
-                &format!("Frame: ({}, {})", col, row),
-                13.0,
-                Color::from_rgba8(188, 199, 216, 255),
-            );
-            canvas.text(
-                stats_x + 16.0,
-                stats_y + stats_h - 104.0,
+                -hw + 28.0,
+                hh - 146.0,
                 &format!("Last event: {}", self.last_event),
                 13.0,
                 Color::from_rgba8(140, 214, 255, 255),
@@ -492,8 +474,13 @@ impl Game for AnimationStateMachineDemo {
                 CarState::Brake,
                 CarState::SpinOut,
             ];
+            let state_box_w = 98.0;
+            let state_gap = 12.0;
+            let state_total_w = states.len() as f32 * state_box_w
+                + (states.len().saturating_sub(1)) as f32 * state_gap;
+            let state_start_x = -state_total_w / 2.0;
             for (index, state) in states.iter().enumerate() {
-                let box_x = 190.0 + index as f32 * 110.0;
+                let box_x = state_start_x + index as f32 * (state_box_w + state_gap);
                 let active = *state == car_state;
                 let bg = if active {
                     Self::state_color(*state)
@@ -505,20 +492,29 @@ impl Game for AnimationStateMachineDemo {
                 } else {
                     Color::from_rgba8(188, 199, 216, 255)
                 };
-                canvas.rect(box_x, -hh + 74.0, 98.0, 28.0, bg);
-                canvas.text(box_x + 10.0, -hh + 94.0, Self::state_name(*state), 12.0, fg);
+                canvas.rect(box_x, -hh + 74.0, state_box_w, 28.0, bg);
+                canvas.text_aligned(
+                    box_x + state_box_w / 2.0,
+                    -hh + 94.0,
+                    Self::state_name(*state),
+                    12.0,
+                    fg,
+                    TextAlign::Center,
+                );
             }
 
-            canvas.text(
+            canvas.text_block(
                 -hw + 28.0,
-                -hh + 54.0,
-                "Launch auto-falls through to Cruise. Brake auto-falls through to Idle. Crash is a global transition into Spin Out, which uses PingPong playback until Recover fires.",
+                -hh + 62.0,
+                "Launch falls through to Cruise. Brake falls through to Idle. Crash is a global transition into Spin Out, which ping-pongs until Recover fires.",
                 12.0,
                 Color::from_rgba8(176, 186, 206, 255),
+                860.0,
+                TextAlign::Left,
             );
             canvas.text(
                 -hw + 28.0,
-                -hh + 28.0,
+                -hh + 18.0,
                 "Up: Accelerate | Down: Brake | Space: Crash | Enter: Recover | Esc: Quit",
                 12.0,
                 Color::from_rgba8(214, 224, 242, 255),

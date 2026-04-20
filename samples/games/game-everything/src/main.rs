@@ -45,7 +45,7 @@ fn main() {
             vsync: false,
             headless,
             hot_reload: !headless,
-            show_fps: !headless,
+            show_fps: false,
             fixed_dt: 1.0 / 60.0,
             render_width: Some(480),
             render_height: Some(360),
