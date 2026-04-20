@@ -127,19 +127,20 @@ impl Game for RngDemo {
         );
 
         let content_w = sw as f32 - 60.0;
-        let line_h = 18.0;
+        let text_size = 14.0;
+        let line_h = canvas.line_height(text_size);
         let mut y = hh - 92.0;
         for line in &self.results {
-            let wrapped = wrap_text(line, 14.0, content_w, engine.font_atlas());
-            canvas.text_block(
-                -hw + 20.0,
-                y,
-                line,
-                14.0,
-                Color::from_rgba8(200, 220, 255, 255),
-                content_w,
-                TextAlign::Left,
-            );
+            let wrapped = wrap_text(line, text_size, content_w, engine.font_atlas());
+            for (index, wrapped_line) in wrapped.iter().enumerate() {
+                canvas.text(
+                    -hw + 20.0,
+                    y - index as f32 * line_h,
+                    wrapped_line,
+                    text_size,
+                    Color::from_rgba8(200, 220, 255, 255),
+                );
+            }
             y -= wrapped.len().max(1) as f32 * line_h + 8.0;
         }
 
