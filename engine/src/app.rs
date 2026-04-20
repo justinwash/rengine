@@ -14,6 +14,7 @@ use crate::assets::{
     MeshAsset, SpriteSheet, TextureAsset,
 };
 use crate::canvas;
+use crate::debug::{self, DebugCommand, DebugLogLevel, DebugOverlayInfo, DebugUiState};
 use crate::input::{ActionMap, GamepadAssignMode, GamepadSystem, InputState};
 use crate::math::tween::Easing;
 use crate::math::{Rng, TimeState};
@@ -37,6 +38,55 @@ fn handle_ime_event(input: &mut InputState, event: Ime) {
     input.handle_ime_event(event);
 }
 
+fn route_debug_keyboard_event(input: &mut InputState, debug_ui: &mut DebugUiState, event: &KeyEvent) {
+    let consumed_text = if event.state == winit::event::ElementState::Pressed {
+        event.text
+            .as_deref()
+            .is_some_and(|text| debug_ui.handle_committed_text(text))
+    } else {
+        false
+    };
+    let consumed_key = debug_ui.handle_key_event(event);
+
+    if !consumed_text {
+        handle_text_event(input, event);
+    }
+
+    if !consumed_key {
+        if let PhysicalKey::Code(key) = event.physical_key {
+            input.handle_key_event(key, event.state);
+        }
+    }
+}
+
+fn route_debug_ime_event(input: &mut InputState, debug_ui: &mut DebugUiState, event: Ime) {
+    if !debug_ui.handle_ime_event(&event) {
+        handle_ime_event(input, event);
+    }
+}
+
+fn route_debug_scroll_event(input: &mut InputState, debug_ui: &mut DebugUiState, dx: f32, dy: f32) {
+    if !debug_ui.handle_scroll(dy) {
+        input.handle_scroll(dx, dy);
+    }
+}
+
+fn route_debug_mouse_button_event(
+    input: &mut InputState,
+    debug_ui: &mut DebugUiState,
+    window_size: (u32, u32),
+    button: usize,
+    state: winit::event::ElementState,
+) -> bool {
+    let mouse_position = input.mouse_position();
+    if debug_ui.handle_mouse_button(window_size, mouse_position, button, state) {
+        true
+    } else {
+        input.handle_mouse_button(button, state);
+        false
+    }
+}
+
 fn normalize_asset_bundle_dependencies(mut deps: Vec<PathBuf>) -> Vec<PathBuf> {
     deps.sort();
     deps.dedup();
@@ -54,6 +104,213 @@ fn evict_released_asset_paths(
         assets.unload_mesh(&path);
         assets.unload_data(&path);
         assets.unload_manifest(&path);
+    }
+}
+
+fn push_fps_overlay(
+    canvases: &mut Vec<canvas::Canvas>,
+    screen_size: (u32, u32),
+    atlas: *const text::FontAtlas,
+    fps: f32,
+) {
+    let mut fps_canvas = canvas::Canvas::new(screen_size, atlas);
+    canvas::draw_fps(&mut fps_canvas, fps);
+    canvases.push(fps_canvas);
+}
+
+fn push_debug_overlay(
+    canvases: &mut Vec<canvas::Canvas>,
+    screen_size: (u32, u32),
+    atlas: *const text::FontAtlas,
+    info: DebugOverlayInfo<'_>,
+    state: &DebugUiState,
+    mouse_position: (f32, f32),
+) {
+    let mut overlay = canvas::Canvas::new(screen_size, atlas);
+    debug::draw_overlay(&mut overlay, &info, state, Some(mouse_position));
+    debug::draw_console(&mut overlay, state);
+    canvases.push(overlay);
+}
+
+fn push_builtin_2d_overlays(frame: &mut Frame, engine: &Engine, show_fps: bool) {
+    let screen_size = engine.window_size();
+    let atlas = engine.font_atlas() as *const text::FontAtlas;
+
+    if show_fps {
+        push_fps_overlay(&mut frame.canvases, screen_size, atlas, engine.time.fps());
+    }
+
+    if engine.debug_ui.overlay_visible() {
+        push_debug_overlay(
+            &mut frame.canvases,
+            screen_size,
+            atlas,
+            DebugOverlayInfo {
+                mode: "2D",
+                fps: engine.time.fps(),
+                dt: engine.time.dt(),
+                frame_count: engine.time.frame_count(),
+                total_time: engine.time.total_time(),
+                window_size: engine.window_size(),
+                game_size: engine.game_size(),
+                hot_reload_enabled: engine.hot_reload_enabled,
+                gamepads_connected: Some(engine.gamepads_connected()),
+                mouse_captured: None,
+            },
+            &engine.debug_ui,
+            engine.input.mouse_position(),
+        );
+    }
+}
+
+fn push_builtin_3d_overlays(frame: &mut Frame3D, engine: &Engine3D, show_fps: bool) {
+    let screen_size = engine.window_size();
+    let atlas = engine.font_atlas() as *const text::FontAtlas;
+
+    if show_fps {
+        push_fps_overlay(&mut frame.canvases, screen_size, atlas, engine.time.fps());
+    }
+
+    if engine.debug_ui.overlay_visible() {
+        push_debug_overlay(
+            &mut frame.canvases,
+            screen_size,
+            atlas,
+            DebugOverlayInfo {
+                mode: "3D",
+                fps: engine.time.fps(),
+                dt: engine.time.dt(),
+                frame_count: engine.time.frame_count(),
+                total_time: engine.time.total_time(),
+                window_size: engine.window_size(),
+                game_size: engine.game_size(),
+                hot_reload_enabled: engine.hot_reload_enabled,
+                gamepads_connected: None,
+                mouse_captured: Some(engine.mouse_captured),
+            },
+            &engine.debug_ui,
+            engine.input.mouse_position(),
+        );
+    }
+}
+
+fn console_target() -> &'static str {
+    "rengine::debug::console"
+}
+
+fn log_console_line(level: DebugLogLevel, message: impl AsRef<str>) {
+    debug::log_message(level, console_target(), message.as_ref());
+}
+
+fn execute_debug_command(debug_ui: &mut DebugUiState, hot_reload_enabled: &mut bool, command_text: &str) {
+    match debug::parse_command(command_text) {
+        Ok(DebugCommand::Help) => {
+            log_console_line(DebugLogLevel::Debug, format!("> {command_text}"));
+            for line in debug::command_help_lines() {
+                log_console_line(DebugLogLevel::Info, *line);
+            }
+        }
+        Ok(DebugCommand::State) => {
+            log_console_line(DebugLogLevel::Debug, format!("> {command_text}"));
+            log_console_line(
+                DebugLogLevel::Info,
+                format!(
+                    "overlay={} console={} follow={} level={} target={} hot_reload={}",
+                    debug_ui.overlay_visible(),
+                    debug_ui.console_open(),
+                    debug_ui.follow_logs(),
+                    debug_ui.severity_filter().label(),
+                    if debug_ui.target_filter().is_empty() {
+                        "*"
+                    } else {
+                        debug_ui.target_filter()
+                    },
+                    *hot_reload_enabled,
+                ),
+            );
+        }
+        Ok(DebugCommand::Clear) => {
+            debug::clear_logs();
+            log_console_line(DebugLogLevel::Debug, "> clear");
+            log_console_line(DebugLogLevel::Info, "log buffer cleared");
+        }
+        Ok(DebugCommand::Overlay(toggle)) => {
+            log_console_line(DebugLogLevel::Debug, format!("> {command_text}"));
+            debug_ui.set_overlay_visible(toggle.apply(debug_ui.overlay_visible()));
+            log_console_line(
+                DebugLogLevel::Info,
+                format!("overlay {}", if debug_ui.overlay_visible() { "on" } else { "off" }),
+            );
+        }
+        Ok(DebugCommand::Console(toggle)) => {
+            log_console_line(DebugLogLevel::Debug, format!("> {command_text}"));
+            debug_ui.set_console_open(toggle.apply(debug_ui.console_open()));
+            log_console_line(
+                DebugLogLevel::Info,
+                format!("console {}", if debug_ui.console_open() { "on" } else { "off" }),
+            );
+        }
+        Ok(DebugCommand::Follow(toggle)) => {
+            log_console_line(DebugLogLevel::Debug, format!("> {command_text}"));
+            debug_ui.set_follow_logs(toggle.apply(debug_ui.follow_logs()));
+            log_console_line(
+                DebugLogLevel::Info,
+                format!(
+                    "log follow {}",
+                    if debug_ui.follow_logs() { "live" } else { "paused" }
+                ),
+            );
+        }
+        Ok(DebugCommand::Level(filter)) => {
+            log_console_line(DebugLogLevel::Debug, format!("> {command_text}"));
+            debug_ui.set_severity_filter(filter);
+            log_console_line(DebugLogLevel::Info, format!("severity filter {}", filter.label()));
+        }
+        Ok(DebugCommand::Target(target)) => {
+            log_console_line(DebugLogLevel::Debug, format!("> {command_text}"));
+            match target {
+                Some(target) => {
+                    debug_ui.set_target_filter(target);
+                    log_console_line(
+                        DebugLogLevel::Info,
+                        format!("target filter {}", debug_ui.target_filter()),
+                    );
+                }
+                None => {
+                    debug_ui.clear_target_filter();
+                    log_console_line(DebugLogLevel::Info, "target filter cleared");
+                }
+            }
+        }
+        Ok(DebugCommand::HotReload(toggle)) => {
+            log_console_line(DebugLogLevel::Debug, format!("> {command_text}"));
+            *hot_reload_enabled = toggle.apply(*hot_reload_enabled);
+            log_console_line(
+                DebugLogLevel::Info,
+                format!("hot reload {}", if *hot_reload_enabled { "on" } else { "off" }),
+            );
+        }
+        Ok(DebugCommand::Echo(level, message)) => {
+            log_console_line(DebugLogLevel::Debug, format!("> {command_text}"));
+            log_console_line(level, message);
+        }
+        Err(error) => {
+            log_console_line(DebugLogLevel::Error, format!("{error}; try 'help'"));
+        }
+    }
+}
+
+fn drain_debug_commands_2d(engine: &mut Engine) {
+    let commands = engine.debug_ui.drain_pending_commands();
+    for command in commands {
+        execute_debug_command(&mut engine.debug_ui, &mut engine.hot_reload_enabled, &command);
+    }
+}
+
+fn drain_debug_commands_3d(engine: &mut Engine3D) {
+    let commands = engine.debug_ui.drain_pending_commands();
+    for command in commands {
+        execute_debug_command(&mut engine.debug_ui, &mut engine.hot_reload_enabled, &command);
     }
 }
 
@@ -106,6 +363,7 @@ pub struct EngineConfig {
     pub headless: bool,
     pub hot_reload: bool,
     pub show_fps: bool,
+    pub show_debug_overlay: bool,
     pub fixed_dt: f32,
 
     pub render_width: Option<u32>,
@@ -124,6 +382,7 @@ impl Default for EngineConfig {
             headless: false,
             hot_reload: true,
             show_fps: true,
+            show_debug_overlay: false,
             fixed_dt: 1.0 / 60.0,
             render_width: None,
             render_height: None,
@@ -144,6 +403,7 @@ pub struct Engine {
     pub(crate) render_resolution: Option<(u32, u32)>,
     pub(crate) gamepads: GamepadSystem,
     pub(crate) hot_reload_enabled: bool,
+    pub(crate) debug_ui: DebugUiState,
     pub(crate) actions: ActionMap,
     pub(crate) rng: RefCell<Rng>,
     pub(crate) postfx_chain: PostFxChain,
@@ -271,6 +531,58 @@ impl Engine {
 
     pub fn set_hot_reload_enabled(&mut self, enabled: bool) {
         self.hot_reload_enabled = enabled;
+    }
+
+    pub fn debug_overlay_visible(&self) -> bool {
+        self.debug_ui.overlay_visible()
+    }
+
+    pub fn set_debug_overlay_visible(&mut self, visible: bool) {
+        self.debug_ui.set_overlay_visible(visible);
+    }
+
+    pub fn toggle_debug_overlay(&mut self) {
+        self.debug_ui.toggle_overlay();
+    }
+
+    pub fn debug_console_open(&self) -> bool {
+        self.debug_ui.console_open()
+    }
+
+    pub fn set_debug_console_open(&mut self, open: bool) {
+        self.debug_ui.set_console_open(open);
+    }
+
+    pub fn toggle_debug_console(&mut self) {
+        self.debug_ui.toggle_console();
+    }
+
+    pub fn debug_logs(&self, limit: usize) -> Vec<crate::debug::DebugLogEntry> {
+        crate::debug::recent_logs(limit)
+    }
+
+    pub fn clear_debug_logs(&self) {
+        crate::debug::clear_logs();
+    }
+
+    pub fn log_trace(&self, target: &str, message: impl AsRef<str>) {
+        crate::debug::log_message(DebugLogLevel::Trace, target, message.as_ref());
+    }
+
+    pub fn log_debug(&self, target: &str, message: impl AsRef<str>) {
+        crate::debug::log_message(DebugLogLevel::Debug, target, message.as_ref());
+    }
+
+    pub fn log_info(&self, target: &str, message: impl AsRef<str>) {
+        crate::debug::log_message(DebugLogLevel::Info, target, message.as_ref());
+    }
+
+    pub fn log_warn(&self, target: &str, message: impl AsRef<str>) {
+        crate::debug::log_message(DebugLogLevel::Warn, target, message.as_ref());
+    }
+
+    pub fn log_error(&self, target: &str, message: impl AsRef<str>) {
+        crate::debug::log_message(DebugLogLevel::Error, target, message.as_ref());
     }
 
     pub fn create_texture(&mut self, width: u32, height: u32, pixels: &[u8]) -> TextureId {
@@ -665,7 +977,7 @@ pub trait Game: 'static + Sized {
 }
 
 pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Error>> {
-    env_logger::init();
+    debug::init_logging();
 
     let headless = config.headless;
     let show_fps = config.show_fps;
@@ -714,6 +1026,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
         render_resolution: render_res,
         gamepads: GamepadSystem::new(gamepad_assign),
         hot_reload_enabled: config.hot_reload,
+        debug_ui: DebugUiState::new(config.show_debug_overlay),
         actions: ActionMap::new(),
         rng: RefCell::new(Rng::from_time()),
         postfx_chain: PostFxChain::new(),
@@ -758,14 +1071,11 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
                 }
 
                 WindowEvent::KeyboardInput { event, .. } => {
-                    handle_text_event(&mut engine.input, &event);
-                    if let PhysicalKey::Code(key) = event.physical_key {
-                        engine.input.handle_key_event(key, event.state);
-                    }
+                    route_debug_keyboard_event(&mut engine.input, &mut engine.debug_ui, &event);
                 }
 
                 WindowEvent::Ime(event) => {
-                    handle_ime_event(&mut engine.input, event);
+                    route_debug_ime_event(&mut engine.input, &mut engine.debug_ui, event);
                 }
 
                 WindowEvent::CursorMoved { position, .. } => {
@@ -781,7 +1091,14 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
                         MouseButton::Middle => 2,
                         _ => return,
                     };
-                    engine.input.handle_mouse_button(idx, state);
+                    let window_size = engine.window_size();
+                    route_debug_mouse_button_event(
+                        &mut engine.input,
+                        &mut engine.debug_ui,
+                        window_size,
+                        idx,
+                        state,
+                    );
                 }
 
                 WindowEvent::MouseWheel { delta, .. } => {
@@ -791,7 +1108,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
                             (pos.x as f32 / 40.0, pos.y as f32 / 40.0)
                         }
                     };
-                    engine.input.handle_scroll(dx, dy);
+                    route_debug_scroll_event(&mut engine.input, &mut engine.debug_ui, dx, dy);
                 }
 
                 WindowEvent::RedrawRequested => {
@@ -799,6 +1116,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
                     engine.gamepads.update();
                     engine.reload_assets_if_changed();
                     engine.audio.update(engine.time.dt());
+                    drain_debug_commands_2d(&mut engine);
 
                     while engine.time.consume_fixed_step() {
                         game.fixed_update(&engine);
@@ -813,13 +1131,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
 
                     game.render(&engine, &mut frame);
 
-                    if show_fps {
-                        let screen_size = engine.window_size();
-                        let atlas: *const text::FontAtlas = &engine.renderer.fonts[0];
-                        let mut fps_canvas = canvas::Canvas::new(screen_size, atlas);
-                        canvas::draw_fps(&mut fps_canvas, engine.time.fps());
-                        frame.canvases.push(fps_canvas);
-                    }
+                    push_builtin_2d_overlays(&mut frame, &engine, show_fps);
                     engine
                         .renderer
                         .render_frame(&mut frame, &engine.postfx_chain);
@@ -845,7 +1157,7 @@ pub fn run_with_scenes<F>(config: EngineConfig, init: F) -> Result<(), Box<dyn s
 where
     F: FnOnce(&mut Engine, &mut Globals) -> Box<dyn Scene>,
 {
-    env_logger::init();
+    debug::init_logging();
 
     let headless = config.headless;
     let show_fps = config.show_fps;
@@ -884,6 +1196,7 @@ where
         render_resolution: render_res,
         gamepads: GamepadSystem::new(gamepad_assign),
         hot_reload_enabled: config.hot_reload,
+        debug_ui: DebugUiState::new(config.show_debug_overlay),
         actions: ActionMap::new(),
         rng: RefCell::new(Rng::from_time()),
         postfx_chain: PostFxChain::new(),
@@ -946,14 +1259,11 @@ where
                 }
 
                 WindowEvent::KeyboardInput { event, .. } => {
-                    handle_text_event(&mut engine.input, &event);
-                    if let PhysicalKey::Code(key) = event.physical_key {
-                        engine.input.handle_key_event(key, event.state);
-                    }
+                    route_debug_keyboard_event(&mut engine.input, &mut engine.debug_ui, &event);
                 }
 
                 WindowEvent::Ime(event) => {
-                    handle_ime_event(&mut engine.input, event);
+                    route_debug_ime_event(&mut engine.input, &mut engine.debug_ui, event);
                 }
 
                 WindowEvent::CursorMoved { position, .. } => {
@@ -969,7 +1279,14 @@ where
                         MouseButton::Middle => 2,
                         _ => return,
                     };
-                    engine.input.handle_mouse_button(idx, state);
+                    let window_size = engine.window_size();
+                    route_debug_mouse_button_event(
+                        &mut engine.input,
+                        &mut engine.debug_ui,
+                        window_size,
+                        idx,
+                        state,
+                    );
                 }
 
                 WindowEvent::MouseWheel { delta, .. } => {
@@ -979,7 +1296,7 @@ where
                             (pos.x as f32 / 40.0, pos.y as f32 / 40.0)
                         }
                     };
-                    engine.input.handle_scroll(dx, dy);
+                    route_debug_scroll_event(&mut engine.input, &mut engine.debug_ui, dx, dy);
                 }
 
                 WindowEvent::RedrawRequested => {
@@ -987,6 +1304,7 @@ where
                     engine.gamepads.update();
                     engine.reload_assets_if_changed();
                     engine.audio.update(engine.time.dt());
+                    drain_debug_commands_2d(&mut engine);
 
                     while engine.time.consume_fixed_step() {
                         if let Some(scene) = stack.last_mut() {
@@ -1066,13 +1384,7 @@ where
                         }
                     }
 
-                    if show_fps {
-                        let screen_size = engine.window_size();
-                        let atlas: *const text::FontAtlas = &engine.renderer.fonts[0];
-                        let mut fps_canvas = canvas::Canvas::new(screen_size, atlas);
-                        canvas::draw_fps(&mut fps_canvas, engine.time.fps());
-                        frame.canvases.push(fps_canvas);
-                    }
+                    push_builtin_2d_overlays(&mut frame, &engine, show_fps);
                     engine
                         .renderer
                         .render_frame(&mut frame, &engine.postfx_chain);
@@ -1152,6 +1464,7 @@ pub struct Engine3D {
     render_resolution: Option<(u32, u32)>,
     mouse_captured: bool,
     hot_reload_enabled: bool,
+    debug_ui: DebugUiState,
     actions: ActionMap,
     no_gamepad: crate::input::GamepadState,
     rng: RefCell<Rng>,
@@ -1196,6 +1509,30 @@ impl Engine3D {
         self.mouse_captured
     }
 
+    pub fn debug_overlay_visible(&self) -> bool {
+        self.debug_ui.overlay_visible()
+    }
+
+    pub fn set_debug_overlay_visible(&mut self, visible: bool) {
+        self.debug_ui.set_overlay_visible(visible);
+    }
+
+    pub fn toggle_debug_overlay(&mut self) {
+        self.debug_ui.toggle_overlay();
+    }
+
+    pub fn debug_console_open(&self) -> bool {
+        self.debug_ui.console_open()
+    }
+
+    pub fn set_debug_console_open(&mut self, open: bool) {
+        self.debug_ui.set_console_open(open);
+    }
+
+    pub fn toggle_debug_console(&mut self) {
+        self.debug_ui.toggle_console();
+    }
+
     pub fn actions(&self) -> &ActionMap {
         &self.actions
     }
@@ -1224,6 +1561,34 @@ impl Engine3D {
 
     pub fn axis(&self, name: &str) -> f32 {
         self.actions.axis(name, &self.input, &self.no_gamepad)
+    }
+
+    pub fn debug_logs(&self, limit: usize) -> Vec<crate::debug::DebugLogEntry> {
+        crate::debug::recent_logs(limit)
+    }
+
+    pub fn clear_debug_logs(&self) {
+        crate::debug::clear_logs();
+    }
+
+    pub fn log_trace(&self, target: &str, message: impl AsRef<str>) {
+        crate::debug::log_message(DebugLogLevel::Trace, target, message.as_ref());
+    }
+
+    pub fn log_debug(&self, target: &str, message: impl AsRef<str>) {
+        crate::debug::log_message(DebugLogLevel::Debug, target, message.as_ref());
+    }
+
+    pub fn log_info(&self, target: &str, message: impl AsRef<str>) {
+        crate::debug::log_message(DebugLogLevel::Info, target, message.as_ref());
+    }
+
+    pub fn log_warn(&self, target: &str, message: impl AsRef<str>) {
+        crate::debug::log_message(DebugLogLevel::Warn, target, message.as_ref());
+    }
+
+    pub fn log_error(&self, target: &str, message: impl AsRef<str>) {
+        crate::debug::log_message(DebugLogLevel::Error, target, message.as_ref());
     }
 
     pub fn asset_root(&self) -> &Path {
@@ -1606,7 +1971,7 @@ pub trait Game3D: 'static + Sized {
 }
 
 pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::Error>> {
-    env_logger::init();
+    debug::init_logging();
 
     let headless = config.headless;
     let show_fps = config.show_fps;
@@ -1654,6 +2019,7 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
         render_resolution: render_res,
         mouse_captured: false,
         hot_reload_enabled: config.hot_reload,
+        debug_ui: DebugUiState::new(config.show_debug_overlay),
         actions: ActionMap::new(),
         no_gamepad: crate::input::GamepadState::new(),
         rng: RefCell::new(Rng::from_time()),
@@ -1724,10 +2090,21 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
                 }
 
                 WindowEvent::KeyboardInput { event, .. } => {
-                    handle_text_event(&mut engine.input, &event);
+                    let debug_consumed_text = if event.state == winit::event::ElementState::Pressed {
+                        event.text
+                            .as_deref()
+                            .is_some_and(|text| engine.debug_ui.handle_committed_text(text))
+                    } else {
+                        false
+                    };
+                    let debug_consumed = engine.debug_ui.handle_key_event(&event);
+                    if !debug_consumed_text {
+                        handle_text_event(&mut engine.input, &event);
+                    }
                     if let PhysicalKey::Code(key) = event.physical_key {
                         if key == winit::keyboard::KeyCode::Escape
                             && event.state == winit::event::ElementState::Pressed
+                            && !debug_consumed
                         {
                             if engine.mouse_captured {
                                 let _ = window.set_cursor_grab(CursorGrabMode::None);
@@ -1737,12 +2114,14 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
                                 target.exit();
                             }
                         }
-                        engine.input.handle_key_event(key, event.state);
+                        if !debug_consumed {
+                            engine.input.handle_key_event(key, event.state);
+                        }
                     }
                 }
 
                 WindowEvent::Ime(event) => {
-                    handle_ime_event(&mut engine.input, event);
+                    route_debug_ime_event(&mut engine.input, &mut engine.debug_ui, event);
                 }
 
                 WindowEvent::MouseInput { button, state, .. } => {
@@ -1752,6 +2131,17 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
                         MouseButton::Middle => 2,
                         _ => return,
                     };
+                    let window_size = engine.window_size();
+
+                    if route_debug_mouse_button_event(
+                        &mut engine.input,
+                        &mut engine.debug_ui,
+                        window_size,
+                        idx,
+                        state,
+                    ) {
+                        return;
+                    }
 
                     if !engine.mouse_captured && state == winit::event::ElementState::Pressed {
                         let _ = window
@@ -1760,7 +2150,6 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
                         window.set_cursor_visible(false);
                         engine.mouse_captured = true;
                     }
-                    engine.input.handle_mouse_button(idx, state);
                 }
 
                 WindowEvent::MouseWheel { delta, .. } => {
@@ -1770,7 +2159,7 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
                             (pos.x as f32 / 40.0, pos.y as f32 / 40.0)
                         }
                     };
-                    engine.input.handle_scroll(dx, dy);
+                    route_debug_scroll_event(&mut engine.input, &mut engine.debug_ui, dx, dy);
                 }
 
                 WindowEvent::CursorMoved { position, .. } => {
@@ -1783,6 +2172,7 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
                     engine.time.tick();
                     engine.reload_assets_if_changed();
                     engine.audio.update(engine.time.dt());
+                    drain_debug_commands_3d(&mut engine);
 
                     while engine.time.consume_fixed_step() {
                         game.fixed_update(&engine);
@@ -1797,13 +2187,7 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
 
                     game.render(&engine, &mut frame);
 
-                    if show_fps {
-                        let screen_size = engine.window_size();
-                        let atlas: *const text::FontAtlas = &engine.renderer.fonts[0];
-                        let mut fps_canvas = canvas::Canvas::new(screen_size, atlas);
-                        canvas::draw_fps(&mut fps_canvas, engine.time.fps());
-                        frame.canvases.push(fps_canvas);
-                    }
+                    push_builtin_3d_overlays(&mut frame, &engine, show_fps);
                     engine.renderer.render_frame(&mut frame);
 
                     engine.input.end_frame();
@@ -1827,7 +2211,7 @@ pub fn run3d_with_scenes<F>(config: EngineConfig, init: F) -> Result<(), Box<dyn
 where
     F: FnOnce(&mut Engine3D, &mut Globals) -> Box<dyn Scene3D>,
 {
-    env_logger::init();
+    debug::init_logging();
 
     let headless = config.headless;
     let show_fps = config.show_fps;
@@ -1875,6 +2259,7 @@ where
         render_resolution: render_res,
         mouse_captured: false,
         hot_reload_enabled: config.hot_reload,
+        debug_ui: DebugUiState::new(config.show_debug_overlay),
         actions: ActionMap::new(),
         no_gamepad: crate::input::GamepadState::new(),
         rng: RefCell::new(Rng::from_time()),
@@ -1962,10 +2347,21 @@ where
                 }
 
                 WindowEvent::KeyboardInput { event, .. } => {
-                    handle_text_event(&mut engine.input, &event);
+                    let debug_consumed_text = if event.state == winit::event::ElementState::Pressed {
+                        event.text
+                            .as_deref()
+                            .is_some_and(|text| engine.debug_ui.handle_committed_text(text))
+                    } else {
+                        false
+                    };
+                    let debug_consumed = engine.debug_ui.handle_key_event(&event);
+                    if !debug_consumed_text {
+                        handle_text_event(&mut engine.input, &event);
+                    }
                     if let PhysicalKey::Code(key) = event.physical_key {
                         if key == winit::keyboard::KeyCode::Escape
                             && event.state == winit::event::ElementState::Pressed
+                            && !debug_consumed
                         {
                             if engine.mouse_captured {
                                 let _ = window.set_cursor_grab(CursorGrabMode::None);
@@ -1975,12 +2371,14 @@ where
                                 target.exit();
                             }
                         }
-                        engine.input.handle_key_event(key, event.state);
+                        if !debug_consumed {
+                            engine.input.handle_key_event(key, event.state);
+                        }
                     }
                 }
 
                 WindowEvent::Ime(event) => {
-                    handle_ime_event(&mut engine.input, event);
+                    route_debug_ime_event(&mut engine.input, &mut engine.debug_ui, event);
                 }
 
                 WindowEvent::MouseInput { button, state, .. } => {
@@ -1990,6 +2388,17 @@ where
                         MouseButton::Middle => 2,
                         _ => return,
                     };
+                    let window_size = engine.window_size();
+
+                    if route_debug_mouse_button_event(
+                        &mut engine.input,
+                        &mut engine.debug_ui,
+                        window_size,
+                        idx,
+                        state,
+                    ) {
+                        return;
+                    }
 
                     if !engine.mouse_captured && state == winit::event::ElementState::Pressed {
                         let _ = window
@@ -1998,7 +2407,6 @@ where
                         window.set_cursor_visible(false);
                         engine.mouse_captured = true;
                     }
-                    engine.input.handle_mouse_button(idx, state);
                 }
 
                 WindowEvent::MouseWheel { delta, .. } => {
@@ -2008,7 +2416,7 @@ where
                             (pos.x as f32 / 40.0, pos.y as f32 / 40.0)
                         }
                     };
-                    engine.input.handle_scroll(dx, dy);
+                    route_debug_scroll_event(&mut engine.input, &mut engine.debug_ui, dx, dy);
                 }
 
                 WindowEvent::CursorMoved { position, .. } => {
@@ -2021,6 +2429,7 @@ where
                     engine.time.tick();
                     engine.reload_assets_if_changed();
                     engine.audio.update(engine.time.dt());
+                    drain_debug_commands_3d(&mut engine);
 
                     while engine.time.consume_fixed_step() {
                         if let Some(scene) = stack.last_mut() {
@@ -2048,13 +2457,7 @@ where
                         scene.render(&engine, &globals, &mut frame);
                     }
 
-                    if show_fps {
-                        let screen_size = engine.window_size();
-                        let atlas: *const text::FontAtlas = &engine.renderer.fonts[0];
-                        let mut fps_canvas = canvas::Canvas::new(screen_size, atlas);
-                        canvas::draw_fps(&mut fps_canvas, engine.time.fps());
-                        frame.canvases.push(fps_canvas);
-                    }
+                    push_builtin_3d_overlays(&mut frame, &engine, show_fps);
                     engine.renderer.render_frame(&mut frame);
 
                     engine.input.end_frame();
