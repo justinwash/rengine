@@ -109,6 +109,12 @@ impl Game for Platformer {
         input::handle_input(&mut self.player, engine);
         physics::update(&mut self.player, &self.platforms, dt);
 
+        if self.player.sprite.position.y < -220.0 {
+            self.player.sprite.position = Vec2::new(80.0, 200.0);
+            self.player.vel = Vec2::ZERO;
+            self.player.on_ground = false;
+        }
+
         self.player.sprite.flip_x = !self.player.facing_right;
         let eye_offset_x = if self.player.facing_right {
             PLAYER_W * 0.55

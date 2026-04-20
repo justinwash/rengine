@@ -284,6 +284,28 @@ fn draw_hud(game: &FightGame, hud: &mut Canvas) {
         );
         hud.text(ko_x, ko_y + 36.0, &winner.to_string(), 36.0, Color::YELLOW);
     }
+
+    hud.rect(
+        -170.0,
+        -hh + 8.0,
+        340.0,
+        34.0,
+        Color::from_rgba8(0, 0, 0, 170),
+    );
+    hud.text(
+        -160.0,
+        -hh + 28.0,
+        "P1: WASD + V/B",
+        12.0,
+        Color::from_rgba8(120, 180, 255, 255),
+    );
+    hud.text(
+        18.0,
+        -hh + 28.0,
+        "P2: Arrows + ,/.",
+        12.0,
+        Color::from_rgba8(255, 140, 140, 255),
+    );
 }
 
 fn draw_demo_overlay(game: &FightGame, hud: &mut Canvas) {

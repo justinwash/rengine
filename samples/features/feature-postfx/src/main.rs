@@ -186,19 +186,30 @@ impl Game for PostFxDemo {
         let _screen_size = engine.window_size();
         let canvas = frame.canvas(0);
         canvas.rect(
-            -hw + 4.0,
-            hh - 4.0 - 22.0,
-            300.0,
-            22.0,
+            -118.0,
+            hh - 46.0,
+            236.0,
+            42.0,
             Color::from_rgba8(0, 0, 0, 180),
         );
-        let info = format!(
-            "PostFx: {} [{}/{}] [Left/Right]",
+        let index_text = format!("[{}/{}]  Left / Right", self.effect_index + 1, names.len(),);
+        canvas.text_block(
+            0.0,
+            hh - 10.0,
             name,
-            self.effect_index + 1,
-            names.len()
+            13.0,
+            Color::WHITE,
+            220.0,
+            TextAlign::Center,
         );
-        canvas.text(-hw + 8.0, hh - 8.0, &info, 14.0, Color::WHITE);
+        canvas.text_aligned(
+            0.0,
+            hh - 30.0,
+            &index_text,
+            11.0,
+            Color::from_rgba8(180, 190, 205, 255),
+            TextAlign::Center,
+        );
     }
 
     fn should_exit(&self) -> bool {

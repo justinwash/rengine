@@ -580,7 +580,6 @@ impl Scene for GameScene {
                         return SceneOp::Push(Box::new(PauseOverlay {
                             demo_frames: 0,
                             ui: Ui::default(),
-                            badge: None,
                         }));
                     }
                     if prev < 500 && f >= 500 {
@@ -650,7 +649,6 @@ impl Scene for GameScene {
                 return SceneOp::Push(Box::new(PauseOverlay {
                     demo_frames: 0,
                     ui: Ui::default(),
-                    badge: None,
                 }));
             }
         }
@@ -802,9 +800,9 @@ impl Scene for GameScene {
         }
 
         hud.text(
-            hw - 380.0,
-            -hh + 20.0,
-            "WASD: Move | Space: Jump | +/-: Zoom | ESC: Pause/Quit",
+            hw - 220.0,
+            -hh + 34.0,
+            "WASD move | Space jump | +/- zoom | Esc pause",
             10.0,
             Color::new(1.0, 1.0, 1.0, 0.6),
         );
@@ -819,35 +817,24 @@ impl Scene for GameScene {
         );
 
         hud.text_block(
-            hw - 200.0,
-            hh - 75.0,
+            hw - 220.0,
+            hh - 78.0,
             "Collect coins to earn points. Reach checkpoints to save progress.",
             10.0,
             Color::new(1.0, 1.0, 1.0, 0.5),
-            190.0,
+            210.0,
             TextAlign::Left,
         );
 
         if let Some(stats) = globals.get::<PlayerStats>() {
             hud.text(
-                hw - 200.0,
-                hh - 35.0,
+                hw - 220.0,
+                hh - 40.0,
                 &format!("Best height: {:.0}", stats.best_height),
                 12.0,
                 Color::GREEN,
             );
         }
-
-        let player_top = self.player_pos + Vec2::new(14.0, 52.0);
-        let sp = frame.camera.world_to_screen(player_top);
-        let world_labels = frame.canvas(2);
-        world_labels.text(
-            sp.x - 20.0,
-            sp.y,
-            "Player",
-            10.0,
-            Color::new(1.0, 1.0, 1.0, 0.7),
-        );
     }
 
     fn on_pause(&mut self, _engine: &Engine, _globals: &Globals) {

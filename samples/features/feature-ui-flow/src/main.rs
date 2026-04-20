@@ -24,24 +24,25 @@ impl UiFlowDemo {
         ui.label_centered("Single-Build UI Flow", 28.0, Color::WHITE);
         ui.separator(8.0);
         ui.label_centered(
-            "Ui::sync_with rebuilds the widget tree after handling input, so toggles, labels, and summary panels stay in sync on the same frame.",
-            12.0,
+            "Ui::sync_with rebuilds the widget tree after input",
+            11.0,
+            Color::from_rgba8(176, 184, 202, 255),
+        );
+        ui.label_centered(
+            "so toggles, labels, and panels stay in sync on the same frame.",
+            11.0,
             Color::from_rgba8(176, 184, 202, 255),
         );
         ui.separator(12.0);
 
         ui.panel(if state.show_review { 9 } else { 4 });
-        ui.text_input(TEAM_NAME_ID, &state.team_name, "ENTER TEAM NAME");
+        ui.text_input(TEAM_NAME_ID, &state.team_name, "ENTER PROFILE NAME");
         ui.tooltip("This field now rebuilds through Ui::sync_with, so the review panel sees the edited value immediately.");
-        ui.checkbox(
-            RISK_MODE_ID,
-            "Aggressive Strategy Calls",
-            state.aggressive_calls,
-        );
+        ui.checkbox(RISK_MODE_ID, "High-risk mode", state.aggressive_calls);
         ui.tooltip("Toggle risk appetite and the review button label updates on the same frame.");
         ui.slider(
             AERO_BALANCE_ID,
-            "Front Wing Bias",
+            "Primary Balance",
             state.aero_balance,
             38.0,
             62.0,
@@ -59,25 +60,21 @@ impl UiFlowDemo {
 
         if state.show_review {
             ui.panel(4);
-            ui.label_centered(
-                "Session Review",
-                18.0,
-                Color::from_rgba8(228, 232, 240, 255),
-            );
+            ui.label_centered("Live Review", 18.0, Color::from_rgba8(228, 232, 240, 255));
             ui.progress_bar(
-                "Aero Confidence",
+                "Confidence",
                 ((state.aero_balance - 38.0) / 24.0).clamp(0.0, 1.0),
             );
             ui.label(
-                &format!("Team: {}", state.team_name),
+                &format!("Profile: {}", state.team_name),
                 14.0,
                 Color::from_rgba8(212, 218, 230, 255),
             );
             ui.label(
                 if state.aggressive_calls {
-                    "Risk Mode: Attack undercuts and cover rivals early."
+                    "Mode: high risk, faster response."
                 } else {
-                    "Risk Mode: Protect tyres and react late to the field."
+                    "Mode: steady, safer response."
                 },
                 13.0,
                 Color::from_rgba8(170, 178, 194, 255),
@@ -89,23 +86,23 @@ impl UiFlowDemo {
         if let Some(text) = response.text_for(TEAM_NAME_ID) {
             state.team_name = text.to_string();
             state.note = format!(
-                "Updated the session banner instantly. The review card now reads '{}'.",
+                "Updated the profile instantly. The review card now reads '{}'.",
                 state.team_name
             );
         }
         if response.was_toggled(RISK_MODE_ID) {
             state.aggressive_calls = !state.aggressive_calls;
             state.note = if state.aggressive_calls {
-                "Risk mode switched to aggressive and the review copy rebuilt immediately."
+                "High-risk mode switched on and the review copy rebuilt immediately."
             } else {
-                "Risk mode switched to conservative and the review copy rebuilt immediately."
+                "High-risk mode switched off and the review copy rebuilt immediately."
             }
             .into();
         }
         if let Some(value) = response.value_for(AERO_BALANCE_ID) {
             state.aero_balance = value;
             state.note = format!(
-                "Front wing bias moved to {:.1}. The confidence bar rebuilt on the same frame.",
+                "Primary balance moved to {:.1}. The confidence bar rebuilt on the same frame.",
                 state.aero_balance
             );
         }
@@ -126,7 +123,7 @@ impl Game for UiFlowDemo {
         Self {
             ui: Ui::default(),
             state: PitWallState {
-                team_name: "Orion GP".into(),
+                team_name: "Studio North".into(),
                 aggressive_calls: false,
                 aero_balance: 49.5,
                 show_review: true,
@@ -138,9 +135,9 @@ impl Game for UiFlowDemo {
     fn update(&mut self, engine: &Engine, _frame: &mut Frame) {
         self.ui.sync_at_with(
             engine,
-            -220.0,
-            278.0,
-            440.0,
+            -230.0,
+            312.0,
+            460.0,
             &mut self.state,
             Self::build_ui,
             |response, state| Self::handle_response(response, state),
@@ -152,20 +149,22 @@ impl Game for UiFlowDemo {
         let (_, hh) = engine.half_size();
         let canvas = frame.canvas(0);
         self.ui.render(canvas, engine);
-        canvas.text_aligned(
+        canvas.text_block(
             0.0,
-            -hh + 34.0,
+            -hh + 52.0,
             &self.state.note,
             12.0,
             Color::from_rgba8(190, 198, 214, 255),
+            760.0,
             TextAlign::Center,
         );
-        canvas.text_aligned(
+        canvas.text_block(
             0.0,
-            -hh + 16.0,
-            "Ui::run handles simple menus; Ui::sync_with is for stateful flows that need the rebuilt tree before render.",
+            -hh + 24.0,
+            "Ui::run handles simple menus. Ui::sync_with is for stateful flows that need the rebuilt tree before render.",
             10.0,
             Color::from_rgba8(132, 142, 160, 255),
+            760.0,
             TextAlign::Center,
         );
     }
@@ -174,8 +173,8 @@ impl Game for UiFlowDemo {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     rengine::run::<UiFlowDemo>(EngineConfig {
         title: "Feature: UI Flow".into(),
-        width: 960,
-        height: 640,
+        width: 1000,
+        height: 720,
         ..Default::default()
     })
 }

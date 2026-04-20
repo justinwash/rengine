@@ -176,33 +176,42 @@ impl Game for TriggerDemo {
         let hw = sw as f32 / 2.0;
         let hh = sh as f32 / 2.0;
         let canvas = frame.canvas(0);
+        canvas.rect(
+            -hw,
+            hh - 42.0,
+            sw as f32,
+            42.0,
+            Color::from_rgba8(12, 16, 24, 220),
+        );
         canvas.text(
             -hw + 8.0,
-            hh - 8.0 - 11.0,
+            hh - 12.0,
             &format!(
-                "WASD:Move  Score:{}  {}  {}",
+                "Score: {}   {}   {}",
                 self.score,
                 if self.pickup_collected {
-                    "Pickup:Collected"
+                    "Pickup: collected"
                 } else {
-                    "Pickup:Active"
+                    "Pickup: active"
                 },
                 if self.layered_overlap {
-                    "Layered:Inside"
+                    "Layered: inside"
                 } else {
-                    "Layered:Outside"
+                    "Layered: outside"
                 }
             ),
-            11.0,
+            12.0,
             Color::WHITE,
         );
 
-        canvas.text(
+        canvas.text_block(
             -hw + 8.0,
-            hh - 24.0,
-            "Green=Checkpoint  Yellow=Pickup  Red=Damage  Purple=Layered(PLAYER only)",
-            9.0,
+            hh - 28.0,
+            "WASD / Arrows move. Green checkpoint, yellow pickup, red damage, purple layered zone (PLAYER only).",
+            10.0,
             Color::new(0.7, 0.7, 0.7, 1.0),
+            560.0,
+            TextAlign::Left,
         );
     }
 }

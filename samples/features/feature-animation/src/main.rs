@@ -34,11 +34,12 @@ fn make_sprite_sheet(engine: &mut Engine) -> (TextureId, u32, u32) {
         let ox = (col * CELL_W) as i32;
         let oy = 0i32;
         let body = body_colors[col as usize];
+        pc.fill_rect(ox + 3, oy + 5, 3, 6, Color::from_rgba8(24, 42, 86, 255));
         pc.fill_circle(ox + 8, oy + 8, 6, body);
-        pc.fill_circle(ox + 5, oy + 6, 1, Color::WHITE);
-        pc.fill_circle(ox + 11, oy + 6, 1, Color::WHITE);
+        pc.fill_rect(ox + 10, oy + 6, 3, 2, Color::WHITE);
+        pc.fill_circle(ox + 10, oy + 6, 1, Color::from_rgba8(16, 28, 52, 255));
         let foot_offset = if col % 2 == 0 { 0 } else { 1 };
-        pc.fill_rect(ox + 4, oy + 13 + foot_offset, 3, 2, body);
+        pc.fill_rect(ox + 5, oy + 13 + foot_offset, 3, 2, body);
         pc.fill_rect(ox + 9, oy + 13 + (1 - foot_offset), 3, 2, body);
     }
 
@@ -60,11 +61,19 @@ fn make_sprite_sheet(engine: &mut Engine) -> (TextureId, u32, u32) {
         pc.fill_rect(ox + 9, oy + 13 + (1 - foot_offset), 3, 2, body);
     }
 
+    let idle_blue = Color::new(0.28, 0.58, 0.95, 1.0);
+    let idle_row_y = (2 * CELL_H) as i32;
+    pc.fill_circle(8, idle_row_y + 8, 6, idle_blue);
+    pc.fill_rect(10, idle_row_y + 6, 3, 2, Color::WHITE);
+    pc.fill_circle(10, idle_row_y + 6, 1, Color::from_rgba8(16, 28, 52, 255));
+    pc.fill_rect(5, idle_row_y + 13, 3, 2, idle_blue);
+    pc.fill_rect(9, idle_row_y + 13, 3, 2, idle_blue);
+
     let green = Color::new(0.3, 0.8, 0.3, 1.0);
-    for col in 0..COLS {
+    for col in 1..COLS {
         let ox = (col * CELL_W) as i32;
         let oy = (2 * CELL_H) as i32;
-        let r = 4 + (col % 3) as i32;
+        let r = 4 + ((col - 1) % 3) as i32;
         pc.fill_circle(ox + 8, oy + 8, r, green);
     }
 
@@ -93,12 +102,12 @@ impl Game for AnimationDemo {
 
         let walk_right = Animation::new(vec![(0, 0), (1, 0), (2, 0), (3, 0)], 8.0);
         let walk_down = Animation::new(vec![(0, 1), (1, 1), (2, 1), (3, 1)], 8.0);
-        let walk_left = Animation::new(vec![(3, 0), (2, 0), (1, 0), (0, 0)], 8.0);
+        let walk_left = Animation::new(vec![(0, 0), (1, 0), (2, 0), (3, 0)], 8.0);
         let walk_up = Animation::new(vec![(3, 1), (2, 1), (1, 1), (0, 1)], 8.0);
-        let idle = Animation::new(vec![(0, 0), (0, 0), (0, 0), (1, 0)], 2.0);
-        let bounce = Animation::new(vec![(0, 2), (1, 2), (2, 2), (3, 2)], 6.0);
+        let idle = Animation::new(vec![(0, 2), (0, 2), (0, 2), (0, 2)], 2.0);
+        let bounce = Animation::new(vec![(1, 2), (2, 2), (3, 2), (2, 2)], 6.0);
         let spin = Animation::new(vec![(0, 3), (1, 3), (2, 3), (3, 3)], 10.0);
-        let pulse = Animation::new(vec![(0, 2), (1, 2), (2, 2), (1, 2)], 4.0);
+        let pulse = Animation::new(vec![(1, 2), (2, 2), (3, 2), (2, 2)], 4.0);
 
         Self {
             sheet,
@@ -142,24 +151,24 @@ impl Game for AnimationDemo {
             Color::WHITE,
         );
 
-        let animations: [(&str, &Animation); 8] = [
-            ("Walk Right (8fps)", &self.walk_right),
-            ("Walk Down (8fps)", &self.walk_down),
-            ("Walk Left (8fps)", &self.walk_left),
-            ("Walk Up (8fps)", &self.walk_up),
-            ("Idle (2fps)", &self.idle),
-            ("Bounce (6fps)", &self.bounce),
-            ("Spin (10fps)", &self.spin),
-            ("Pulse (4fps)", &self.pulse),
+        let animations: [(&str, &Animation, bool); 8] = [
+            ("Walk Right (8fps)", &self.walk_right, false),
+            ("Walk Down (8fps)", &self.walk_down, false),
+            ("Walk Left (8fps)", &self.walk_left, true),
+            ("Walk Up (8fps)", &self.walk_up, false),
+            ("Idle (2fps)", &self.idle, false),
+            ("Bounce (6fps)", &self.bounce, false),
+            ("Spin (10fps)", &self.spin, false),
+            ("Pulse (4fps)", &self.pulse, false),
         ];
 
         let cols = 4;
-        let x_spacing = 160.0;
-        let y_spacing = 130.0;
-        let start_x = -hw + 60.0;
-        let start_y = hh - 70.0 - DISPLAY_SIZE;
+        let x_spacing = 220.0;
+        let y_spacing = 170.0;
+        let start_x = -hw + 56.0;
+        let start_y = hh - 130.0;
 
-        for (i, (label, anim)) in animations.iter().enumerate() {
+        for (i, (label, anim, flip_x)) in animations.iter().enumerate() {
             let col = i % cols;
             let row = i / cols;
             let x = start_x + col as f32 * x_spacing;
@@ -174,38 +183,48 @@ impl Game for AnimationDemo {
                     Vec2::new(x, y),
                     Vec2::new(DISPLAY_SIZE, DISPLAY_SIZE),
                 )
-                .with_uv_rect(uv),
+                .with_uv_rect(uv)
+                .with_flip_x(*flip_x),
             );
 
             let labels = frame.canvas(0);
-            labels.text(x, y - 6.0, label, 12.0, Color::new(0.7, 0.8, 0.9, 1.0));
+            labels.text_aligned(
+                x + DISPLAY_SIZE * 0.5,
+                y - 14.0,
+                label,
+                12.0,
+                Color::new(0.7, 0.8, 0.9, 1.0),
+                TextAlign::Center,
+            );
 
             let frame_text = format!("frame: ({},{})", fc, fr);
-            labels.text(
-                x,
-                y - 22.0,
+            labels.text_aligned(
+                x + DISPLAY_SIZE * 0.5,
+                y - 32.0,
                 &frame_text,
                 11.0,
                 Color::new(0.5, 0.6, 0.7, 1.0),
+                TextAlign::Center,
             );
         }
 
+        let preview_scale = 5.0;
+        let preview_pitch = CELL_H as f32 * preview_scale + 6.0;
+        let sheet_y = start_y - 2.0 * y_spacing - 150.0;
         let sheet_label = frame.canvas(0);
         sheet_label.text(
             start_x,
-            start_y - y_spacing - 44.0,
+            sheet_y + ROWS as f32 * preview_pitch + 18.0,
             "Sprite sheet (4x4 grid, 16x16 cells):",
             13.0,
             Color::new(0.6, 0.7, 0.8, 1.0),
         );
 
-        let sheet_y = start_y + 2.0 * y_spacing + 30.0;
-        let preview_scale = 4.0;
         for row in 0..ROWS {
             for col in 0..COLS {
                 let uv = self.sheet.uv_rect(col, row);
-                let px = start_x + col as f32 * (CELL_W as f32 * preview_scale + 4.0);
-                let py = sheet_y + row as f32 * (CELL_H as f32 * preview_scale + 4.0);
+                let px = start_x + col as f32 * (CELL_W as f32 * preview_scale + 6.0);
+                let py = sheet_y + row as f32 * preview_pitch;
                 frame.draw_sprite(
                     DrawParams::new(
                         self.sheet.texture,
@@ -222,8 +241,8 @@ impl Game for AnimationDemo {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     rengine::run::<AnimationDemo>(EngineConfig {
         title: "Feature: SpriteSheet Animation".into(),
-        width: 700,
-        height: 640,
+        width: 920,
+        height: 760,
         ..Default::default()
     })
 }
