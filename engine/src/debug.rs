@@ -201,7 +201,7 @@ pub struct DebugUiState {
     console_buffer: String,
     preedit: Option<(String, Option<(usize, usize)>)>,
     scroll_offset: usize,
-    command_history: Vec<String>,
+    command_history: VecDeque<String>,
     history_index: Option<usize>,
     pending_commands: VecDeque<String>,
     input_mode: DebugTextInputMode,
@@ -220,7 +220,7 @@ impl DebugUiState {
             console_buffer: String::new(),
             preedit: None,
             scroll_offset: 0,
-            command_history: Vec::new(),
+            command_history: VecDeque::new(),
             history_index: None,
             pending_commands: VecDeque::new(),
             input_mode: DebugTextInputMode::None,
@@ -421,10 +421,7 @@ impl DebugUiState {
         }
 
         for ch in text.chars() {
-            if ch == '\u{7f}' || (ch.is_control() && ch != '\n' && ch != '\t') {
-                continue;
-            }
-            if ch == '\r' || ch == '\n' || ch == '\t' {
+            if ch.is_control() {
                 continue;
             }
             self.active_buffer_mut().push(ch);
@@ -610,14 +607,14 @@ impl DebugUiState {
             DebugTextInputMode::Console => {
                 let command = self.console_buffer.trim().to_string();
                 if !command.is_empty() {
-                    let should_push = match self.command_history.last() {
+                    let should_push = match self.command_history.back() {
                         Some(last) => last != &command,
                         None => true,
                     };
                     if should_push {
-                        self.command_history.push(command.clone());
+                        self.command_history.push_back(command.clone());
                         if self.command_history.len() > MAX_COMMAND_HISTORY {
-                            self.command_history.remove(0);
+                            self.command_history.pop_front();
                         }
                     }
                     self.pending_commands.push_back(command);
