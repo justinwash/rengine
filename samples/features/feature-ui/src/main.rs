@@ -20,26 +20,41 @@ impl MenuScene {
 
 impl Scene for MenuScene {
     fn on_enter(&mut self, engine: &mut Engine, _globals: &mut Globals) {
-        self.ui.begin(engine, -120.0, 80.0, 240.0);
+        self.ui.begin(engine, -140.0, 96.0, 280.0);
         Self::build_menu(&mut self.ui);
     }
 
     fn update(&mut self, engine: &Engine, _globals: &mut Globals, _frame: &mut Frame) -> SceneOp {
-        self.ui.begin(engine, -120.0, 80.0, 240.0);
+        self.ui.begin(engine, -140.0, 96.0, 280.0);
         Self::build_menu(&mut self.ui);
         let response = self.ui.update(engine);
 
         if let Some(id) = response.activated {
             match id {
-                0 => return SceneOp::Switch(Box::new(GameScene::new())),
+                0 => {
+                    self.message.clear();
+                    return SceneOp::Switch(Box::new(GameScene::new()));
+                }
                 1 => {
                     self.message = "Options not implemented".into();
                     return SceneOp::Push(Box::new(OptionsScene { ui: Ui::default() }));
                 }
-                2 => return SceneOp::Push(Box::new(DemoScene::new())),
-                3 => return SceneOp::Push(Box::new(LayoutScene::new())),
-                5 => return SceneOp::Push(Box::new(ScrollScene::new())),
-                4 => return SceneOp::Quit,
+                2 => {
+                    self.message.clear();
+                    return SceneOp::Push(Box::new(DemoScene::new()));
+                }
+                3 => {
+                    self.message.clear();
+                    return SceneOp::Push(Box::new(LayoutScene::new()));
+                }
+                5 => {
+                    self.message.clear();
+                    return SceneOp::Push(Box::new(ScrollScene::new()));
+                }
+                4 => {
+                    self.message.clear();
+                    return SceneOp::Quit;
+                }
                 _ => {}
             }
         }
@@ -57,7 +72,7 @@ impl Scene for MenuScene {
         if !self.message.is_empty() {
             canvas.text_aligned(
                 0.0,
-                -hh + 30.0,
+                -hh + 48.0,
                 &self.message,
                 12.0,
                 Color::YELLOW,
@@ -67,8 +82,8 @@ impl Scene for MenuScene {
 
         canvas.text_aligned(
             0.0,
-            -hh + 12.0,
-            "Mouse or arrow keys: navigate | Click or Enter: select",
+            -hh + 22.0,
+            "Mouse or arrows navigate | Click or Enter selects",
             10.0,
             Color::from_rgba8(140, 140, 140, 255),
             TextAlign::Center,
@@ -102,12 +117,12 @@ impl OptionsScene {
 impl Scene for OptionsScene {
     fn on_enter(&mut self, engine: &mut Engine, _globals: &mut Globals) {
         self.ui = Ui::default().with_style(Self::options_style());
-        self.ui.begin(engine, -100.0, 60.0, 200.0);
+        self.ui.begin(engine, -120.0, 72.0, 240.0);
         Self::build_options(&mut self.ui);
     }
 
     fn update(&mut self, engine: &Engine, _globals: &mut Globals, _frame: &mut Frame) -> SceneOp {
-        self.ui.begin(engine, -100.0, 60.0, 200.0);
+        self.ui.begin(engine, -120.0, 72.0, 240.0);
         Self::build_options(&mut self.ui);
         let response = self.ui.update(engine);
 
@@ -134,7 +149,7 @@ impl Scene for OptionsScene {
 
         canvas.text_aligned(
             0.0,
-            -hh + 12.0,
+            -hh + 20.0,
             "ESC: back",
             10.0,
             Color::from_rgba8(140, 140, 140, 255),
@@ -196,7 +211,7 @@ impl DemoScene {
 
 impl Scene for DemoScene {
     fn on_enter(&mut self, engine: &mut Engine, _globals: &mut Globals) {
-        self.ui.begin(engine, -180.0, 40.0, 360.0);
+        self.ui.begin(engine, -190.0, 56.0, 380.0);
         Self::build_widgets(
             &mut self.ui,
             self.health,
@@ -209,7 +224,7 @@ impl Scene for DemoScene {
     }
 
     fn update(&mut self, engine: &Engine, _globals: &mut Globals, _frame: &mut Frame) -> SceneOp {
-        self.ui.begin(engine, -180.0, 40.0, 360.0);
+        self.ui.begin(engine, -190.0, 56.0, 380.0);
         Self::build_widgets(
             &mut self.ui,
             self.health,
@@ -254,7 +269,7 @@ impl Scene for DemoScene {
         let mouse = engine.mouse_screen_pos();
         canvas.text_aligned(
             0.0,
-            -hh + 30.0,
+            -hh + 38.0,
             &format!("Mouse: ({:.0}, {:.0})", mouse.x, mouse.y),
             10.0,
             Color::from_rgba8(180, 180, 180, 255),
@@ -263,7 +278,7 @@ impl Scene for DemoScene {
 
         canvas.text_aligned(
             0.0,
-            -hh + 12.0,
+            -hh + 20.0,
             "Mouse or arrows: navigate | Click/Enter: interact | Left/Right: adjust sliders",
             10.0,
             Color::from_rgba8(140, 140, 140, 255),
@@ -285,19 +300,15 @@ impl LayoutScene {
         ui.label_centered("Layout Demo", 24.0, Color::WHITE);
         ui.separator(8.0);
 
-        ui.label(
-            "Row (2 buttons):",
-            14.0,
-            Color::from_rgba8(180, 200, 255, 255),
-        );
-        ui.row(2);
+        ui.label("Row (2)", 14.0, Color::from_rgba8(180, 200, 255, 255));
+        ui.row_spaced(10.0, 2);
         ui.button(0, "Left");
         ui.button(1, "Right");
 
-        ui.separator(6.0);
+        ui.separator(8.0);
 
         ui.label(
-            "Row spaced (3 buttons):",
+            "Row spaced (3)",
             14.0,
             Color::from_rgba8(180, 200, 255, 255),
         );
@@ -306,28 +317,25 @@ impl LayoutScene {
         ui.button(3, "B");
         ui.button(4, "C");
 
-        ui.separator(6.0);
+        ui.separator(8.0);
 
         ui.label("Grid 2x2:", 14.0, Color::from_rgba8(180, 200, 255, 255));
-        ui.grid_spaced(2, 4.0, 4);
+        ui.grid_spaced(2, 8.0, 4);
         ui.button(5, "One");
         ui.button(6, "Two");
         ui.button(7, "Three");
         ui.button(8, "Four");
 
-        ui.separator(6.0);
+        ui.separator(8.0);
 
-        ui.label(
-            "Grid 3-col (5 items):",
-            14.0,
-            Color::from_rgba8(180, 200, 255, 255),
-        );
-        ui.grid_spaced(3, 4.0, 5);
+        ui.label("Grid 3-col", 14.0, Color::from_rgba8(180, 200, 255, 255));
+        ui.grid_spaced(3, 8.0, 6);
         ui.button(9, "1");
         ui.button(10, "2");
         ui.button(11, "3");
         ui.button(12, "4");
         ui.button(13, "5");
+        ui.button(14, "6");
 
         ui.separator(10.0);
         ui.button(99, "Back");
@@ -336,12 +344,12 @@ impl LayoutScene {
 
 impl Scene for LayoutScene {
     fn on_enter(&mut self, engine: &mut Engine, _globals: &mut Globals) {
-        self.ui.begin(engine, -200.0, 30.0, 400.0);
+        self.ui.begin(engine, -230.0, 56.0, 460.0);
         Self::build_widgets(&mut self.ui);
     }
 
     fn update(&mut self, engine: &Engine, _globals: &mut Globals, _frame: &mut Frame) -> SceneOp {
-        self.ui.begin(engine, -200.0, 30.0, 400.0);
+        self.ui.begin(engine, -230.0, 56.0, 460.0);
         Self::build_widgets(&mut self.ui);
         let response = self.ui.update(engine);
 
@@ -361,7 +369,7 @@ impl Scene for LayoutScene {
 
         canvas.text_aligned(
             0.0,
-            -hh + 12.0,
+            -hh + 20.0,
             "ESC: back | Arrows: navigate | Enter: select",
             10.0,
             Color::from_rgba8(140, 140, 140, 255),
@@ -392,7 +400,7 @@ impl ScrollScene {
             14.0,
             Color::from_rgba8(180, 200, 255, 255),
         );
-        ui.scroll(100, 150.0, scroll_offset, 10);
+        ui.scroll(100, 170.0, scroll_offset, 10);
         ui.button(10, "Item 1");
         ui.button(11, "Item 2");
         ui.button(12, "Item 3");
@@ -411,12 +419,12 @@ impl ScrollScene {
 
 impl Scene for ScrollScene {
     fn on_enter(&mut self, engine: &mut Engine, _globals: &mut Globals) {
-        self.ui.begin(engine, -200.0, 30.0, 400.0);
+        self.ui.begin(engine, -220.0, 56.0, 440.0);
         Self::build_widgets(&mut self.ui, self.scroll_offset);
     }
 
     fn update(&mut self, engine: &Engine, _globals: &mut Globals, _frame: &mut Frame) -> SceneOp {
-        self.ui.begin(engine, -200.0, 30.0, 400.0);
+        self.ui.begin(engine, -220.0, 56.0, 440.0);
         Self::build_widgets(&mut self.ui, self.scroll_offset);
         let response = self.ui.update(engine);
 
@@ -440,7 +448,7 @@ impl Scene for ScrollScene {
 
         canvas.text_aligned(
             0.0,
-            -hh + 12.0,
+            -hh + 20.0,
             "ESC: back | Mouse wheel: scroll | Arrows: navigate",
             10.0,
             Color::from_rgba8(140, 140, 140, 255),
@@ -507,8 +515,8 @@ impl Scene for GameScene {
 fn main() {
     let config = EngineConfig {
         title: "UI Widget Demo".into(),
-        width: 500,
-        height: 500,
+        width: 760,
+        height: 720,
         ..Default::default()
     };
     let _ = rengine::run_with_scenes(config, |_engine, _globals| -> Box<dyn Scene> {

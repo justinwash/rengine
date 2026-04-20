@@ -77,9 +77,9 @@ impl UiAnimationDemo {
 
     fn pit_call_label(id: usize) -> &'static str {
         match id {
-            10 => "Soft Start",
-            11 => "Cover Undercut",
-            12 => "Late Fuel Save",
+            10 => "Scout",
+            11 => "Defend",
+            12 => "Rotate",
             _ => "Unknown Call",
         }
     }
@@ -104,7 +104,7 @@ impl UiAnimationDemo {
             .with_focus(Self::focus_bump())
             .with_press(Self::press_snap());
 
-        self.ui.begin(engine, -220.0, 36.0, 440.0);
+        self.ui.begin(engine, -260.0, 52.0, 520.0);
         self.ui
             .label_centered("Widget Animation Hooks", 28.0, Color::WHITE);
         self.ui.animate_with(label_appear);
@@ -121,31 +121,31 @@ impl UiAnimationDemo {
             "Non-interactive widgets can animate too. Hover this badge to see the lift + scale hook fire.",
         );
         self.ui.label_centered(
-            "Pit Wall Briefing",
+            "Status Briefing",
             18.0,
             Color::from_rgba8(220, 220, 240, 255),
         );
         self.ui.animate_with(label_appear);
-        self.ui.progress_bar("Crew Confidence", self.confidence);
+        self.ui.progress_bar("Confidence", self.confidence);
         self.ui.animate_with(bar_animation);
         self.ui.tooltip(
             "Hover-only widgets like labels, images, and stat bars can still react without turning into buttons.",
         );
         self.ui.progress_bar_colored(
-            "Rear Tire Grip",
+            "Stability",
             self.tire_grip,
             Color::from_rgba8(236, 174, 72, 255),
         );
         self.ui.animate_with(bar_animation);
         self.ui
-            .checkbox(1, "Aggressive Undercut", self.aggressive_undercut);
+            .checkbox(1, "High-risk mode", self.aggressive_undercut);
         self.ui.animate_with(interactive_animation);
         self.ui.tooltip(
             "Arrow keys move focus, Enter or Space triggers the press hook, and the appear hook handles the initial slide-in.",
         );
-        self.ui.slider(2, "Brake Bias", self.brake_bias, 45.0, 60.0);
+        self.ui.slider(2, "Balance", self.brake_bias, 45.0, 60.0);
         self.ui.animate_with(interactive_animation);
-        self.ui.button(3, "Cycle Briefing");
+        self.ui.button(3, "Cycle Values");
         self.ui.animate_with(button_animation);
         self.ui.tooltip(
             "Swap the sample values so the progress bars and footer note do not stay static.",
@@ -157,9 +157,9 @@ impl UiAnimationDemo {
         self.ui.button(
             5,
             if self.show_strategy_tray {
-                "Hide Strategy Tray"
+                "Hide Call Tray"
             } else {
-                "Show Strategy Tray"
+                "Show Call Tray"
             },
         );
         self.ui.animate_with(button_animation);
@@ -176,9 +176,9 @@ impl UiAnimationDemo {
         ) {
             self.ui.panel(7);
             self.ui
-                .label_centered("Strategy Tray", 18.0, Color::from_rgba8(220, 220, 240, 255));
+                .label_centered("Call Tray", 18.0, Color::from_rgba8(220, 220, 240, 255));
             self.ui.label_centered(
-                "Drag a call onto another call to reorder the tray.",
+                "Drag one call onto another to reorder the tray.",
                 12.0,
                 Color::from_rgba8(165, 174, 196, 255),
             );
@@ -190,7 +190,12 @@ impl UiAnimationDemo {
                 self.ui.drop_target();
             }
             self.ui.label_centered(
-                "Mouse drag works directly; keyboard focus plus Enter/Space also carries a call between targets.",
+                "Mouse drag works directly.",
+                11.0,
+                Color::from_rgba8(132, 142, 160, 255),
+            );
+            self.ui.label_centered(
+                "Keyboard focus can carry a call too.",
                 11.0,
                 Color::from_rgba8(132, 142, 160, 255),
             );
@@ -222,7 +227,7 @@ impl Game for UiAnimationDemo {
         if response.was_toggled(1) {
             self.aggressive_undercut = !self.aggressive_undercut;
             self.note = if self.aggressive_undercut {
-                "Focus and press hooks make keyboard-first flows feel less dead in management menus."
+                "Focus and press hooks keep keyboard-first flows from feeling static."
             } else {
                 "Hover hooks are useful even on passive readouts like badges and stat bars."
             }
@@ -237,7 +242,7 @@ impl Game for UiAnimationDemo {
             self.note = if self.aggressive_undercut {
                 "Press hooks fire on mouse clicks and keyboard confirmation alike."
             } else {
-                "Appear hooks handle the first-frame slide-in without a separate tween system in game code."
+                "Appear hooks handle first-frame slide-in without a separate tween system in game code."
             }
             .into();
         }
@@ -252,7 +257,7 @@ impl Game for UiAnimationDemo {
         if response.was_activated(5) {
             self.show_strategy_tray = !self.show_strategy_tray;
             self.note = if self.show_strategy_tray {
-                "Container transitions keep the strategy tray alive long enough to animate cleanly out and back in."
+                "Container transitions keep the tray alive long enough to animate out and back in cleanly."
             } else {
                 "Exit hooks now cover full containers, not just individual widgets."
             }
@@ -279,20 +284,22 @@ impl Game for UiAnimationDemo {
 
         let canvas = frame.canvas(0);
         self.ui.render(canvas, engine);
-        canvas.text_aligned(
+        canvas.text_block(
             0.0,
-            -hh + 34.0,
+            -hh + 56.0,
             &self.note,
             12.0,
             Color::from_rgba8(184, 192, 208, 255),
+            820.0,
             TextAlign::Center,
         );
-        canvas.text_aligned(
+        canvas.text_block(
             0.0,
-            -hh + 16.0,
-            "Hover shows passive widget hooks; the lower tray demonstrates container exit motion and drag/drop responses.",
+            -hh + 26.0,
+            "Hover shows passive widget hooks. The lower tray demonstrates container exit motion and drag/drop responses.",
             10.0,
             Color::from_rgba8(132, 142, 160, 255),
+            820.0,
             TextAlign::Center,
         );
     }
@@ -301,8 +308,8 @@ impl Game for UiAnimationDemo {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     rengine::run::<UiAnimationDemo>(EngineConfig {
         title: "Feature: UI Animation Hooks".into(),
-        width: 960,
-        height: 640,
+        width: 1040,
+        height: 840,
         ..Default::default()
     })
 }

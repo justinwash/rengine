@@ -39,10 +39,10 @@ impl UiStylingScene {
     fn new() -> Self {
         Self {
             ui: Ui::default().with_style(Self::base_style()),
-            team_name: "Aurora GP".into(),
+            team_name: "Studio North".into(),
             aggressive_undercut: true,
             pit_window: 2.5,
-            note: "Hover the offer cards, then mix and match the styled widgets below.".into(),
+            note: "Hover the cards, then mix and match the widget variants below.".into(),
         }
     }
 
@@ -50,12 +50,14 @@ impl UiStylingScene {
         UiStyle {
             text_color: Color::from_rgba8(225, 229, 235, 255),
             panel_bg: Color::from_rgba8(23, 28, 36, 230),
-            panel_padding: 12.0,
+            panel_padding: 10.0,
             button_bg: Color::from_rgba8(38, 58, 76, 235),
             button_focused_bg: Color::from_rgba8(60, 98, 124, 255),
             button_pressed_bg: Color::from_rgba8(27, 44, 58, 255),
             button_text_color: Color::from_rgba8(235, 241, 246, 255),
             button_focused_text_color: Color::WHITE,
+            text_input_padding: 6.0,
+            button_padding: 6.0,
             text_input_bg: Color::from_rgba8(18, 23, 30, 255),
             text_input_focused_bg: Color::from_rgba8(28, 39, 51, 255),
             text_input_text_color: Color::from_rgba8(240, 244, 248, 255),
@@ -65,12 +67,15 @@ impl UiStylingScene {
             checkbox_checked_bg: Color::from_rgba8(74, 143, 114, 255),
             progress_bg: Color::from_rgba8(16, 20, 27, 255),
             progress_fill: Color::from_rgba8(82, 162, 212, 255),
+            progress_height: 16.0,
+            checkbox_size: 14.0,
             slider_track_color: Color::from_rgba8(25, 36, 47, 255),
             slider_fill_color: Color::from_rgba8(245, 180, 63, 255),
             slider_thumb_color: Color::from_rgba8(255, 224, 147, 255),
+            slider_height: 14.0,
             tooltip_bg: Color::from_rgba8(13, 16, 22, 244),
             tooltip_text_color: Color::from_rgba8(234, 239, 244, 255),
-            spacing: 10.0,
+            spacing: 6.0,
             ..UiStyle::default()
         }
     }
@@ -79,10 +84,10 @@ impl UiStylingScene {
         [
             OfferCard {
                 id: ACADEMY_ID,
-                title: "Academy Prospect",
-                summary: "Cheap upside, patient sponsors.",
-                action: "Sign Prospect",
-                tooltip: "A low-cost long play. This card styles the panel, tooltip, progress bar, and button independently.",
+                title: "Starter Kit",
+                summary: "Cheap, steady upside.",
+                action: "Pick Starter",
+                tooltip: "A calm blue variant that overrides the panel, tooltip, progress bar, and button styling together.",
                 sponsor_fit: 0.58,
                 panel_bg: Color::from_rgba8(35, 60, 86, 240),
                 panel_text: Color::from_rgba8(223, 240, 255, 255),
@@ -97,10 +102,10 @@ impl UiStylingScene {
             },
             OfferCard {
                 id: VETERAN_ID,
-                title: "Veteran Closer",
-                summary: "Late-race pace, expensive wages.",
-                action: "Back Veteran",
-                tooltip: "A more urgent visual variant with amber fills and a warmer tooltip treatment for high-pressure racecraft.",
+                title: "Pro Package",
+                summary: "Reliable, higher cost.",
+                action: "Choose Pro",
+                tooltip: "A warmer amber variant that pushes a more urgent visual treatment without replacing the whole UI theme.",
                 sponsor_fit: 0.77,
                 panel_bg: Color::from_rgba8(74, 54, 24, 240),
                 panel_text: Color::from_rgba8(255, 238, 205, 255),
@@ -115,10 +120,10 @@ impl UiStylingScene {
             },
             OfferCard {
                 id: AERO_ID,
-                title: "Aero Windfall",
-                summary: "Big ceiling, volatile spend curve.",
-                action: "Fund Upgrade",
-                tooltip: "A sharper red-toned variant for risky development bets. Focus, pressed, and fill colors all diverge from the global theme.",
+                title: "Risky Bet",
+                summary: "High ceiling, volatile cost.",
+                action: "Fund Bet",
+                tooltip: "A sharper red variant for risky choices. Focus, pressed, and fill colors all diverge from the global theme.",
                 sponsor_fit: 0.91,
                 panel_bg: Color::from_rgba8(82, 28, 40, 240),
                 panel_text: Color::from_rgba8(255, 227, 232, 255),
@@ -138,7 +143,7 @@ impl UiStylingScene {
         ui.panel(4);
         ui.style_with(
             UiWidgetStyle::new()
-                .with_panel(card.panel_bg, 12.0)
+                .with_panel(card.panel_bg, 10.0)
                 .with_tooltip_colors(card.panel_tooltip_bg, card.panel_text),
         );
         ui.tooltip_with(
@@ -151,8 +156,8 @@ impl UiStylingScene {
                     offset: Vec2::new(0.0, 8.0),
                 }),
         );
-        ui.label_centered(card.title, 18.0, card.panel_text);
-        ui.label_centered(card.summary, 12.0, card.summary_text);
+        ui.label_centered(card.title, 16.0, card.panel_text);
+        ui.label_centered(card.summary, 11.0, card.summary_text);
         ui.progress_bar("Sponsor fit", card.sponsor_fit);
         ui.style_with(
             UiWidgetStyle::new()
@@ -168,39 +173,41 @@ impl UiStylingScene {
     }
 
     fn build_ui(&mut self, engine: &Engine) {
-        self.ui.begin(engine, -300.0, 84.0, 600.0);
+        self.ui.begin(engine, -320.0, 86.0, 640.0);
         self.ui.label_centered(
             "Widget Styling Variants",
-            30.0,
+            28.0,
             Color::from_rgba8(247, 249, 251, 255),
         );
         self.ui.label_centered(
-            "Mix panel, button, progress, text input, checkbox, slider, and tooltip variants without replacing the whole UI theme.",
-            12.0,
+            "Mix panel, button, progress, text input, checkbox,",
+            11.0,
             Color::from_rgba8(152, 166, 182, 255),
         );
-        self.ui.separator(16.0);
+        self.ui.label_centered(
+            "slider, and tooltip variants without replacing the full theme.",
+            11.0,
+            Color::from_rgba8(152, 166, 182, 255),
+        );
+        self.ui.separator(12.0);
 
         let cards = Self::cards();
         for (index, card) in cards.iter().enumerate() {
             Self::build_offer_card(&mut self.ui, *card);
             if index + 1 != cards.len() {
-                self.ui.separator(12.0);
+                self.ui.separator(8.0);
             }
         }
 
-        self.ui.separator(14.0);
+        self.ui.separator(10.0);
         self.ui.panel(4);
         self.ui
-            .style_with(UiWidgetStyle::new().with_panel(Color::from_rgba8(17, 24, 31, 236), 14.0));
-        self.ui.label(
-            "Pit Wall Setup",
-            18.0,
-            Color::from_rgba8(235, 239, 242, 255),
-        );
+            .style_with(UiWidgetStyle::new().with_panel(Color::from_rgba8(17, 24, 31, 236), 12.0));
+        self.ui
+            .label("Configuration", 16.0, Color::from_rgba8(235, 239, 242, 255));
 
         self.ui
-            .text_input(TEAM_NAME_ID, &self.team_name, "ENTER TEAM NAME");
+            .text_input(TEAM_NAME_ID, &self.team_name, "ENTER PROFILE NAME");
         self.ui.style_with(
             UiWidgetStyle::new()
                 .with_text_input_colors(
@@ -219,11 +226,8 @@ impl UiStylingScene {
             "This field only overrides the text-input and tooltip treatment. The rest of the screen still uses the shared base theme.",
         );
 
-        self.ui.checkbox(
-            UNDERCUT_ID,
-            "Aggressive undercut calls",
-            self.aggressive_undercut,
-        );
+        self.ui
+            .checkbox(UNDERCUT_ID, "High-risk mode", self.aggressive_undercut);
         self.ui.style_with(
             UiWidgetStyle::new()
                 .with_checkbox_colors(
@@ -238,13 +242,8 @@ impl UiStylingScene {
                 ),
         );
 
-        self.ui.slider(
-            PIT_WINDOW_ID,
-            "Preferred pit window",
-            self.pit_window,
-            1.0,
-            5.0,
-        );
+        self.ui
+            .slider(PIT_WINDOW_ID, "Preferred window", self.pit_window, 1.0, 5.0);
         self.ui.style_with(
             UiWidgetStyle::new()
                 .with_slider_colors(
@@ -263,14 +262,16 @@ impl UiStylingScene {
 
     fn apply_response(&mut self, response: &UiResponse) {
         if response.was_activated(ACADEMY_ID) {
-            self.note =
-                "Signed an academy prospect: long-term upside with a calm blue variant.".into();
+            self.note = "Picked the starter card: calm blue styling with a steady tone.".into();
         }
         if response.was_activated(VETERAN_ID) {
-            self.note = "Backed the veteran closer: amber styling now reflects a high-pressure race weekend.".into();
+            self.note =
+                "Picked the pro card: amber styling signals a more urgent presentation.".into();
         }
         if response.was_activated(AERO_ID) {
-            self.note = "Funded the aero upgrade: the riskier red card demonstrates an entirely different widget treatment.".into();
+            self.note =
+                "Picked the risky card: the red variant shows a more extreme widget treatment."
+                    .into();
         }
         if response.was_toggled(UNDERCUT_ID) {
             self.aggressive_undercut = !self.aggressive_undercut;
@@ -308,36 +309,46 @@ impl Scene for UiStylingScene {
         let canvas = frame.canvas(0);
         canvas.rect(
             -hw,
-            hh - 84.0,
+            hh - 72.0,
             hw * 2.0,
-            84.0,
+            72.0,
             Color::from_rgba8(18, 24, 33, 255),
         );
-        canvas.rect(-hw, -hh, hw * 2.0, 54.0, Color::from_rgba8(15, 20, 28, 255));
+        canvas.rect(-hw, -hh, hw * 2.0, 68.0, Color::from_rgba8(15, 20, 28, 255));
         self.ui.render(canvas, engine);
 
-        canvas.text_aligned(
+        canvas.text_block(
             0.0,
-            -hh + 34.0,
+            -hh + 52.0,
             &self.note,
-            12.0,
+            11.0,
             Color::from_rgba8(231, 236, 241, 255),
+            780.0,
             TextAlign::Center,
         );
         canvas.text_aligned(
             0.0,
-            -hh + 16.0,
+            -hh + 24.0,
             &format!(
-                "Team: {} | Pit window: lap {:.1} | Aggressive undercut: {} | ESC: quit",
-                self.team_name,
-                self.pit_window,
+                "Profile: {} | Window: {:.1}",
+                self.team_name, self.pit_window,
+            ),
+            9.0,
+            Color::from_rgba8(148, 161, 176, 255),
+            TextAlign::Center,
+        );
+        canvas.text_aligned(
+            0.0,
+            -hh + 10.0,
+            &format!(
+                "High-risk mode: {} | Esc: quit",
                 if self.aggressive_undercut {
                     "on"
                 } else {
                     "off"
                 }
             ),
-            10.0,
+            9.0,
             Color::from_rgba8(148, 161, 176, 255),
             TextAlign::Center,
         );
@@ -347,8 +358,8 @@ impl Scene for UiStylingScene {
 fn main() {
     let config = EngineConfig {
         title: "UI Styling Variants".into(),
-        width: 720,
-        height: 520,
+        width: 920,
+        height: 840,
         ..Default::default()
     };
     let _ = rengine::run_with_scenes(config, |_engine, _globals| -> Box<dyn Scene> {

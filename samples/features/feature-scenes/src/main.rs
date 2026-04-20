@@ -139,12 +139,16 @@ impl Scene for PauseOverlay {
         let hh = h as f32 / 2.0;
         let canvas = frame.canvas(1);
         canvas.rect(-hw, -hh, w as f32, h as f32, Color::new(0.0, 0.0, 0.0, 0.6));
-        canvas.text(
-            -hw + 20.0,
-            hh - 200.0,
-            "PAUSED  —  press P or Esc to resume",
-            28.0,
-            Color::WHITE,
+        canvas.rect(-180.0, -46.0, 360.0, 108.0, Color::from_rgba8(0, 0, 0, 180));
+        canvas.text_aligned(0.0, 20.0, "PAUSED", 34.0, Color::WHITE, TextAlign::Center);
+        canvas.text_block(
+            0.0,
+            -10.0,
+            "Press P or Esc to resume",
+            18.0,
+            Color::from_rgba8(210, 220, 240, 255),
+            280.0,
+            TextAlign::Center,
         );
     }
 

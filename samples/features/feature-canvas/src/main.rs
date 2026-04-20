@@ -25,23 +25,23 @@ impl Game for CanvasDemo {
 
         hud.rect(
             -hw + 20.0,
-            hh - 20.0 - 120.0,
-            200.0,
-            120.0,
+            hh - 28.0 - 96.0,
+            230.0,
+            96.0,
             Color::new(0.15, 0.15, 0.22, 0.9),
         );
-        hud.text(-hw + 30.0, hh - 30.0, "Canvas Demo", 20.0, Color::WHITE);
+        hud.text(-hw + 30.0, hh - 40.0, "Canvas Demo", 22.0, Color::WHITE);
         hud.text(
             -hw + 30.0,
-            hh - 56.0,
-            "Rectangles, text,",
+            hh - 68.0,
+            "Rectangles, text, and",
             14.0,
             Color::new(0.7, 0.7, 0.7, 1.0),
         );
         hud.text(
             -hw + 30.0,
-            hh - 74.0,
-            "and custom shapes",
+            hh - 86.0,
+            "custom shapes in one pass",
             14.0,
             Color::new(0.7, 0.7, 0.7, 1.0),
         );
@@ -55,38 +55,34 @@ impl Game for CanvasDemo {
             Color::INDIGO,
             Color::VIOLET,
         ];
+        let palette_x = -hw + 300.0;
         for (i, color) in colors.iter().enumerate() {
-            let x = -hw + 260.0 + i as f32 * 50.0;
-            hud.rect(x, hh - 30.0 - 40.0, 40.0, 40.0, *color);
+            let x = palette_x + i as f32 * 48.0;
+            hud.rect(x, hh - 82.0, 36.0, 36.0, *color);
         }
-        hud.text(
-            -hw + 260.0,
-            hh - 80.0,
+        hud.text_aligned(
+            palette_x + 162.0,
+            hh - 38.0,
             "Color palette",
             14.0,
             Color::new(0.7, 0.7, 0.7, 1.0),
+            TextAlign::Center,
         );
 
         let bar_w = 300.0;
         let bar_h = 24.0;
-        let bar_x = -hw + 260.0;
-        let bar_y = hh - 110.0 - bar_h;
+        let bar_x = palette_x;
+        let bar_y = hh - 152.0;
         hud.rect(bar_x, bar_y, bar_w, bar_h, Color::new(0.2, 0.2, 0.2, 1.0));
         let fill = ((self.time * 0.3).sin() * 0.5 + 0.5) * bar_w;
         hud.rect(bar_x, bar_y, fill, bar_h, Color::new(0.3, 0.8, 0.4, 1.0));
-        hud.text(
-            bar_x + 8.0,
-            bar_y + 18.0,
-            "Animated bar",
-            14.0,
-            Color::WHITE,
-        );
+        hud.text(bar_x, bar_y + 42.0, "Animated bar", 14.0, Color::WHITE);
 
         let shapes = frame.canvas(1);
 
-        let cx = -0.3 * hw;
-        let cy = -0.2 * hh;
-        let r = 60.0;
+        let cx = -0.32 * hw;
+        let cy = -32.0;
+        let r = 56.0;
         let segments = 24;
         for i in 0..segments {
             let a0 = i as f32 / segments as f32 * std::f32::consts::TAU;
@@ -120,18 +116,19 @@ impl Game for CanvasDemo {
         }
 
         let label = frame.canvas(2);
-        label.text(
-            cx - 70.0,
-            cy - r - 10.0,
+        label.text_aligned(
+            cx,
+            cy - r - 16.0,
             "Custom triangle fan",
-            14.0,
+            13.0,
             Color::WHITE,
+            TextAlign::Center,
         );
 
         let dx = 0.3 * hw;
-        let dy = -0.1 * hh;
+        let dy = -4.0;
         let spin = self.time * 1.5;
-        let size = 90.0;
+        let size = 84.0;
         let corners: [(f32, f32); 4] = [
             (dx + spin.cos() * size, dy + spin.sin() * size),
             (
@@ -166,31 +163,13 @@ impl Game for CanvasDemo {
         shapes2.shape(&[verts[0], verts[1], verts[2], verts[0], verts[2], verts[3]]);
 
         let label2 = frame.canvas(2);
-        label2.text(
-            dx - 60.0,
-            dy - size - 20.0,
+        label2.text_aligned(
+            dx,
+            dy - size - 22.0,
             "Spinning quad",
-            14.0,
+            13.0,
             Color::WHITE,
-        );
-
-        let stats = frame.canvas(3);
-        let fps_text = format!("dt: {:.1}ms", engine.dt() * 1000.0);
-        let time_text = format!("time: {:.1}s", self.time);
-        stats.rect(
-            -hw + 20.0,
-            -hh + 10.0,
-            160.0,
-            50.0,
-            Color::new(0.1, 0.1, 0.15, 0.85),
-        );
-        stats.text(-hw + 30.0, -hh + 46.0, &fps_text, 14.0, Color::YELLOW);
-        stats.text(
-            -hw + 30.0,
-            -hh + 28.0,
-            &time_text,
-            14.0,
-            Color::new(0.6, 0.8, 1.0, 1.0),
+            TextAlign::Center,
         );
     }
 }
@@ -198,8 +177,8 @@ impl Game for CanvasDemo {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     rengine::run::<CanvasDemo>(EngineConfig {
         title: "Feature: Canvas Drawing".into(),
-        width: 800,
-        height: 600,
+        width: 960,
+        height: 640,
         ..Default::default()
     })
 }

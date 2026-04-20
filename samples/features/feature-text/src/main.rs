@@ -29,7 +29,7 @@ impl Game for TextDemo {
         let text_color = Color::WHITE;
         let dim_color = Color::from_rgba8(140, 140, 140, 255);
 
-        let col_x = -hw + 30.0;
+        let col_x = -hw + 32.0;
         let mut y = hh - 40.0;
 
         canvas.text(col_x, y, "measure_text()", heading, label_color);
@@ -48,8 +48,7 @@ impl Game for TextDemo {
         y -= 30.0;
 
         let align_x = 0.0;
-        let guide_w = 300.0;
-        canvas.rect(align_x - guide_w / 2.0, y - 2.0, guide_w, 1.0, dim_color);
+        let guide_w = 340.0;
 
         let aligns = [
             (TextAlign::Left, "Left-aligned text"),
@@ -57,31 +56,27 @@ impl Game for TextDemo {
             (TextAlign::Right, "Right-aligned text"),
         ];
         for (align, txt) in &aligns {
+            canvas.rect(align_x - guide_w / 2.0, y - 2.0, guide_w, 1.0, dim_color);
             let ax = match align {
                 TextAlign::Left => align_x - guide_w / 2.0,
                 TextAlign::Center => align_x,
                 TextAlign::Right => align_x + guide_w / 2.0,
             };
             canvas.text_aligned(ax, y, txt, body, text_color, *align);
-            y -= 22.0;
+            y -= 30.0;
         }
 
-        canvas.rect(align_x - guide_w / 2.0, y + 18.0, guide_w, 1.0, dim_color);
-
-        y -= 20.0;
+        y -= 8.0;
         canvas.text(col_x, y, "Word wrapping", heading, label_color);
         y -= 30.0;
 
         let paragraph = "The quick brown fox jumps over the lazy dog. \
             This paragraph demonstrates automatic word wrapping within a \
             fixed-width region, with each line broken at word boundaries.";
-        let wrap_w = 280.0;
-
-        canvas.rect(col_x + 8.0, y + 2.0, wrap_w, 1.0, dim_color);
-
-        let widths = [280.0, 180.0];
-        let labels = ["max_width = 280", "max_width = 180"];
-        let offsets = [col_x + 10.0, col_x + 320.0];
+        let widths = [300.0, 200.0];
+        let labels = ["max_width = 300", "max_width = 200"];
+        let offsets = [-hw + 40.0, 30.0];
+        let mut tallest_block: f32 = 0.0;
 
         for i in 0..2 {
             let bx = offsets[i];
@@ -103,9 +98,10 @@ impl Game for TextDemo {
                 Color::from_rgba8(50, 50, 60, 255),
             );
             canvas.text_block(bx, by, paragraph, body, text_color, max_w, TextAlign::Left);
+            tallest_block = tallest_block.max(block_h);
         }
 
-        y -= 120.0;
+        y -= tallest_block + 70.0;
         canvas.text(
             col_x,
             y,
@@ -116,13 +112,13 @@ impl Game for TextDemo {
         y -= 30.0;
 
         let short_text = "Short lines\nshow alignment\nclearly across\nmultiple lines.";
-        let block_w = 200.0;
+        let block_w = 220.0;
         let block_aligns = [
             (TextAlign::Left, "Left"),
             (TextAlign::Center, "Center"),
             (TextAlign::Right, "Right"),
         ];
-        let spacing = 220.0;
+        let spacing = 280.0;
         let start_x = -hw + 40.0;
 
         for (i, (align, name)) in block_aligns.iter().enumerate() {
@@ -146,10 +142,15 @@ impl Game for TextDemo {
             canvas.text_block(ax, by, short_text, body, text_color, block_w, *align);
         }
 
-        y -= 120.0;
-        let features =
-            "Features: measure_text, line_height, TextAlign, wrap_text, text_aligned, text_block";
-        canvas.text(col_x, y, features, 11.0, dim_color);
+        canvas.text_block(
+            0.0,
+            -hh + 26.0,
+            "Features: measure_text, line_height, TextAlign, wrap_text, text_aligned, and text_block.",
+            11.0,
+            dim_color,
+            sw as f32 - 80.0,
+            TextAlign::Center,
+        );
     }
 
     fn should_exit(&self) -> bool {
@@ -160,8 +161,8 @@ impl Game for TextDemo {
 fn main() {
     let config = EngineConfig {
         title: "Text Layout Demo".into(),
-        width: 750,
-        height: 620,
+        width: 920,
+        height: 780,
         ..Default::default()
     };
     let _ = rengine::run::<TextDemo>(config);

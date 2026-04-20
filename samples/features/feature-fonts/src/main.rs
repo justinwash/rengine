@@ -52,7 +52,7 @@ impl Game for FontsDemo {
         let text_color = Color::WHITE;
         let dim_color = Color::from_rgba8(140, 140, 140, 255);
 
-        let col_x = -hw + 30.0;
+        let col_x = -hw + 40.0;
         let mut y = hh - 40.0;
 
         canvas.text(col_x, y, "Multiple Font Support", heading, label_color);
@@ -80,7 +80,7 @@ impl Game for FontsDemo {
         canvas.text(
             col_x,
             y,
-            "Mono font (JetBrains Mono, loaded from retained asset bundle):",
+            "Mono font (JetBrains Mono, retained asset bundle):",
             body,
             dim_color,
         );
@@ -192,9 +192,9 @@ impl Game for FontsDemo {
 fn main() {
     let config = EngineConfig {
         title: "Feature: Multiple Fonts".into(),
-        width: 900,
+        width: 960,
         height: 700,
-        show_fps: true,
+        show_fps: false,
         ..Default::default()
     };
     let _ = run::<FontsDemo>(config);
