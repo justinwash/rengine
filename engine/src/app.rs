@@ -38,7 +38,11 @@ fn handle_ime_event(input: &mut InputState, event: Ime) {
     input.handle_ime_event(event);
 }
 
-fn route_debug_keyboard_event(input: &mut InputState, debug_ui: &mut DebugUiState, event: &KeyEvent) {
+fn route_debug_text_and_key_event(
+    input: &mut InputState,
+    debug_ui: &mut DebugUiState,
+    event: &KeyEvent,
+) -> bool {
     let consumed_text = if event.state == winit::event::ElementState::Pressed {
         event.text
             .as_deref()
@@ -57,6 +61,43 @@ fn route_debug_keyboard_event(input: &mut InputState, debug_ui: &mut DebugUiStat
             input.handle_key_event(key, event.state);
         }
     }
+
+    consumed_key
+}
+
+fn route_debug_keyboard_event(input: &mut InputState, debug_ui: &mut DebugUiState, event: &KeyEvent) {
+    let _ = route_debug_text_and_key_event(input, debug_ui, event);
+}
+
+enum Debug3DKeyboardOutcome {
+    None,
+    ReleaseMouseCapture,
+    Exit,
+}
+
+fn route_debug_keyboard_event_3d(
+    input: &mut InputState,
+    debug_ui: &mut DebugUiState,
+    mouse_captured: bool,
+    event: &KeyEvent,
+) -> Debug3DKeyboardOutcome {
+    let consumed_key = route_debug_text_and_key_event(input, debug_ui, event);
+
+    if event.state == winit::event::ElementState::Pressed
+        && !consumed_key
+        && matches!(
+            event.physical_key,
+            PhysicalKey::Code(winit::keyboard::KeyCode::Escape)
+        )
+    {
+        if mouse_captured {
+            Debug3DKeyboardOutcome::ReleaseMouseCapture
+        } else {
+            Debug3DKeyboardOutcome::Exit
+        }
+    } else {
+        Debug3DKeyboardOutcome::None
+    }
 }
 
 fn route_debug_ime_event(input: &mut InputState, debug_ui: &mut DebugUiState, event: Ime) {
@@ -65,8 +106,15 @@ fn route_debug_ime_event(input: &mut InputState, debug_ui: &mut DebugUiState, ev
     }
 }
 
-fn route_debug_scroll_event(input: &mut InputState, debug_ui: &mut DebugUiState, dx: f32, dy: f32) {
-    if !debug_ui.handle_scroll(dy) {
+fn route_debug_scroll_event(
+    input: &mut InputState,
+    debug_ui: &mut DebugUiState,
+    window_size: (u32, u32),
+    dx: f32,
+    dy: f32,
+) {
+    let mouse_position = input.mouse_position();
+    if !debug_ui.handle_scroll(window_size, mouse_position, dy) {
         input.handle_scroll(dx, dy);
     }
 }
@@ -230,9 +278,8 @@ fn execute_debug_command(debug_ui: &mut DebugUiState, hot_reload_enabled: &mut b
             );
         }
         Ok(DebugCommand::Clear) => {
+            debug_ui.scroll_to_latest();
             debug::clear_logs();
-            log_console_line(DebugLogLevel::Debug, "> clear");
-            log_console_line(DebugLogLevel::Info, "log buffer cleared");
         }
         Ok(DebugCommand::Overlay(toggle)) => {
             log_console_line(DebugLogLevel::Debug, format!("> {command_text}"));
@@ -316,7 +363,8 @@ fn drain_debug_commands_3d(engine: &mut Engine3D) {
 
 #[cfg(test)]
 mod tests {
-    use super::normalize_asset_bundle_dependencies;
+    use super::{execute_debug_command, normalize_asset_bundle_dependencies};
+    use crate::debug::{self, DebugLogLevel, DebugUiState};
     use std::path::PathBuf;
 
     #[test]
@@ -338,6 +386,18 @@ mod tests {
                 PathBuf::from("z.txt"),
             ]
         );
+    }
+
+    #[test]
+    fn clear_command_empties_log_buffer() {
+        debug::clear_logs();
+        debug::log_message(DebugLogLevel::Info, "app-test", "before clear");
+
+        let mut debug_ui = DebugUiState::new(true);
+        let mut hot_reload_enabled = false;
+        execute_debug_command(&mut debug_ui, &mut hot_reload_enabled, "clear");
+
+        assert_eq!(debug::log_count(), 0);
     }
 }
 
@@ -1108,7 +1168,14 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
                             (pos.x as f32 / 40.0, pos.y as f32 / 40.0)
                         }
                     };
-                    route_debug_scroll_event(&mut engine.input, &mut engine.debug_ui, dx, dy);
+                    let window_size = engine.window_size();
+                    route_debug_scroll_event(
+                        &mut engine.input,
+                        &mut engine.debug_ui,
+                        window_size,
+                        dx,
+                        dy,
+                    );
                 }
 
                 WindowEvent::RedrawRequested => {
@@ -1296,7 +1363,14 @@ where
                             (pos.x as f32 / 40.0, pos.y as f32 / 40.0)
                         }
                     };
-                    route_debug_scroll_event(&mut engine.input, &mut engine.debug_ui, dx, dy);
+                    let window_size = engine.window_size();
+                    route_debug_scroll_event(
+                        &mut engine.input,
+                        &mut engine.debug_ui,
+                        window_size,
+                        dx,
+                        dy,
+                    );
                 }
 
                 WindowEvent::RedrawRequested => {
@@ -2090,33 +2164,20 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
                 }
 
                 WindowEvent::KeyboardInput { event, .. } => {
-                    let debug_consumed_text = if event.state == winit::event::ElementState::Pressed {
-                        event.text
-                            .as_deref()
-                            .is_some_and(|text| engine.debug_ui.handle_committed_text(text))
-                    } else {
-                        false
-                    };
-                    let debug_consumed = engine.debug_ui.handle_key_event(&event);
-                    if !debug_consumed_text {
-                        handle_text_event(&mut engine.input, &event);
-                    }
-                    if let PhysicalKey::Code(key) = event.physical_key {
-                        if key == winit::keyboard::KeyCode::Escape
-                            && event.state == winit::event::ElementState::Pressed
-                            && !debug_consumed
-                        {
-                            if engine.mouse_captured {
-                                let _ = window.set_cursor_grab(CursorGrabMode::None);
-                                window.set_cursor_visible(true);
-                                engine.mouse_captured = false;
-                            } else {
-                                target.exit();
-                            }
+                    let mouse_captured = engine.mouse_captured;
+                    match route_debug_keyboard_event_3d(
+                        &mut engine.input,
+                        &mut engine.debug_ui,
+                        mouse_captured,
+                        &event,
+                    ) {
+                        Debug3DKeyboardOutcome::None => {}
+                        Debug3DKeyboardOutcome::ReleaseMouseCapture => {
+                            let _ = window.set_cursor_grab(CursorGrabMode::None);
+                            window.set_cursor_visible(true);
+                            engine.mouse_captured = false;
                         }
-                        if !debug_consumed {
-                            engine.input.handle_key_event(key, event.state);
-                        }
+                        Debug3DKeyboardOutcome::Exit => target.exit(),
                     }
                 }
 
@@ -2159,7 +2220,14 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
                             (pos.x as f32 / 40.0, pos.y as f32 / 40.0)
                         }
                     };
-                    route_debug_scroll_event(&mut engine.input, &mut engine.debug_ui, dx, dy);
+                    let window_size = engine.window_size();
+                    route_debug_scroll_event(
+                        &mut engine.input,
+                        &mut engine.debug_ui,
+                        window_size,
+                        dx,
+                        dy,
+                    );
                 }
 
                 WindowEvent::CursorMoved { position, .. } => {
@@ -2347,33 +2415,20 @@ where
                 }
 
                 WindowEvent::KeyboardInput { event, .. } => {
-                    let debug_consumed_text = if event.state == winit::event::ElementState::Pressed {
-                        event.text
-                            .as_deref()
-                            .is_some_and(|text| engine.debug_ui.handle_committed_text(text))
-                    } else {
-                        false
-                    };
-                    let debug_consumed = engine.debug_ui.handle_key_event(&event);
-                    if !debug_consumed_text {
-                        handle_text_event(&mut engine.input, &event);
-                    }
-                    if let PhysicalKey::Code(key) = event.physical_key {
-                        if key == winit::keyboard::KeyCode::Escape
-                            && event.state == winit::event::ElementState::Pressed
-                            && !debug_consumed
-                        {
-                            if engine.mouse_captured {
-                                let _ = window.set_cursor_grab(CursorGrabMode::None);
-                                window.set_cursor_visible(true);
-                                engine.mouse_captured = false;
-                            } else {
-                                target.exit();
-                            }
+                    let mouse_captured = engine.mouse_captured;
+                    match route_debug_keyboard_event_3d(
+                        &mut engine.input,
+                        &mut engine.debug_ui,
+                        mouse_captured,
+                        &event,
+                    ) {
+                        Debug3DKeyboardOutcome::None => {}
+                        Debug3DKeyboardOutcome::ReleaseMouseCapture => {
+                            let _ = window.set_cursor_grab(CursorGrabMode::None);
+                            window.set_cursor_visible(true);
+                            engine.mouse_captured = false;
                         }
-                        if !debug_consumed {
-                            engine.input.handle_key_event(key, event.state);
-                        }
+                        Debug3DKeyboardOutcome::Exit => target.exit(),
                     }
                 }
 
@@ -2416,7 +2471,14 @@ where
                             (pos.x as f32 / 40.0, pos.y as f32 / 40.0)
                         }
                     };
-                    route_debug_scroll_event(&mut engine.input, &mut engine.debug_ui, dx, dy);
+                    let window_size = engine.window_size();
+                    route_debug_scroll_event(
+                        &mut engine.input,
+                        &mut engine.debug_ui,
+                        window_size,
+                        dx,
+                        dy,
+                    );
                 }
 
                 WindowEvent::CursorMoved { position, .. } => {

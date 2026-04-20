@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, Once, OnceLock};
 use std::time::Instant;
 
@@ -455,9 +456,23 @@ impl DebugUiState {
         true
     }
 
-    pub fn handle_scroll(&mut self, dy: f32) -> bool {
-        if !self.overlay_visible || self.is_text_input_active() || dy.abs() < f32::EPSILON {
+    pub fn handle_scroll(
+        &mut self,
+        screen_size: (u32, u32),
+        pointer: (f32, f32),
+        dy: f32,
+    ) -> bool {
+        if !self.overlay_visible || dy.abs() < f32::EPSILON {
             return false;
+        }
+
+        let pointer_over_debug = self.pointer_hits_overlay(screen_size, pointer)
+            || self.pointer_hits_console(screen_size, pointer);
+        if !pointer_over_debug {
+            return self.is_text_input_active();
+        }
+        if self.is_text_input_active() {
+            return true;
         }
 
         let amount = dy.abs().ceil() as usize;
@@ -661,7 +676,7 @@ impl DebugUiState {
     }
 
     fn filtered_snapshot(&self) -> Vec<DebugLogEntry> {
-        let filter = self.target_filter.to_ascii_lowercase();
+        let filter = self.target_filter.trim();
         snapshot_logs()
             .into_iter()
             .filter(|entry| self.severity_filter.allows(entry.level))
@@ -670,8 +685,8 @@ impl DebugUiState {
                     return true;
                 }
 
-                entry.target.to_ascii_lowercase().contains(&filter)
-                    || entry.message.to_ascii_lowercase().contains(&filter)
+                contains_ascii_case_insensitive(&entry.target, filter)
+                    || contains_ascii_case_insensitive(&entry.message, filter)
             })
             .collect()
     }
@@ -883,7 +898,6 @@ impl DebugLogBuffer {
 
 struct CombinedLogger {
     inner: env_logger::Logger,
-    start: Instant,
 }
 
 impl log::Log for CombinedLogger {
@@ -901,7 +915,7 @@ impl log::Log for CombinedLogger {
         let mut buffer = log_buffer()
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        buffer.push_record(self.start.elapsed().as_secs_f32(), record);
+        buffer.push_record(log_start().elapsed().as_secs_f32(), record);
     }
 
     fn flush(&self) {
@@ -910,14 +924,21 @@ impl log::Log for CombinedLogger {
 }
 
 static LOGGER_INIT: Once = Once::new();
+static LOGGER_CAPTURE_ACTIVE: AtomicBool = AtomicBool::new(false);
 static LOG_BUFFER: OnceLock<Mutex<DebugLogBuffer>> = OnceLock::new();
+static LOG_START: OnceLock<Instant> = OnceLock::new();
 
 fn log_buffer() -> &'static Mutex<DebugLogBuffer> {
     LOG_BUFFER.get_or_init(|| Mutex::new(DebugLogBuffer::new(DEFAULT_LOG_CAPACITY)))
 }
 
+fn log_start() -> &'static Instant {
+    LOG_START.get_or_init(Instant::now)
+}
+
 pub fn init_logging() {
     log_buffer();
+    log_start();
 
     LOGGER_INIT.call_once(|| {
         let mut builder = env_logger::Builder::from_default_env();
@@ -925,13 +946,17 @@ pub fn init_logging() {
 
         let inner = builder.build();
         let max_level = inner.filter();
-        let logger = CombinedLogger {
-            inner,
-            start: Instant::now(),
-        };
+        let logger = CombinedLogger { inner };
 
-        let _ = log::set_boxed_logger(Box::new(logger));
-        log::set_max_level(max_level);
+        match log::set_boxed_logger(Box::new(logger)) {
+            Ok(()) => {
+                LOGGER_CAPTURE_ACTIVE.store(true, Ordering::Relaxed);
+                log::set_max_level(max_level);
+            }
+            Err(err) => {
+                eprintln!("failed to initialize debug logger: {err}");
+            }
+        }
     });
 }
 
@@ -979,6 +1004,19 @@ pub fn set_log_capacity(capacity: usize) {
 
 pub fn log_message(level: DebugLogLevel, target: &str, message: &str) {
     init_logging();
+
+    if !LOGGER_CAPTURE_ACTIVE.load(Ordering::Relaxed) {
+        let mut buffer = log_buffer()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        buffer.push_entry(DebugLogEntry {
+            index: 0,
+            seconds: log_start().elapsed().as_secs_f32(),
+            level,
+            target: target.to_string(),
+            message: message.to_string(),
+        });
+    }
 
     match level {
         DebugLogLevel::Trace => log::trace!(target: target, "{message}"),
@@ -1390,6 +1428,18 @@ fn approx_text_width(text: &str, size: f32) -> f32 {
     text.chars().count() as f32 * size * 0.58
 }
 
+fn contains_ascii_case_insensitive(haystack: &str, needle: &str) -> bool {
+    let needle_bytes = needle.as_bytes();
+    if needle_bytes.is_empty() {
+        return true;
+    }
+
+    haystack
+        .as_bytes()
+        .windows(needle_bytes.len())
+        .any(|window| window.eq_ignore_ascii_case(needle_bytes))
+}
+
 fn overlay_stats(
     info: &DebugOverlayInfo<'_>,
     state: &DebugUiState,
@@ -1625,5 +1675,44 @@ mod tests {
         assert!(state.handle_mouse_button((800, 600), pointer, 0, ElementState::Pressed));
         assert!(state.handle_mouse_button((800, 600), pointer, 0, ElementState::Released));
         assert_eq!(state.severity_filter(), DebugSeverityFilter::Debug);
+    }
+
+    #[test]
+    fn target_filter_matches_case_insensitively_without_lowercasing_entries() {
+        {
+            let mut buffer = log_buffer()
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            buffer.clear();
+            buffer.push_entry(DebugLogEntry {
+                index: 0,
+                seconds: 0.1,
+                level: DebugLogLevel::Info,
+                target: "Renderer::Mesh".into(),
+                message: "Frame Presented".into(),
+            });
+        }
+
+        let mut state = DebugUiState::new(true);
+        state.set_target_filter("renderER");
+
+        let (logs, filtered_count) = state.filtered_logs(10);
+        assert_eq!(filtered_count, 1);
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0].target, "Renderer::Mesh");
+    }
+
+    #[test]
+    fn scroll_only_consumes_when_pointer_is_over_debug_ui_or_text_input_is_active() {
+        let mut state = DebugUiState::new(true);
+        let layout = state.overlay_layout((800, 600));
+        let inside_overlay = (layout.panel.x + 12.0, layout.panel.y + 12.0);
+        let outside_overlay = (380.0, -280.0);
+
+        assert!(!state.handle_scroll((800, 600), outside_overlay, 1.0));
+        assert!(state.handle_scroll((800, 600), inside_overlay, 1.0));
+
+        state.begin_target_filter_edit();
+        assert!(state.handle_scroll((800, 600), outside_overlay, 1.0));
     }
 }
