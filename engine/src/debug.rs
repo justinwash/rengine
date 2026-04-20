@@ -697,7 +697,7 @@ impl DebugUiState {
     }
 
     fn handle_left_mouse_press(&mut self, screen_size: (u32, u32), pointer: (f32, f32)) {
-        let layout = self.overlay_layout(screen_size);
+        let layout = self.overlay_layout(screen_size, self.filtered_log_count());
         for button in layout.buttons {
             if button.rect.contains(pointer) {
                 match button.action {
@@ -722,14 +722,18 @@ impl DebugUiState {
     }
 
     fn pointer_hits_overlay(&self, screen_size: (u32, u32), pointer: (f32, f32)) -> bool {
-        self.overlay_visible && self.overlay_layout(screen_size).panel.contains(pointer)
+        self.overlay_visible
+            && self
+                .overlay_layout(screen_size, self.filtered_log_count())
+                .panel
+                .contains(pointer)
     }
 
     fn pointer_hits_console(&self, screen_size: (u32, u32), pointer: (f32, f32)) -> bool {
         self.console_open && console_panel_rect(screen_size).contains(pointer)
     }
 
-    fn overlay_layout(&self, screen_size: (u32, u32)) -> OverlayLayout {
+    fn overlay_layout(&self, screen_size: (u32, u32), visible_log_count: usize) -> OverlayLayout {
         let hw = screen_size.0 as f32 / 2.0;
         let hh = screen_size.1 as f32 / 2.0;
         let padding = 10.0;
@@ -740,7 +744,7 @@ impl DebugUiState {
         let title_line_height = debug_line_height(OVERLAY_TITLE_SIZE);
         let body_line_height = debug_line_height(OVERLAY_BODY_SIZE);
         let hint_line_height = debug_line_height(OVERLAY_HINT_SIZE);
-        let visible_log_lines = self.filtered_logs(self.visible_log_limit()).0.len().max(1);
+        let visible_log_lines = visible_log_count.max(1);
 
         let buttons = build_overlay_buttons(
             self,
@@ -1104,7 +1108,7 @@ pub fn draw_overlay(
     let padding = 10.0;
     let body_line_height = debug_line_height(OVERLAY_BODY_SIZE);
     let hint_line_height = debug_line_height(OVERLAY_HINT_SIZE);
-    let layout = state.overlay_layout(screen_size);
+    let layout = state.overlay_layout(screen_size, logs.len());
     let panel_x = layout.panel.x;
     let panel_y = layout.panel.y;
     let panel_width = layout.panel.w;
@@ -1642,7 +1646,7 @@ mod tests {
 
         let mut state = DebugUiState::new(true);
         let clear_button = state
-            .overlay_layout((800, 600))
+            .overlay_layout((800, 600), state.filtered_log_count())
             .buttons
             .into_iter()
             .find(|button| button.action == OverlayButtonAction::Clear)
@@ -1661,7 +1665,7 @@ mod tests {
     fn mouse_click_level_button_cycles_severity() {
         let mut state = DebugUiState::new(true);
         let level_button = state
-            .overlay_layout((800, 600))
+            .overlay_layout((800, 600), state.filtered_log_count())
             .buttons
             .into_iter()
             .find(|button| button.action == OverlayButtonAction::CycleSeverity)
@@ -1705,7 +1709,7 @@ mod tests {
     #[test]
     fn scroll_only_consumes_when_pointer_is_over_debug_ui_or_text_input_is_active() {
         let mut state = DebugUiState::new(true);
-        let layout = state.overlay_layout((800, 600));
+        let layout = state.overlay_layout((800, 600), state.filtered_log_count());
         let inside_overlay = (layout.panel.x + 12.0, layout.panel.y + 12.0);
         let outside_overlay = (380.0, -280.0);
 
