@@ -1,6 +1,12 @@
-# Rengine Architecture: Deep Technical Reference
+# Rengine Runtime Architecture: Deep Technical Reference
 
-> This document is an **exhaustive, line-by-line technical deep-dive** into the Rengine game engine as it exists on the `master` branch. It covers every subsystem from boot to shutdown, every GPU pipeline, every data structure, and every interaction surface. A companion "kitchen-sink" game example at the end demonstrates how to exercise as many features as possible in a single coherent project.
+> This document is an **exhaustive, line-by-line technical deep-dive** into the runtime engine as it exists on the `master` branch. It covers the engine subsystems from boot to shutdown, the GPU pipelines, the data structures, and the runtime interaction surfaces. A companion "kitchen-sink" game example at the end demonstrates how to exercise as many features as possible in a single coherent project.
+>
+> The editor shell is documented separately in `EDITOR_GUIDE.md`.
+>
+> Roadmap planning is now split across `ROADMAP_ENGINE.md` and `ROADMAP_EDITOR.md`.
+>
+> The runtime `Scene2D` loader now includes an adapter for the editor's scene document format, including grouped multi-sprite prefab export, while the separate editor shell continues to mature around multi-document tabs, typed scene properties, sprite preview assignment, Camera2D bounds visualization, and native file flow.
 
 ---
 
@@ -96,7 +102,13 @@
 
 ```
 rengine/
-├── Cargo.toml            # workspace root — lists engine + all samples
+├── Cargo.toml            # workspace root — lists editor + engine + samples
+├── editor/
+│   ├── Cargo.toml        # "rengine-editor" native editor prototype
+│   └── src/
+│       ├── main.rs       # eframe bootstrap and native window options
+│       ├── app.rs        # editor shell panels, project browser, inspector, scene viewport
+│       └── scene.rs      # JSON-serializable scene document and node model
 ├── engine/
 │   ├── Cargo.toml        # "rengine" library crate
 │   ├── assets/           # embedded font.ttf
@@ -123,12 +135,11 @@ The `Cargo.toml` workspace root declares all members:
 
 ```toml
 [workspace]
-members = ["engine", "samples/games/game-platformer", "samples/games/game-topdown",
-           "samples/games/game-iso", "samples/games/game-fps", "samples/games/game-fight",
-           "samples/games/game-fps-mp", "samples/features/feature-scenes",
-           "samples/features/feature-sprites"]
+members = ["editor", "engine", "samples/games/game-platformer", ...]
 resolver = "2"
 ```
+
+The editor lives in its own crate on purpose: it can iterate on desktop tooling concerns (panels, file browsing, scene documents, inspector UX) without polluting the runtime-facing `rengine::*` API surface.
 
 The engine crate itself has one optional feature:
 

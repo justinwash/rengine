@@ -7,7 +7,7 @@ use crate::assets::{AssetError, AssetPack, Color};
 use crate::renderer::{DrawParams, Frame};
 use crate::{TextureId, Vec2};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PrefabSprite2DDef {
     pub asset: String,
     pub offset: [f32; 2],
@@ -22,13 +22,13 @@ pub struct PrefabSprite2DDef {
     pub flip_y: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Prefab2DDef {
     pub name: String,
     pub sprites: Vec<PrefabSprite2DDef>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SceneInstance2DDef {
     pub prefab: String,
     pub position: [f32; 2],
@@ -38,7 +38,7 @@ pub struct SceneInstance2DDef {
     pub properties: HashMap<String, String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct Scene2DDef {
     #[serde(default)]
     pub prefabs: Vec<Prefab2DDef>,
@@ -105,11 +105,12 @@ impl Scene2D {
             path: path.to_path_buf(),
             source,
         })?;
-        let definition: Scene2DDef =
+        let json_value: serde_json::Value =
             serde_json::from_str(&text).map_err(|source| AssetError::Json {
                 path: path.to_path_buf(),
                 source,
             })?;
+        let definition = scene_definition_from_json(path, json_value)?;
         Self::from_definition(path, definition, assets)
     }
 
@@ -212,4 +213,648 @@ fn default_color() -> [f32; 4] {
 
 fn default_scale() -> [f32; 2] {
     [1.0, 1.0]
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct EditorSceneDocumentDef {
+    #[serde(default)]
+    nodes: Vec<EditorSceneNodeDef>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct EditorSceneNodeDef {
+    id: u64,
+    #[serde(default)]
+    parent: Option<u64>,
+    #[serde(default)]
+    name: String,
+    kind: EditorSceneNodeKind,
+    #[serde(default)]
+    position: [f32; 2],
+    #[serde(default = "default_editor_size")]
+    size: [f32; 2],
+    #[serde(default = "default_editor_visible")]
+    visible: bool,
+    #[serde(default)]
+    script_path: String,
+    #[serde(default)]
+    runtime_prefab: String,
+    #[serde(default)]
+    asset_alias: String,
+    #[serde(default)]
+    properties: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+enum EditorSceneNodeKind {
+    Group,
+    Empty,
+    Camera2d,
+    Sprite,
+    Trigger,
+    UiRoot,
+}
+
+impl EditorSceneNodeKind {
+    fn property_value(self) -> &'static str {
+        match self {
+            Self::Group => "Group",
+            Self::Empty => "Empty",
+            Self::Camera2d => "Camera2D",
+            Self::Sprite => "Sprite",
+            Self::Trigger => "Trigger",
+            Self::UiRoot => "UI Root",
+        }
+    }
+}
+
+fn scene_definition_from_json(
+    path: &Path,
+    json_value: serde_json::Value,
+) -> Result<Scene2DDef, AssetError> {
+    if json_value.get("nodes").is_some() {
+        let document: EditorSceneDocumentDef =
+            serde_json::from_value(json_value).map_err(|source| AssetError::Json {
+                path: path.to_path_buf(),
+                source,
+            })?;
+        scene_definition_from_editor_document(path, document)
+    } else {
+        serde_json::from_value(json_value).map_err(|source| AssetError::Json {
+            path: path.to_path_buf(),
+            source,
+        })
+    }
+}
+
+fn scene_definition_from_editor_document(
+    path: &Path,
+    document: EditorSceneDocumentDef,
+) -> Result<Scene2DDef, AssetError> {
+    let node_indices = build_editor_node_indices(&document.nodes);
+    let child_ids = build_editor_child_ids(&document.nodes);
+    let mut prefabs = Vec::new();
+    let mut prefab_indices = HashMap::new();
+    let mut instances = Vec::with_capacity(document.nodes.len());
+
+    for node in &document.nodes {
+        if !should_emit_editor_instance(node, &document.nodes, &node_indices) {
+            continue;
+        }
+
+        let prefab_name = editor_runtime_prefab_name(path, &node)?;
+        let prefab = prefab_from_editor_node(
+            path,
+            node,
+            &prefab_name,
+            &document.nodes,
+            &node_indices,
+            &child_ids,
+        )?;
+
+        if let Some(index) = prefab_indices.get(prefab_name.as_str()) {
+            if prefabs[*index] != prefab {
+                return Err(AssetError::scene_message(
+                    path,
+                    format!(
+                        "editor nodes map to runtime prefab '{}' with conflicting visual definitions",
+                        prefab_name
+                    ),
+                ));
+            }
+        } else {
+            prefab_indices.insert(prefab_name.clone(), prefabs.len());
+            prefabs.push(prefab);
+        }
+
+        instances.push(SceneInstance2DDef {
+            prefab: prefab_name,
+            position: node.position,
+            scale: default_scale(),
+            properties: editor_instance_properties(node),
+        });
+    }
+
+    Ok(Scene2DDef { prefabs, instances })
+}
+
+fn build_editor_node_indices(nodes: &[EditorSceneNodeDef]) -> HashMap<u64, usize> {
+    let mut indices = HashMap::with_capacity(nodes.len());
+    for (index, node) in nodes.iter().enumerate() {
+        indices.insert(node.id, index);
+    }
+    indices
+}
+
+fn build_editor_child_ids(nodes: &[EditorSceneNodeDef]) -> HashMap<u64, Vec<u64>> {
+    let mut child_ids = HashMap::new();
+    for node in nodes {
+        if let Some(parent) = node.parent {
+            child_ids
+                .entry(parent)
+                .or_insert_with(Vec::new)
+                .push(node.id);
+        }
+    }
+    child_ids
+}
+
+fn should_emit_editor_instance(
+    node: &EditorSceneNodeDef,
+    nodes: &[EditorSceneNodeDef],
+    node_indices: &HashMap<u64, usize>,
+) -> bool {
+    match node.kind {
+        EditorSceneNodeKind::Group => true,
+        EditorSceneNodeKind::Sprite => {
+            nearest_group_ancestor(node.parent, nodes, node_indices).is_none()
+        }
+        _ => true,
+    }
+}
+
+fn nearest_group_ancestor(
+    mut node_id: Option<u64>,
+    nodes: &[EditorSceneNodeDef],
+    node_indices: &HashMap<u64, usize>,
+) -> Option<u64> {
+    while let Some(parent_id) = node_id {
+        let Some(index) = node_indices.get(&parent_id) else {
+            return None;
+        };
+        let parent = &nodes[*index];
+        if parent.kind == EditorSceneNodeKind::Group {
+            return Some(parent_id);
+        }
+        node_id = parent.parent;
+    }
+
+    None
+}
+
+fn editor_runtime_prefab_name(
+    path: &Path,
+    node: &EditorSceneNodeDef,
+) -> Result<String, AssetError> {
+    let prefab_name = if node.runtime_prefab.trim().is_empty() {
+        node.name.trim()
+    } else {
+        node.runtime_prefab.trim()
+    };
+
+    if prefab_name.is_empty() {
+        return Err(AssetError::scene_message(
+            path,
+            format!(
+                "editor node {} must have either a node name or a runtime prefab override",
+                node.id
+            ),
+        ));
+    }
+
+    Ok(prefab_name.to_string())
+}
+
+fn prefab_from_editor_node(
+    path: &Path,
+    node: &EditorSceneNodeDef,
+    prefab_name: &str,
+    nodes: &[EditorSceneNodeDef],
+    node_indices: &HashMap<u64, usize>,
+    child_ids: &HashMap<u64, Vec<u64>>,
+) -> Result<Prefab2DDef, AssetError> {
+    if node.kind == EditorSceneNodeKind::Group {
+        return Ok(Prefab2DDef {
+            name: prefab_name.to_string(),
+            sprites: group_prefab_sprites(path, node, nodes, node_indices, child_ids)?,
+        });
+    }
+
+    if node.kind != EditorSceneNodeKind::Sprite {
+        return Ok(Prefab2DDef {
+            name: prefab_name.to_string(),
+            sprites: Vec::new(),
+        });
+    }
+
+    let sprite = prefab_sprite_from_editor_node(path, node, node.position)?;
+
+    Ok(Prefab2DDef {
+        name: prefab_name.to_string(),
+        sprites: vec![sprite],
+    })
+}
+
+fn group_prefab_sprites(
+    path: &Path,
+    root: &EditorSceneNodeDef,
+    nodes: &[EditorSceneNodeDef],
+    node_indices: &HashMap<u64, usize>,
+    child_ids: &HashMap<u64, Vec<u64>>,
+) -> Result<Vec<PrefabSprite2DDef>, AssetError> {
+    let mut sprites = Vec::new();
+    collect_group_prefab_sprites(
+        path,
+        root,
+        root.id,
+        nodes,
+        node_indices,
+        child_ids,
+        &mut sprites,
+    )?;
+    Ok(sprites)
+}
+
+fn collect_group_prefab_sprites(
+    path: &Path,
+    root: &EditorSceneNodeDef,
+    parent_id: u64,
+    nodes: &[EditorSceneNodeDef],
+    node_indices: &HashMap<u64, usize>,
+    child_ids: &HashMap<u64, Vec<u64>>,
+    sprites: &mut Vec<PrefabSprite2DDef>,
+) -> Result<(), AssetError> {
+    let Some(children) = child_ids.get(&parent_id) else {
+        return Ok(());
+    };
+
+    for child_id in children {
+        let Some(index) = node_indices.get(child_id) else {
+            continue;
+        };
+        let child = &nodes[*index];
+
+        if child.kind == EditorSceneNodeKind::Group {
+            continue;
+        }
+
+        if child.kind == EditorSceneNodeKind::Sprite {
+            sprites.push(prefab_sprite_from_editor_node(path, child, root.position)?);
+        }
+
+        collect_group_prefab_sprites(
+            path,
+            root,
+            child.id,
+            nodes,
+            node_indices,
+            child_ids,
+            sprites,
+        )?;
+    }
+
+    Ok(())
+}
+
+fn prefab_sprite_from_editor_node(
+    path: &Path,
+    node: &EditorSceneNodeDef,
+    root_position: [f32; 2],
+) -> Result<PrefabSprite2DDef, AssetError> {
+    let asset_alias = node.asset_alias.trim();
+    if asset_alias.is_empty() {
+        return Err(AssetError::scene_message(
+            path,
+            format!(
+                "editor sprite node '{}' ({}) is missing an asset alias",
+                node.name, node.id
+            ),
+        ));
+    }
+
+    if node.size[0] <= 0.0 || node.size[1] <= 0.0 {
+        return Err(AssetError::scene_message(
+            path,
+            format!(
+                "editor sprite node '{}' ({}) must have a positive size",
+                node.name, node.id
+            ),
+        ));
+    }
+
+    Ok(PrefabSprite2DDef {
+        asset: asset_alias.to_string(),
+        offset: [
+            node.position[0] - root_position[0],
+            node.position[1] - root_position[1],
+        ],
+        size: node.size,
+        color: default_color(),
+        uv_rect: None,
+        flip_x: false,
+        flip_y: false,
+    })
+}
+
+fn editor_instance_properties(node: &EditorSceneNodeDef) -> HashMap<String, String> {
+    let mut properties = node.properties.clone();
+
+    properties
+        .entry("editor_id".to_string())
+        .or_insert_with(|| node.id.to_string());
+    properties
+        .entry("editor_name".to_string())
+        .or_insert_with(|| node.name.clone());
+    properties
+        .entry("editor_kind".to_string())
+        .or_insert_with(|| node.kind.property_value().to_string());
+    properties
+        .entry("editor_visible".to_string())
+        .or_insert_with(|| node.visible.to_string());
+    properties
+        .entry("editor_size_x".to_string())
+        .or_insert_with(|| node.size[0].to_string());
+    properties
+        .entry("editor_size_y".to_string())
+        .or_insert_with(|| node.size[1].to_string());
+
+    if let Some(parent) = node.parent {
+        properties
+            .entry("editor_parent_id".to_string())
+            .or_insert_with(|| parent.to_string());
+    }
+
+    if !node.script_path.trim().is_empty() {
+        properties
+            .entry("script_path".to_string())
+            .or_insert_with(|| node.script_path.trim().to_string());
+    }
+
+    if !node.asset_alias.trim().is_empty() {
+        properties
+            .entry("asset_alias".to_string())
+            .or_insert_with(|| node.asset_alias.trim().to_string());
+    }
+
+    properties
+}
+
+fn default_editor_size() -> [f32; 2] {
+    [88.0, 56.0]
+}
+
+fn default_editor_visible() -> bool {
+    true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn converts_editor_scene_document_into_runtime_scene_definition() {
+        let mut spawn_properties = HashMap::new();
+        spawn_properties.insert("team".to_string(), "player".to_string());
+
+        let document = EditorSceneDocumentDef {
+            nodes: vec![
+                EditorSceneNodeDef {
+                    id: 1,
+                    parent: None,
+                    name: "player_spawn".to_string(),
+                    kind: EditorSceneNodeKind::Empty,
+                    position: [96.0, 288.0],
+                    size: [88.0, 56.0],
+                    visible: true,
+                    script_path: "scripts/player_spawn.rs".to_string(),
+                    runtime_prefab: String::new(),
+                    asset_alias: String::new(),
+                    properties: spawn_properties,
+                },
+                EditorSceneNodeDef {
+                    id: 2,
+                    parent: None,
+                    name: "tree_cluster".to_string(),
+                    kind: EditorSceneNodeKind::Group,
+                    position: [128.0, 512.0],
+                    size: [120.0, 72.0],
+                    visible: true,
+                    script_path: String::new(),
+                    runtime_prefab: String::new(),
+                    asset_alias: String::new(),
+                    properties: HashMap::new(),
+                },
+                EditorSceneNodeDef {
+                    id: 3,
+                    parent: Some(2),
+                    name: "tree".to_string(),
+                    kind: EditorSceneNodeKind::Sprite,
+                    position: [128.0, 512.0],
+                    size: [32.0, 32.0],
+                    visible: true,
+                    script_path: String::new(),
+                    runtime_prefab: String::new(),
+                    asset_alias: "tree".to_string(),
+                    properties: HashMap::new(),
+                },
+                EditorSceneNodeDef {
+                    id: 4,
+                    parent: Some(2),
+                    name: "tree_highlight".to_string(),
+                    kind: EditorSceneNodeKind::Sprite,
+                    position: [160.0, 496.0],
+                    size: [16.0, 16.0],
+                    visible: false,
+                    script_path: String::new(),
+                    runtime_prefab: String::new(),
+                    asset_alias: "gem".to_string(),
+                    properties: HashMap::new(),
+                },
+            ],
+        };
+
+        let definition =
+            scene_definition_from_editor_document(Path::new("editor.scene.json"), document)
+                .expect("editor scene should convert to a runtime scene definition");
+
+        assert_eq!(definition.prefabs.len(), 2);
+        assert_eq!(definition.instances.len(), 2);
+
+        assert_eq!(
+            definition.prefabs[1],
+            Prefab2DDef {
+                name: "tree_cluster".to_string(),
+                sprites: vec![
+                    PrefabSprite2DDef {
+                        asset: "tree".to_string(),
+                        offset: [0.0, 0.0],
+                        size: [32.0, 32.0],
+                        color: [1.0, 1.0, 1.0, 1.0],
+                        uv_rect: None,
+                        flip_x: false,
+                        flip_y: false,
+                    },
+                    PrefabSprite2DDef {
+                        asset: "gem".to_string(),
+                        offset: [32.0, -16.0],
+                        size: [16.0, 16.0],
+                        color: [1.0, 1.0, 1.0, 1.0],
+                        uv_rect: None,
+                        flip_x: false,
+                        flip_y: false,
+                    }
+                ],
+            }
+        );
+
+        let spawn = &definition.instances[0];
+        assert_eq!(spawn.prefab, "player_spawn");
+        assert_eq!(spawn.properties.get("team"), Some(&"player".to_string()));
+        assert_eq!(
+            spawn.properties.get("script_path"),
+            Some(&"scripts/player_spawn.rs".to_string())
+        );
+        assert_eq!(
+            spawn.properties.get("editor_kind"),
+            Some(&"Empty".to_string())
+        );
+        assert_eq!(
+            spawn.properties.get("editor_size_x"),
+            Some(&"88".to_string())
+        );
+
+        let tree_cluster = &definition.instances[1];
+        assert_eq!(tree_cluster.prefab, "tree_cluster");
+        assert_eq!(tree_cluster.position, [128.0, 512.0]);
+    }
+
+    #[test]
+    fn rejects_conflicting_prefab_visuals_from_editor_scene_document() {
+        let document = EditorSceneDocumentDef {
+            nodes: vec![
+                EditorSceneNodeDef {
+                    id: 1,
+                    parent: None,
+                    name: "tree".to_string(),
+                    kind: EditorSceneNodeKind::Group,
+                    position: [0.0, 0.0],
+                    size: [120.0, 72.0],
+                    visible: true,
+                    script_path: String::new(),
+                    runtime_prefab: String::new(),
+                    asset_alias: String::new(),
+                    properties: HashMap::new(),
+                },
+                EditorSceneNodeDef {
+                    id: 2,
+                    parent: Some(1),
+                    name: "tree".to_string(),
+                    kind: EditorSceneNodeKind::Sprite,
+                    position: [0.0, 0.0],
+                    size: [32.0, 32.0],
+                    visible: true,
+                    script_path: String::new(),
+                    runtime_prefab: String::new(),
+                    asset_alias: "tree".to_string(),
+                    properties: HashMap::new(),
+                },
+                EditorSceneNodeDef {
+                    id: 3,
+                    parent: None,
+                    name: "tree".to_string(),
+                    kind: EditorSceneNodeKind::Group,
+                    position: [64.0, 64.0],
+                    size: [120.0, 72.0],
+                    visible: true,
+                    script_path: String::new(),
+                    runtime_prefab: String::new(),
+                    asset_alias: String::new(),
+                    properties: HashMap::new(),
+                },
+                EditorSceneNodeDef {
+                    id: 4,
+                    parent: Some(3),
+                    name: "tree_glow".to_string(),
+                    kind: EditorSceneNodeKind::Sprite,
+                    position: [64.0, 64.0],
+                    size: [16.0, 16.0],
+                    visible: true,
+                    script_path: String::new(),
+                    runtime_prefab: String::new(),
+                    asset_alias: "gem".to_string(),
+                    properties: HashMap::new(),
+                },
+            ],
+        };
+
+        let error = scene_definition_from_editor_document(Path::new("editor.scene.json"), document)
+            .expect_err("prefab name reuse with different visuals should fail");
+
+        assert!(
+            error.to_string().contains("conflicting visual definitions"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn nested_groups_export_as_separate_instances() {
+        let document = EditorSceneDocumentDef {
+            nodes: vec![
+                EditorSceneNodeDef {
+                    id: 1,
+                    parent: None,
+                    name: "wagon".to_string(),
+                    kind: EditorSceneNodeKind::Group,
+                    position: [100.0, 100.0],
+                    size: [120.0, 72.0],
+                    visible: true,
+                    script_path: String::new(),
+                    runtime_prefab: String::new(),
+                    asset_alias: String::new(),
+                    properties: HashMap::new(),
+                },
+                EditorSceneNodeDef {
+                    id: 2,
+                    parent: Some(1),
+                    name: "wagon_body".to_string(),
+                    kind: EditorSceneNodeKind::Sprite,
+                    position: [100.0, 100.0],
+                    size: [48.0, 32.0],
+                    visible: true,
+                    script_path: String::new(),
+                    runtime_prefab: String::new(),
+                    asset_alias: "tree".to_string(),
+                    properties: HashMap::new(),
+                },
+                EditorSceneNodeDef {
+                    id: 3,
+                    parent: Some(1),
+                    name: "wagon_lantern".to_string(),
+                    kind: EditorSceneNodeKind::Group,
+                    position: [124.0, 84.0],
+                    size: [120.0, 72.0],
+                    visible: true,
+                    script_path: String::new(),
+                    runtime_prefab: String::new(),
+                    asset_alias: String::new(),
+                    properties: HashMap::new(),
+                },
+                EditorSceneNodeDef {
+                    id: 4,
+                    parent: Some(3),
+                    name: "lantern_glow".to_string(),
+                    kind: EditorSceneNodeKind::Sprite,
+                    position: [124.0, 84.0],
+                    size: [16.0, 16.0],
+                    visible: true,
+                    script_path: String::new(),
+                    runtime_prefab: String::new(),
+                    asset_alias: "gem".to_string(),
+                    properties: HashMap::new(),
+                },
+            ],
+        };
+
+        let definition =
+            scene_definition_from_editor_document(Path::new("editor.scene.json"), document)
+                .expect("nested groups should export as separate prefab instances");
+
+        assert_eq!(definition.prefabs.len(), 2);
+        assert_eq!(definition.instances.len(), 2);
+
+        assert_eq!(definition.prefabs[0].sprites.len(), 1);
+        assert_eq!(definition.prefabs[1].sprites.len(), 1);
+        assert_eq!(definition.prefabs[0].name, "wagon");
+        assert_eq!(definition.prefabs[1].name, "wagon_lantern");
+    }
 }
