@@ -8,7 +8,7 @@ use crate::canvas::Canvas;
 use winit::event::{ElementState, Ime, KeyEvent};
 use winit::keyboard::{KeyCode, PhysicalKey};
 
-const DEFAULT_LOG_CAPACITY: usize = 256;
+const DEFAULT_LOG_CAPACITY: usize = 4096;
 const DEFAULT_OVERLAY_LOG_LIMIT: usize = 10;
 const DEFAULT_SCROLL_STEP: usize = 3;
 const MAX_COMMAND_HISTORY: usize = 64;
@@ -18,9 +18,9 @@ const OVERLAY_HINT_SIZE: f32 = 10.0;
 const OVERLAY_BUTTON_TEXT_SIZE: f32 = 10.0;
 const OVERLAY_BUTTON_HEIGHT: f32 = 20.0;
 const OVERLAY_BUTTON_GAP: f32 = 6.0;
-const OVERLAY_BUTTON_PADDING_X: f32 = 8.0;
-const OVERLAY_BUTTON_MIN_WIDTH: f32 = 54.0;
-const CONSOLE_PANEL_HEIGHT: f32 = 84.0;
+const OVERLAY_BUTTON_PADDING_X: f32 = 14.0;
+const OVERLAY_BUTTON_MIN_WIDTH: f32 = 78.0;
+const CONSOLE_PANEL_HEIGHT: f32 = 104.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DebugLogLevel {
@@ -157,6 +157,7 @@ pub enum DebugCommand {
     Console(DebugToggle),
     Follow(DebugToggle),
     Level(DebugSeverityFilter),
+    Capacity(usize),
     Target(Option<String>),
     HotReload(DebugToggle),
     Echo(DebugLogLevel, String),
@@ -734,7 +735,7 @@ impl DebugUiState {
         let padding = 10.0;
         let panel_x = -hw + 8.0;
         let panel_top = hh - 8.0;
-        let panel_width = (screen_size.0 as f32 - 16.0).max(220.0).min(620.0);
+        let panel_width = (screen_size.0 as f32 - 16.0).max(220.0);
 
         let title_line_height = debug_line_height(OVERLAY_TITLE_SIZE);
         let body_line_height = debug_line_height(OVERLAY_BODY_SIZE);
@@ -905,11 +906,9 @@ impl log::Log for CombinedLogger {
     }
 
     fn log(&self, record: &log::Record<'_>) {
-        if !self.enabled(record.metadata()) {
-            return;
+        if self.enabled(record.metadata()) {
+            log::Log::log(&self.inner, record);
         }
-
-        log::Log::log(&self.inner, record);
 
         let mut buffer = log_buffer()
             .lock()
@@ -950,7 +949,7 @@ pub fn init_logging() {
         match log::set_boxed_logger(Box::new(logger)) {
             Ok(()) => {
                 LOGGER_CAPTURE_ACTIVE.store(true, Ordering::Relaxed);
-                log::set_max_level(max_level);
+                log::set_max_level(log::LevelFilter::Trace.max(max_level));
             }
             Err(err) => {
                 eprintln!("failed to initialize debug logger: {err}");
@@ -1061,6 +1060,19 @@ pub fn parse_command(text: &str) -> Result<DebugCommand, String> {
             };
             Ok(DebugCommand::Level(filter))
         }
+        "capacity" | "buffer" => {
+            let value = match non_empty(rest) {
+                Some(value) => value,
+                None => return Err("capacity command expects a positive integer".into()),
+            };
+            let capacity = value
+                .parse::<usize>()
+                .map_err(|_| format!("unknown log capacity '{value}'"))?;
+            if capacity == 0 {
+                return Err("capacity command expects a positive integer".into());
+            }
+            Ok(DebugCommand::Capacity(capacity))
+        }
         "target" => {
             let value = rest.trim();
             if value.is_empty() || value.eq_ignore_ascii_case("clear") {
@@ -1086,7 +1098,7 @@ pub fn command_help_lines() -> &'static [&'static str] {
         "help | state | clear",
         "overlay [on|off|toggle] | console [on|off|toggle] | follow [on|off|toggle]",
         "level <all|debug|info|warn|error> | target <text> | target clear",
-        "hot_reload [on|off|toggle]",
+        "capacity <count> | hot_reload [on|off|toggle]",
         "echo <msg> | debug <msg> | info <msg> | warn <msg> | error <msg>",
     ]
 }
@@ -1109,6 +1121,7 @@ pub fn draw_overlay(
     let panel_width = layout.panel.w;
     let panel_top = panel_y + layout.panel.h;
     let stats = overlay_stats(info, state, filtered_count);
+    let title_hint_width = (panel_width * 0.34).clamp(180.0, 320.0);
 
     canvas.rect(
         panel_x,
@@ -1133,12 +1146,14 @@ pub fn draw_overlay(
         OVERLAY_TITLE_SIZE,
         Color::from_rgba8(122, 214, 255, 255),
     );
-    canvas.text(
-        panel_x + panel_width - 210.0,
+    canvas.text_block(
+        panel_x + panel_width - padding,
         title_y,
         "click chips | F4 console | F5 clear",
         OVERLAY_HINT_SIZE,
         Color::from_rgba8(146, 163, 186, 255),
+        title_hint_width,
+        crate::canvas::TextAlign::Right,
     );
 
     for button in &layout.buttons {
@@ -1152,6 +1167,7 @@ pub fn draw_overlay(
             button.rect.h,
             fill,
         );
+        canvas.push_clip(button.rect.x, button.rect.y, button.rect.w, button.rect.h);
         canvas.text(
             button.rect.x + OVERLAY_BUTTON_PADDING_X,
             button.rect.y + OVERLAY_BUTTON_HEIGHT - 5.0,
@@ -1159,6 +1175,7 @@ pub fn draw_overlay(
             OVERLAY_BUTTON_TEXT_SIZE,
             text_color,
         );
+        canvas.pop_clip();
     }
 
     let mut y = layout.stats_y;
@@ -1278,12 +1295,14 @@ pub fn draw_console(canvas: &mut Canvas, state: &DebugUiState) {
         13.0,
         Color::from_rgba8(122, 214, 255, 255),
     );
-    canvas.text(
+    canvas.text_block(
         panel.x + padding,
         panel.y + 32.0,
-        "Examples: state | level warn | target renderer | hot_reload toggle | clear",
+        "Examples: state | level warn | capacity 8192 | target renderer | clear",
         hint_size,
         Color::from_rgba8(146, 163, 186, 255),
+        panel.w - padding * 2.0,
+        crate::canvas::TextAlign::Left,
     );
 
     let prompt = format!(
@@ -1298,12 +1317,14 @@ pub fn draw_console(canvas: &mut Canvas, state: &DebugUiState) {
         body_size,
         Color::from_rgba8(230, 236, 245, 255),
     );
-    canvas.text(
+    canvas.text_block(
         panel.x + padding,
         panel.y + panel.h - 8.0 - line_height - 4.0,
-        "Enter run | Up/Down history | Esc close | click overlay chips for mouse controls",
+        "Enter runs the command | Up/Down walks history | Esc closes | overlay chips stay clickable",
         hint_size,
         Color::from_rgba8(156, 168, 188, 255),
+        panel.w - padding * 2.0,
+        crate::canvas::TextAlign::Left,
     );
 }
 
@@ -1348,42 +1369,34 @@ fn build_overlay_buttons(
 
 fn overlay_button_specs(state: &DebugUiState) -> Vec<(OverlayButtonAction, String, bool)> {
     let target_label = if state.input_mode == DebugTextInputMode::TargetFilter {
-        "target: apply".to_string()
+        "target apply".to_string()
     } else if state.target_filter().is_empty() {
-        "target: *".to_string()
+        "target *".to_string()
     } else {
-        format!("target: {}", truncate_chars(state.target_filter(), 12))
+        format!("target {}", truncate_chars(state.target_filter(), 12))
     };
 
     vec![
-        (OverlayButtonAction::Clear, "clear logs".to_string(), false),
+        (OverlayButtonAction::Clear, "clear".to_string(), false),
         (
             OverlayButtonAction::ToggleConsole,
             format!(
-                "console: {}",
-                if state.console_open() {
-                    "open"
-                } else {
-                    "closed"
-                }
+                "console {}",
+                if state.console_open() { "on" } else { "off" }
             ),
             state.console_open(),
         ),
         (
             OverlayButtonAction::ToggleFollow,
             format!(
-                "follow: {}",
-                if state.follow_logs() {
-                    "live"
-                } else {
-                    "paused"
-                }
+                "follow {}",
+                if state.follow_logs() { "live" } else { "hold" }
             ),
             state.follow_logs(),
         ),
         (
             OverlayButtonAction::CycleSeverity,
-            format!("level: {}", state.severity_filter().label()),
+            format!("level {}", state.severity_filter().label()),
             state.severity_filter() != DebugSeverityFilter::All,
         ),
         (
@@ -1396,7 +1409,9 @@ fn overlay_button_specs(state: &DebugUiState) -> Vec<(OverlayButtonAction, Strin
 }
 
 fn overlay_button_width(label: &str) -> f32 {
-    (approx_text_width(label, OVERLAY_BUTTON_TEXT_SIZE) + OVERLAY_BUTTON_PADDING_X * 2.0)
+    (crate::text::measure_builtin_text(label, OVERLAY_BUTTON_TEXT_SIZE).0
+        + OVERLAY_BUTTON_PADDING_X * 2.0
+        + 8.0)
         .max(OVERLAY_BUTTON_MIN_WIDTH)
 }
 
@@ -1444,10 +1459,6 @@ fn console_panel_rect(screen_size: (u32, u32)) -> DebugRect {
 
 fn debug_line_height(size: f32) -> f32 {
     size * 1.35
-}
-
-fn approx_text_width(text: &str, size: f32) -> f32 {
-    text.chars().count() as f32 * size * 0.58
 }
 
 fn contains_ascii_case_insensitive(haystack: &str, needle: &str) -> bool {
@@ -1610,6 +1621,28 @@ mod tests {
     }
 
     #[test]
+    fn buffer_capacity_resize_trims_existing_entries() {
+        let mut buffer = DebugLogBuffer::new(4);
+        for (seconds, message) in [(0.1, "one"), (0.2, "two"), (0.3, "three"), (0.4, "four")] {
+            buffer.push_entry(DebugLogEntry {
+                index: 0,
+                seconds,
+                level: DebugLogLevel::Info,
+                target: "debug".into(),
+                message: message.into(),
+            });
+        }
+
+        buffer.set_capacity(2);
+
+        let recent = buffer.recent(10);
+        assert_eq!(buffer.capacity(), 2);
+        assert_eq!(recent.len(), 2);
+        assert_eq!(recent[0].message, "three");
+        assert_eq!(recent[1].message, "four");
+    }
+
+    #[test]
     fn compact_target_keeps_last_segments() {
         assert_eq!(compact_target("rengine::renderer::mod"), "renderer::mod");
         assert_eq!(compact_target("gameplay"), "gameplay");
@@ -1627,6 +1660,10 @@ mod tests {
         assert_eq!(
             parse_command("level warn").unwrap(),
             DebugCommand::Level(DebugSeverityFilter::Warn)
+        );
+        assert_eq!(
+            parse_command("capacity 8192").unwrap(),
+            DebugCommand::Capacity(8192)
         );
         assert_eq!(
             parse_command("target renderer").unwrap(),

@@ -1,3 +1,5 @@
+use std::sync::OnceLock;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct FontId(pub(crate) usize);
 
@@ -20,6 +22,51 @@ pub(crate) struct GlyphEntry {
 
 pub(crate) const ATLAS_SIZE: u32 = 512;
 pub(crate) const FONT_SIZE: f32 = 48.0;
+
+struct BuiltinFontMetrics {
+    advances: [f32; 128],
+    line_height: f32,
+}
+
+static BUILTIN_FONT_METRICS: OnceLock<BuiltinFontMetrics> = OnceLock::new();
+
+fn builtin_font_metrics() -> &'static BuiltinFontMetrics {
+    BUILTIN_FONT_METRICS.get_or_init(|| {
+        let font = fontdue::Font::from_bytes(
+            &include_bytes!("../assets/font.ttf")[..],
+            fontdue::FontSettings::default(),
+        )
+        .expect("failed to parse font");
+        let mut advances = [0.0; 128];
+        let mut line_height: f32 = 0.0;
+
+        for c in 32u8..127 {
+            let metrics = font.metrics(c as char, FONT_SIZE);
+            advances[c as usize] = metrics.advance_width;
+            line_height = line_height.max(metrics.height as f32);
+        }
+
+        BuiltinFontMetrics {
+            advances,
+            line_height,
+        }
+    })
+}
+
+pub(crate) fn measure_builtin_text(text: &str, size: f32) -> (f32, f32) {
+    let metrics = builtin_font_metrics();
+    let scale = size / FONT_SIZE;
+    let mut width = 0.0;
+
+    for ch in text.chars() {
+        let idx = ch as usize;
+        if idx < metrics.advances.len() {
+            width += metrics.advances[idx] * scale;
+        }
+    }
+
+    (width, metrics.line_height * scale)
+}
 
 pub struct FontAtlas {
     pub bind_group: wgpu::BindGroup,
