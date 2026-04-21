@@ -65,8 +65,9 @@ fn route_debug_text_and_key_event(
     consumed_key
 }
 
-fn route_debug_keyboard_event(input: &mut InputState, debug_ui: &mut DebugUiState, event: &KeyEvent) {
-    let _ = route_debug_text_and_key_event(input, debug_ui, event);
+enum DebugEscapeHandling {
+    None,
+    ExitOrReleaseMouseCapture { mouse_captured: bool },
 }
 
 enum Debug3DKeyboardOutcome {
@@ -75,11 +76,11 @@ enum Debug3DKeyboardOutcome {
     Exit,
 }
 
-fn route_debug_keyboard_event_3d(
+fn route_debug_keyboard_event(
     input: &mut InputState,
     debug_ui: &mut DebugUiState,
-    mouse_captured: bool,
     event: &KeyEvent,
+    escape_handling: DebugEscapeHandling,
 ) -> Debug3DKeyboardOutcome {
     let consumed_key = route_debug_text_and_key_event(input, debug_ui, event);
 
@@ -90,10 +91,15 @@ fn route_debug_keyboard_event_3d(
             PhysicalKey::Code(winit::keyboard::KeyCode::Escape)
         )
     {
-        if mouse_captured {
-            Debug3DKeyboardOutcome::ReleaseMouseCapture
-        } else {
-            Debug3DKeyboardOutcome::Exit
+        match escape_handling {
+            DebugEscapeHandling::None => Debug3DKeyboardOutcome::None,
+            DebugEscapeHandling::ExitOrReleaseMouseCapture { mouse_captured } => {
+                if mouse_captured {
+                    Debug3DKeyboardOutcome::ReleaseMouseCapture
+                } else {
+                    Debug3DKeyboardOutcome::Exit
+                }
+            }
         }
     } else {
         Debug3DKeyboardOutcome::None
@@ -1131,7 +1137,12 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
                 }
 
                 WindowEvent::KeyboardInput { event, .. } => {
-                    route_debug_keyboard_event(&mut engine.input, &mut engine.debug_ui, &event);
+                    let _ = route_debug_keyboard_event(
+                        &mut engine.input,
+                        &mut engine.debug_ui,
+                        &event,
+                        DebugEscapeHandling::None,
+                    );
                 }
 
                 WindowEvent::Ime(event) => {
@@ -1326,7 +1337,12 @@ where
                 }
 
                 WindowEvent::KeyboardInput { event, .. } => {
-                    route_debug_keyboard_event(&mut engine.input, &mut engine.debug_ui, &event);
+                    let _ = route_debug_keyboard_event(
+                        &mut engine.input,
+                        &mut engine.debug_ui,
+                        &event,
+                        DebugEscapeHandling::None,
+                    );
                 }
 
                 WindowEvent::Ime(event) => {
@@ -2164,12 +2180,13 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
                 }
 
                 WindowEvent::KeyboardInput { event, .. } => {
-                    let mouse_captured = engine.mouse_captured;
-                    match route_debug_keyboard_event_3d(
+                    match route_debug_keyboard_event(
                         &mut engine.input,
                         &mut engine.debug_ui,
-                        mouse_captured,
                         &event,
+                        DebugEscapeHandling::ExitOrReleaseMouseCapture {
+                            mouse_captured: engine.mouse_captured,
+                        },
                     ) {
                         Debug3DKeyboardOutcome::None => {}
                         Debug3DKeyboardOutcome::ReleaseMouseCapture => {
@@ -2415,12 +2432,13 @@ where
                 }
 
                 WindowEvent::KeyboardInput { event, .. } => {
-                    let mouse_captured = engine.mouse_captured;
-                    match route_debug_keyboard_event_3d(
+                    match route_debug_keyboard_event(
                         &mut engine.input,
                         &mut engine.debug_ui,
-                        mouse_captured,
                         &event,
+                        DebugEscapeHandling::ExitOrReleaseMouseCapture {
+                            mouse_captured: engine.mouse_captured,
+                        },
                     ) {
                         Debug3DKeyboardOutcome::None => {}
                         Debug3DKeyboardOutcome::ReleaseMouseCapture => {
