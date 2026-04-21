@@ -274,7 +274,7 @@ fn execute_debug_command(
             log_console_line(
                 DebugLogLevel::Info,
                 format!(
-                    "overlay={} console={} follow={} level={} target={} hot_reload={}",
+                    "overlay={} console={} follow={} level={} target={} hot_reload={} log_capacity={}",
                     debug_ui.overlay_visible(),
                     debug_ui.console_open(),
                     debug_ui.follow_logs(),
@@ -285,6 +285,7 @@ fn execute_debug_command(
                         debug_ui.target_filter()
                     },
                     *hot_reload_enabled,
+                    debug::log_capacity(),
                 ),
             );
         }
@@ -339,6 +340,14 @@ fn execute_debug_command(
             log_console_line(
                 DebugLogLevel::Info,
                 format!("severity filter {}", filter.label()),
+            );
+        }
+        Ok(DebugCommand::Capacity(capacity)) => {
+            log_console_line(DebugLogLevel::Debug, format!("> {command_text}"));
+            debug::set_log_capacity(capacity);
+            log_console_line(
+                DebugLogLevel::Info,
+                format!("log capacity {}", debug::log_capacity()),
             );
         }
         Ok(DebugCommand::Target(target)) => {
@@ -463,6 +472,7 @@ pub struct EngineConfig {
     pub hot_reload: bool,
     pub show_fps: bool,
     pub show_debug_overlay: bool,
+    pub debug_log_capacity: usize,
     pub fixed_dt: f32,
 
     pub render_width: Option<u32>,
@@ -482,6 +492,7 @@ impl Default for EngineConfig {
             hot_reload: true,
             show_fps: true,
             show_debug_overlay: false,
+            debug_log_capacity: 4096,
             fixed_dt: 1.0 / 60.0,
             render_width: None,
             render_height: None,
@@ -658,6 +669,18 @@ impl Engine {
 
     pub fn debug_logs(&self, limit: usize) -> Vec<crate::debug::DebugLogEntry> {
         crate::debug::recent_logs(limit)
+    }
+
+    pub fn debug_log_count(&self) -> usize {
+        crate::debug::log_count()
+    }
+
+    pub fn debug_log_capacity(&self) -> usize {
+        crate::debug::log_capacity()
+    }
+
+    pub fn set_debug_log_capacity(&self, capacity: usize) {
+        crate::debug::set_log_capacity(capacity);
     }
 
     pub fn clear_debug_logs(&self) {
@@ -1077,6 +1100,7 @@ pub trait Game: 'static + Sized {
 
 pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Error>> {
     debug::init_logging();
+    debug::set_log_capacity(config.debug_log_capacity);
 
     let headless = config.headless;
     let show_fps = config.show_fps;
@@ -1269,6 +1293,7 @@ where
     F: FnOnce(&mut Engine, &mut Globals) -> Box<dyn Scene>,
 {
     debug::init_logging();
+    debug::set_log_capacity(config.debug_log_capacity);
 
     let headless = config.headless;
     let show_fps = config.show_fps;
@@ -1690,6 +1715,18 @@ impl Engine3D {
         crate::debug::recent_logs(limit)
     }
 
+    pub fn debug_log_count(&self) -> usize {
+        crate::debug::log_count()
+    }
+
+    pub fn debug_log_capacity(&self) -> usize {
+        crate::debug::log_capacity()
+    }
+
+    pub fn set_debug_log_capacity(&self, capacity: usize) {
+        crate::debug::set_log_capacity(capacity);
+    }
+
     pub fn clear_debug_logs(&self) {
         crate::debug::clear_logs();
     }
@@ -2095,6 +2132,7 @@ pub trait Game3D: 'static + Sized {
 
 pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::Error>> {
     debug::init_logging();
+    debug::set_log_capacity(config.debug_log_capacity);
 
     let headless = config.headless;
     let show_fps = config.show_fps;
@@ -2330,6 +2368,7 @@ where
     F: FnOnce(&mut Engine3D, &mut Globals) -> Box<dyn Scene3D>,
 {
     debug::init_logging();
+    debug::set_log_capacity(config.debug_log_capacity);
 
     let headless = config.headless;
     let show_fps = config.show_fps;
