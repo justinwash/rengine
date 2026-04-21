@@ -226,6 +226,7 @@ pub(crate) struct Renderer {
 
     canvas_pipeline: wgpu::RenderPipeline,
     canvas_vb: wgpu::Buffer,
+    canvas_vb_capacity: usize,
     pub(crate) fonts: Vec<text::FontAtlas>,
     font_bgl: wgpu::BindGroupLayout,
 
@@ -420,7 +421,8 @@ impl Renderer {
 
         let font_bgl = texture_bgl.clone();
         let canvas_pipeline = canvas::pipeline(&device, surface_format, &font_bgl);
-        let canvas_vb = canvas::vertex_buffer(&device);
+        let canvas_vb_capacity = canvas::MAX_CANVAS_VERTICES;
+        let canvas_vb = canvas::vertex_buffer(&device, canvas_vb_capacity);
         let font_atlas = text::font_atlas(&device, &queue, &font_bgl);
 
         let mut renderer = Self {
@@ -440,6 +442,7 @@ impl Renderer {
             render_targets: Vec::new(),
             canvas_pipeline,
             canvas_vb,
+            canvas_vb_capacity,
             fonts: vec![font_atlas],
             font_bgl,
             offscreen: None,
@@ -737,19 +740,24 @@ impl Renderer {
         }
 
         let target_view = &self.textures[texture_index].view;
+        let device = &self.device;
+        let canvas_pipeline = &self.canvas_pipeline;
+        let canvas_vb = &mut self.canvas_vb;
+        let canvas_vb_capacity = &mut self.canvas_vb_capacity;
+        let queue = &self.queue;
+        let fonts = &self.fonts;
+        let textures = &self.textures;
         canvas::render_pass(
+            device,
             encoder,
             target_view,
-            &self.canvas_pipeline,
-            &self.canvas_vb,
-            &self.queue,
+            canvas_pipeline,
+            canvas_vb,
+            canvas_vb_capacity,
+            queue,
             &mut frame.canvases,
-            &self.fonts,
-            |texture_id| {
-                self.textures
-                    .get(texture_id)
-                    .map(|texture| &texture.bind_group)
-            },
+            fonts,
+            |texture_id| textures.get(texture_id).map(|texture| &texture.bind_group),
         );
 
         let popped = active_targets.pop();
@@ -921,19 +929,24 @@ impl Renderer {
             pass.draw(0..3, 0..1);
         }
 
+        let device = &self.device;
+        let canvas_pipeline = &self.canvas_pipeline;
+        let canvas_vb = &mut self.canvas_vb;
+        let canvas_vb_capacity = &mut self.canvas_vb_capacity;
+        let queue = &self.queue;
+        let fonts = &self.fonts;
+        let textures = &self.textures;
         canvas::render_pass(
+            device,
             &mut encoder,
             &swap_view,
-            &self.canvas_pipeline,
-            &self.canvas_vb,
-            &self.queue,
+            canvas_pipeline,
+            canvas_vb,
+            canvas_vb_capacity,
+            queue,
             &mut frame.canvases,
-            &self.fonts,
-            |texture_id| {
-                self.textures
-                    .get(texture_id)
-                    .map(|texture| &texture.bind_group)
-            },
+            fonts,
+            |texture_id| textures.get(texture_id).map(|texture| &texture.bind_group),
         );
 
         self.queue.submit(std::iter::once(encoder.finish()));
