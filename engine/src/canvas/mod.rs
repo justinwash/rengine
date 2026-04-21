@@ -730,20 +730,33 @@ pub(crate) fn pipeline(
     })
 }
 
-pub(crate) fn vertex_buffer(device: &wgpu::Device) -> wgpu::Buffer {
+pub(crate) fn vertex_buffer(device: &wgpu::Device, vertex_capacity: usize) -> wgpu::Buffer {
     device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("canvas_vertex_buffer"),
-        size: (MAX_CANVAS_VERTICES * std::mem::size_of::<CanvasVertex>()) as u64,
+        size: (vertex_capacity * std::mem::size_of::<CanvasVertex>()) as u64,
         usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     })
 }
 
+fn required_vertex_buffer_capacity(current_capacity: usize, required_vertices: usize) -> usize {
+    if required_vertices <= current_capacity {
+        return current_capacity;
+    }
+
+    required_vertices
+        .max(current_capacity.max(MAX_CANVAS_VERTICES))
+        .checked_next_power_of_two()
+        .unwrap_or(required_vertices)
+}
+
 pub(crate) fn render_pass<'a, F>(
+    device: &wgpu::Device,
     encoder: &mut wgpu::CommandEncoder,
     view: &wgpu::TextureView,
     pipeline: &wgpu::RenderPipeline,
-    vertex_buffer: &wgpu::Buffer,
+    vertex_buffer: &mut wgpu::Buffer,
+    vertex_capacity: &mut usize,
     queue: &wgpu::Queue,
     canvases: &mut [Canvas],
     fonts: &[FontAtlas],
@@ -761,6 +774,10 @@ pub(crate) fn render_pass<'a, F>(
         .collect();
     if verts.is_empty() {
         return;
+    }
+    if verts.len() > *vertex_capacity {
+        *vertex_capacity = required_vertex_buffer_capacity(*vertex_capacity, verts.len());
+        *vertex_buffer = self::vertex_buffer(device, *vertex_capacity);
     }
     queue.write_buffer(vertex_buffer, 0, bytemuck::cast_slice(&verts));
 
