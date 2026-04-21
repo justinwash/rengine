@@ -103,6 +103,7 @@ rengine/
 │   └── src/
 │       ├── lib.rs         # public re-exports
 │       ├── app.rs         # Engine, Engine3D, Game, Game3D, run(), run3d(), scene runners
+│       ├── debug.rs       # in-game debug overlay, console, and ring-buffer logging
 │       ├── text.rs        # FontAtlas — glyph rasterization + GPU atlas
 │       ├── canvas/        # Canvas overlay: mod.rs + canvas.wgsl
 │       ├── input/         # keyboard.rs, gamepad.rs, action.rs, mod.rs
@@ -174,6 +175,7 @@ pub mod app;
 pub mod math;
 pub mod input;
 pub mod canvas;
+pub mod debug;
 pub mod renderer;
 pub mod renderer3d;
 pub mod scene;
@@ -195,6 +197,7 @@ Then selective re-exports:
 - **Scene:** [`Globals`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/globals.rs#L4), [`Prefab2D`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/data2d.rs#L61)/[`Prefab2DDef`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/data2d.rs#L26), [`PrefabSprite2D`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/data2d.rs#L50)/[`PrefabSprite2DDef`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/data2d.rs#L11), [`Scene`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/mod.rs#L24), [`Scene2D`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/data2d.rs#L98)/[`Scene2DDef`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/data2d.rs#L42), [`SceneInstance2D`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/data2d.rs#L67)/[`SceneInstance2DDef`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/data2d.rs#L32), [`SceneOp`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/mod.rs#L16), [`Scene3D`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/mod.rs#L47), [`SceneOp3D`](https://github.com/justinwash/rengine/blob/master/engine/src/scene/mod.rs#L39)
 - **World:** [`tilemap`](https://github.com/justinwash/rengine/blob/master/engine/src/world/tilemap.rs), [`aabb_overlap`](https://github.com/justinwash/rengine/blob/master/engine/src/world/physics.rs), [`aabb_overlap_layered`](https://github.com/justinwash/rengine/blob/master/engine/src/world/physics.rs), [`CollisionLayer`](https://github.com/justinwash/rengine/blob/master/engine/src/world/physics.rs), [`BodyId`](https://github.com/justinwash/rengine/blob/master/engine/src/world/trigger.rs), [`TriggerSystem`](https://github.com/justinwash/rengine/blob/master/engine/src/world/trigger.rs), [`TriggerZone`](https://github.com/justinwash/rengine/blob/master/engine/src/world/trigger.rs), [`TriggerZoneId`](https://github.com/justinwash/rengine/blob/master/engine/src/world/trigger.rs), [`OverlapEvent`](https://github.com/justinwash/rengine/blob/master/engine/src/world/trigger.rs), [`iso_to_screen`](https://github.com/justinwash/rengine/blob/master/engine/src/world/iso.rs#L4), [`screen_to_iso`](https://github.com/justinwash/rengine/blob/master/engine/src/world/iso.rs#L11), [`TileDef`](https://github.com/justinwash/rengine/blob/master/engine/src/world/tilemap.rs#L16), [`TileMap`](https://github.com/justinwash/rengine/blob/master/engine/src/world/tilemap.rs#L6)
 - **Canvas/Text:** [`screen_to_ndc`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs#L197), [`wrap_text`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs#L203), [`Canvas`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs#L49), [`CanvasVertex`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs#L13), [`TextAlign`](https://github.com/justinwash/rengine/blob/master/engine/src/canvas/mod.rs#L5), [`FontAtlas`](https://github.com/justinwash/rengine/blob/master/engine/src/text.rs#L17)
+- **Debug:** [`DebugLogEntry`](https://github.com/justinwash/rengine/blob/master/engine/src/debug.rs), [`DebugLogLevel`](https://github.com/justinwash/rengine/blob/master/engine/src/debug.rs), plus the public `debug` module for log capture, overlay controls, and console parsing helpers
 - **UI:** [`Ui`](https://github.com/justinwash/rengine/blob/master/engine/src/ui.rs), [`UiResponse`](https://github.com/justinwash/rengine/blob/master/engine/src/ui.rs), [`UiStyle`](https://github.com/justinwash/rengine/blob/master/engine/src/ui.rs)
 - **Pixel art:** [`pixelart`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pixelart.rs) (module-level re-export of [`PixelCanvas`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pixelart.rs#L3), [`darken`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pixelart.rs#L106), [`lighten`](https://github.com/justinwash/rengine/blob/master/engine/src/assets/pixelart.rs#L110))
 - **Math:** [`Rect`](https://github.com/justinwash/rengine/blob/master/engine/src/math/rect.rs#L5), [`TimeState`](https://github.com/justinwash/rengine/blob/master/engine/src/math/time.rs#L4), [`Rng`](https://github.com/justinwash/rengine/blob/master/engine/src/math/rng.rs), [`Tween`](https://github.com/justinwash/rengine/blob/master/engine/src/math/tween.rs), [`Easing`](https://github.com/justinwash/rengine/blob/master/engine/src/math/tween.rs), [`LoopMode`](https://github.com/justinwash/rengine/blob/master/engine/src/math/tween.rs), [`ease`](https://github.com/justinwash/rengine/blob/master/engine/src/math/tween.rs), [`lerp`](https://github.com/justinwash/rengine/blob/master/engine/src/math/tween.rs), `Vec2`, `Vec3`, `Quat` (from glam)
@@ -216,12 +219,13 @@ pub struct EngineConfig {
     pub headless: bool,     // Skip window creation visibility + mute audio
     pub hot_reload: bool,   // File-watching for assets at runtime
     pub show_fps: bool,     // Render FPS counter overlay on canvas
+    pub show_debug_overlay: bool, // Start with the built-in debug overlay visible
     pub fixed_dt: f32,      // Fixed-timestep interval (default 1/60)
     pub gamepad_assign: GamepadAssignMode, // OnButtonPress (default) or OnConnect
 }
 ```
 
-Default: 800×600, no vsync, not headless, hot reload on, FPS shown, fixed_dt 1/60, gamepad assign on button press.
+Default: 800×600, no vsync, not headless, hot reload on, FPS shown, debug overlay hidden, fixed_dt 1/60, gamepad assign on button press.
 
 The `headless` flag is critical for testing:
 
@@ -243,9 +247,17 @@ pub struct Engine {
     pub(crate) window_height: u32,
     pub(crate) gamepads: GamepadSystem,   // gilrs-backed gamepad state
     pub(crate) hot_reload_enabled: bool,
+    pub(crate) debug_ui: DebugUiState,    // Built-in debug overlay + console state
     pub(crate) rng: Rng,                  // Seeded xoshiro256** PRNG
 }
 ```
+
+The engine now has a built-in debug surface shared by the 2D and 3D entry points:
+
+- `F3` toggles the overlay, `F4` / backquote toggles the console.
+- Keyboard, IME, mouse, and wheel events route through `DebugUiState` before game input, so the overlay can safely consume text entry, scrolling, and mouse clicks without leaking into gameplay input.
+- The console supports commands for overlay visibility, severity and target filtering, log follow mode, hot-reload toggling, and ad-hoc log emission.
+- `Engine` and `Engine3D` now expose helpers like `debug_overlay_visible()`, `set_debug_overlay_visible()`, `toggle_debug_console()`, `debug_logs()`, and the `log_trace` / `log_debug` / `log_info` / `log_warn` / `log_error` convenience methods.
 
 All fields are `pub(crate)` — the game only interacts through accessor methods:
 

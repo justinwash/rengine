@@ -86,6 +86,7 @@ Recently completed or partially completed:
 - Completed: render targets and offscreen textures — the 2D renderer now exposes a public `RenderTarget` handle, `Engine::create_render_target()`, `Engine::resize_render_target()`, and `Frame::render_target()` for nested offscreen drawing into a texture that can immediately be reused as a sprite, UI image, or secondary preview surface later in the same frame. Added `feature-render-targets` as the reference sample for monitor/preview composition.
 - Completed: text input widget — `InputState` now carries per-frame committed text plus persistent IME preedit state from winit text events, `Ui::text_input()` adds a single-line editable field with caret movement and placeholder rendering, `UiResponse::text_for()` reports changed strings, and `feature-text-input` demonstrates both direct keyboard entry and a game/sample-layer gamepad-friendly on-screen keyboard built from regular Ui buttons
 - Completed: animation state machines — `Animation` now supports `Loop`, `Once`, and `PingPong` playback, while `AnimationStateMachine<State, Trigger>` layers named states, trigger-driven transitions, global transitions, and one-shot completion fallthrough on top of sprite-sheet clips. Includes the new `feature-animation-state-machines` sample with car launch, cruise, brake, and spin-out states
+- Completed: in-game debug overlay and console — the engine now ships a shared `debug` module with ring-buffer log capture, on-screen overlay stats, target and severity filters, a developer console with command parsing, mouse-accessible overlay controls, and engine-level helpers on both `Engine` and `Engine3D` for toggling the surface and writing trace/debug/info/warn/error entries
 - Completed: sample presentation polish — feature and game demos now reserve explicit header/footer space, wrap long copy, disable stray FPS overlays by default, and keep generic UI demos visually neutral unless the sample is intentionally game-specific
 
 Tooltip follow-up backlog after the current tooltip PR lands:
@@ -216,7 +217,7 @@ These features make 2D development substantially more practical.
     Collision bounds, path nodes, raycasts, contact normals, velocity vectors, and AI state overlays.
 
 35. Debug performance stats
-    Show frame time, batch count, texture binds, draw calls, and memory trends.
+    Partially done: the new in-game debug overlay now reports FPS, frame time, frame count, log volume, filter state, hot reload status, and mode-specific info, while the deeper renderer counters (batch count, texture binds, draw calls, memory trends) still need dedicated instrumentation.
 
 36. Hot reload for assets [done]
     Reload textures, shaders, and data files during development.
