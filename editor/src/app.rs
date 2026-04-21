@@ -34,14 +34,18 @@ impl ProjectTreeEntry {
             .map(ToOwned::to_owned)
             .unwrap_or_else(|| path.display().to_string());
 
-        let is_dir = path.is_dir();
+        let is_dir = is_project_tree_directory(path);
         let mut children = Vec::new();
 
         if is_dir {
             if let Ok(entries) = fs::read_dir(path) {
                 for entry in entries.flatten() {
                     let child_path = entry.path();
-                    let child_is_dir = child_path.is_dir();
+                    if is_symlinked_directory(&child_path) {
+                        continue;
+                    }
+
+                    let child_is_dir = is_project_tree_directory(&child_path);
 
                     if should_skip_entry(&child_path, child_is_dir) {
                         continue;
@@ -1298,7 +1302,7 @@ impl RengineEditorApp {
                 }
 
                 ui.horizontal(|ui| {
-                    if ui.button("Browse PNG...").clicked() {
+                    if ui.button("Browse Image...").clicked() {
                         browse_for_texture = true;
                     }
 
@@ -1477,7 +1481,7 @@ impl RengineEditorApp {
             ui.heading("Scene View");
             ui.label(
                 RichText::new(
-                    "Double-click to add an empty node. Right-click to add nodes, pick sprite PNGs, and preview Camera2D bounds.",
+                    "Double-click to add an empty node. Right-click to add nodes, pick sprite images, and preview Camera2D bounds.",
                 )
                 .color(Color32::from_gray(170)),
             );
@@ -1805,6 +1809,18 @@ fn apply_editor_theme(ctx: &Context) {
     style.spacing.item_spacing = Vec2::new(8.0, 8.0);
     style.spacing.button_padding = Vec2::new(10.0, 6.0);
     ctx.set_style(style);
+}
+
+fn is_project_tree_directory(path: &Path) -> bool {
+    fs::symlink_metadata(path)
+        .map(|metadata| !metadata.file_type().is_symlink() && metadata.is_dir())
+        .unwrap_or_else(|_| path.is_dir())
+}
+
+fn is_symlinked_directory(path: &Path) -> bool {
+    fs::symlink_metadata(path)
+        .map(|metadata| metadata.file_type().is_symlink() && path.is_dir())
+        .unwrap_or(false)
 }
 
 fn should_skip_entry(path: &Path, is_dir: bool) -> bool {

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
@@ -204,13 +204,30 @@ impl SceneDocument {
     }
 
     pub fn translate_subtree(&mut self, node_id: u64, delta: [f32; 2]) {
-        if let Some(node) = self.node_mut(node_id) {
-            node.position[0] += delta[0];
-            node.position[1] += delta[1];
+        let mut children_by_parent: HashMap<u64, Vec<u64>> = HashMap::new();
+        for node in &self.nodes {
+            if let Some(parent) = node.parent {
+                children_by_parent.entry(parent).or_default().push(node.id);
+            }
         }
 
-        for child_id in self.child_ids(node_id) {
-            self.translate_subtree(child_id, delta);
+        let mut subtree_ids = HashSet::new();
+        let mut stack = vec![node_id];
+        while let Some(current_id) = stack.pop() {
+            if !subtree_ids.insert(current_id) {
+                continue;
+            }
+
+            if let Some(child_ids) = children_by_parent.get(&current_id) {
+                stack.extend(child_ids.iter().copied());
+            }
+        }
+
+        for node in &mut self.nodes {
+            if subtree_ids.contains(&node.id) {
+                node.position[0] += delta[0];
+                node.position[1] += delta[1];
+            }
         }
     }
 
