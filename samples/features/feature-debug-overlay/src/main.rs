@@ -1,7 +1,7 @@
 use rengine::*;
 
-const AUTO_LOG_INTERVAL: f32 = 1.2;
-const MAX_DEBUG_LOGS: usize = 256;
+const AUTO_LOG_INTERVAL: f32 = 0.35;
+const MAX_DEBUG_LOGS: usize = 1024;
 
 const SAMPLE_EVENTS: [(DebugLogLevel, &str, &str); 5] = [
     (
@@ -78,6 +78,30 @@ fn truncate_text(text: &str, max_chars: usize) -> String {
     output
 }
 
+fn draw_card(canvas: &mut Canvas, x: f32, top: f32, w: f32, h: f32, title: &str) {
+    canvas.rect(x, top - h, w, h, Color::from_rgba8(20, 26, 38, 235));
+    canvas.text(x + 16.0, top - 18.0, title, 18.0, Color::WHITE);
+}
+
+fn wrapped_lines(engine: &Engine, text: &str, size: f32, width: f32) -> Vec<String> {
+    wrap_text(text, size, width, engine.font_atlas())
+}
+
+fn draw_wrapped_lines(
+    canvas: &mut Canvas,
+    x: f32,
+    top: f32,
+    lines: &[String],
+    size: f32,
+    color: Color,
+) -> f32 {
+    let line_height = canvas.line_height(size);
+    for (index, line) in lines.iter().enumerate() {
+        canvas.text(x, top - index as f32 * line_height, line, size, color);
+    }
+    line_height * lines.len().max(1) as f32
+}
+
 struct DebugOverlayDemo {
     quit: bool,
     elapsed: f32,
@@ -112,14 +136,16 @@ impl Game for DebugOverlayDemo {
             );
         }
 
+        engine.set_debug_overlay_visible(true);
+        engine.set_debug_console_open(false);
         engine.clear_debug_logs();
         engine.log_info(
             "sample::debug_overlay",
-            "Debug overlay sample booted. The overlay starts open so you can inspect the built-in surface immediately.",
+            "Debug overlay sample booted. The overlay starts open and the console starts closed so you can inspect the built-in surface immediately.",
         );
         engine.log_debug(
             "sample::console",
-            "Press F4 or ` to open the console and type `help`, `state`, `level warn`, or `target sample::assets`.",
+            "Press F4 or ` to open the console and type `help`, `state`, `level warn`, `capacity 8192`, or `target sample::assets`.",
         );
         engine.log_warn(
             "sample::filters",
@@ -224,7 +250,19 @@ impl Game for DebugOverlayDemo {
         let hh = sh as f32 / 2.0;
         frame.clear_color = Color::from_rgba8(12, 16, 24, 255);
         let canvas = frame.canvas(0);
-        let logs = engine.debug_logs(MAX_DEBUG_LOGS);
+        let log_capacity = engine.debug_log_capacity();
+        let log_count = engine.debug_log_count();
+        let logs = engine.debug_logs(MAX_DEBUG_LOGS.min(log_capacity));
+        let overlay_visible = engine.debug_overlay_visible();
+        let console_open = engine.debug_console_open();
+        let overlay_priority_layout = overlay_visible || console_open;
+        let content_left = -hw + 24.0;
+        let content_w = sw as f32 - 48.0;
+        let body_size = 12.0;
+        let small_size = 11.0;
+        let body_color = Color::from_rgba8(214, 222, 236, 255);
+        let muted_color = Color::from_rgba8(176, 188, 208, 255);
+        let hint_color = Color::from_rgba8(158, 170, 188, 255);
 
         canvas.rect(
             -hw,
@@ -234,104 +272,10 @@ impl Game for DebugOverlayDemo {
             Color::from_rgba8(12, 16, 24, 255),
         );
 
-        canvas.text(
-            -hw + 24.0,
-            hh - 28.0,
-            "Debug Overlay + Console",
-            30.0,
-            Color::WHITE,
-        );
-        canvas.text_block(
-            -hw + 24.0,
-            hh - 62.0,
-            "This sample starts the built-in debug surface open so you can inspect log capture, filters, console commands, and the engine-facing logging helpers without wiring anything yourself.",
-            13.0,
-            Color::from_rgba8(184, 194, 212, 255),
-            sw as f32 - 48.0,
-            TextAlign::Left,
-        );
-
-        let left_x = -hw + 24.0;
-        let left_w = 430.0;
-        let right_x = -hw + 478.0;
-        let right_w = sw as f32 - (right_x + hw) - 24.0;
-        let panel_top = hh - 130.0;
-        let panel_h = 214.0;
-
-        canvas.rect(
-            left_x,
-            panel_top - panel_h,
-            left_w,
-            panel_h,
-            Color::from_rgba8(20, 26, 38, 235),
-        );
-        canvas.rect(
-            right_x,
-            panel_top - panel_h,
-            right_w,
-            panel_h,
-            Color::from_rgba8(20, 26, 38, 235),
-        );
-
-        canvas.text(
-            left_x + 16.0,
-            panel_top - 18.0,
-            "Engine State",
-            18.0,
-            Color::WHITE,
-        );
-        canvas.text(
-            left_x + 16.0,
-            panel_top - 50.0,
-            &format!(
-                "overlay: {}   console: {}   hot reload: {}",
-                if engine.debug_overlay_visible() {
-                    "visible"
-                } else {
-                    "hidden"
-                },
-                if engine.debug_console_open() {
-                    "open"
-                } else {
-                    "closed"
-                },
-                if engine.hot_reload_enabled() {
-                    "on"
-                } else {
-                    "off"
-                },
-            ),
-            13.0,
-            Color::from_rgba8(214, 222, 236, 255),
-        );
-
         let mut counts = [0usize; 5];
         for entry in &logs {
             counts[level_index(entry.level)] += 1;
         }
-
-        canvas.text(
-            left_x + 16.0,
-            panel_top - 76.0,
-            &format!(
-                "captured logs: {}   auto emit: every {:.1}s   frame: {}",
-                logs.len(),
-                AUTO_LOG_INTERVAL,
-                self.frame,
-            ),
-            13.0,
-            Color::from_rgba8(160, 224, 255, 255),
-        );
-        canvas.text(
-            left_x + 16.0,
-            panel_top - 102.0,
-            &format!(
-                "trace {}   debug {}   info {}   warn {}   error {}",
-                counts[0], counts[1], counts[2], counts[3], counts[4]
-            ),
-            13.0,
-            Color::from_rgba8(194, 204, 222, 255),
-        );
 
         let latest_summary = logs.last().map_or_else(
             || "latest: buffer is empty".to_string(),
@@ -344,23 +288,7 @@ impl Game for DebugOverlayDemo {
                 )
             },
         );
-        canvas.text_block(
-            left_x + 16.0,
-            panel_top - 134.0,
-            &latest_summary,
-            12.0,
-            Color::from_rgba8(176, 188, 208, 255),
-            left_w - 32.0,
-            TextAlign::Left,
-        );
 
-        let clear_text = if self.clear_flash > 0.0 {
-            "buffer cleared from sample input"
-        } else if self.burst_flash > 0.0 {
-            "manual burst emitted across all five levels"
-        } else {
-            "F5 or the console `clear` command also empties the buffer"
-        };
         let clear_color = if self.clear_flash > 0.0 {
             Color::from_rgba8(255, 214, 120, 255)
         } else if self.burst_flash > 0.0 {
@@ -368,59 +296,171 @@ impl Game for DebugOverlayDemo {
         } else {
             Color::from_rgba8(148, 160, 180, 255)
         };
-        canvas.text_block(
-            left_x + 16.0,
-            panel_top - 182.0,
-            clear_text,
-            12.0,
-            clear_color,
-            left_w - 32.0,
-            TextAlign::Left,
-        );
 
-        canvas.text(
-            right_x + 16.0,
-            panel_top - 18.0,
-            "Controls",
-            18.0,
-            Color::WHITE,
-        );
-        canvas.text_block(
-            right_x + 16.0,
-            panel_top - 50.0,
-            "F3 overlay   F4 or ` console\nF5 clear   F6 follow   F7 severity   F8 target filter\nQ trace   W debug   E info   R warn   T error\nSpace emits a five-line burst   C clears logs   Esc quits",
-            13.0,
-            Color::from_rgba8(214, 222, 236, 255),
-            right_w - 32.0,
-            TextAlign::Left,
-        );
-        canvas.text_block(
-            right_x + 16.0,
-            panel_top - 156.0,
-            "Console prompts are IME-aware, target filtering is case-insensitive, and scrolling only captures the wheel when the pointer is actually over the overlay or console.",
-            12.0,
-            Color::from_rgba8(158, 170, 188, 255),
-            right_w - 32.0,
-            TextAlign::Left,
-        );
+        if !overlay_priority_layout {
+            let hero_top = hh - 28.0;
+            let hero_lines = wrapped_lines(
+                engine,
+                "The overlay starts open and the console starts closed. Hide the overlay with F3 or open the console with F4 to compare the engine UI against the quieter sample backdrop.",
+                13.0,
+                content_w,
+            );
+            canvas.text(
+                content_left,
+                hero_top,
+                "Debug Overlay + Console",
+                30.0,
+                Color::WHITE,
+            );
+            draw_wrapped_lines(
+                canvas,
+                content_left,
+                hero_top - 34.0,
+                &hero_lines,
+                13.0,
+                Color::from_rgba8(184, 194, 212, 255),
+            );
 
-        let bottom_x = -hw + 24.0;
-        let bottom_w = sw as f32 - 48.0;
-        let bottom_h = 240.0;
-        let bottom_top = -20.0;
-        canvas.rect(
+            let card_gap = 20.0;
+            let card_w = (content_w - card_gap) * 0.5;
+            let card_top = 132.0;
+            let card_h = 176.0;
+            let left_x = content_left;
+            let right_x = left_x + card_w + card_gap;
+            let latest_lines = wrapped_lines(engine, &latest_summary, small_size, card_w - 32.0);
+            let state_line_1 = wrapped_lines(
+                engine,
+                &format!(
+                    "overlay {}   console {}   hot reload {}",
+                    if overlay_visible { "visible" } else { "hidden" },
+                    if console_open { "open" } else { "closed" },
+                    if engine.hot_reload_enabled() {
+                        "on"
+                    } else {
+                        "off"
+                    },
+                ),
+                body_size,
+                card_w - 32.0,
+            );
+            let state_line_2 = wrapped_lines(
+                engine,
+                &format!(
+                    "captured logs {} / {}   auto emit {:.2}s   frame {}",
+                    log_count, log_capacity, AUTO_LOG_INTERVAL, self.frame,
+                ),
+                body_size,
+                card_w - 32.0,
+            );
+            let state_line_3 = wrapped_lines(
+                engine,
+                &format!(
+                    "recent trace {}   debug {}   info {}   warn {}   error {}",
+                    counts[0], counts[1], counts[2], counts[3], counts[4]
+                ),
+                small_size,
+                card_w - 32.0,
+            );
+            let use_case_lines = wrapped_lines(
+                engine,
+                "Combat: filter a `combat` target and watch cooldowns, damage spikes, and boss phase changes live.\nQuest + dialogue: verify triggers fire in the right order without alt-tabbing.\nNetcode + save/load: isolate rollback, persistence, or desync spam to one subsystem target.\nHot reload: leave the overlay open while assets and data are changing under the running build.",
+                small_size,
+                card_w - 32.0,
+            );
+
+            draw_card(canvas, left_x, card_top, card_w, card_h, "Current State");
+            let mut current_y = card_top - 44.0;
+            current_y -= draw_wrapped_lines(
+                canvas,
+                left_x + 16.0,
+                current_y,
+                &state_line_1,
+                body_size,
+                body_color,
+            );
+            current_y -= 8.0;
+            current_y -= draw_wrapped_lines(
+                canvas,
+                left_x + 16.0,
+                current_y,
+                &state_line_2,
+                body_size,
+                Color::from_rgba8(160, 224, 255, 255),
+            );
+            current_y -= 8.0;
+            current_y -= draw_wrapped_lines(
+                canvas,
+                left_x + 16.0,
+                current_y,
+                &state_line_3,
+                small_size,
+                Color::from_rgba8(194, 204, 222, 255),
+            );
+            current_y -= 10.0;
+            draw_wrapped_lines(
+                canvas,
+                left_x + 16.0,
+                current_y,
+                &latest_lines,
+                small_size,
+                muted_color,
+            );
+
+            draw_card(
+                canvas,
+                right_x,
+                card_top,
+                card_w,
+                card_h,
+                "Useful In A Real Game",
+            );
+            draw_wrapped_lines(
+                canvas,
+                right_x + 16.0,
+                card_top - 42.0,
+                &use_case_lines,
+                small_size,
+                body_color,
+            );
+        }
+
+        let bottom_x = content_left;
+        let bottom_w = content_w;
+        let bottom_h = if overlay_priority_layout {
+            248.0
+        } else {
+            224.0
+        };
+        let bottom_top = if overlay_priority_layout {
+            -56.0
+        } else {
+            -82.0
+        };
+        draw_card(
+            canvas,
             bottom_x,
-            bottom_top - bottom_h,
+            bottom_top,
             bottom_w,
             bottom_h,
-            Color::from_rgba8(20, 26, 38, 235),
-        );
-        canvas.text(
-            bottom_x + 16.0,
-            bottom_top - 18.0,
             "Live Activity + Recent Mirror",
-            18.0,
-            Color::WHITE,
+        );
+        let overlay_note_lines = wrapped_lines(
+            engine,
+            if overlay_priority_layout {
+                "Keep this UI open while you play the actual game build: watch combat, quest, save/load, or netcode targets update live, then use the engine overlay to narrow the view without leaving the running scene."
+            } else {
+                "When you bring the overlay back with F3, it acts like an in-game diagnosis surface rather than a second app window. Use F6 for live follow, F7 for severity, and F8 to lock onto a subsystem target."
+            },
+            small_size,
+            bottom_w - 32.0,
+        );
+        draw_wrapped_lines(
+            canvas,
+            bottom_x + 16.0,
+            bottom_top - 40.0,
+            &overlay_note_lines,
+            small_size,
+            hint_color,
         );
 
         let activity_rows = [
@@ -430,10 +470,13 @@ impl Game for DebugOverlayDemo {
             (DebugLogLevel::Warn, "R / warn"),
             (DebugLogLevel::Error, "T / error"),
         ];
+        let meter_x = bottom_x + 116.0;
+        let meter_w = 220.0;
+        let activity_top = bottom_top - 92.0;
 
         for (row_index, (level, label)) in activity_rows.iter().enumerate() {
-            let row_y = bottom_top - 54.0 - row_index as f32 * 28.0;
-            let meter_fill = 220.0 * self.activity[level_index(*level)].clamp(0.0, 1.0);
+            let row_y = activity_top - row_index as f32 * 28.0;
+            let meter_fill = meter_w * self.activity[level_index(*level)].clamp(0.0, 1.0);
             let active_color = if self.activity[level_index(*level)] > 0.05 {
                 level.color()
             } else {
@@ -448,14 +491,14 @@ impl Game for DebugOverlayDemo {
                 Color::from_rgba8(210, 218, 232, 255),
             );
             canvas.rect(
-                bottom_x + 116.0,
+                meter_x,
                 row_y - 14.0,
-                220.0,
+                meter_w,
                 16.0,
                 Color::from_rgba8(34, 40, 52, 255),
             );
             canvas.rect(
-                bottom_x + 116.0,
+                meter_x,
                 row_y - 14.0,
                 meter_fill.max(6.0),
                 16.0,
@@ -463,28 +506,58 @@ impl Game for DebugOverlayDemo {
             );
         }
 
-        let recent_x = bottom_x + 374.0;
+        let recent_x = meter_x + meter_w + 56.0;
+        let recent_w = bottom_x + bottom_w - recent_x - 16.0;
         canvas.text(
             recent_x,
-            bottom_top - 42.0,
+            activity_top + 12.0,
             "Recent mirror (via engine.debug_logs)",
             13.0,
             Color::from_rgba8(160, 224, 255, 255),
         );
-        for (line_index, entry) in logs.iter().rev().take(5).enumerate() {
-            let line_y = bottom_top - 72.0 - line_index as f32 * 28.0;
-            canvas.text(
-                recent_x,
-                line_y,
+        let recent_line_height = canvas.line_height(small_size);
+        let mut recent_y = activity_top - 14.0;
+        for entry in logs.iter().rev().take(4) {
+            let wrapped = wrapped_lines(
+                engine,
                 &format!(
-                    "[{:<5}] {}",
+                    "[{}] {} — {}",
                     entry.level.label(),
-                    truncate_text(&format!("{} — {}", entry.target, entry.message), 64)
+                    entry.target,
+                    entry.message
                 ),
-                12.0,
-                entry.level.color(),
+                small_size,
+                recent_w,
             );
+            for line in wrapped.iter().take(2) {
+                canvas.text(recent_x, recent_y, line, small_size, entry.level.color());
+                recent_y -= recent_line_height;
+            }
+            recent_y -= 8.0;
         }
+
+        let footer_h = 72.0;
+        let footer_top = -hh + footer_h;
+        canvas.rect(
+            -hw,
+            -hh,
+            sw as f32,
+            footer_h,
+            Color::from_rgba8(14, 18, 28, 255),
+        );
+        canvas.text_block(
+            content_left,
+            footer_top - 16.0,
+            if overlay_priority_layout {
+                "Console stays closed at startup so the overlay can do the first pass. Open it with F4 when you want command entry, and keep follow live enabled when you want the newest gameplay logs pinned in view."
+            } else {
+                "Controls: F3 overlay, F4 console, F6 follow, F7 severity, F8 target filter, Q/W/E/R/T emit logs, Space bursts, C clears, Esc quits."
+            },
+            11.0,
+            clear_color,
+            content_w,
+            TextAlign::Left,
+        );
     }
 
     fn should_exit(&self) -> bool {
@@ -497,12 +570,13 @@ fn main() {
 
     let config = EngineConfig {
         title: "Feature: Debug Overlay + Console".into(),
-        width: 1020,
-        height: 720,
+        width: 1360,
+        height: 900,
         headless,
         hot_reload: !headless,
         show_fps: false,
         show_debug_overlay: true,
+        debug_log_capacity: 16384,
         ..Default::default()
     };
 

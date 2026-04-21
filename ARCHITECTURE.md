@@ -220,12 +220,13 @@ pub struct EngineConfig {
     pub hot_reload: bool,   // File-watching for assets at runtime
     pub show_fps: bool,     // Render FPS counter overlay on canvas
     pub show_debug_overlay: bool, // Start with the built-in debug overlay visible
+    pub debug_log_capacity: usize, // Ring-buffer capacity for debug overlay logs
     pub fixed_dt: f32,      // Fixed-timestep interval (default 1/60)
     pub gamepad_assign: GamepadAssignMode, // OnButtonPress (default) or OnConnect
 }
 ```
 
-Default: 800×600, no vsync, not headless, hot reload on, FPS shown, debug overlay hidden, fixed_dt 1/60, gamepad assign on button press.
+Default: 800×600, no vsync, not headless, hot reload on, FPS shown, debug overlay hidden, debug log capacity 4096, fixed_dt 1/60, gamepad assign on button press.
 
 The `headless` flag is critical for testing:
 
