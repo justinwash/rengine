@@ -44,7 +44,8 @@ fn route_debug_text_and_key_event(
     event: &KeyEvent,
 ) -> bool {
     let consumed_text = if event.state == winit::event::ElementState::Pressed {
-        event.text
+        event
+            .text
             .as_deref()
             .is_some_and(|text| debug_ui.handle_committed_text(text))
     } else {
@@ -256,7 +257,11 @@ fn log_console_line(level: DebugLogLevel, message: impl AsRef<str>) {
     debug::log_message(level, console_target(), message.as_ref());
 }
 
-fn execute_debug_command(debug_ui: &mut DebugUiState, hot_reload_enabled: &mut bool, command_text: &str) {
+fn execute_debug_command(
+    debug_ui: &mut DebugUiState,
+    hot_reload_enabled: &mut bool,
+    command_text: &str,
+) {
     match debug::parse_command(command_text) {
         Ok(DebugCommand::Help) => {
             log_console_line(DebugLogLevel::Debug, format!("> {command_text}"));
@@ -292,7 +297,14 @@ fn execute_debug_command(debug_ui: &mut DebugUiState, hot_reload_enabled: &mut b
             debug_ui.set_overlay_visible(toggle.apply(debug_ui.overlay_visible()));
             log_console_line(
                 DebugLogLevel::Info,
-                format!("overlay {}", if debug_ui.overlay_visible() { "on" } else { "off" }),
+                format!(
+                    "overlay {}",
+                    if debug_ui.overlay_visible() {
+                        "on"
+                    } else {
+                        "off"
+                    }
+                ),
             );
         }
         Ok(DebugCommand::Console(toggle)) => {
@@ -300,7 +312,10 @@ fn execute_debug_command(debug_ui: &mut DebugUiState, hot_reload_enabled: &mut b
             debug_ui.set_console_open(toggle.apply(debug_ui.console_open()));
             log_console_line(
                 DebugLogLevel::Info,
-                format!("console {}", if debug_ui.console_open() { "on" } else { "off" }),
+                format!(
+                    "console {}",
+                    if debug_ui.console_open() { "on" } else { "off" }
+                ),
             );
         }
         Ok(DebugCommand::Follow(toggle)) => {
@@ -310,14 +325,21 @@ fn execute_debug_command(debug_ui: &mut DebugUiState, hot_reload_enabled: &mut b
                 DebugLogLevel::Info,
                 format!(
                     "log follow {}",
-                    if debug_ui.follow_logs() { "live" } else { "paused" }
+                    if debug_ui.follow_logs() {
+                        "live"
+                    } else {
+                        "paused"
+                    }
                 ),
             );
         }
         Ok(DebugCommand::Level(filter)) => {
             log_console_line(DebugLogLevel::Debug, format!("> {command_text}"));
             debug_ui.set_severity_filter(filter);
-            log_console_line(DebugLogLevel::Info, format!("severity filter {}", filter.label()));
+            log_console_line(
+                DebugLogLevel::Info,
+                format!("severity filter {}", filter.label()),
+            );
         }
         Ok(DebugCommand::Target(target)) => {
             log_console_line(DebugLogLevel::Debug, format!("> {command_text}"));
@@ -340,7 +362,10 @@ fn execute_debug_command(debug_ui: &mut DebugUiState, hot_reload_enabled: &mut b
             *hot_reload_enabled = toggle.apply(*hot_reload_enabled);
             log_console_line(
                 DebugLogLevel::Info,
-                format!("hot reload {}", if *hot_reload_enabled { "on" } else { "off" }),
+                format!(
+                    "hot reload {}",
+                    if *hot_reload_enabled { "on" } else { "off" }
+                ),
             );
         }
         Ok(DebugCommand::Echo(level, message)) => {
@@ -356,14 +381,22 @@ fn execute_debug_command(debug_ui: &mut DebugUiState, hot_reload_enabled: &mut b
 fn drain_debug_commands_2d(engine: &mut Engine) {
     let commands = engine.debug_ui.drain_pending_commands();
     for command in commands {
-        execute_debug_command(&mut engine.debug_ui, &mut engine.hot_reload_enabled, &command);
+        execute_debug_command(
+            &mut engine.debug_ui,
+            &mut engine.hot_reload_enabled,
+            &command,
+        );
     }
 }
 
 fn drain_debug_commands_3d(engine: &mut Engine3D) {
     let commands = engine.debug_ui.drain_pending_commands();
     for command in commands {
-        execute_debug_command(&mut engine.debug_ui, &mut engine.hot_reload_enabled, &command);
+        execute_debug_command(
+            &mut engine.debug_ui,
+            &mut engine.hot_reload_enabled,
+            &command,
+        );
     }
 }
 
