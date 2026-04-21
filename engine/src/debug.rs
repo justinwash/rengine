@@ -456,12 +456,7 @@ impl DebugUiState {
         true
     }
 
-    pub fn handle_scroll(
-        &mut self,
-        screen_size: (u32, u32),
-        pointer: (f32, f32),
-        dy: f32,
-    ) -> bool {
+    pub fn handle_scroll(&mut self, screen_size: (u32, u32), pointer: (f32, f32), dy: f32) -> bool {
         if !self.overlay_visible || dy.abs() < f32::EPSILON {
             return false;
         }
@@ -1074,9 +1069,9 @@ pub fn parse_command(text: &str) -> Result<DebugCommand, String> {
                 Ok(DebugCommand::Target(Some(value.to_string())))
             }
         }
-        "hot_reload" | "hotreload" => {
-            Ok(DebugCommand::HotReload(DebugToggle::parse(non_empty(rest))?))
-        }
+        "hot_reload" | "hotreload" => Ok(DebugCommand::HotReload(DebugToggle::parse(non_empty(
+            rest,
+        ))?)),
         "echo" => parse_echo_command(rest, DebugLogLevel::Info),
         "debug" => parse_echo_command(rest, DebugLogLevel::Debug),
         "info" => parse_echo_command(rest, DebugLogLevel::Info),
@@ -1150,7 +1145,13 @@ pub fn draw_overlay(
         let hovered = mouse_position.is_some_and(|pointer| button.rect.contains(pointer));
         let fill = overlay_button_fill(button, hovered);
         let text_color = overlay_button_text_color(button, hovered);
-        canvas.rect(button.rect.x, button.rect.y, button.rect.w, button.rect.h, fill);
+        canvas.rect(
+            button.rect.x,
+            button.rect.y,
+            button.rect.w,
+            button.rect.h,
+            fill,
+        );
         canvas.text(
             button.rect.x + OVERLAY_BUTTON_PADDING_X,
             button.rect.y + OVERLAY_BUTTON_HEIGHT - 5.0,
@@ -1326,7 +1327,9 @@ fn build_overlay_buttons(
 
         let rect = DebugRect {
             x: cursor_x,
-            y: top - OVERLAY_BUTTON_HEIGHT - row as f32 * (OVERLAY_BUTTON_HEIGHT + OVERLAY_BUTTON_GAP),
+            y: top
+                - OVERLAY_BUTTON_HEIGHT
+                - row as f32 * (OVERLAY_BUTTON_HEIGHT + OVERLAY_BUTTON_GAP),
             w: width,
             h: OVERLAY_BUTTON_HEIGHT,
         };
@@ -1356,12 +1359,26 @@ fn overlay_button_specs(state: &DebugUiState) -> Vec<(OverlayButtonAction, Strin
         (OverlayButtonAction::Clear, "clear logs".to_string(), false),
         (
             OverlayButtonAction::ToggleConsole,
-            format!("console: {}", if state.console_open() { "open" } else { "closed" }),
+            format!(
+                "console: {}",
+                if state.console_open() {
+                    "open"
+                } else {
+                    "closed"
+                }
+            ),
             state.console_open(),
         ),
         (
             OverlayButtonAction::ToggleFollow,
-            format!("follow: {}", if state.follow_logs() { "live" } else { "paused" }),
+            format!(
+                "follow: {}",
+                if state.follow_logs() {
+                    "live"
+                } else {
+                    "paused"
+                }
+            ),
             state.follow_logs(),
         ),
         (
@@ -1372,7 +1389,8 @@ fn overlay_button_specs(state: &DebugUiState) -> Vec<(OverlayButtonAction, Strin
         (
             OverlayButtonAction::EditTargetFilter,
             target_label,
-            state.input_mode == DebugTextInputMode::TargetFilter || !state.target_filter().is_empty(),
+            state.input_mode == DebugTextInputMode::TargetFilter
+                || !state.target_filter().is_empty(),
         ),
     ]
 }
@@ -1474,13 +1492,20 @@ fn overlay_stats(
         } else {
             state.target_filter()
         },
-        if state.follow_logs() { "live" } else { "paused" },
+        if state.follow_logs() {
+            "live"
+        } else {
+            "paused"
+        },
         state.scroll_offset(),
         filtered_count,
     ));
 
     if let Some(gamepads) = info.gamepads_connected {
-        lines.push(format!("gamepads connected {} | F3 toggles overlay", gamepads));
+        lines.push(format!(
+            "gamepads connected {} | F3 toggles overlay",
+            gamepads
+        ));
     } else if let Some(mouse_captured) = info.mouse_captured {
         lines.push(format!(
             "mouse captured {} | F3 toggles overlay",
@@ -1607,7 +1632,10 @@ mod tests {
             parse_command("target renderer").unwrap(),
             DebugCommand::Target(Some("renderer".into()))
         );
-        assert_eq!(parse_command("target clear").unwrap(), DebugCommand::Target(None));
+        assert_eq!(
+            parse_command("target clear").unwrap(),
+            DebugCommand::Target(None)
+        );
     }
 
     #[test]

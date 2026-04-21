@@ -2492,6 +2492,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rengine-feature-debug-overlay"
+version = "0.1.0"
+dependencies = [
+ "rengine",
+]
+
+[[package]]
 name = "rengine-feature-fonts"
 version = "0.1.0"
 dependencies = [

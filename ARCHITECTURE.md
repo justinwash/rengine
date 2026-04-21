@@ -258,6 +258,7 @@ The engine now has a built-in debug surface shared by the 2D and 3D entry points
 - Keyboard, IME, mouse, and wheel events route through `DebugUiState` before game input, so the overlay can safely consume text entry, scrolling, and mouse clicks without leaking into gameplay input.
 - The console supports commands for overlay visibility, severity and target filtering, log follow mode, hot-reload toggling, and ad-hoc log emission.
 - `Engine` and `Engine3D` now expose helpers like `debug_overlay_visible()`, `set_debug_overlay_visible()`, `toggle_debug_console()`, `debug_logs()`, and the `log_trace` / `log_debug` / `log_info` / `log_warn` / `log_error` convenience methods.
+- `samples/features/feature-debug-overlay/` is the reference demo for the overlay and console surface, and `samples/games/game-everything/` exposes `--debug-overlay` to start the kitchen-sink sample with the surface open.
 
 All fields are `pub(crate)` — the game only interacts through accessor methods:
 
