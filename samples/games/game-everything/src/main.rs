@@ -26,6 +26,7 @@ fn arg_value(name: &str) -> Option<String> {
 fn main() {
     let headless = has_flag("--headless");
     let demo = has_flag("--demo");
+    let show_debug_overlay = has_flag("--debug-overlay");
     let max_frames: u32 = arg_value("--frames")
         .and_then(|f| f.parse().ok())
         .unwrap_or(600);
@@ -46,6 +47,7 @@ fn main() {
             headless,
             hot_reload: !headless,
             show_fps: false,
+            show_debug_overlay,
             fixed_dt: 1.0 / 60.0,
             render_width: Some(480),
             render_height: Some(360),
@@ -98,9 +100,23 @@ fn main() {
             println!("[FEATURE OK] Binding::Key + Binding::GamepadButton");
             println!("[FEATURE OK] AxisMapping — move_x with keyboard + GamepadAxis::LeftStickX");
             println!(
+                "[FEATURE OK] Debug overlay + console — pass --debug-overlay to start it open"
+            );
+            println!(
                 "[FEATURE OK] EngineConfig — title, width, height, vsync, headless, \
                  hot_reload, show_fps, fixed_dt"
             );
+
+            engine.log_info(
+                "kitchen_sink::debug",
+                "Kitchen sink debug overlay support is live. Press F3 for the overlay and F4 or ` for the console.",
+            );
+            if show_debug_overlay {
+                engine.log_debug(
+                    "kitchen_sink::debug",
+                    "Debug overlay started open via --debug-overlay.",
+                );
+            }
 
             globals.set(TransitionCounter(0));
             globals.set(PlayerStats {
