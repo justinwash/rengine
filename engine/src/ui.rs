@@ -1514,6 +1514,7 @@ mod tests {
     fn drop_for_reports_matching_source() {
         let response = UiResponse {
             focused: None,
+            focused_id: None,
             activated: None,
             hovered: None,
             toggled: Vec::new(),
@@ -1532,6 +1533,7 @@ mod tests {
 
 pub struct UiResponse {
     pub focused: Option<usize>,
+    pub focused_id: Option<usize>,
     pub activated: Option<usize>,
     pub hovered: Option<usize>,
     pub toggled: Vec<usize>,
@@ -2654,6 +2656,7 @@ impl Ui {
             self.active_drag = None;
             let response = UiResponse {
                 focused: None,
+                focused_id: None,
                 activated: None,
                 hovered: None,
                 toggled,
@@ -2959,7 +2962,8 @@ impl Ui {
         }
 
         let response = UiResponse {
-            focused: Some(focused_id),
+            focused: Some(self.focus_index),
+            focused_id: Some(focused_id),
             activated: self.activated,
             hovered,
             toggled,
@@ -3204,12 +3208,6 @@ impl Ui {
                     } else {
                         format!("  {}", text)
                     };
-                    let fitted_label = fit_text_to_width(
-                        atlas,
-                        &label,
-                        text_size,
-                        (current_width - pad * 2.0).max(0.0),
-                    );
 
                     if let Some(animation_options) = animation {
                         let render_animation = resolve_widget_animation(
@@ -3230,6 +3228,14 @@ impl Ui {
                         if has_tooltip {
                             tooltip_rect = Some(render_rect);
                         }
+                        let animated_text_size = animated_size(text_size, render_animation);
+                        let scaled_pad = pad * render_animation.scale.max(0.0);
+                        let fitted_label = fit_text_to_width(
+                            atlas,
+                            &label,
+                            animated_text_size,
+                            (render_rect.w - scaled_pad * 2.0).max(0.0),
+                        );
                         let label_pos = animated_point(
                             Vec2::new(base_x + pad, cursor_y),
                             button_rect,
@@ -3242,7 +3248,6 @@ impl Ui {
                             render_rect.h,
                             scale_alpha(bg, render_animation.alpha),
                         );
-                        let scaled_pad = pad * render_animation.scale.max(0.0);
                         canvas.push_clip(
                             render_rect.x + scaled_pad,
                             render_rect.y,
@@ -3253,7 +3258,7 @@ impl Ui {
                             label_pos.x,
                             label_pos.y,
                             &fitted_label,
-                            animated_size(text_size, render_animation),
+                            animated_text_size,
                             scale_alpha(fg, render_animation.alpha),
                         );
                         canvas.pop_clip();
@@ -3261,6 +3266,12 @@ impl Ui {
                         if has_tooltip {
                             tooltip_rect = Some(button_rect);
                         }
+                        let fitted_label = fit_text_to_width(
+                            atlas,
+                            &label,
+                            text_size,
+                            (current_width - pad * 2.0).max(0.0),
+                        );
                         canvas.rect(base_x, btn_y, current_width, btn_h, bg);
                         canvas.push_clip(
                             base_x + pad,

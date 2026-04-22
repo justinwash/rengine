@@ -509,9 +509,10 @@ impl RengineNativeEditor {
                 }
             }
             BottomTab::SceneJson => {
-                let scene_json = self.active_scene_tab_mut().cached_scene_json().to_owned();
+                let bottom_scroll = self.bottom_scroll;
+                let scene_json = self.scene_json_preview_text();
                 for (index, line) in scene_json.lines().enumerate() {
-                    let line_rect = list_line_rect(content_rect, index, self.bottom_scroll);
+                    let line_rect = list_line_rect(content_rect, index, bottom_scroll);
                     if line_rect.y > content_rect.top() || line_rect.top() < content_rect.y {
                         continue;
                     }
@@ -530,7 +531,7 @@ impl RengineNativeEditor {
         canvas.pop_clip();
         let line_count = match self.bottom_tab {
             BottomTab::Activity => self.activity_log.len(),
-            BottomTab::SceneJson => self.active_scene_tab_mut().cached_scene_json().lines().count(),
+            BottomTab::SceneJson => self.scene_json_preview_line_count(),
         };
         draw_scrollbar(canvas, content_rect, line_count, self.bottom_scroll);
     }

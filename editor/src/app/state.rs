@@ -160,6 +160,23 @@ impl RengineNativeEditor {
         &mut self.scene_tabs[self.active_scene_tab]
     }
 
+    pub(crate) fn scene_json_preview_text(&mut self) -> &str {
+        let defer_refresh = self
+            .active_scene_tab()
+            .scene_json_dirty
+            && self.active_scene_tab().viewport_drag.is_some();
+        let tab = self.active_scene_tab_mut();
+        if defer_refresh {
+            &tab.scene_json_cache
+        } else {
+            tab.cached_scene_json()
+        }
+    }
+
+    pub(crate) fn scene_json_preview_line_count(&mut self) -> usize {
+        self.scene_json_preview_text().lines().count()
+    }
+
     pub(crate) fn push_log(&mut self, message: impl Into<String>) {
         self.activity_log.push(message.into());
         if self.activity_log.len() > MAX_ACTIVITY_LOG_LINES {
