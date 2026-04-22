@@ -108,10 +108,10 @@ impl RengineNativeEditor {
             &mut file_browser_form,
             Self::build_file_browser_ui,
             |response, state| {
-                self.file_browser_ui_focused = response.focused.is_some();
+                self.file_browser_ui_focused = response.focused_id.is_some();
                 self.capture_text_input_owner(
                     TextInputOwner::FileBrowser,
-                    response.focused,
+                    response.focused_id,
                     response.hovered,
                     mouse_pressed,
                 );
@@ -172,10 +172,10 @@ impl RengineNativeEditor {
             |response, state| {
                 let request_kind_menu = response.was_activated(INSPECTOR_NODE_KIND_BUTTON_ID);
                 let request_child_menu = response.was_activated(INSPECTOR_CREATE_CHILD_BUTTON_ID);
-                self.inspector_ui_focused = response.focused.is_some();
+                self.inspector_ui_focused = response.focused_id.is_some();
                 self.capture_text_input_owner(
                     TextInputOwner::Inspector,
-                    response.focused,
+                    response.focused_id,
                     response.hovered,
                     mouse_pressed,
                 );

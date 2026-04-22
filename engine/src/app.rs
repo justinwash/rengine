@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -37,6 +38,9 @@ fn handle_text_event(input: &mut InputState, event: &KeyEvent) {
 fn handle_ime_event(input: &mut InputState, event: Ime) {
     input.handle_ime_event(event);
 }
+
+const REQUESTED_TEXTURE_RETRY_COOLDOWN_SECS: f32 = 1.0;
+const REQUESTED_TEXTURE_LOG_TARGET: &str = "rengine::texture-request";
 
 fn route_debug_text_and_key_event(
     input: &mut InputState,
@@ -518,6 +522,7 @@ pub struct Engine {
     pub(crate) rng: RefCell<Rng>,
     pub(crate) postfx_chain: PostFxChain,
     pending_texture_requests: RefCell<Vec<PathBuf>>,
+    failed_texture_requests: RefCell<HashMap<PathBuf, f32>>,
 }
 
 impl Engine {
@@ -637,8 +642,19 @@ impl Engine {
     }
 
     pub fn request_texture<P: AsRef<Path>>(&self, path: P) {
-        let resolved = self.assets.resolve_path(path.as_ref());
-        if self.assets.loaded_texture(&resolved).is_some() {
+        let path = path.as_ref();
+        if self.assets.loaded_texture(path).is_some() {
+            return;
+        }
+
+        let resolved = self.assets.resolve_path(path);
+        let now = self.time.total_time();
+        if self
+            .failed_texture_requests
+            .borrow()
+            .get(&resolved)
+            .is_some_and(|retry_at| *retry_at > now)
+        {
             return;
         }
 
@@ -658,8 +674,33 @@ impl Engine {
 
     fn process_requested_textures(&mut self) {
         let pending = std::mem::take(&mut *self.pending_texture_requests.borrow_mut());
+        let now = self.time.total_time();
         for path in pending {
-            let _ = self.load_texture(path);
+            match self.load_texture(&path) {
+                Ok(_) => {
+                    self.failed_texture_requests.borrow_mut().remove(&path);
+                }
+                Err(error) => {
+                    let mut failed = self.failed_texture_requests.borrow_mut();
+                    let should_log = match failed.get(&path) {
+                        Some(retry_at) => *retry_at <= now,
+                        None => true,
+                    };
+                    failed.insert(path.clone(), now + REQUESTED_TEXTURE_RETRY_COOLDOWN_SECS);
+                    drop(failed);
+
+                    if should_log {
+                        self.log_warn(
+                            REQUESTED_TEXTURE_LOG_TARGET,
+                            format!(
+                                "Failed to load requested texture {}: {}",
+                                path.display(),
+                                error
+                            ),
+                        );
+                    }
+                }
+            }
         }
     }
 
@@ -1178,6 +1219,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
         rng: RefCell::new(Rng::from_time()),
         postfx_chain: PostFxChain::new(),
         pending_texture_requests: RefCell::new(Vec::new()),
+        failed_texture_requests: RefCell::new(HashMap::new()),
     };
     engine.time.set_fixed_dt(fixed_dt);
     if let Some((rw, rh)) = render_res {
@@ -1364,6 +1406,7 @@ where
         rng: RefCell::new(Rng::from_time()),
         postfx_chain: PostFxChain::new(),
         pending_texture_requests: RefCell::new(Vec::new()),
+        failed_texture_requests: RefCell::new(HashMap::new()),
     };
     engine.time.set_fixed_dt(fixed_dt);
     if let Some((rw, rh)) = render_res {

@@ -561,9 +561,13 @@ impl RengineNativeEditor {
             0.0
         };
 
-        let bottom_line_count = match self.bottom_tab {
-            BottomTab::Activity => self.activity_log.len(),
-            BottomTab::SceneJson => self.active_scene_tab_mut().cached_scene_json().lines().count(),
+        let bottom_line_count = if layout.bottom_open {
+            match self.bottom_tab {
+                BottomTab::Activity => self.activity_log.len(),
+                BottomTab::SceneJson => self.scene_json_preview_line_count(),
+            }
+        } else {
+            0
         };
         let bottom_max = if layout.bottom_open {
             scroll_max_for_lines(bottom_line_count, layout.bottom_content)
