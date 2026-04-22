@@ -1,5 +1,74 @@
 {
   "name": "untitled_scene",
-  "nodes": [],
-  "next_id": 1
+  "view": {
+    "window_size": [
+      960.0,
+      720.0
+    ]
+  },
+  "nodes": [
+    {
+      "id": 1,
+      "parent": null,
+      "name": "Empty 1",
+      "kind": "Empty",
+      "position": [
+        -33.0,
+        130.0
+      ],
+      "size": [
+        88.0,
+        56.0
+      ],
+      "visible": true,
+      "script_path": "",
+      "runtime_prefab": "",
+      "asset_alias": "",
+      "sprite": {
+        "texture_path": ""
+      },
+      "camera2d": {
+        "zoom": 1.0,
+        "show_bounds": true,
+        "use_scene_view_size": true,
+        "view_size": [
+          960.0,
+          720.0
+        ]
+      },
+      "properties": {}
+    },
+    {
+      "id": 2,
+      "parent": 1,
+      "name": "Sprite 2",
+      "kind": "Sprite",
+      "position": [
+        56.0,
+        48.0
+      ],
+      "size": [
+        112.0,
+        72.0
+      ],
+      "visible": true,
+      "script_path": "",
+      "runtime_prefab": "",
+      "asset_alias": "",
+      "sprite": {
+        "texture_path": ""
+      },
+      "camera2d": {
+        "zoom": 1.0,
+        "show_bounds": true,
+        "use_scene_view_size": true,
+        "view_size": [
+          960.0,
+          720.0
+        ]
+      },
+      "properties": {}
+    }
+  ],
+  "next_id": 3
 }
