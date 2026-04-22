@@ -1,21 +1,15 @@
 mod app;
 mod scene;
 
-use app::RengineEditorApp;
-use eframe::egui;
+use app::RengineNativeEditor;
+use rengine::{run, EngineConfig};
 
-fn main() -> eframe::Result<()> {
-    let native_options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1440.0, 900.0])
-            .with_min_inner_size([960.0, 640.0])
-            .with_title("Rengine Editor"),
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    run::<RengineNativeEditor>(EngineConfig {
+        title: "Rengine Editor".into(),
+        width: 1440,
+        height: 900,
+        show_fps: false,
         ..Default::default()
-    };
-
-    eframe::run_native(
-        "Rengine Editor",
-        native_options,
-        Box::new(|cc| Ok(Box::new(RengineEditorApp::new(cc)))),
-    )
+    })
 }
