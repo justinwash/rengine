@@ -517,6 +517,7 @@ pub struct Engine {
     pub(crate) actions: ActionMap,
     pub(crate) rng: RefCell<Rng>,
     pub(crate) postfx_chain: PostFxChain,
+    pending_texture_requests: RefCell<Vec<PathBuf>>,
 }
 
 impl Engine {
@@ -635,8 +636,31 @@ impl Engine {
         self.assets.set_root(root);
     }
 
+    pub fn request_texture<P: AsRef<Path>>(&self, path: P) {
+        let resolved = self.assets.resolve_path(path.as_ref());
+        if self.assets.loaded_texture(&resolved).is_some() {
+            return;
+        }
+
+        let mut pending = self.pending_texture_requests.borrow_mut();
+        if !pending.iter().any(|pending_path| pending_path == &resolved) {
+            pending.push(resolved);
+        }
+    }
+
+    pub fn loaded_texture<P: AsRef<Path>>(&self, path: P) -> Option<TextureAsset> {
+        self.assets.loaded_texture(path)
+    }
+
     pub fn hot_reload_enabled(&self) -> bool {
         self.hot_reload_enabled
+    }
+
+    fn process_requested_textures(&mut self) {
+        let pending = std::mem::take(&mut *self.pending_texture_requests.borrow_mut());
+        for path in pending {
+            let _ = self.load_texture(path);
+        }
     }
 
     pub fn set_hot_reload_enabled(&mut self, enabled: bool) {
@@ -1153,6 +1177,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
         actions: ActionMap::new(),
         rng: RefCell::new(Rng::from_time()),
         postfx_chain: PostFxChain::new(),
+        pending_texture_requests: RefCell::new(Vec::new()),
     };
     engine.time.set_fixed_dt(fixed_dt);
     if let Some((rw, rh)) = render_res {
@@ -1168,6 +1193,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
             engine.time.tick();
             engine.gamepads.update();
             engine.reload_assets_if_changed();
+            engine.process_requested_textures();
             engine.audio.update(engine.time.dt());
             while engine.time.consume_fixed_step() {
                 game.fixed_update(&engine);
@@ -1250,6 +1276,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
                     engine.time.tick();
                     engine.gamepads.update();
                     engine.reload_assets_if_changed();
+                    engine.process_requested_textures();
                     engine.audio.update(engine.time.dt());
                     drain_debug_commands_2d(&mut engine);
 
@@ -1336,6 +1363,7 @@ where
         actions: ActionMap::new(),
         rng: RefCell::new(Rng::from_time()),
         postfx_chain: PostFxChain::new(),
+        pending_texture_requests: RefCell::new(Vec::new()),
     };
     engine.time.set_fixed_dt(fixed_dt);
     if let Some((rw, rh)) = render_res {
@@ -1451,6 +1479,7 @@ where
                     engine.time.tick();
                     engine.gamepads.update();
                     engine.reload_assets_if_changed();
+                    engine.process_requested_textures();
                     engine.audio.update(engine.time.dt());
                     drain_debug_commands_2d(&mut engine);
 

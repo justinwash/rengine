@@ -422,6 +422,11 @@ impl AssetPipeline {
         candidate.canonicalize().unwrap_or(candidate)
     }
 
+    pub fn loaded_texture<P: AsRef<Path>>(&self, path: P) -> Option<TextureAsset> {
+        let resolved = self.resolve_path(path.as_ref());
+        self.textures.get(&resolved).cloned()
+    }
+
     pub fn load_bytes<P: AsRef<Path>>(&mut self, path: P) -> Result<Arc<[u8]>, AssetError> {
         let resolved = self.resolve_path(path.as_ref());
         if let Some(bytes) = self.bytes.get(&resolved) {
