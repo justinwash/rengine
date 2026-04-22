@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -366,8 +366,37 @@ fn validate_editor_node_parents(
     node_indices: &HashMap<u64, usize>,
 ) -> Result<(), AssetError> {
     for node in nodes {
-        if let Some(parent_id) = node.parent {
-            if !node_indices.contains_key(&parent_id) {
+        let mut ancestors = HashSet::new();
+        let mut current_parent = node.parent;
+
+        while let Some(parent_id) = current_parent {
+            if parent_id == node.id {
+                let message = if node.parent == Some(node.id) {
+                    format!(
+                        "editor node '{}' ({}) cannot parent itself",
+                        node.name, node.id
+                    )
+                } else {
+                    format!(
+                        "editor node '{}' ({}) participates in a parent cycle",
+                        node.name, node.id
+                    )
+                };
+
+                return Err(AssetError::scene_message(path, message));
+            }
+
+            if !ancestors.insert(parent_id) {
+                return Err(AssetError::scene_message(
+                    path,
+                    format!(
+                        "editor node '{}' ({}) participates in a parent cycle",
+                        node.name, node.id
+                    ),
+                ));
+            }
+
+            let Some(parent_index) = node_indices.get(&parent_id) else {
                 return Err(AssetError::scene_message(
                     path,
                     format!(
@@ -375,7 +404,9 @@ fn validate_editor_node_parents(
                         node.name, node.id, parent_id
                     ),
                 ));
-            }
+            };
+
+            current_parent = nodes[*parent_index].parent;
         }
     }
 
@@ -549,8 +580,15 @@ fn collect_group_prefab_sprites(
         return Ok(());
     };
 
-    for child_id in children {
-        let Some(index) = node_indices.get(child_id) else {
+    let mut stack = children.iter().rev().copied().collect::<Vec<_>>();
+    let mut visited = HashSet::new();
+
+    while let Some(child_id) = stack.pop() {
+        if !visited.insert(child_id) {
+            continue;
+        }
+
+        let Some(index) = node_indices.get(&child_id) else {
             continue;
         };
         let child = &nodes[*index];
@@ -563,15 +601,9 @@ fn collect_group_prefab_sprites(
             sprites.push(prefab_sprite_from_editor_node(path, child, root.position)?);
         }
 
-        collect_group_prefab_sprites(
-            path,
-            root,
-            child.id,
-            nodes,
-            node_indices,
-            child_ids,
-            sprites,
-        )?;
+        if let Some(grandchildren) = child_ids.get(&child.id) {
+            stack.extend(grandchildren.iter().rev().copied());
+        }
     }
 
     Ok(())
@@ -1010,6 +1042,136 @@ mod tests {
             error.to_string().contains("missing parent 99"),
             "unexpected error: {error}"
         );
+    }
+
+    #[test]
+    fn rejects_self_parenting_editor_nodes() {
+        let document = EditorSceneDocumentDef {
+            nodes: vec![EditorSceneNodeDef {
+                id: 1,
+                parent: Some(1),
+                name: "loop".to_string(),
+                kind: EditorSceneNodeKind::Empty,
+                position: [0.0, 0.0],
+                size: [88.0, 56.0],
+                visible: true,
+                script_path: String::new(),
+                runtime_prefab: String::new(),
+                asset_alias: String::new(),
+                properties: HashMap::new(),
+            }],
+        };
+
+        let error = scene_definition_from_editor_document(Path::new("editor.scene.json"), document)
+            .expect_err("self-parenting should fail fast");
+
+        assert!(
+            error.to_string().contains("cannot parent itself"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn rejects_editor_parent_cycles() {
+        let document = EditorSceneDocumentDef {
+            nodes: vec![
+                EditorSceneNodeDef {
+                    id: 1,
+                    parent: Some(2),
+                    name: "first".to_string(),
+                    kind: EditorSceneNodeKind::Empty,
+                    position: [0.0, 0.0],
+                    size: [88.0, 56.0],
+                    visible: true,
+                    script_path: String::new(),
+                    runtime_prefab: String::new(),
+                    asset_alias: String::new(),
+                    properties: HashMap::new(),
+                },
+                EditorSceneNodeDef {
+                    id: 2,
+                    parent: Some(1),
+                    name: "second".to_string(),
+                    kind: EditorSceneNodeKind::Empty,
+                    position: [64.0, 64.0],
+                    size: [88.0, 56.0],
+                    visible: true,
+                    script_path: String::new(),
+                    runtime_prefab: String::new(),
+                    asset_alias: String::new(),
+                    properties: HashMap::new(),
+                },
+            ],
+        };
+
+        let error = scene_definition_from_editor_document(Path::new("editor.scene.json"), document)
+            .expect_err("parent cycles should fail fast");
+
+        assert!(
+            error.to_string().contains("parent cycle"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn collects_group_prefab_sprites_through_empty_descendants() {
+        let document = EditorSceneDocumentDef {
+            nodes: vec![
+                EditorSceneNodeDef {
+                    id: 1,
+                    parent: None,
+                    name: "crate_stack".to_string(),
+                    kind: EditorSceneNodeKind::Group,
+                    position: [128.0, 256.0],
+                    size: [120.0, 72.0],
+                    visible: true,
+                    script_path: String::new(),
+                    runtime_prefab: String::new(),
+                    asset_alias: String::new(),
+                    properties: HashMap::new(),
+                },
+                EditorSceneNodeDef {
+                    id: 2,
+                    parent: Some(1),
+                    name: "anchor".to_string(),
+                    kind: EditorSceneNodeKind::Empty,
+                    position: [140.0, 268.0],
+                    size: [88.0, 56.0],
+                    visible: true,
+                    script_path: String::new(),
+                    runtime_prefab: String::new(),
+                    asset_alias: String::new(),
+                    properties: HashMap::new(),
+                },
+                EditorSceneNodeDef {
+                    id: 3,
+                    parent: Some(2),
+                    name: "crate".to_string(),
+                    kind: EditorSceneNodeKind::Sprite,
+                    position: [156.0, 280.0],
+                    size: [32.0, 32.0],
+                    visible: true,
+                    script_path: String::new(),
+                    runtime_prefab: String::new(),
+                    asset_alias: "crate".to_string(),
+                    properties: HashMap::new(),
+                },
+            ],
+        };
+
+        let definition =
+            scene_definition_from_editor_document(Path::new("editor.scene.json"), document)
+                .expect("descendant sprites under non-group nodes should be collected");
+
+        let group_prefab = definition
+            .prefabs
+            .iter()
+            .find(|prefab| prefab.name == "crate_stack")
+            .expect("group prefab should be present");
+
+        assert_eq!(group_prefab.sprites.len(), 1);
+        assert_eq!(group_prefab.sprites[0].asset, "crate");
+        assert_eq!(group_prefab.sprites[0].offset, [28.0, 24.0]);
     }
 
     #[test]

@@ -621,7 +621,7 @@ impl RengineEditorApp {
             }
         };
 
-        let scene = match serde_json::from_str::<SceneDocument>(&text) {
+        let mut scene = match serde_json::from_str::<SceneDocument>(&text) {
             Ok(scene) => scene,
             Err(error) => {
                 self.push_log(format!(
@@ -632,6 +632,14 @@ impl RengineEditorApp {
                 return;
             }
         };
+
+        if scene.normalize_next_id() {
+            self.push_log(format!(
+                "Normalized next node id for {} to {}",
+                self.display_path(&path),
+                scene.next_id
+            ));
+        }
 
         let replace_active_tab =
             self.scene_tabs.len() == 1 && self.active_scene_tab().is_fresh_untitled();
