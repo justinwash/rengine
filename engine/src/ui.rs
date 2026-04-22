@@ -1044,6 +1044,39 @@ fn clamp_char_boundary(text: &str, index: usize) -> usize {
     }
 }
 
+fn fit_text_to_width(atlas: &FontAtlas, text: &str, size: f32, max_width: f32) -> String {
+    if max_width <= 0.0 {
+        return String::new();
+    }
+
+    if atlas.measure_text(text, size).0 <= max_width {
+        return text.to_string();
+    }
+
+    let ellipsis = "...";
+    if atlas.measure_text(ellipsis, size).0 >= max_width {
+        return ellipsis.to_string();
+    }
+
+    let mut end = text.len();
+    loop {
+        let candidate = format!("{}{}", &text[..end], ellipsis);
+        if atlas.measure_text(&candidate, size).0 <= max_width {
+            return candidate;
+        }
+
+        if end == 0 {
+            return ellipsis.to_string();
+        }
+
+        end = text[..end]
+            .char_indices()
+            .next_back()
+            .map(|(index, _)| index)
+            .unwrap_or(0);
+    }
+}
+
 fn animation_duration(animation: Option<UiAnimation>) -> f32 {
     animation.map(|animation| animation.duration).unwrap_or(0.0)
 }
@@ -1481,6 +1514,7 @@ mod tests {
     fn drop_for_reports_matching_source() {
         let response = UiResponse {
             focused: None,
+            focused_id: None,
             activated: None,
             hovered: None,
             toggled: Vec::new(),
@@ -1499,6 +1533,7 @@ mod tests {
 
 pub struct UiResponse {
     pub focused: Option<usize>,
+    pub focused_id: Option<usize>,
     pub activated: Option<usize>,
     pub hovered: Option<usize>,
     pub toggled: Vec<usize>,
@@ -1571,6 +1606,7 @@ pub struct Ui {
     resolved_style_cache: RefCell<Option<ResolvedStyleCache>>,
     animation_frame: Cell<u64>,
     text_input_cursor: RefCell<HashMap<usize, usize>>,
+    text_input_enabled: bool,
 }
 
 impl Default for Ui {
@@ -1600,6 +1636,7 @@ impl Default for Ui {
             resolved_style_cache: RefCell::new(None),
             animation_frame: Cell::new(0),
             text_input_cursor: RefCell::new(HashMap::new()),
+            text_input_enabled: true,
         }
     }
 }
@@ -1924,6 +1961,14 @@ impl Ui {
 
     pub fn set_focus(&mut self, focus: usize) {
         self.focus_index = focus;
+    }
+
+    pub fn set_text_input_enabled(&mut self, enabled: bool) {
+        self.text_input_enabled = enabled;
+    }
+
+    pub fn text_input_enabled(&self) -> bool {
+        self.text_input_enabled
     }
 
     pub fn with_dragging(mut self, dragging: Option<usize>) -> Self {
@@ -2611,6 +2656,7 @@ impl Ui {
             self.active_drag = None;
             let response = UiResponse {
                 focused: None,
+                focused_id: None,
                 activated: None,
                 hovered: None,
                 toggled,
@@ -2642,10 +2688,11 @@ impl Ui {
             }
         }
 
-        let focus_is_text_input = self.widgets.iter().any(|widget| match widget {
-            Widget::TextInput { id, .. } => *id == self.focusable_ids[self.focus_index],
-            _ => false,
-        });
+        let focus_is_text_input = self.text_input_enabled
+            && self.widgets.iter().any(|widget| match widget {
+                Widget::TextInput { id, .. } => *id == self.focusable_ids[self.focus_index],
+                _ => false,
+            });
 
         if input.is_key_pressed(KeyCode::ArrowUp)
             || (!focus_is_text_input && input.is_key_pressed(KeyCode::KeyW))
@@ -2731,10 +2778,16 @@ impl Ui {
             }
         }
 
-        let focused_text_input = self.widgets.iter().find_map(|widget| match widget {
-            Widget::TextInput { id, text, .. } if *id == focused_id => Some((*id, text.as_str())),
-            _ => None,
-        });
+        let focused_text_input = if self.text_input_enabled {
+            self.widgets.iter().find_map(|widget| match widget {
+                Widget::TextInput { id, text, .. } if *id == focused_id => {
+                    Some((*id, text.as_str()))
+                }
+                _ => None,
+            })
+        } else {
+            None
+        };
 
         if focused_text_input.is_none()
             && (input.is_key_pressed(KeyCode::ArrowLeft)
@@ -2910,6 +2963,7 @@ impl Ui {
 
         let response = UiResponse {
             focused: Some(self.focus_index),
+            focused_id: Some(focused_id),
             activated: self.activated,
             hovered,
             toggled,
@@ -3174,6 +3228,14 @@ impl Ui {
                         if has_tooltip {
                             tooltip_rect = Some(render_rect);
                         }
+                        let animated_text_size = animated_size(text_size, render_animation);
+                        let scaled_pad = pad * render_animation.scale.max(0.0);
+                        let fitted_label = fit_text_to_width(
+                            atlas,
+                            &label,
+                            animated_text_size,
+                            (render_rect.w - scaled_pad * 2.0).max(0.0),
+                        );
                         let label_pos = animated_point(
                             Vec2::new(base_x + pad, cursor_y),
                             button_rect,
@@ -3186,19 +3248,39 @@ impl Ui {
                             render_rect.h,
                             scale_alpha(bg, render_animation.alpha),
                         );
+                        canvas.push_clip(
+                            render_rect.x + scaled_pad,
+                            render_rect.y,
+                            (render_rect.w - scaled_pad * 2.0).max(1.0),
+                            render_rect.h,
+                        );
                         canvas.text(
                             label_pos.x,
                             label_pos.y,
-                            &label,
-                            animated_size(text_size, render_animation),
+                            &fitted_label,
+                            animated_text_size,
                             scale_alpha(fg, render_animation.alpha),
                         );
+                        canvas.pop_clip();
                     } else {
                         if has_tooltip {
                             tooltip_rect = Some(button_rect);
                         }
+                        let fitted_label = fit_text_to_width(
+                            atlas,
+                            &label,
+                            text_size,
+                            (current_width - pad * 2.0).max(0.0),
+                        );
                         canvas.rect(base_x, btn_y, current_width, btn_h, bg);
-                        canvas.text(base_x + pad, cursor_y, &label, text_size, fg);
+                        canvas.push_clip(
+                            base_x + pad,
+                            btn_y,
+                            (current_width - pad * 2.0).max(1.0),
+                            btn_h,
+                        );
+                        canvas.text(base_x + pad, cursor_y, &fitted_label, text_size, fg);
+                        canvas.pop_clip();
                     }
 
                     cursor_y -= btn_h + style.spacing;
@@ -3208,7 +3290,7 @@ impl Ui {
                     text,
                     placeholder,
                 } => {
-                    let is_focused = focused_id == Some(*id);
+                    let is_focused = focused_id == Some(*id) && self.text_input_enabled;
                     let text_size = style.text_size;
                     let pad = style.text_input_padding;
                     let lh = atlas.line_height(text_size);

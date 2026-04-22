@@ -6,7 +6,7 @@
 >
 > Roadmap planning is now split across `ROADMAP_ENGINE.md` and `ROADMAP_EDITOR.md`.
 >
-> The runtime `Scene2D` loader now includes an adapter for the editor's scene document format, including grouped multi-sprite prefab export, while the separate editor shell continues to mature around multi-document tabs, typed scene properties, sprite preview assignment, Camera2D bounds visualization, and native file flow.
+> The runtime `Scene2D` loader now includes an adapter for the editor's scene document format, including grouped multi-sprite prefab export, while the separate editor shell continues to mature around a rengine-native shell, multi-document tabs, typed scene properties, real sprite previews, viewport panning, collapsible and resizable panels, and native file flow.
 
 ---
 
@@ -106,8 +106,9 @@ rengine/
 ├── editor/
 │   ├── Cargo.toml        # "rengine-editor" native editor prototype
 │   └── src/
-│       ├── main.rs       # eframe bootstrap and native window options
-│       ├── app.rs        # editor shell panels, project browser, inspector, scene viewport
+│       ├── main.rs       # rengine bootstrap and engine-native editor entry point
+│       ├── app.rs        # native editor shell root and Game lifecycle wiring
+│       ├── app/          # split native editor modules: drawing, filesystem, forms, popup, state, windowing
 │       └── scene.rs      # JSON-serializable scene document and node model
 ├── engine/
 │   ├── Cargo.toml        # "rengine" library crate
@@ -139,7 +140,7 @@ members = ["editor", "engine", "samples/games/game-platformer", ...]
 resolver = "2"
 ```
 
-The editor lives in its own crate on purpose: it can iterate on desktop tooling concerns (panels, file browsing, scene documents, inspector UX) without polluting the runtime-facing `rengine::*` API surface.
+The editor lives in its own crate on purpose: it can iterate on desktop tooling concerns (panels, file browsing, scene documents, inspector UX) without polluting the runtime-facing `rengine::*` API surface. The active native shell currently mixes direct canvas rendering for layout and viewport work with the engine's `Ui` layer for editable inspector controls, including a properties panel that is reserved for scene or selected-node editing plus a selected-node Create Child Node popup menu, reliable native right-click context menus across the file browser, hierarchy, and viewport with popup placement clamped into the visible window near top edges, hierarchy-driven node creation via right click on the scene header or existing nodes with popup labels that distinguish root creation from adding a child under the clicked node, a scene-header selected-state highlight when the scene itself is active, popup-based kind selection, sprite-source assignment, filtered project browsing with working text-input ownership, double-click open, and a project-entry context menu that sizes to its labels, collapsible project, hierarchy, inspector, and bottom panes that reopen from shared stacked side-button strips or slim slivers when collapsed, drag-resizable shell borders, a clipped scrollable inspector form, content-aware list scrolling, and single-owner text-input focus across multiple `Ui` trees that transfers ownership only from the hovered text field on click so stale focus in another `Ui` cannot steal keyboard input, plus responsive button rows/tab strips and inspector action buttons that only trim once their container is actually full, delayed hover tooltips for trimmed canvas-only labels, and middle-mouse viewport panning. The native editor now uses `editor/src/app.rs` as its root assembly point and splits windowing/layout, filesystem and scene I/O, popup handling, form state, drawing, and shared editor state into focused `editor/src/app/` modules instead of keeping the entire shell in one monolithic source file. The engine now also supports deferred texture requests from immutable game code so runtime-driven tools like the native editor can request on-demand sprite previews without widening the `Game` API to `&mut Engine` during normal update or render passes.
 
 The engine crate itself has one optional feature:
 
@@ -938,13 +939,14 @@ impl Scene for MyScene {
 - **`Ui::style()` / `style_mut()`** — Read or mutate the current `UiStyle` after construction. This is the main runtime path for things like tooltip delay or animation tuning.
 - **`Ui::with_focus(index) -> Self`** — Override the focused button index.
 - **`Ui::set_focus(index)`** — Override the focused slot index without reconstructing the `Ui`. Useful when game code wants to drive focus explicitly (for example, from a gamepad-specific navigation layer).
+- **`Ui::set_text_input_enabled(enabled)`** / **`text_input_enabled()`** — Enable or suppress text entry for this `Ui` instance without destroying its widget tree or focus state. This is useful when a shell composes multiple `Ui` trees but wants only one of them to consume `committed_text()` on a given frame.
 - **`Ui::label(text, size, color)`** / **`label_centered(text, size, color)`** — Static text (left-aligned or centered).
 - **`Ui::image(texture, size)`** / **`image_colored(texture, size, color)`** / **`image_region(texture, size, uv_rect)`** — Non-interactive image widgets backed by the canvas image API. These render centered within the current layout width and participate in panels, rows, grids, and scroll regions like any other widget.
 - **`Ui::tooltip(text)`** / **`tooltip_sized(text, width)`** / **`tooltip_with(text, options)`** — Attach a tooltip to the most recently added widget. `tooltip_with()` takes a `TooltipOptions` builder for per-widget overrides like delay, fixed size, placement, animation, advanced expanded text, and custom expand triggers. Tooltips currently attach only to widgets that emit a concrete rect during render: labels, images, buttons, text inputs, panels, progress bars, checkboxes, sliders, and scroll regions.
 - **`Ui::style_with(style)`** — Attach a `UiWidgetStyle` override to the most recently added widget. This is the per-widget escape hatch for card rarities, warning states, or CTA emphasis without cloning an entire `UiStyle`. Supported widget-level overrides currently cover buttons, text inputs, panels, progress bars, checkboxes, sliders, and tooltip colors, and they participate in layout, hit-testing, render, and tooltip drawing through the same resolved style data.
 - **`Ui::animate_with(options)`** — Attach draw-time animation hooks to the most recently added widget. `UiAnimationOptions` exposes `with_hover()`, `with_focus()`, `with_press()`, and `with_appear()` builders, each taking a `UiAnimation` with duration, easing, offset, scale, and alpha. Hooks currently support labels, images, buttons, text inputs, progress bars, checkboxes, and sliders.
 - **`Ui::animate_container_with(id, visible, options) -> bool`** — Attach enter/exit transition hooks to the next panel, row, grid, or scroll region. The returned bool tells game code whether to keep emitting that container this frame; when `visible` flips false, the container stays alive until its exit animation reaches zero progress.
-- **`Ui::button(id, text)`** — Interactive button identified by a numeric `id`.
+- **`Ui::button(id, text)`** — Interactive button identified by a numeric `id`. Button labels are clipped to the widget width and trimmed with `...` when the available space is narrower than the caption.
 - **`Ui::text_input(id, text, placeholder)`** — Single-line text field. The string is owned by game code; the widget consumes committed text plus IME preedit state from `InputState`, supports caret movement with Left/Right/Home/End, Backspace/Delete editing, placeholder text, and reports changes via `UiResponse::text_for(id)`.
 - **`Ui::text_cursor(id)`** / **`set_text_cursor(id, cursor)`** — Read or override a text field caret position from game code. This is primarily useful for sample/game-layer compositions like an on-screen keyboard that inserts text into the engine-level field.
 - **`Ui::draggable()`** / **`drop_target()`** — Mark the most recently added focusable widget as a drag source or drop target. This is the new engine-level path for card/tray reordering or slot-based menu flows without hard-coding drag semantics into individual widget types.
@@ -962,7 +964,7 @@ impl Scene for MyScene {
   - Focused text inputs consume `InputState::committed_text()`, show `InputState::ime_preedit()` during composition, and support Left/Right/Home/End plus Backspace/Delete editing.
   - Mouse hover sets focus; mouse click activates buttons, sliders, and checkboxes or focuses a text field.
     - Drag/drop piggybacks on the same focusable ids as button activation: mouse press starts a drag from a marked source, mouse release drops onto a marked hovered target, and keyboard focus plus Enter/Space provides the same carry/drop loop without requiring the mouse.
-    - Returns `UiResponse { focused, activated, hovered, toggled, changed_values, changed_text, dragging, drag_target, dropped, scroll_offsets }`, where `focused` is the current focusable slot index rather than a widget id.
+    - Returns `UiResponse { focused, focused_id, activated, hovered, toggled, changed_values, changed_text, dragging, drag_target, dropped, scroll_offsets }`, where `focused` is the current focusable slot index and `focused_id` is the currently focused widget id when one exists.
     - Convenience: `response.was_activated(id)`, `was_toggled(id)`, `value_for(id) -> Option<f32>`, `text_for(id) -> Option<&str>`, `drop_for(id) -> Option<usize>`, `scroll_for(id) -> Option<f32>`.
     - `run*()` and `sync*()` are built on top of this low-level method; game code can still call `begin()` + `update()` directly when it wants explicit control.
 - **`Ui::render(canvas, engine)`** — Draw all widgets into a `Canvas` layer (font atlas fetched from engine internally) and emit any active tooltip after the rest of the UI so it stays on top. Tooltip visibility is driven by persistent UI runtime state, which is what enables delayed popups and prevents stale tooltips from lingering after the active widget clears. Widget animation hooks also run here: render combines appear, hover, focus, and press transforms each frame, reusing persistent per-widget runtime state so animated widgets remain stable across frames, text-input carets inherit the same transforms, and tooltip hit rects follow the transformed widget. Container animation hooks run here too: panels, rows, grids, and scroll regions apply their transition offset to the whole subtree until the exit runtime reaches zero.

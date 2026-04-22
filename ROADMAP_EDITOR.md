@@ -9,24 +9,23 @@ The runtime engine roadmap lives in `ROADMAP_ENGINE.md`.
 The current shell already has:
 
 - a dedicated `editor/` crate
-- a native desktop window built with `eframe` and `egui`
+- a rengine-native desktop shell bootstrap running on the engine runtime
+- a custom canvas-driven shell foundation replacing the old `eframe` / `egui` bootstrap
 - a responsive top bar
 - scene tabs for switching between in-progress documents
-- a project/filesystem browser
-- a scene hierarchy panel
-- a grouped properties panel with scene-view, node, sprite, and camera settings
+- a project/filesystem browser with native filtering and direct open-selected flow
+- a scene hierarchy panel with collapsible subtrees
+- an inspector surface with engine-native editing for scene metadata, selected-node transforms, sprite sources, and camera preview properties
 - an activity log and JSON preview panel
-- a draggable 2D scene canvas
-- right-click add-node menus in the viewport and hierarchy instead of the old top-row create-button strip
-- sprite-node creation that can browse for image files and falls back to a placeholder preview if no texture is chosen
+- a draggable and pannable 2D scene canvas
+- add-node actions from the native inspector shell plus popup-driven hierarchy and viewport context menus
+- real sprite-image previews in the native viewport
+- content-aware list scrolling with native scroll indicators
 - Camera2D bounds preview driven by adjustable scene window size, camera zoom, and optional camera-local view size
-- background workspace rescans so refreshes do not stall the UI thread
-- a paused JSON preview during live drag or resize interactions to reduce visual flashing
-- tighter repaint scheduling so the shell only forces continuous redraw during active viewport drags
 - native open/save/save-as scene flow through file dialogs
 - a `Scene2D` runtime bridge that supports marker export, single-sprite export, and grouped multi-sprite prefab export
 
-That is enough to prove the layout direction, but it is not yet enough for real game production.
+The migration is now in the toolkit-rebuild phase: the editor no longer depends on egui for bootstrap, and the inspector now uses the engine's own UI layer for text inputs, toggles, sliders, transform editing, sprite-file assignment, and popup-based kind changes. The project browser and scene hierarchy now support native filtering, collapse state, and content-aware scrolling, while the viewport now supports real sprite previews and middle-mouse panning, but the shell still needs richer engine-native widgets such as split panes, reusable tree controls, and broader editing flows before it reaches feature parity.
 
 ## Editor Success Criteria
 
