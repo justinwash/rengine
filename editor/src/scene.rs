@@ -175,6 +175,23 @@ impl SceneDocument {
         id
     }
 
+    pub fn normalize_next_id(&mut self) -> bool {
+        let normalized_next_id = self
+            .nodes
+            .iter()
+            .map(|node| node.id)
+            .max()
+            .map(|max_id| max_id.saturating_add(1))
+            .unwrap_or(1);
+
+        if self.next_id < normalized_next_id {
+            self.next_id = normalized_next_id;
+            true
+        } else {
+            false
+        }
+    }
+
     pub fn node(&self, id: u64) -> Option<&SceneNode> {
         self.nodes.iter().find(|node| node.id == id)
     }
@@ -251,4 +268,39 @@ fn default_camera_show_bounds() -> bool {
 
 fn default_camera_use_scene_view_size() -> bool {
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_node(id: u64) -> SceneNode {
+        SceneNode::new(id, SceneNodeKind::Empty, None, 0)
+    }
+
+    #[test]
+    fn normalize_next_id_raises_loaded_counter_above_existing_ids() {
+        let mut document = SceneDocument {
+            name: "test".to_string(),
+            view: SceneViewSettings::default(),
+            nodes: vec![test_node(4), test_node(9)],
+            next_id: 3,
+        };
+
+        assert!(document.normalize_next_id());
+        assert_eq!(document.next_id, 10);
+    }
+
+    #[test]
+    fn normalize_next_id_preserves_valid_future_counter() {
+        let mut document = SceneDocument {
+            name: "test".to_string(),
+            view: SceneViewSettings::default(),
+            nodes: vec![test_node(4), test_node(9)],
+            next_id: 25,
+        };
+
+        assert!(!document.normalize_next_id());
+        assert_eq!(document.next_id, 25);
+    }
 }
