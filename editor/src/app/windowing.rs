@@ -337,7 +337,10 @@ impl RengineNativeEditor {
             }
         }
 
-        if self.panel_resize_drag.is_some_and(|drag| drag.panel == kind) {
+        if self
+            .panel_resize_drag
+            .is_some_and(|drag| drag.panel == kind)
+        {
             self.panel_resize_drag = None;
         }
     }
@@ -400,7 +403,11 @@ impl RengineNativeEditor {
         };
         let visible_side_total = left_visible_total + right_visible_total;
         let visible_side_elements = if self.panel_layout.files.open { 1 } else { 0 }
-            + if self.panel_layout.hierarchy.open { 1 } else { 0 }
+            + if self.panel_layout.hierarchy.open {
+                1
+            } else {
+                0
+            }
             + if left_collapsed_visible { 1 } else { 0 }
             + 1;
         let gap_count = visible_side_elements + 2;
@@ -445,11 +452,7 @@ impl RengineNativeEditor {
         false
     }
 
-    pub(crate) fn handle_panel_resize_start(
-        &mut self,
-        mouse: Vec2,
-        layout: &ShellLayout,
-    ) -> bool {
+    pub(crate) fn handle_panel_resize_start(&mut self, mouse: Vec2, layout: &ShellLayout) -> bool {
         if let Some(rect) = layout.files_resize {
             if rect.contains(mouse) {
                 self.begin_panel_resize(DockPanelKind::Files, mouse);
@@ -598,8 +601,8 @@ impl RengineNativeEditor {
 
     pub(crate) fn handle_context_clicks(&mut self, engine: &Engine, layout: &ShellLayout) {
         let input = engine.input();
-        let context_click = input.is_mouse_pressed(1)
-            || (self.popup_menu.is_none() && input.is_mouse_released(1));
+        let context_click =
+            input.is_mouse_pressed(1) || (self.popup_menu.is_none() && input.is_mouse_released(1));
         if !context_click {
             return;
         }
@@ -819,11 +822,7 @@ impl RengineNativeEditor {
         false
     }
 
-    pub(crate) fn handle_project_tree_click(
-        &mut self,
-        mouse: Vec2,
-        layout: &ShellLayout,
-    ) -> bool {
+    pub(crate) fn handle_project_tree_click(&mut self, mouse: Vec2, layout: &ShellLayout) -> bool {
         if let Some((toggle_only, path)) = self.project_tree_hit(mouse, layout) {
             if toggle_only {
                 self.toggle_project_entry(&path);
@@ -922,7 +921,11 @@ impl RengineNativeEditor {
         }
 
         let node_rects = self.viewport_node_rects(layout.viewport);
-        if let Some((node_id, rect)) = node_rects.iter().rev().find(|(_, rect)| rect.contains(mouse)) {
+        if let Some((node_id, rect)) = node_rects
+            .iter()
+            .rev()
+            .find(|(_, rect)| rect.contains(mouse))
+        {
             self.active_scene_tab_mut().selected_node = Some(*node_id);
             self.active_scene_tab_mut().viewport_drag = Some(ViewportDrag {
                 node_id: *node_id,

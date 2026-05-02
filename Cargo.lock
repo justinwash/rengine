@@ -3240,6 +3240,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rengine-stl-gamejam"
+version = "0.1.0"
+dependencies = [
+ "rengine",
+]
+
+[[package]]
 name = "rengine-topdown"
 version = "0.1.0"
 dependencies = [

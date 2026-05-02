@@ -402,7 +402,8 @@ impl RengineNativeEditor {
         if replace_active_tab {
             self.scene_tabs[self.active_scene_tab] = SceneTab::new(scene, Some(path.clone()));
         } else {
-            self.scene_tabs.push(SceneTab::new(scene, Some(path.clone())));
+            self.scene_tabs
+                .push(SceneTab::new(scene, Some(path.clone())));
             self.active_scene_tab = self.scene_tabs.len() - 1;
         }
 
@@ -510,7 +511,12 @@ impl RengineNativeEditor {
         position: Option<[f32; 2]>,
     ) {
         let parent_label = parent
-            .and_then(|id| self.active_scene_tab().scene.node_name(id).map(ToOwned::to_owned))
+            .and_then(|id| {
+                self.active_scene_tab()
+                    .scene
+                    .node_name(id)
+                    .map(ToOwned::to_owned)
+            })
             .unwrap_or_else(|| "scene root".to_string());
 
         let selected_sprite_path = self.selected_sprite_source_path();

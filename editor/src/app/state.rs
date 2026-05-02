@@ -161,9 +161,7 @@ impl RengineNativeEditor {
     }
 
     pub(crate) fn scene_json_preview_text(&mut self) -> &str {
-        let defer_refresh = self
-            .active_scene_tab()
-            .scene_json_dirty
+        let defer_refresh = self.active_scene_tab().scene_json_dirty
             && self.active_scene_tab().viewport_drag.is_some();
         let tab = self.active_scene_tab_mut();
         if defer_refresh {

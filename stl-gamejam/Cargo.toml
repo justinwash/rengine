@@ -1,0 +1,11 @@
+[package]
+name = "rengine-stl-gamejam"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "rengine-stl-gamejam"
+path = "src/main.rs"
+
+[dependencies]
+rengine = { path = "../engine" }

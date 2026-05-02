@@ -212,7 +212,12 @@ impl Game for RengineNativeEditor {
         let canvas = frame.canvas(0);
         let layout = ShellLayout::new(engine, &self.panel_layout);
         if layout.files_open {
-            canvas.push_clip(layout.files.x, layout.files.y, layout.files.w, layout.files.h);
+            canvas.push_clip(
+                layout.files.x,
+                layout.files.y,
+                layout.files.w,
+                layout.files.h,
+            );
             self.file_browser_ui.render(canvas, engine);
             canvas.pop_clip();
         }
