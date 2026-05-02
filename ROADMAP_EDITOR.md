@@ -210,6 +210,19 @@ For a platformer or top-down project to feel realistic in the editor, the editor
 - logs, validation, and missing-reference warnings
 - safe save formats that can be committed and reviewed in git
 
+## Content-Heavy 2D Game Authoring Checklist
+
+For a content-driven game such as the planned motorsport roguelike, the editor also needs to make these workflows cheap:
+
+- route-loop markers, lap checkpoints, pit entry and exit volumes, and camera anchors
+- encounter nodes, reward nodes, meta-progression hooks, and authored run-flow markers
+- reusable authored chunks for trackside props, hazard sets, spawn packs, and UI sections
+- path editing for rival traffic, escorts, camera rails, and scripted movement loops
+- structured data documents for upgrades, cars, crews, sponsors, loot pools, and run-generation tables
+- HUD, menu, tooltip, and card-like UI authoring that can be previewed without hand-building every screen in Rust
+- fast play-in-editor restart so balance and content pacing can be tuned in minutes instead of rebuild cycles
+- validation for broken references, duplicate IDs, missing scripts, invalid prefab wiring, and missing assets before a run boots
+
 ## Minimum Viable Editor Cut Line
 
 If the goal is to stop hardcoding most game content in Rust, the first genuinely useful editor must include:
@@ -224,6 +237,21 @@ If the goal is to stop hardcoding most game content in Rust, the first genuinely
 8. visual UI builder
 9. play-in-editor with logs
 10. undo/redo, autosave, and safe reference updates
+
+## Ordered Production Backlog
+
+If the goal is to make building games in rengine materially easier, the editor work should land in this order:
+
+1. undo/redo plus autosave and recovery so the shell stops feeling fragile
+2. multi-select, marquee, duplicate, reparent, reorder, and selection-history workflows
+3. snapping, guides, frame-selection, and first transform gizmos for reliable spatial editing
+4. gameplay markers, trigger volumes, and path tools aimed at checkpoints, route loops, encounter nodes, and camera rails
+5. prefab assets, nested scenes, and reusable authored chunks for repeated gameplay setups and prop assemblies
+6. stronger exposed-property editing plus structured data documents for gameplay tables and content metadata
+7. play-in-editor, fast restart, log filtering, and runtime inspection once authored content can drive a level
+8. dedicated UI documents, reusable HUD or menu chunks, and input-preview workflows
+9. safe filesystem refactors with reference rewriting, dependency viewing, and project-wide validation
+10. specialized editors such as particle, animation, cutscene, audio, and localization tooling after the core authoring path is stable
 
 ## Phased Plan
 
@@ -272,7 +300,10 @@ If the goal is to stop hardcoding most game content in Rust, the first genuinely
 
 ## Immediate Next Steps
 
-- Add undo or redo support before editing tools multiply further.
-- Add richer viewport tools, snapping, and selection ergonomics.
-- Add basic prefab and spawn-marker workflows aimed directly at the top-down and platformer examples.
-- Expand the runtime bridge with richer properties, stronger prefab composition, and better nested-scene/export workflows.
+- Add undo or redo support plus autosave before editing tools multiply further.
+- Add multi-select, marquee, duplicate, reparent, reorder, and richer viewport selection ergonomics.
+- Add snapping, guides, frame-selection, and first transform gizmos.
+- Add marker, trigger, and path workflows aimed directly at route loops, checkpoints, encounter nodes, and camera anchors.
+- Add basic prefab and reusable authored-chunk workflows aimed directly at the top-down, platformer, and content-heavy 2D examples.
+- Expand the runtime bridge with richer properties, stronger prefab composition, better nested-scene/export workflows, and safer validation.
+- After those land, add play-in-editor and dedicated UI documents as the next productivity jump.

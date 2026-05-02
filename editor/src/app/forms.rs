@@ -198,7 +198,8 @@ impl RengineNativeEditor {
             let inner = layout.inspector.inset(PANEL_PADDING);
             self.open_kind_menu(
                 Vec2::new(
-                    inner.right() - popup_menu_width(NODE_KIND_OPTIONS.iter().map(|kind| kind.label())),
+                    inner.right()
+                        - popup_menu_width(NODE_KIND_OPTIONS.iter().map(|kind| kind.label())),
                     inner.top() - 264.0,
                 ),
                 node_id,
@@ -398,9 +399,14 @@ impl RengineNativeEditor {
         }
     }
 
-    fn apply_inspector_form_response(&mut self, response: UiResponse, state: &mut InspectorFormState) {
+    fn apply_inspector_form_response(
+        &mut self,
+        response: UiResponse,
+        state: &mut InspectorFormState,
+    ) {
         let selected_sprite_path = self.selected_sprite_source_path();
         let mut changed = false;
+        let mut history_entry = None;
         let mut log_messages = Vec::new();
         let mut manual_sprite_texture_for_node = None;
         let mut use_selected_sprite_for_node = None;
@@ -410,6 +416,7 @@ impl RengineNativeEditor {
 
         {
             let tab = self.active_scene_tab_mut();
+            let previous_state = SceneHistoryEntry::capture(tab);
 
             if let Some(text) = response.text_for(INSPECTOR_SCENE_NAME_ID) {
                 state.scene_name = text.to_string();
@@ -480,7 +487,8 @@ impl RengineNativeEditor {
 
                     if let Some(text) = response.text_for(INSPECTOR_NODE_SIZE_WIDTH_ID) {
                         state.node_size_width = text.to_string();
-                        if let Some(width) = parse_editor_number(&state.node_size_width, 16.0, 4096.0)
+                        if let Some(width) =
+                            parse_editor_number(&state.node_size_width, 16.0, 4096.0)
                         {
                             if (node.size[0] - width).abs() > f32::EPSILON {
                                 node.size[0] = width;
@@ -491,7 +499,8 @@ impl RengineNativeEditor {
 
                     if let Some(text) = response.text_for(INSPECTOR_NODE_SIZE_HEIGHT_ID) {
                         state.node_size_height = text.to_string();
-                        if let Some(height) = parse_editor_number(&state.node_size_height, 16.0, 4096.0)
+                        if let Some(height) =
+                            parse_editor_number(&state.node_size_height, 16.0, 4096.0)
                         {
                             if (node.size[1] - height).abs() > f32::EPSILON {
                                 node.size[1] = height;
@@ -572,8 +581,10 @@ impl RengineNativeEditor {
 
                         if response.was_toggled(INSPECTOR_CAMERA_USE_SCENE_SIZE_ID) {
                             state.camera_use_scene_view_size = !state.camera_use_scene_view_size;
-                            if node.camera2d.use_scene_view_size != state.camera_use_scene_view_size {
-                                node.camera2d.use_scene_view_size = state.camera_use_scene_view_size;
+                            if node.camera2d.use_scene_view_size != state.camera_use_scene_view_size
+                            {
+                                node.camera2d.use_scene_view_size =
+                                    state.camera_use_scene_view_size;
                                 changed = true;
                             }
                         }
@@ -606,8 +617,13 @@ impl RengineNativeEditor {
             }
 
             if changed {
+                history_entry = Some(previous_state);
                 tab.mark_dirty();
             }
+        }
+
+        if let Some(history_entry) = history_entry {
+            self.active_scene_tab_mut().push_undo_entry(history_entry);
         }
 
         if let Some(node_id) = use_selected_sprite_for_node {
@@ -668,7 +684,10 @@ fn inspector_form_height(panel: PanelRect) -> f32 {
     (inspector_form_top(panel) - inner.y).max(0.0)
 }
 
-fn inspector_form_widget_count(state: &InspectorFormState, selected_sprite_label: Option<&str>) -> usize {
+fn inspector_form_widget_count(
+    state: &InspectorFormState,
+    selected_sprite_label: Option<&str>,
+) -> usize {
     let mut count = 7;
 
     if let Some(kind) = state.selected_node_kind {
