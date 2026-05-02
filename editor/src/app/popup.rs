@@ -136,6 +136,7 @@ impl RengineNativeEditor {
             } => self.add_node_with_parent(kind, parent, position),
             PopupMenuAction::ChangeNodeKind { node_id, kind } => {
                 let mut changed = false;
+                let history_entry = SceneHistoryEntry::capture(self.active_scene_tab());
                 {
                     let tab = self.active_scene_tab_mut();
                     if let Some(node) = tab.scene.node_mut(node_id) {
@@ -148,6 +149,7 @@ impl RengineNativeEditor {
                 }
 
                 if changed {
+                    self.active_scene_tab_mut().push_undo_entry(history_entry);
                     self.push_log(format!("Changed node {} kind to {}", node_id, kind.label()));
                     self.refresh_inspector_form();
                 }

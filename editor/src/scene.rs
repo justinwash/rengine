@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SceneViewSettings {
     #[serde(default = "default_scene_window_size")]
     pub window_size: [f32; 2],
@@ -16,13 +16,13 @@ impl Default for SceneViewSettings {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct SpriteNodeSettings {
     #[serde(default)]
     pub texture_path: String,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Camera2dNodeSettings {
     #[serde(default = "default_camera_zoom")]
     pub zoom: f32,
@@ -94,7 +94,7 @@ impl SceneNodeKind {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SceneNode {
     pub id: u64,
     pub parent: Option<u64>,
@@ -143,7 +143,7 @@ impl SceneNode {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SceneDocument {
     pub name: String,
     #[serde(default)]

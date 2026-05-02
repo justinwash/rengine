@@ -30,7 +30,12 @@ impl RengineNativeEditor {
         let mut tooltip_targets = Vec::new();
         self.draw_top_bar(canvas, layout.top_bar, &mut tooltip_targets);
         self.draw_scene_tabs(canvas, layout.scene_tabs, &mut tooltip_targets);
-        self.draw_project_browser(canvas, layout.files, layout.files_open, &mut tooltip_targets);
+        self.draw_project_browser(
+            canvas,
+            layout.files,
+            layout.files_open,
+            &mut tooltip_targets,
+        );
         self.draw_scene_hierarchy(
             canvas,
             layout.hierarchy,
@@ -489,7 +494,12 @@ impl RengineNativeEditor {
             );
         }
 
-        canvas.push_clip(content_rect.x, content_rect.y, content_rect.w, content_rect.h);
+        canvas.push_clip(
+            content_rect.x,
+            content_rect.y,
+            content_rect.w,
+            content_rect.h,
+        );
 
         match self.bottom_tab {
             BottomTab::Activity => {
@@ -893,7 +903,12 @@ fn draw_scrollbar(canvas: &mut Canvas, rect: PanelRect, line_count: usize, scrol
     }
 
     let content_height = line_count as f32 * LINE_HEIGHT;
-    let track_rect = PanelRect::new(rect.right() - SCROLLBAR_WIDTH, rect.y, SCROLLBAR_WIDTH, rect.h);
+    let track_rect = PanelRect::new(
+        rect.right() - SCROLLBAR_WIDTH,
+        rect.y,
+        SCROLLBAR_WIDTH,
+        rect.h,
+    );
     let thumb_height = (rect.h * (rect.h / content_height)).clamp(SCROLLBAR_MIN_HEIGHT, rect.h);
     let thumb_travel = (rect.h - thumb_height).max(0.0);
     let thumb_ratio = (scroll / max_scroll).clamp(0.0, 1.0);

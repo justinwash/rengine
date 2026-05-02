@@ -48,6 +48,7 @@ const CANVAS_TOOLTIP_MAX_WIDTH: f32 = 280.0;
 const CANVAS_TOOLTIP_OFFSET_X: f32 = 18.0;
 const CANVAS_TOOLTIP_OFFSET_Y: f32 = 18.0;
 const PROJECT_DOUBLE_CLICK_DELAY: f32 = 0.35;
+const SCENE_AUTOSAVE_INTERVAL_SECONDS: f32 = 5.0;
 
 const FILE_FILTER_INPUT_ID: usize = 10;
 
@@ -192,6 +193,8 @@ impl Game for RengineNativeEditor {
         self.update_viewport_drag(engine, &layout);
         self.update_file_browser_ui(engine, &layout);
         self.update_inspector_ui(engine, &layout);
+        self.update_scene_autosave(engine.dt());
+        self.handle_scene_history_shortcuts(engine);
 
         if !self.ui_has_focus() && engine.input().is_key_pressed(KeyCode::F5) {
             self.refresh_project_tree();
@@ -212,7 +215,12 @@ impl Game for RengineNativeEditor {
         let canvas = frame.canvas(0);
         let layout = ShellLayout::new(engine, &self.panel_layout);
         if layout.files_open {
-            canvas.push_clip(layout.files.x, layout.files.y, layout.files.w, layout.files.h);
+            canvas.push_clip(
+                layout.files.x,
+                layout.files.y,
+                layout.files.w,
+                layout.files.h,
+            );
             self.file_browser_ui.render(canvas, engine);
             canvas.pop_clip();
         }
