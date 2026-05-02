@@ -85,6 +85,13 @@ impl RengineNativeEditor {
             .join("scene-prototype.scene.json")
     }
 
+    pub(crate) fn autosave_directory(&self) -> PathBuf {
+        self.workspace_root
+            .join("editor")
+            .join("scratch")
+            .join("autosave")
+    }
+
     pub(crate) fn dialog_directory(&self) -> PathBuf {
         if let Some(selected_path) = &self.selected_project_path {
             if selected_path.is_dir() {
@@ -124,6 +131,23 @@ impl RengineNativeEditor {
                 format!("{}.scene.json", scene_name.replace(' ', "_"))
             }
         })
+    }
+
+    pub(crate) fn autosave_scene_path(&self, index: usize) -> PathBuf {
+        let tab = &self.scene_tabs[index];
+        let preferred_stem = tab
+            .scene_path
+            .as_ref()
+            .and_then(|path| path.file_stem())
+            .and_then(|stem| stem.to_str())
+            .map(ToOwned::to_owned)
+            .unwrap_or_else(|| tab.display_name());
+        let autosave_stem = sanitize_autosave_stem(preferred_stem.trim());
+
+        self.autosave_directory().join(format!(
+            "{:02}_{}.autosave.scene.json",
+            index, autosave_stem
+        ))
     }
 
     pub(crate) fn normalize_scene_save_path(&self, path: PathBuf) -> PathBuf {
@@ -184,6 +208,7 @@ impl RengineNativeEditor {
             .file_stem()
             .and_then(|name| name.to_str())
             .map(ToOwned::to_owned);
+        let history_entry = SceneHistoryEntry::capture(self.active_scene_tab());
 
         let tab = self.active_scene_tab_mut();
         let Some(node) = tab.scene.node_mut(node_id) else {
@@ -216,6 +241,10 @@ impl RengineNativeEditor {
             tab.mark_dirty();
         }
 
+        if changed {
+            tab.push_undo_entry(history_entry);
+        }
+
         changed
     }
 
@@ -225,6 +254,7 @@ impl RengineNativeEditor {
             .and_then(|name| name.to_str())
             .unwrap_or("sprite")
             .to_string();
+        let history_entry = SceneHistoryEntry::capture(self.active_scene_tab());
 
         let tab = self.active_scene_tab_mut();
         let Some(node) = tab.scene.node_mut(node_id) else {
@@ -234,6 +264,7 @@ impl RengineNativeEditor {
         if node.asset_alias.trim().is_empty() {
             node.asset_alias = sprite_alias;
             tab.mark_dirty();
+            tab.push_undo_entry(history_entry);
             true
         } else {
             false
@@ -241,6 +272,7 @@ impl RengineNativeEditor {
     }
 
     pub(crate) fn clear_node_sprite_texture_path(&mut self, node_id: u64) -> bool {
+        let history_entry = SceneHistoryEntry::capture(self.active_scene_tab());
         let tab = self.active_scene_tab_mut();
         let Some(node) = tab.scene.node_mut(node_id) else {
             return false;
@@ -252,6 +284,7 @@ impl RengineNativeEditor {
 
         node.sprite.texture_path.clear();
         tab.mark_dirty();
+        tab.push_undo_entry(history_entry);
         true
     }
 
@@ -402,7 +435,8 @@ impl RengineNativeEditor {
         if replace_active_tab {
             self.scene_tabs[self.active_scene_tab] = SceneTab::new(scene, Some(path.clone()));
         } else {
-            self.scene_tabs.push(SceneTab::new(scene, Some(path.clone())));
+            self.scene_tabs
+                .push(SceneTab::new(scene, Some(path.clone())));
             self.active_scene_tab = self.scene_tabs.len() - 1;
         }
 
@@ -482,11 +516,11 @@ impl RengineNativeEditor {
         let scene_json = self.active_scene_tab_mut().cached_scene_json().to_owned();
         let tree_has_path = self.project_tree.contains_path(&path);
 
-        match fs::write(&path, scene_json) {
+        match fs::write(&path, &scene_json) {
             Ok(()) => {
                 let tab = self.active_scene_tab_mut();
                 tab.scene_path = Some(path.clone());
-                tab.scene_dirty = false;
+                tab.mark_saved(scene_json.clone());
                 self.selected_project_path = Some(path.clone());
                 if !tree_has_path {
                     self.refresh_project_tree();
@@ -503,6 +537,65 @@ impl RengineNativeEditor {
         }
     }
 
+    pub(crate) fn update_scene_autosave(&mut self, dt: f32) {
+        let mut autosave_logs = Vec::new();
+
+        for index in 0..self.scene_tabs.len() {
+            let should_autosave = {
+                let tab = &mut self.scene_tabs[index];
+                if !tab.scene_dirty || tab.autosaved_revision == tab.edit_revision {
+                    false
+                } else {
+                    tab.autosave_elapsed += dt;
+                    tab.autosave_elapsed >= SCENE_AUTOSAVE_INTERVAL_SECONDS
+                }
+            };
+
+            if !should_autosave {
+                continue;
+            }
+
+            let autosave_path = self.autosave_scene_path(index);
+            let scene_json = self.scene_tabs[index].cached_scene_json().to_owned();
+
+            if let Some(parent) = autosave_path.parent() {
+                if let Err(error) = fs::create_dir_all(parent) {
+                    autosave_logs.push(format!(
+                        "Failed to prepare autosave directory {}: {}",
+                        self.display_path(parent),
+                        error
+                    ));
+                    self.scene_tabs[index].autosave_elapsed = 0.0;
+                    continue;
+                }
+            }
+
+            match fs::write(&autosave_path, &scene_json) {
+                Ok(()) => {
+                    let tab = &mut self.scene_tabs[index];
+                    tab.autosaved_revision = tab.edit_revision;
+                    tab.autosave_elapsed = 0.0;
+                    autosave_logs.push(format!(
+                        "Autosaved scene to {}",
+                        self.display_path(&autosave_path)
+                    ));
+                }
+                Err(error) => {
+                    self.scene_tabs[index].autosave_elapsed = 0.0;
+                    autosave_logs.push(format!(
+                        "Failed to autosave {}: {}",
+                        self.display_path(&autosave_path),
+                        error
+                    ));
+                }
+            }
+        }
+
+        for log in autosave_logs {
+            self.push_log(log);
+        }
+    }
+
     pub(crate) fn add_node_with_parent(
         &mut self,
         kind: SceneNodeKind,
@@ -510,10 +603,16 @@ impl RengineNativeEditor {
         position: Option<[f32; 2]>,
     ) {
         let parent_label = parent
-            .and_then(|id| self.active_scene_tab().scene.node_name(id).map(ToOwned::to_owned))
+            .and_then(|id| {
+                self.active_scene_tab()
+                    .scene
+                    .node_name(id)
+                    .map(ToOwned::to_owned)
+            })
             .unwrap_or_else(|| "scene root".to_string());
 
         let selected_sprite_path = self.selected_sprite_source_path();
+        let history_entry = SceneHistoryEntry::capture(self.active_scene_tab());
 
         let node_id = {
             let tab = self.active_scene_tab_mut();
@@ -525,6 +624,7 @@ impl RengineNativeEditor {
             }
             tab.mark_dirty();
             tab.selected_node = Some(node_id);
+            tab.push_undo_entry(history_entry);
             node_id
         };
 
@@ -664,4 +764,24 @@ pub(crate) fn is_supported_sprite_path(path: &Path) -> bool {
             .as_deref(),
         Some("png" | "jpg" | "jpeg" | "webp")
     )
+}
+
+fn sanitize_autosave_stem(stem: &str) -> String {
+    let sanitized: String = stem
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect();
+
+    let sanitized = sanitized.trim_matches('_');
+    if sanitized.is_empty() {
+        "untitled_scene".to_string()
+    } else {
+        sanitized.to_string()
+    }
 }
