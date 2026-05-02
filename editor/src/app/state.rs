@@ -1,9 +1,12 @@
 use super::*;
 
-#[derive(Clone, Copy, Debug)]
+const MAX_SCENE_HISTORY_STEPS: usize = 128;
+
+#[derive(Clone, Debug)]
 pub(crate) struct ViewportDrag {
     pub(crate) node_id: u64,
     pub(crate) pointer_offset: Vec2,
+    pub(crate) history_captured: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -33,6 +36,21 @@ impl BottomTab {
     }
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct SceneHistoryEntry {
+    pub(crate) scene: SceneDocument,
+    pub(crate) selected_node: Option<u64>,
+}
+
+impl SceneHistoryEntry {
+    pub(crate) fn capture(tab: &SceneTab) -> Self {
+        Self {
+            scene: tab.scene.clone(),
+            selected_node: sanitize_scene_history_selection(&tab.scene, tab.selected_node),
+        }
+    }
+}
+
 pub(crate) struct SceneTab {
     pub(crate) scene: SceneDocument,
     pub(crate) scene_dirty: bool,
@@ -43,7 +61,13 @@ pub(crate) struct SceneTab {
     pub(crate) viewport_pan_drag: Option<ViewportPanDrag>,
     pub(crate) collapsed_nodes: HashSet<u64>,
     pub(crate) scene_json_cache: String,
+    pub(crate) saved_scene_json: String,
     pub(crate) scene_json_dirty: bool,
+    pub(crate) undo_history: Vec<SceneHistoryEntry>,
+    pub(crate) redo_history: Vec<SceneHistoryEntry>,
+    pub(crate) edit_revision: u64,
+    pub(crate) autosaved_revision: u64,
+    pub(crate) autosave_elapsed: f32,
 }
 
 impl SceneTab {
@@ -59,8 +83,14 @@ impl SceneTab {
             viewport_pan: Vec2::ZERO,
             viewport_pan_drag: None,
             collapsed_nodes: HashSet::new(),
+            saved_scene_json: scene_json_cache.clone(),
             scene_json_cache,
             scene_json_dirty: false,
+            undo_history: Vec::new(),
+            redo_history: Vec::new(),
+            edit_revision: 0,
+            autosaved_revision: 0,
+            autosave_elapsed: 0.0,
         }
     }
 
@@ -109,6 +139,70 @@ impl SceneTab {
     pub(crate) fn mark_dirty(&mut self) {
         self.scene_dirty = true;
         self.scene_json_dirty = true;
+        self.edit_revision = self.edit_revision.saturating_add(1);
+        self.autosave_elapsed = 0.0;
+    }
+
+    pub(crate) fn push_undo_entry(&mut self, entry: SceneHistoryEntry) {
+        if self.undo_history.last().is_some_and(|last| {
+            last.scene == entry.scene && last.selected_node == entry.selected_node
+        }) {
+            self.redo_history.clear();
+            return;
+        }
+
+        self.undo_history.push(entry);
+        if self.undo_history.len() > MAX_SCENE_HISTORY_STEPS {
+            let overflow = self.undo_history.len() - MAX_SCENE_HISTORY_STEPS;
+            self.undo_history.drain(0..overflow);
+        }
+        self.redo_history.clear();
+    }
+
+    pub(crate) fn mark_saved(&mut self, scene_json: String) {
+        self.saved_scene_json = scene_json.clone();
+        self.scene_json_cache = scene_json;
+        self.scene_json_dirty = false;
+        self.scene_dirty = false;
+        self.autosaved_revision = self.edit_revision;
+        self.autosave_elapsed = 0.0;
+    }
+
+    fn restore_history_entry(&mut self, entry: SceneHistoryEntry) {
+        self.scene = entry.scene;
+        self.selected_node = sanitize_scene_history_selection(&self.scene, entry.selected_node);
+        self.viewport_drag = None;
+        self.viewport_pan_drag = None;
+        self.collapsed_nodes
+            .retain(|node_id| self.scene.node(*node_id).is_some());
+        self.scene_json_cache = self.scene.pretty_json();
+        self.scene_json_dirty = false;
+        self.scene_dirty = self.scene_json_cache != self.saved_scene_json;
+        self.edit_revision = self.edit_revision.saturating_add(1);
+        self.autosave_elapsed = 0.0;
+        if !self.scene_dirty {
+            self.autosaved_revision = self.edit_revision;
+        }
+    }
+
+    pub(crate) fn undo(&mut self) -> bool {
+        let Some(entry) = self.undo_history.pop() else {
+            return false;
+        };
+
+        self.redo_history.push(SceneHistoryEntry::capture(self));
+        self.restore_history_entry(entry);
+        true
+    }
+
+    pub(crate) fn redo(&mut self) -> bool {
+        let Some(entry) = self.redo_history.pop() else {
+            return false;
+        };
+
+        self.undo_history.push(SceneHistoryEntry::capture(self));
+        self.restore_history_entry(entry);
+        true
     }
 
     pub(crate) fn cached_scene_json(&mut self) -> &str {
@@ -151,6 +245,23 @@ pub(crate) struct ProjectEntryClickState {
     pub(crate) elapsed: f32,
 }
 
+fn sanitize_scene_history_selection(
+    scene: &SceneDocument,
+    selected_node: Option<u64>,
+) -> Option<u64> {
+    selected_node.filter(|node_id| scene.node(*node_id).is_some())
+}
+
+fn history_modifier_down(engine: &Engine) -> bool {
+    let input = engine.input();
+    input.is_key_down(KeyCode::ControlLeft) || input.is_key_down(KeyCode::ControlRight)
+}
+
+fn history_shift_down(engine: &Engine) -> bool {
+    let input = engine.input();
+    input.is_key_down(KeyCode::ShiftLeft) || input.is_key_down(KeyCode::ShiftRight)
+}
+
 impl RengineNativeEditor {
     pub(crate) fn active_scene_tab(&self) -> &SceneTab {
         &self.scene_tabs[self.active_scene_tab]
@@ -161,9 +272,7 @@ impl RengineNativeEditor {
     }
 
     pub(crate) fn scene_json_preview_text(&mut self) -> &str {
-        let defer_refresh = self
-            .active_scene_tab()
-            .scene_json_dirty
+        let defer_refresh = self.active_scene_tab().scene_json_dirty
             && self.active_scene_tab().viewport_drag.is_some();
         let tab = self.active_scene_tab_mut();
         if defer_refresh {
@@ -262,5 +371,38 @@ impl RengineNativeEditor {
         self.active_scene_tab = self.scene_tabs.len() - 1;
         self.refresh_inspector_form();
         self.push_log("Started new empty scene");
+    }
+
+    pub(crate) fn handle_scene_history_shortcuts(&mut self, engine: &Engine) {
+        if !history_modifier_down(engine) {
+            return;
+        }
+
+        if engine.input().is_key_pressed(KeyCode::KeyY)
+            || (history_shift_down(engine) && engine.input().is_key_pressed(KeyCode::KeyZ))
+        {
+            self.redo_active_scene();
+            return;
+        }
+
+        if engine.input().is_key_pressed(KeyCode::KeyZ) {
+            self.undo_active_scene();
+        }
+    }
+
+    pub(crate) fn undo_active_scene(&mut self) {
+        let scene_label = self.active_scene_tab().display_name();
+        if self.active_scene_tab_mut().undo() {
+            self.refresh_inspector_form();
+            self.push_log(format!("Undid edit in {}", scene_label));
+        }
+    }
+
+    pub(crate) fn redo_active_scene(&mut self) {
+        let scene_label = self.active_scene_tab().display_name();
+        if self.active_scene_tab_mut().redo() {
+            self.refresh_inspector_form();
+            self.push_log(format!("Redid edit in {}", scene_label));
+        }
     }
 }
