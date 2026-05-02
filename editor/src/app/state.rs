@@ -144,18 +144,7 @@ impl SceneTab {
     }
 
     pub(crate) fn push_undo_entry(&mut self, entry: SceneHistoryEntry) {
-        if self.undo_history.last().is_some_and(|last| {
-            last.scene == entry.scene && last.selected_node == entry.selected_node
-        }) {
-            self.redo_history.clear();
-            return;
-        }
-
-        self.undo_history.push(entry);
-        if self.undo_history.len() > MAX_SCENE_HISTORY_STEPS {
-            let overflow = self.undo_history.len() - MAX_SCENE_HISTORY_STEPS;
-            self.undo_history.drain(0..overflow);
-        }
+        Self::push_history_entry(&mut self.undo_history, entry);
         self.redo_history.clear();
     }
 
@@ -190,7 +179,8 @@ impl SceneTab {
             return false;
         };
 
-        self.redo_history.push(SceneHistoryEntry::capture(self));
+        let current_state = SceneHistoryEntry::capture(self);
+        Self::push_history_entry(&mut self.redo_history, current_state);
         self.restore_history_entry(entry);
         true
     }
@@ -200,9 +190,24 @@ impl SceneTab {
             return false;
         };
 
-        self.undo_history.push(SceneHistoryEntry::capture(self));
+        let current_state = SceneHistoryEntry::capture(self);
+        Self::push_history_entry(&mut self.undo_history, current_state);
         self.restore_history_entry(entry);
         true
+    }
+
+    fn push_history_entry(stack: &mut Vec<SceneHistoryEntry>, entry: SceneHistoryEntry) {
+        if stack.last().is_some_and(|last| {
+            last.scene == entry.scene && last.selected_node == entry.selected_node
+        }) {
+            return;
+        }
+
+        stack.push(entry);
+        if stack.len() > MAX_SCENE_HISTORY_STEPS {
+            let overflow = stack.len() - MAX_SCENE_HISTORY_STEPS;
+            stack.drain(0..overflow);
+        }
     }
 
     pub(crate) fn cached_scene_json(&mut self) -> &str {
@@ -374,6 +379,10 @@ impl RengineNativeEditor {
     }
 
     pub(crate) fn handle_scene_history_shortcuts(&mut self, engine: &Engine) {
+        if self.active_text_input_owner.is_some() {
+            return;
+        }
+
         if !history_modifier_down(engine) {
             return;
         }
