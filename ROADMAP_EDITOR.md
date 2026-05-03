@@ -24,6 +24,9 @@ The current shell already has:
 - Camera2D bounds preview driven by adjustable scene window size, camera zoom, and optional camera-local view size
 - native open/save/save-as scene flow through file dialogs
 - multi-select hierarchy and viewport selection with duplicate, reparent, reorder, grouped dragging, and selection-history shortcuts
+- a frame-selection shortcut that recenters the viewport on the current selection or whole scene
+- grid-snapped viewport dragging with selection-center guides and live snap feedback
+- a first translate gizmo with plane, X-axis, and Y-axis dragging for selected nodes
 - a `Scene2D` runtime bridge that supports marker export, single-sprite export, and grouped multi-sprite prefab export
 
 The migration is now in the toolkit-rebuild phase: the editor no longer depends on egui for bootstrap, and the inspector now uses the engine's own UI layer for text inputs, toggles, sliders, transform editing, sprite-file assignment, and popup-based kind changes. The project browser and scene hierarchy now support native filtering, collapse state, and content-aware scrolling, while the viewport now supports real sprite previews and middle-mouse panning, but the shell still needs richer engine-native widgets such as split panes, reusable tree controls, and broader editing flows before it reaches feature parity.
@@ -245,7 +248,7 @@ If the goal is to make building games in rengine materially easier, the editor w
 
 1. undo/redo plus autosave and recovery so the shell stops feeling fragile
 2. multi-select, box selection, duplicate, reparent, reorder, and selection-history workflows
-3. snapping, guides, frame-selection, and first transform gizmos for reliable spatial editing
+3. rotate or scale gizmo follow-up plus richer spatial-editing polish on top of the current snapping, guides, and translate-gizmo baseline
 4. gameplay markers, trigger volumes, and path tools aimed at checkpoints, route loops, encounter nodes, and camera rails
 5. prefab assets, nested scenes, and reusable authored chunks for repeated gameplay setups and prop assemblies
 6. stronger exposed-property editing plus structured data documents for gameplay tables and content metadata
@@ -271,7 +274,7 @@ If the goal is to make building games in rengine materially easier, the editor w
 
 ### Phase 2: Core Scene Authoring
 
-- Add full hierarchy editing, multi-select, reparenting, snapping, and transform workflows.
+- Add rotate, scale, pivot, and alignment follow-up on top of the current hierarchy editing, multi-select, reparenting, snapping, guides, and translate-gizmo baseline.
 - Add tabs and multiple documents.
 - Expand the current runtime scene bridge beyond grouped sprite composition into richer prefab and nested-scene workflows.
 
@@ -301,7 +304,7 @@ If the goal is to make building games in rengine materially easier, the editor w
 
 ## Immediate Next Steps
 
-- Add snapping, guides, frame-selection, and first transform gizmos.
+- Add rotate and scale gizmo follow-up, plus alignment and distribution workflows, on top of the new grid-snapped dragging, selection guides, and translate gizmo.
 - Add marker, trigger, and path workflows aimed directly at route loops, checkpoints, encounter nodes, and camera anchors.
 - Add basic prefab and reusable authored-chunk workflows aimed directly at the top-down, platformer, and content-heavy 2D examples.
 - Expand the runtime bridge with richer properties, stronger prefab composition, better nested-scene/export workflows, and safer validation.
