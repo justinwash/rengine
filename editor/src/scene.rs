@@ -298,6 +298,14 @@ impl SceneDocument {
             return Vec::new();
         }
 
+        let duplicate_count = root_ids
+            .iter()
+            .map(|root_id| self.subtree_ids(*root_id).len() as u64)
+            .sum::<u64>();
+        if self.next_id.checked_add(duplicate_count).is_none() {
+            return Vec::new();
+        }
+
         let source_nodes = self.nodes.clone();
         let source_by_id: HashMap<u64, SceneNode> = source_nodes
             .iter()
@@ -385,10 +393,13 @@ impl SceneDocument {
         } else {
             self.root_ids()
         };
+        let selected_root_set: HashSet<u64> = root_ids.iter().copied().collect();
         let selected_positions: Vec<usize> = sibling_root_ids
             .iter()
             .enumerate()
-            .filter_map(|(index, sibling_id)| root_ids.contains(sibling_id).then_some(index))
+            .filter_map(|(index, sibling_id)| {
+                selected_root_set.contains(sibling_id).then_some(index)
+            })
             .collect();
         if selected_positions.is_empty() {
             return false;
@@ -411,7 +422,6 @@ impl SceneDocument {
             }
         };
 
-        let selected_root_set: HashSet<u64> = root_ids.iter().copied().collect();
         let mut reordered_root_ids: Vec<u64> = sibling_root_ids
             .iter()
             .copied()
@@ -483,7 +493,7 @@ impl SceneDocument {
     ) -> Option<u64> {
         let source = source_by_id.get(&source_id)?.clone();
         let new_id = self.next_id;
-        self.next_id = self.next_id.saturating_add(1);
+        self.next_id = self.next_id.checked_add(1)?;
 
         let mut duplicate = source;
         duplicate.id = new_id;
@@ -566,6 +576,13 @@ mod tests {
         SceneNode::new(id, SceneNodeKind::Empty, None, 0)
     }
 
+    fn test_node_with_parent(id: u64, parent: Option<u64>) -> SceneNode {
+        let mut node = SceneNode::new(id, SceneNodeKind::Empty, parent, 0);
+        node.name = format!("Node {id}");
+        node.position = [id as f32 * 10.0, id as f32 * 20.0];
+        node
+    }
+
     #[test]
     fn normalize_next_id_raises_loaded_counter_above_existing_ids() {
         let mut document = SceneDocument {
@@ -590,5 +607,86 @@ mod tests {
 
         assert!(!document.normalize_next_id());
         assert_eq!(document.next_id, 25);
+    }
+
+    #[test]
+    fn duplicate_nodes_prunes_descendants_and_preserves_subtree_structure() {
+        let mut document = SceneDocument {
+            name: "test".to_string(),
+            view: SceneViewSettings::default(),
+            nodes: vec![
+                test_node_with_parent(1, None),
+                test_node_with_parent(2, Some(1)),
+                test_node_with_parent(3, None),
+            ],
+            next_id: 4,
+        };
+
+        let duplicated_root_ids = document.duplicate_nodes(&[1, 2], [5.0, 7.0]);
+
+        assert_eq!(duplicated_root_ids, vec![4]);
+        assert_eq!(document.next_id, 6);
+        assert_eq!(document.nodes.len(), 5);
+
+        let duplicated_root = document.node(4).expect("duplicated root exists");
+        assert_eq!(duplicated_root.parent, None);
+        assert_eq!(duplicated_root.position, [15.0, 27.0]);
+
+        let duplicated_child = document.node(5).expect("duplicated child exists");
+        assert_eq!(duplicated_child.parent, Some(4));
+        assert_eq!(duplicated_child.position, [25.0, 47.0]);
+    }
+
+    #[test]
+    fn duplicate_nodes_fails_cleanly_when_id_space_is_exhausted() {
+        let original = test_node_with_parent(1, None);
+        let mut document = SceneDocument {
+            name: "test".to_string(),
+            view: SceneViewSettings::default(),
+            nodes: vec![original.clone()],
+            next_id: u64::MAX,
+        };
+
+        assert!(document.duplicate_nodes(&[1], [5.0, 7.0]).is_empty());
+        assert_eq!(document.nodes, vec![original]);
+        assert_eq!(document.next_id, u64::MAX);
+    }
+
+    #[test]
+    fn reparent_nodes_rejects_cycles() {
+        let original_nodes = vec![
+            test_node_with_parent(1, None),
+            test_node_with_parent(2, Some(1)),
+            test_node_with_parent(3, Some(2)),
+        ];
+        let mut document = SceneDocument {
+            name: "test".to_string(),
+            view: SceneViewSettings::default(),
+            nodes: original_nodes.clone(),
+            next_id: 4,
+        };
+
+        assert!(!document.reparent_nodes(&[1], Some(3)));
+        assert_eq!(document.nodes, original_nodes);
+    }
+
+    #[test]
+    fn reorder_nodes_moves_selection_up_and_down() {
+        let mut document = SceneDocument {
+            name: "test".to_string(),
+            view: SceneViewSettings::default(),
+            nodes: vec![
+                test_node_with_parent(1, None),
+                test_node_with_parent(2, None),
+                test_node_with_parent(3, None),
+            ],
+            next_id: 4,
+        };
+
+        assert!(document.reorder_nodes(&[2], SceneNodeReorderDirection::Up));
+        assert_eq!(document.root_ids(), vec![2, 1, 3]);
+
+        assert!(document.reorder_nodes(&[2], SceneNodeReorderDirection::Down));
+        assert_eq!(document.root_ids(), vec![1, 2, 3]);
     }
 }

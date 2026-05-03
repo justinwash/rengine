@@ -72,17 +72,14 @@ impl SceneHistoryEntry {
 
 impl SceneSelectionEntry {
     pub(crate) fn capture(tab: &SceneTab) -> Self {
+        let selected_nodes =
+            sanitize_scene_selection_nodes(&tab.scene, &tab.selected_nodes, tab.selected_node);
+        let selected_node =
+            sanitize_scene_primary_selection(&tab.scene, tab.selected_node, &selected_nodes);
+
         Self {
-            selected_nodes: sanitize_scene_selection_nodes(
-                &tab.scene,
-                &tab.selected_nodes,
-                tab.selected_node,
-            ),
-            selected_node: sanitize_scene_primary_selection(
-                &tab.scene,
-                tab.selected_node,
-                &tab.selected_nodes,
-            ),
+            selected_node,
+            selected_nodes,
         }
     }
 }
