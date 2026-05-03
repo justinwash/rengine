@@ -199,6 +199,15 @@ impl Game for RengineNativeEditor {
         if !self.ui_has_focus() && engine.input().is_key_pressed(KeyCode::KeyF) {
             self.frame_active_scene_view();
         }
+        if !self.ui_has_focus() && engine.input().is_key_pressed(KeyCode::KeyW) {
+            self.active_scene_tab_mut().gizmo_mode = GizmoMode::Translate;
+        }
+        if !self.ui_has_focus() && engine.input().is_key_pressed(KeyCode::KeyE) {
+            self.active_scene_tab_mut().gizmo_mode = GizmoMode::Rotate;
+        }
+        if !self.ui_has_focus() && engine.input().is_key_pressed(KeyCode::KeyR) {
+            self.active_scene_tab_mut().gizmo_mode = GizmoMode::Scale;
+        }
 
         if !self.ui_has_focus() && engine.input().is_key_pressed(KeyCode::F5) {
             self.refresh_project_tree();

@@ -5,6 +5,9 @@ const VIEWPORT_GIZMO_AXIS_LENGTH: f32 = 56.0;
 const VIEWPORT_GIZMO_AXIS_THICKNESS: f32 = 10.0;
 const VIEWPORT_GIZMO_CENTER_SIZE: f32 = 16.0;
 const VIEWPORT_GIZMO_TIP_SIZE: f32 = 10.0;
+const VIEWPORT_ROTATE_RING_RADIUS: f32 = 72.0;
+const VIEWPORT_ROTATE_RING_HIT_HALF: f32 = 10.0;
+const VIEWPORT_SCALE_HANDLE_SIZE: f32 = 10.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ViewportTranslateHandle {
@@ -32,6 +35,70 @@ impl ViewportTranslateGizmo {
         } else {
             None
         }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct ViewportRotateGizmo {
+    pub(crate) center: Vec2,
+    pub(crate) radius: f32,
+}
+
+impl ViewportRotateGizmo {
+    pub(crate) fn hit_test(self, point: Vec2) -> bool {
+        let dx = point.x - self.center.x;
+        let dy = point.y - self.center.y;
+        let dist = (dx * dx + dy * dy).sqrt();
+        let inner = self.radius - VIEWPORT_ROTATE_RING_HIT_HALF;
+        let outer = self.radius + VIEWPORT_ROTATE_RING_HIT_HALF;
+        dist >= inner && dist <= outer
+    }
+
+    pub(crate) fn pointer_angle(self, point: Vec2) -> f32 {
+        let dx = point.x - self.center.x;
+        let dy = point.y - self.center.y;
+        dy.atan2(dx)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ScaleHandle {
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct ViewportScaleGizmo {
+    pub(crate) top_left: PanelRect,
+    pub(crate) top_right: PanelRect,
+    pub(crate) bottom_left: PanelRect,
+    pub(crate) bottom_right: PanelRect,
+}
+
+impl ViewportScaleGizmo {
+    pub(crate) fn hit_test(self, point: Vec2) -> Option<ScaleHandle> {
+        if self.top_left.contains(point) {
+            Some(ScaleHandle::TopLeft)
+        } else if self.top_right.contains(point) {
+            Some(ScaleHandle::TopRight)
+        } else if self.bottom_left.contains(point) {
+            Some(ScaleHandle::BottomLeft)
+        } else if self.bottom_right.contains(point) {
+            Some(ScaleHandle::BottomRight)
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn all_rects(self) -> [PanelRect; 4] {
+        [
+            self.top_left,
+            self.top_right,
+            self.bottom_left,
+            self.bottom_right,
+        ]
     }
 }
 
@@ -469,12 +536,13 @@ impl RengineNativeEditor {
                     lines.push(format!("{} nodes selected", selection_count));
                 }
                 lines.push(format!(
-                    "{}   pos {:.0}, {:.0}   size {:.0} x {:.0}",
+                    "{}   pos {:.0}, {:.0}   size {:.0} x {:.0}   rot {:.0}°",
                     node.kind.label(),
                     node.position[0],
                     node.position[1],
                     node.size[0],
-                    node.size[1]
+                    node.size[1],
+                    node.rotation,
                 ));
 
                 for (index, line) in lines.iter().enumerate() {
@@ -604,7 +672,10 @@ impl RengineNativeEditor {
         if let Some(bounds) = selection_bounds {
             let selection_rect = scene_bounds_rect(bounds, viewport, pan);
             let selection_center = selection_rect.center();
-            let guide_color = if self.active_scene_tab().viewport_drag.is_some() {
+            let any_drag_active = self.active_scene_tab().viewport_drag.is_some()
+                || self.active_scene_tab().viewport_rotate_drag.is_some()
+                || self.active_scene_tab().viewport_scale_drag.is_some();
+            let guide_color = if any_drag_active {
                 Color::from_rgba8(132, 212, 224, 180)
             } else {
                 Color::from_rgba8(88, 156, 176, 140)
@@ -782,74 +853,154 @@ impl RengineNativeEditor {
         }
 
         if let Some(gizmo) = selection_gizmo {
-            let hovered_handle = gizmo.hit_test(engine.mouse_screen_pos());
-            let active_handle =
-                self.active_scene_tab()
-                    .viewport_drag
-                    .as_ref()
-                    .map(|drag| match drag.constraint {
-                        ViewportDragConstraint::Free => ViewportTranslateHandle::Plane,
-                        ViewportDragConstraint::AxisX => ViewportTranslateHandle::AxisX,
-                        ViewportDragConstraint::AxisY => ViewportTranslateHandle::AxisY,
-                    });
-
-            let x_color = viewport_gizmo_handle_color(
-                active_handle == Some(ViewportTranslateHandle::AxisX),
-                hovered_handle == Some(ViewportTranslateHandle::AxisX),
-                Color::from_rgba8(224, 112, 92, 255),
-            );
-            let y_color = viewport_gizmo_handle_color(
-                active_handle == Some(ViewportTranslateHandle::AxisY),
-                hovered_handle == Some(ViewportTranslateHandle::AxisY),
-                Color::from_rgba8(116, 204, 126, 255),
-            );
-            let plane_color = viewport_gizmo_handle_color(
-                active_handle == Some(ViewportTranslateHandle::Plane),
-                hovered_handle == Some(ViewportTranslateHandle::Plane),
-                Color::from_rgba8(92, 188, 214, 255),
-            );
-
-            canvas.line(
-                gizmo.center.x,
-                gizmo.center.y,
-                gizmo.x_axis_rect.right(),
-                gizmo.center.y,
-                2.0,
-                x_color,
-            );
-            canvas.line(
-                gizmo.center.x,
-                gizmo.center.y,
-                gizmo.center.x,
-                gizmo.y_axis_rect.top(),
-                2.0,
-                y_color,
-            );
-            canvas.rect(
-                gizmo.x_axis_rect.right() - VIEWPORT_GIZMO_TIP_SIZE,
-                gizmo.center.y - VIEWPORT_GIZMO_TIP_SIZE * 0.5,
-                VIEWPORT_GIZMO_TIP_SIZE,
-                VIEWPORT_GIZMO_TIP_SIZE,
-                x_color,
-            );
-            canvas.rect(
-                gizmo.center.x - VIEWPORT_GIZMO_TIP_SIZE * 0.5,
-                gizmo.y_axis_rect.top() - VIEWPORT_GIZMO_TIP_SIZE,
-                VIEWPORT_GIZMO_TIP_SIZE,
-                VIEWPORT_GIZMO_TIP_SIZE,
-                y_color,
-            );
-            canvas.rect(
-                gizmo.plane_rect.x,
-                gizmo.plane_rect.y,
-                gizmo.plane_rect.w,
-                gizmo.plane_rect.h,
-                Color::new(plane_color.r, plane_color.g, plane_color.b, 0.28),
-            );
-            draw_outline(canvas, gizmo.plane_rect, plane_color);
+            let tab = self.active_scene_tab();
+            match tab.gizmo_mode {
+                GizmoMode::Translate => {
+                    let hovered_handle = gizmo.hit_test(engine.mouse_screen_pos());
+                    let active_handle =
+                        tab.viewport_drag
+                            .as_ref()
+                            .map(|drag| match drag.constraint {
+                                ViewportDragConstraint::Free => ViewportTranslateHandle::Plane,
+                                ViewportDragConstraint::AxisX => ViewportTranslateHandle::AxisX,
+                                ViewportDragConstraint::AxisY => ViewportTranslateHandle::AxisY,
+                            });
+                    let x_color = viewport_gizmo_handle_color(
+                        active_handle == Some(ViewportTranslateHandle::AxisX),
+                        hovered_handle == Some(ViewportTranslateHandle::AxisX),
+                        Color::from_rgba8(224, 112, 92, 255),
+                    );
+                    let y_color = viewport_gizmo_handle_color(
+                        active_handle == Some(ViewportTranslateHandle::AxisY),
+                        hovered_handle == Some(ViewportTranslateHandle::AxisY),
+                        Color::from_rgba8(116, 204, 126, 255),
+                    );
+                    let plane_color = viewport_gizmo_handle_color(
+                        active_handle == Some(ViewportTranslateHandle::Plane),
+                        hovered_handle == Some(ViewportTranslateHandle::Plane),
+                        Color::from_rgba8(92, 188, 214, 255),
+                    );
+                    canvas.line(
+                        gizmo.center.x,
+                        gizmo.center.y,
+                        gizmo.x_axis_rect.right(),
+                        gizmo.center.y,
+                        2.0,
+                        x_color,
+                    );
+                    canvas.line(
+                        gizmo.center.x,
+                        gizmo.center.y,
+                        gizmo.center.x,
+                        gizmo.y_axis_rect.top(),
+                        2.0,
+                        y_color,
+                    );
+                    canvas.rect(
+                        gizmo.x_axis_rect.right() - VIEWPORT_GIZMO_TIP_SIZE,
+                        gizmo.center.y - VIEWPORT_GIZMO_TIP_SIZE * 0.5,
+                        VIEWPORT_GIZMO_TIP_SIZE,
+                        VIEWPORT_GIZMO_TIP_SIZE,
+                        x_color,
+                    );
+                    canvas.rect(
+                        gizmo.center.x - VIEWPORT_GIZMO_TIP_SIZE * 0.5,
+                        gizmo.y_axis_rect.top() - VIEWPORT_GIZMO_TIP_SIZE,
+                        VIEWPORT_GIZMO_TIP_SIZE,
+                        VIEWPORT_GIZMO_TIP_SIZE,
+                        y_color,
+                    );
+                    canvas.rect(
+                        gizmo.plane_rect.x,
+                        gizmo.plane_rect.y,
+                        gizmo.plane_rect.w,
+                        gizmo.plane_rect.h,
+                        Color::new(plane_color.r, plane_color.g, plane_color.b, 0.28),
+                    );
+                    draw_outline(canvas, gizmo.plane_rect, plane_color);
+                }
+                GizmoMode::Rotate => {
+                    let bounds = selection_bounds.unwrap();
+                    let rotate_gizmo = selection_rotate_gizmo(bounds, viewport, pan);
+                    let is_active = tab.viewport_rotate_drag.is_some();
+                    let is_hovered = !is_active && rotate_gizmo.hit_test(engine.mouse_screen_pos());
+                    let ring_color = viewport_gizmo_handle_color(
+                        is_active,
+                        is_hovered,
+                        Color::from_rgba8(220, 180, 80, 255),
+                    );
+                    canvas.circle(
+                        rotate_gizmo.center.x,
+                        rotate_gizmo.center.y,
+                        rotate_gizmo.radius,
+                        2.0,
+                        48,
+                        ring_color,
+                    );
+                    canvas.circle_filled(
+                        rotate_gizmo.center.x,
+                        rotate_gizmo.center.y,
+                        4.0,
+                        16,
+                        ring_color,
+                    );
+                }
+                GizmoMode::Scale => {
+                    let bounds = selection_bounds.unwrap();
+                    let scale_gizmo = selection_scale_gizmo(bounds, viewport, pan);
+                    let mouse = engine.mouse_screen_pos();
+                    let is_active = tab.viewport_scale_drag.is_some();
+                    let hovered_handle = if is_active {
+                        None
+                    } else {
+                        scale_gizmo.hit_test(mouse)
+                    };
+                    let active_color = Color::from_rgba8(246, 246, 246, 255);
+                    let base_color = Color::from_rgba8(246, 186, 92, 255);
+                    for handle_rect in scale_gizmo.all_rects() {
+                        let color = if is_active {
+                            active_color
+                        } else if hovered_handle.is_some()
+                            && scale_gizmo.hit_test(mouse) == hovered_handle
+                        {
+                            Color::new(base_color.r, base_color.g, base_color.b, 0.9)
+                        } else {
+                            base_color
+                        };
+                        canvas.rect(
+                            handle_rect.x,
+                            handle_rect.y,
+                            handle_rect.w,
+                            handle_rect.h,
+                            color,
+                        );
+                    }
+                }
+            }
         }
 
-        if self.active_scene_tab().viewport_drag.is_some() {
+        let hud_label = if self.active_scene_tab().viewport_rotate_drag.is_some() {
+            let degrees = self
+                .active_scene_tab()
+                .viewport_rotate_drag
+                .as_ref()
+                .map(|d| d.applied_degrees)
+                .unwrap_or(0.0);
+            let snap_text = if viewport_snap_enabled(engine) {
+                format!("Rotate  {:.0}°  Snap 15°  Shift: free", degrees)
+            } else {
+                format!("Rotate  {:.0}°  Free  Release Shift for 15° snap", degrees)
+            };
+            Some(snap_text)
+        } else if self.active_scene_tab().viewport_scale_drag.is_some() {
+            let factor = self
+                .active_scene_tab()
+                .viewport_scale_drag
+                .as_ref()
+                .map(|d| d.applied_factor)
+                .unwrap_or(1.0);
+            Some(format!("Scale  {:.2}×", factor))
+        } else if self.active_scene_tab().viewport_drag.is_some() {
             let drag_label = match self.active_scene_tab().viewport_drag.as_ref() {
                 Some(ViewportDrag {
                     constraint: ViewportDragConstraint::AxisX,
@@ -861,7 +1012,7 @@ impl RengineNativeEditor {
                 }) => "Move Y",
                 _ => "Move XY",
             };
-            let snap_label = if viewport_snap_enabled(engine) {
+            let snap_text = if viewport_snap_enabled(engine) {
                 format!(
                     "{}  Snap {:.0}px  Shift: free move",
                     drag_label, VIEWPORT_GRID_STEP
@@ -872,14 +1023,31 @@ impl RengineNativeEditor {
                     drag_label, VIEWPORT_GRID_STEP
                 )
             };
+            Some(snap_text)
+        } else {
+            None
+        };
+        if let Some(label) = hud_label {
             canvas.text(
                 viewport.x + 12.0,
                 viewport.y + 18.0,
-                &snap_label,
+                &label,
                 11.0,
                 Color::from_rgba8(168, 186, 202, 255),
             );
         }
+        let mode_label = match self.active_scene_tab().gizmo_mode {
+            GizmoMode::Translate => "W  Translate",
+            GizmoMode::Rotate => "E  Rotate",
+            GizmoMode::Scale => "R  Scale",
+        };
+        canvas.text(
+            viewport.right() - 100.0,
+            viewport.y + 18.0,
+            mode_label,
+            11.0,
+            Color::from_rgba8(148, 162, 180, 200),
+        );
 
         if let Some(box_selection) = self.active_scene_tab().viewport_box_selection.as_ref() {
             let rect = PanelRect::new(
@@ -1326,6 +1494,39 @@ pub(crate) fn selection_translate_gizmo(
     }
 }
 
+pub(crate) fn selection_rotate_gizmo(
+    bounds: [f32; 4],
+    viewport: PanelRect,
+    pan: Vec2,
+) -> ViewportRotateGizmo {
+    let center = scene_to_screen(scene_bounds_center(bounds), viewport, pan);
+    ViewportRotateGizmo {
+        center,
+        radius: VIEWPORT_ROTATE_RING_RADIUS,
+    }
+}
+
+pub(crate) fn selection_scale_gizmo(
+    bounds: [f32; 4],
+    viewport: PanelRect,
+    pan: Vec2,
+) -> ViewportScaleGizmo {
+    let bounds_rect = scene_bounds_rect(bounds, viewport, pan);
+    let h = VIEWPORT_SCALE_HANDLE_SIZE;
+    let half = h * 0.5;
+    let _center = bounds_rect.center();
+    let left = bounds_rect.x - half;
+    let right = bounds_rect.right() - half;
+    let bottom = bounds_rect.y - half;
+    let top = bounds_rect.top() - half;
+    ViewportScaleGizmo {
+        top_left: PanelRect::new(left, top, h, h),
+        top_right: PanelRect::new(right, top, h, h),
+        bottom_left: PanelRect::new(left, bottom, h, h),
+        bottom_right: PanelRect::new(right, bottom, h, h),
+    }
+}
+
 fn scene_bounds_rect(bounds: [f32; 4], viewport: PanelRect, pan: Vec2) -> PanelRect {
     let bottom_left = scene_to_screen([bounds[0], bounds[1]], viewport, pan);
     let top_right = scene_to_screen([bounds[2], bounds[3]], viewport, pan);
@@ -1400,6 +1601,7 @@ mod tests {
             kind: SceneNodeKind::Empty,
             position,
             size,
+            rotation: 0.0,
             visible: true,
             script_path: String::new(),
             runtime_prefab: String::new(),
@@ -1448,5 +1650,64 @@ mod tests {
             gizmo.hit_test(gizmo.y_axis_rect.center()),
             Some(ViewportTranslateHandle::AxisY)
         );
+    }
+
+    fn dummy_viewport() -> PanelRect {
+        PanelRect::new(0.0, 0.0, 400.0, 300.0)
+    }
+
+    #[test]
+    fn rotate_gizmo_hit_test_detects_ring() {
+        let bounds = [-50.0_f32, -50.0, 50.0, 50.0];
+        let viewport = dummy_viewport();
+        let pan = Vec2::ZERO;
+        let gizmo = selection_rotate_gizmo(bounds, viewport, pan);
+        let center = gizmo.center;
+        let on_ring = Vec2::new(center.x + VIEWPORT_ROTATE_RING_RADIUS, center.y);
+        let inside = Vec2::new(center.x + 10.0, center.y);
+        let outside = Vec2::new(center.x + VIEWPORT_ROTATE_RING_RADIUS + 20.0, center.y);
+        assert!(gizmo.hit_test(on_ring));
+        assert!(!gizmo.hit_test(inside));
+        assert!(!gizmo.hit_test(outside));
+    }
+
+    #[test]
+    fn scale_gizmo_hit_test_detects_corners() {
+        let bounds = [-40.0_f32, -30.0, 40.0, 30.0];
+        let viewport = dummy_viewport();
+        let pan = Vec2::ZERO;
+        let gizmo = selection_scale_gizmo(bounds, viewport, pan);
+        assert_eq!(
+            gizmo.hit_test(gizmo.top_left.center()),
+            Some(ScaleHandle::TopLeft)
+        );
+        assert_eq!(
+            gizmo.hit_test(gizmo.top_right.center()),
+            Some(ScaleHandle::TopRight)
+        );
+        assert_eq!(
+            gizmo.hit_test(gizmo.bottom_left.center()),
+            Some(ScaleHandle::BottomLeft)
+        );
+        assert_eq!(
+            gizmo.hit_test(gizmo.bottom_right.center()),
+            Some(ScaleHandle::BottomRight)
+        );
+        assert!(gizmo
+            .hit_test(gizmo.top_left.center() + Vec2::new(50.0, 0.0))
+            .is_none());
+    }
+
+    #[test]
+    fn rotate_gizmo_pointer_angle_returns_correct_quadrant() {
+        let bounds = [0.0_f32, 0.0, 0.0, 0.0];
+        let viewport = dummy_viewport();
+        let pan = Vec2::ZERO;
+        let gizmo = selection_rotate_gizmo(bounds, viewport, pan);
+        let center = gizmo.center;
+        let right = Vec2::new(center.x + 1.0, center.y);
+        let down = Vec2::new(center.x, center.y + 1.0);
+        assert!((gizmo.pointer_angle(right) - 0.0).abs() < 0.01);
+        assert!((gizmo.pointer_angle(down) - std::f32::consts::FRAC_PI_2).abs() < 0.01);
     }
 }

@@ -947,38 +947,109 @@ impl RengineNativeEditor {
         let additive = history_modifier_down(engine);
 
         if !additive {
-            let gizmo_drag = {
+            let gizmo_consumed = {
                 let tab = self.active_scene_tab();
-                scene_nodes_bounds(
+                let bounds = scene_nodes_bounds(
                     tab.scene
                         .nodes
                         .iter()
                         .filter(|node| tab.is_node_selected(node.id)),
-                )
-                .and_then(|bounds| {
-                    selection_translate_gizmo(bounds, layout.viewport, tab.viewport_pan)
-                        .hit_test(mouse)
-                        .map(|handle| ViewportDrag {
-                            node_ids: tab.selected_root_ids(),
-                            transform_origin: scene_bounds_center(bounds),
-                            pointer_scene_origin: screen_to_scene(
-                                mouse,
-                                layout.viewport,
-                                tab.viewport_pan,
-                            ),
-                            applied_delta: [0.0, 0.0],
-                            constraint: match handle {
-                                ViewportTranslateHandle::Plane => ViewportDragConstraint::Free,
-                                ViewportTranslateHandle::AxisX => ViewportDragConstraint::AxisX,
-                                ViewportTranslateHandle::AxisY => ViewportDragConstraint::AxisY,
-                            },
-                            history_captured: false,
-                        })
-                })
+                );
+                match (bounds, tab.gizmo_mode) {
+                    (Some(bounds), GizmoMode::Translate) => {
+                        if let Some(handle) =
+                            selection_translate_gizmo(bounds, layout.viewport, tab.viewport_pan)
+                                .hit_test(mouse)
+                        {
+                            let drag = ViewportDrag {
+                                node_ids: tab.selected_root_ids(),
+                                transform_origin: scene_bounds_center(bounds),
+                                pointer_scene_origin: screen_to_scene(
+                                    mouse,
+                                    layout.viewport,
+                                    tab.viewport_pan,
+                                ),
+                                applied_delta: [0.0, 0.0],
+                                constraint: match handle {
+                                    ViewportTranslateHandle::Plane => ViewportDragConstraint::Free,
+                                    ViewportTranslateHandle::AxisX => ViewportDragConstraint::AxisX,
+                                    ViewportTranslateHandle::AxisY => ViewportDragConstraint::AxisY,
+                                },
+                                history_captured: false,
+                            };
+                            Some(Box::new(move |tab_mut: &mut SceneTab| {
+                                tab_mut.viewport_drag = Some(drag);
+                            })
+                                as Box<dyn FnOnce(&mut SceneTab)>)
+                        } else {
+                            None
+                        }
+                    }
+                    (Some(bounds), GizmoMode::Rotate) => {
+                        let rotate_gizmo =
+                            selection_rotate_gizmo(bounds, layout.viewport, tab.viewport_pan);
+                        if rotate_gizmo.hit_test(mouse) {
+                            let node_ids = tab.selected_root_ids();
+                            let pivot = scene_bounds_center(bounds);
+                            let angle_start = rotate_gizmo.pointer_angle(mouse);
+                            Some(Box::new(move |tab_mut: &mut SceneTab| {
+                                tab_mut.viewport_rotate_drag = Some(ViewportRotateDrag {
+                                    node_ids,
+                                    pivot_scene: pivot,
+                                    angle_start,
+                                    applied_degrees: 0.0,
+                                    history_captured: false,
+                                });
+                            })
+                                as Box<dyn FnOnce(&mut SceneTab)>)
+                        } else {
+                            None
+                        }
+                    }
+                    (Some(bounds), GizmoMode::Scale) => {
+                        let scale_gizmo =
+                            selection_scale_gizmo(bounds, layout.viewport, tab.viewport_pan);
+                        if scale_gizmo.hit_test(mouse).is_some() {
+                            let node_ids = tab.selected_root_ids();
+                            let pivot = scene_bounds_center(bounds);
+                            let pivot_screen =
+                                scene_to_screen(pivot, layout.viewport, tab.viewport_pan);
+                            let dx = mouse.x - pivot_screen.x;
+                            let dy = mouse.y - pivot_screen.y;
+                            let dist = (dx * dx + dy * dy).sqrt().max(1.0);
+                            let original_offsets: Vec<[f32; 2]> = node_ids
+                                .iter()
+                                .filter_map(|id| tab.scene.node(*id))
+                                .map(|n| [n.position[0] - pivot[0], n.position[1] - pivot[1]])
+                                .collect();
+                            let original_sizes: Vec<[f32; 2]> = node_ids
+                                .iter()
+                                .filter_map(|id| tab.scene.node(*id))
+                                .map(|n| n.size)
+                                .collect();
+                            Some(Box::new(move |tab_mut: &mut SceneTab| {
+                                tab_mut.viewport_scale_drag = Some(ViewportScaleDrag {
+                                    node_ids,
+                                    pivot_scene: pivot,
+                                    pointer_start_dist: dist,
+                                    original_offsets,
+                                    original_sizes,
+                                    applied_factor: 1.0,
+                                    history_captured: false,
+                                });
+                            })
+                                as Box<dyn FnOnce(&mut SceneTab)>)
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
+                }
             };
-            if let Some(gizmo_drag) = gizmo_drag {
-                self.active_scene_tab_mut().viewport_box_selection = None;
-                self.active_scene_tab_mut().viewport_drag = Some(gizmo_drag);
+            if let Some(apply) = gizmo_consumed {
+                let tab = self.active_scene_tab_mut();
+                tab.viewport_box_selection = None;
+                apply(tab);
                 return;
             }
         }
@@ -1058,6 +1129,8 @@ impl RengineNativeEditor {
             {
                 let tab = self.active_scene_tab_mut();
                 tab.viewport_drag = None;
+                tab.viewport_rotate_drag = None;
+                tab.viewport_scale_drag = None;
                 tab.viewport_box_selection = None;
             }
             if let Some(box_selection) = box_selection {
@@ -1080,6 +1153,16 @@ impl RengineNativeEditor {
         let pointer = engine.mouse_screen_pos();
         if let Some(box_selection) = self.active_scene_tab_mut().viewport_box_selection.as_mut() {
             box_selection.pointer_current = pointer;
+            return;
+        }
+
+        if self.active_scene_tab().viewport_rotate_drag.is_some() {
+            self.update_rotate_drag(engine, layout, pointer);
+            return;
+        }
+
+        if self.active_scene_tab().viewport_scale_drag.is_some() {
+            self.update_scale_drag(engine, layout, pointer);
             return;
         }
 
@@ -1122,6 +1205,91 @@ impl RengineNativeEditor {
             }
             if let Some(active_drag) = tab.viewport_drag.as_mut() {
                 active_drag.applied_delta = desired_delta;
+            }
+            tab.mark_dirty();
+        }
+    }
+
+    fn update_rotate_drag(&mut self, engine: &Engine, layout: &ShellLayout, pointer: Vec2) {
+        let Some(drag) = self.active_scene_tab().viewport_rotate_drag.clone() else {
+            return;
+        };
+        let pivot_screen = scene_to_screen(
+            drag.pivot_scene,
+            layout.viewport,
+            self.active_scene_tab().viewport_pan,
+        );
+        let current_angle = {
+            let dx = pointer.x - pivot_screen.x;
+            let dy = pointer.y - pivot_screen.y;
+            dy.atan2(dx)
+        };
+        let raw_degrees = (current_angle - drag.angle_start).to_degrees();
+        let target_degrees = if viewport_snap_enabled(engine) {
+            (raw_degrees / 15.0).round() * 15.0
+        } else {
+            raw_degrees
+        };
+        let delta_degrees = target_degrees - drag.applied_degrees;
+
+        if delta_degrees.abs() > f32::EPSILON {
+            let history_entry = (!drag.history_captured)
+                .then(|| SceneHistoryEntry::capture(self.active_scene_tab()));
+            let tab = self.active_scene_tab_mut();
+            if let Some(history_entry) = history_entry {
+                tab.push_undo_entry(history_entry);
+                if let Some(d) = tab.viewport_rotate_drag.as_mut() {
+                    d.history_captured = true;
+                }
+            }
+            for node_id in &drag.node_ids {
+                tab.scene.rotate_node(*node_id, delta_degrees);
+            }
+            if let Some(d) = tab.viewport_rotate_drag.as_mut() {
+                d.applied_degrees = target_degrees;
+            }
+            tab.mark_dirty();
+        }
+    }
+
+    fn update_scale_drag(&mut self, _engine: &Engine, layout: &ShellLayout, pointer: Vec2) {
+        let Some(drag) = self.active_scene_tab().viewport_scale_drag.clone() else {
+            return;
+        };
+        let pivot_screen = scene_to_screen(
+            drag.pivot_scene,
+            layout.viewport,
+            self.active_scene_tab().viewport_pan,
+        );
+        let dx = pointer.x - pivot_screen.x;
+        let dy = pointer.y - pivot_screen.y;
+        let current_dist = (dx * dx + dy * dy).sqrt().max(1.0);
+        let new_factor = (current_dist / drag.pointer_start_dist).max(0.05);
+        let factor_delta = new_factor / drag.applied_factor;
+
+        if (factor_delta - 1.0).abs() > 0.001 {
+            let history_entry = (!drag.history_captured)
+                .then(|| SceneHistoryEntry::capture(self.active_scene_tab()));
+            let tab = self.active_scene_tab_mut();
+            if let Some(history_entry) = history_entry {
+                tab.push_undo_entry(history_entry);
+                if let Some(d) = tab.viewport_scale_drag.as_mut() {
+                    d.history_captured = true;
+                }
+            }
+            for (i, node_id) in drag.node_ids.iter().enumerate() {
+                let orig_offset = drag.original_offsets[i];
+                let orig_size = drag.original_sizes[i];
+                let new_position = [
+                    drag.pivot_scene[0] + orig_offset[0] * new_factor,
+                    drag.pivot_scene[1] + orig_offset[1] * new_factor,
+                ];
+                let new_size = [orig_size[0] * new_factor, orig_size[1] * new_factor];
+                tab.scene
+                    .set_node_position_and_size(*node_id, new_position, new_size);
+            }
+            if let Some(d) = tab.viewport_scale_drag.as_mut() {
+                d.applied_factor = new_factor;
             }
             tab.mark_dirty();
         }
@@ -1443,6 +1611,7 @@ mod tests {
             kind: SceneNodeKind::Empty,
             position,
             size,
+            rotation: 0.0,
             visible: true,
             script_path: String::new(),
             runtime_prefab: String::new(),

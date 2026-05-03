@@ -108,6 +108,8 @@ pub struct SceneNode {
     pub kind: SceneNodeKind,
     pub position: [f32; 2],
     pub size: [f32; 2],
+    #[serde(default)]
+    pub rotation: f32,
     pub visible: bool,
     pub script_path: String,
     #[serde(default)]
@@ -138,6 +140,7 @@ impl SceneNode {
             kind,
             position,
             size: kind.default_size(),
+            rotation: 0.0,
             visible: true,
             script_path: String::new(),
             runtime_prefab: String::new(),
@@ -478,6 +481,19 @@ impl SceneDocument {
         }
     }
 
+    pub fn rotate_node(&mut self, node_id: u64, degrees: f32) {
+        if let Some(node) = self.nodes.iter_mut().find(|n| n.id == node_id) {
+            node.rotation = (node.rotation + degrees).rem_euclid(360.0);
+        }
+    }
+
+    pub fn set_node_position_and_size(&mut self, node_id: u64, position: [f32; 2], size: [f32; 2]) {
+        if let Some(node) = self.nodes.iter_mut().find(|n| n.id == node_id) {
+            node.position = position;
+            node.size = [size[0].max(1.0), size[1].max(1.0)];
+        }
+    }
+
     pub fn pretty_json(&self) -> String {
         serde_json::to_string_pretty(self)
             .unwrap_or_else(|error| format!("{{\n  \"error\": \"{}\"\n}}", error))
@@ -688,5 +704,41 @@ mod tests {
 
         assert!(document.reorder_nodes(&[2], SceneNodeReorderDirection::Down));
         assert_eq!(document.root_ids(), vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn rotate_node_accumulates_and_wraps_to_360() {
+        let mut document = SceneDocument {
+            name: "test".to_string(),
+            view: SceneViewSettings::default(),
+            nodes: vec![test_node(1)],
+            next_id: 2,
+        };
+
+        document.rotate_node(1, 90.0);
+        assert!((document.node(1).unwrap().rotation - 90.0).abs() < 0.01);
+
+        document.rotate_node(1, 300.0);
+        assert!((document.node(1).unwrap().rotation - 30.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn scale_changes_node_position_and_size() {
+        let mut document = SceneDocument {
+            name: "test".to_string(),
+            view: SceneViewSettings::default(),
+            nodes: vec![{
+                let mut n = test_node(1);
+                n.position = [100.0, 0.0];
+                n.size = [40.0, 40.0];
+                n
+            }],
+            next_id: 2,
+        };
+
+        document.set_node_position_and_size(1, [200.0, 0.0], [80.0, 80.0]);
+        let node = document.node(1).unwrap();
+        assert_eq!(node.position, [200.0, 0.0]);
+        assert_eq!(node.size, [80.0, 80.0]);
     }
 }

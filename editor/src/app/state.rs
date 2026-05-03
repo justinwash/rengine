@@ -2,6 +2,14 @@ use super::*;
 
 const MAX_SCENE_HISTORY_STEPS: usize = 128;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub(crate) enum GizmoMode {
+    #[default]
+    Translate,
+    Rotate,
+    Scale,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ViewportDragConstraint {
     Free,
@@ -16,6 +24,26 @@ pub(crate) struct ViewportDrag {
     pub(crate) pointer_scene_origin: [f32; 2],
     pub(crate) applied_delta: [f32; 2],
     pub(crate) constraint: ViewportDragConstraint,
+    pub(crate) history_captured: bool,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct ViewportRotateDrag {
+    pub(crate) node_ids: Vec<u64>,
+    pub(crate) pivot_scene: [f32; 2],
+    pub(crate) angle_start: f32,
+    pub(crate) applied_degrees: f32,
+    pub(crate) history_captured: bool,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct ViewportScaleDrag {
+    pub(crate) node_ids: Vec<u64>,
+    pub(crate) pivot_scene: [f32; 2],
+    pub(crate) pointer_start_dist: f32,
+    pub(crate) original_offsets: Vec<[f32; 2]>,
+    pub(crate) original_sizes: Vec<[f32; 2]>,
+    pub(crate) applied_factor: f32,
     pub(crate) history_captured: bool,
 }
 
@@ -99,7 +127,10 @@ pub(crate) struct SceneTab {
     pub(crate) scene_path: Option<PathBuf>,
     pub(crate) selected_node: Option<u64>,
     pub(crate) selected_nodes: Vec<u64>,
+    pub(crate) gizmo_mode: GizmoMode,
     pub(crate) viewport_drag: Option<ViewportDrag>,
+    pub(crate) viewport_rotate_drag: Option<ViewportRotateDrag>,
+    pub(crate) viewport_scale_drag: Option<ViewportScaleDrag>,
     pub(crate) viewport_box_selection: Option<ViewportBoxSelection>,
     pub(crate) viewport_pan: Vec2,
     pub(crate) viewport_pan_drag: Option<ViewportPanDrag>,
@@ -126,7 +157,10 @@ impl SceneTab {
             scene_path,
             selected_node: None,
             selected_nodes: Vec::new(),
+            gizmo_mode: GizmoMode::Translate,
             viewport_drag: None,
+            viewport_rotate_drag: None,
+            viewport_scale_drag: None,
             viewport_box_selection: None,
             viewport_pan: Vec2::ZERO,
             viewport_pan_drag: None,
@@ -299,6 +333,8 @@ impl SceneTab {
         self.scene = entry.scene;
         self.set_selection(entry.selected_node, entry.selected_nodes);
         self.viewport_drag = None;
+        self.viewport_rotate_drag = None;
+        self.viewport_scale_drag = None;
         self.viewport_box_selection = None;
         self.viewport_pan_drag = None;
         self.collapsed_nodes
