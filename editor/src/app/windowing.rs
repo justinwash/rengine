@@ -1,5 +1,7 @@
 use super::*;
 
+const VIEWPORT_BOX_SELECTION_CLICK_THRESHOLD: f32 = 6.0;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum DockPanelKind {
     Files,
@@ -657,10 +659,10 @@ impl RengineNativeEditor {
         if self.handle_project_tree_click(mouse, layout) {
             return;
         }
-        if self.handle_scene_tree_click(mouse, layout) {
+        if self.handle_scene_tree_click(engine, mouse, layout) {
             return;
         }
-        self.handle_viewport_press(mouse, layout);
+        self.handle_viewport_press(engine, mouse, layout);
     }
 
     pub(crate) fn handle_top_bar_click(&mut self, mouse: Vec2, layout: &ShellLayout) -> bool {
@@ -728,7 +730,7 @@ impl RengineNativeEditor {
             }
         }
 
-        self.active_scene_tab_mut().selected_node = parent;
+        self.select_only_scene_node(parent);
         self.open_add_node_menu(mouse, parent, None);
         true
     }
@@ -754,7 +756,7 @@ impl RengineNativeEditor {
             self.active_scene_tab().viewport_pan,
         ));
 
-        self.active_scene_tab_mut().selected_node = target;
+        self.select_only_scene_node(target);
         self.open_add_node_menu(mouse, target, position);
         true
     }
@@ -878,14 +880,23 @@ impl RengineNativeEditor {
         None
     }
 
-    pub(crate) fn handle_scene_tree_click(&mut self, mouse: Vec2, layout: &ShellLayout) -> bool {
+    pub(crate) fn handle_scene_tree_click(
+        &mut self,
+        engine: &Engine,
+        mouse: Vec2,
+        layout: &ShellLayout,
+    ) -> bool {
         if !layout.hierarchy_open || !layout.hierarchy.contains(mouse) {
             return false;
         }
 
+        let additive = history_modifier_down(engine);
+
         let header_rect = scene_hierarchy_header_rect(layout.hierarchy);
         if header_rect.contains(mouse) {
-            self.active_scene_tab_mut().selected_node = None;
+            if !additive {
+                self.select_only_scene_node(None);
+            }
             return true;
         }
 
@@ -906,19 +917,34 @@ impl RengineNativeEditor {
                     }
                 }
 
-                self.active_scene_tab_mut().selected_node = Some(line.node_id);
+                if additive {
+                    self.toggle_scene_node_selection(line.node_id);
+                } else if self.active_scene_tab().is_node_selected(line.node_id) {
+                    self.focus_scene_node(line.node_id);
+                } else {
+                    self.select_only_scene_node(Some(line.node_id));
+                }
                 return true;
             }
         }
 
-        self.active_scene_tab_mut().selected_node = None;
+        if !additive {
+            self.select_only_scene_node(None);
+        }
         true
     }
 
-    pub(crate) fn handle_viewport_press(&mut self, mouse: Vec2, layout: &ShellLayout) {
+    pub(crate) fn handle_viewport_press(
+        &mut self,
+        engine: &Engine,
+        mouse: Vec2,
+        layout: &ShellLayout,
+    ) {
         if !layout.viewport.contains(mouse) {
             return;
         }
+
+        let additive = history_modifier_down(engine);
 
         let node_rects = self.viewport_node_rects(layout.viewport);
         if let Some((node_id, rect)) = node_rects
@@ -926,14 +952,36 @@ impl RengineNativeEditor {
             .rev()
             .find(|(_, rect)| rect.contains(mouse))
         {
-            self.active_scene_tab_mut().selected_node = Some(*node_id);
+            self.active_scene_tab_mut().viewport_box_selection = None;
+
+            if additive {
+                self.toggle_scene_node_selection(*node_id);
+                self.active_scene_tab_mut().viewport_drag = None;
+                return;
+            }
+
+            if self.active_scene_tab().is_node_selected(*node_id) {
+                self.focus_scene_node(*node_id);
+            } else {
+                self.select_only_scene_node(Some(*node_id));
+            }
+
+            let drag_node_ids = self.active_scene_tab().selected_root_ids();
             self.active_scene_tab_mut().viewport_drag = Some(ViewportDrag {
-                node_id: *node_id,
+                anchor_node_id: *node_id,
+                node_ids: drag_node_ids,
                 pointer_offset: mouse - rect.center(),
                 history_captured: false,
             });
         } else {
-            self.active_scene_tab_mut().selected_node = None;
+            self.active_scene_tab_mut().viewport_drag = None;
+            self.active_scene_tab_mut().viewport_box_selection = Some(ViewportBoxSelection {
+                pointer_origin: mouse,
+                pointer_current: mouse,
+                additive,
+                initial_selected_node: self.active_scene_tab().selected_node,
+                initial_selected_nodes: self.active_scene_tab().selected_nodes.clone(),
+            });
         }
     }
 
@@ -955,8 +1003,17 @@ impl RengineNativeEditor {
     }
 
     pub(crate) fn update_viewport_drag(&mut self, engine: &Engine, layout: &ShellLayout) {
-        if !engine.input().is_mouse_down(0) {
-            self.active_scene_tab_mut().viewport_drag = None;
+        let left_mouse_down = engine.input().is_mouse_down(0);
+        if !left_mouse_down {
+            let box_selection = self.active_scene_tab().viewport_box_selection.clone();
+            {
+                let tab = self.active_scene_tab_mut();
+                tab.viewport_drag = None;
+                tab.viewport_box_selection = None;
+            }
+            if let Some(box_selection) = box_selection {
+                self.finish_viewport_box_selection(box_selection, layout.viewport);
+            }
         }
 
         if !engine.input().is_mouse_down(2) {
@@ -967,7 +1024,13 @@ impl RengineNativeEditor {
                 pan_drag.pan_origin + (pointer - pan_drag.pointer_origin);
         }
 
-        if !engine.input().is_mouse_down(0) {
+        if !left_mouse_down {
+            return;
+        }
+
+        let pointer = engine.mouse_screen_pos();
+        if let Some(box_selection) = self.active_scene_tab_mut().viewport_box_selection.as_mut() {
+            box_selection.pointer_current = pointer;
             return;
         }
 
@@ -975,7 +1038,6 @@ impl RengineNativeEditor {
             return;
         };
 
-        let pointer = engine.mouse_screen_pos();
         let target_center = pointer - drag.pointer_offset;
         let next_position = screen_to_scene(
             target_center,
@@ -985,7 +1047,7 @@ impl RengineNativeEditor {
 
         let delta = {
             let tab = self.active_scene_tab();
-            let Some(node) = tab.scene.node(drag.node_id) else {
+            let Some(node) = tab.scene.node(drag.anchor_node_id) else {
                 return;
             };
             [
@@ -1004,9 +1066,46 @@ impl RengineNativeEditor {
                     active_drag.history_captured = true;
                 }
             }
-            tab.scene.translate_subtree(drag.node_id, delta);
+            for node_id in &drag.node_ids {
+                tab.scene.translate_subtree(*node_id, delta);
+            }
             tab.mark_dirty();
         }
+    }
+
+    pub(crate) fn finish_viewport_box_selection(
+        &mut self,
+        box_selection: ViewportBoxSelection,
+        viewport: PanelRect,
+    ) {
+        let selection_rect = viewport_box_selection_rect(&box_selection);
+        let box_hit_ids = if selection_rect.w < VIEWPORT_BOX_SELECTION_CLICK_THRESHOLD
+            && selection_rect.h < VIEWPORT_BOX_SELECTION_CLICK_THRESHOLD
+        {
+            Vec::new()
+        } else {
+            self.viewport_node_rects(viewport)
+                .into_iter()
+                .filter(|(_, node_rect)| panel_rects_overlap(selection_rect, *node_rect))
+                .map(|(node_id, _)| node_id)
+                .collect::<Vec<_>>()
+        };
+        let next_selected_node = box_hit_ids.last().copied().or(if box_selection.additive {
+            box_selection.initial_selected_node
+        } else {
+            None
+        });
+
+        if box_selection.additive {
+            let mut next_selected_nodes = box_selection.initial_selected_nodes;
+            next_selected_nodes.extend(box_hit_ids);
+            self.update_scene_selection(|tab| {
+                tab.set_selection(next_selected_node, next_selected_nodes)
+            });
+            return;
+        }
+
+        self.update_scene_selection(|tab| tab.set_selection(next_selected_node, box_hit_ids));
     }
 
     pub(crate) fn top_bar_buttons(&self, top_bar: PanelRect) -> Vec<(&'static str, PanelRect)> {
@@ -1145,6 +1244,28 @@ impl RengineNativeEditor {
 pub(crate) fn list_line_rect(list_rect: PanelRect, index: usize, scroll: f32) -> PanelRect {
     let top = list_rect.top() + scroll - index as f32 * LINE_HEIGHT;
     PanelRect::new(list_rect.x, top - LINE_HEIGHT, list_rect.w, LINE_HEIGHT)
+}
+
+fn viewport_box_selection_rect(box_selection: &ViewportBoxSelection) -> PanelRect {
+    PanelRect::new(
+        box_selection
+            .pointer_origin
+            .x
+            .min(box_selection.pointer_current.x),
+        box_selection
+            .pointer_origin
+            .y
+            .min(box_selection.pointer_current.y),
+        (box_selection.pointer_current.x - box_selection.pointer_origin.x).abs(),
+        (box_selection.pointer_current.y - box_selection.pointer_origin.y).abs(),
+    )
+}
+
+fn panel_rects_overlap(left: PanelRect, right: PanelRect) -> bool {
+    left.x <= right.right()
+        && left.right() >= right.x
+        && left.y <= right.top()
+        && left.top() >= right.y
 }
 
 pub(crate) fn button_preferred_width(label: &str) -> f32 {

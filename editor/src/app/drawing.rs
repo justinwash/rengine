@@ -276,7 +276,7 @@ impl RengineNativeEditor {
 
         let inner = panel.inset(PANEL_PADDING);
         let header_rect = scene_hierarchy_header_rect(panel);
-        if self.active_scene_tab().selected_node.is_none() {
+        if !self.active_scene_tab().has_selection() {
             canvas.rect(
                 header_rect.x,
                 header_rect.y,
@@ -326,13 +326,17 @@ impl RengineNativeEditor {
                     continue;
                 }
 
-                if self.active_scene_tab().selected_node == Some(line.node_id) {
+                if self.active_scene_tab().is_node_selected(line.node_id) {
                     canvas.rect(
                         line_rect.x,
                         line_rect.y,
                         (line_rect.w - SCROLLBAR_WIDTH - 4.0).max(0.0),
                         line_rect.h,
-                        Color::from_rgba8(44, 82, 122, 220),
+                        if self.active_scene_tab().selected_node == Some(line.node_id) {
+                            Color::from_rgba8(44, 82, 122, 220)
+                        } else {
+                            Color::from_rgba8(36, 64, 96, 180)
+                        },
                     );
                 }
 
@@ -424,17 +428,19 @@ impl RengineNativeEditor {
         let details_top = inner.top() - 94.0;
         if let Some(node_id) = self.active_scene_tab().selected_node {
             if let Some(node) = self.active_scene_tab().scene.node(node_id) {
-                let lines = [
-                    format!("Selected node {}", node.id),
-                    format!(
-                        "{}   pos {:.0}, {:.0}   size {:.0} x {:.0}",
-                        node.kind.label(),
-                        node.position[0],
-                        node.position[1],
-                        node.size[0],
-                        node.size[1]
-                    ),
-                ];
+                let selection_count = self.active_scene_tab().selection_count();
+                let mut lines = vec![format!("Selected node {}", node.id)];
+                if selection_count > 1 {
+                    lines.push(format!("{} nodes selected", selection_count));
+                }
+                lines.push(format!(
+                    "{}   pos {:.0}, {:.0}   size {:.0} x {:.0}",
+                    node.kind.label(),
+                    node.position[0],
+                    node.position[1],
+                    node.size[0],
+                    node.size[1]
+                ));
 
                 for (index, line) in lines.iter().enumerate() {
                     canvas.text(
@@ -583,6 +589,8 @@ impl RengineNativeEditor {
                     rect,
                     if self.active_scene_tab().selected_node == Some(node.id) {
                         Color::from_rgba8(107, 210, 214, 255)
+                    } else if self.active_scene_tab().is_node_selected(node.id) {
+                        Color::from_rgba8(94, 170, 192, 255)
                     } else {
                         Color::from_rgba8(72, 163, 166, 255)
                     },
@@ -622,6 +630,8 @@ impl RengineNativeEditor {
                 rect,
                 if self.active_scene_tab().selected_node == Some(node.id) {
                     Color::from_rgba8(247, 214, 93, 255)
+                } else if self.active_scene_tab().is_node_selected(node.id) {
+                    Color::from_rgba8(116, 196, 210, 255)
                 } else {
                     Color::from_rgba8(36, 44, 52, 255)
                 },
@@ -652,7 +662,7 @@ impl RengineNativeEditor {
                     Color::from_rgba8(224, 229, 236, 255),
                     TextAlign::Center,
                 );
-            } else if self.active_scene_tab().selected_node == Some(node.id) && rect.h >= 18.0 {
+            } else if self.active_scene_tab().is_node_selected(node.id) && rect.h >= 18.0 {
                 let label_rect = PanelRect::new(rect.x, rect.y, rect.w, 18.0);
                 canvas.rect(
                     label_rect.x,
@@ -666,7 +676,11 @@ impl RengineNativeEditor {
                     text_baseline_in_rect(canvas, label_rect, 11.0),
                     &node.name,
                     11.0,
-                    Color::from_rgba8(238, 242, 246, 255),
+                    if self.active_scene_tab().selected_node == Some(node.id) {
+                        Color::from_rgba8(238, 242, 246, 255)
+                    } else {
+                        Color::from_rgba8(214, 226, 236, 255)
+                    },
                     TextAlign::Center,
                 );
             }
@@ -685,6 +699,31 @@ impl RengineNativeEditor {
                 Color::from_rgba8(214, 220, 232, 255),
                 TextAlign::Center,
             );
+        }
+
+        if let Some(box_selection) = self.active_scene_tab().viewport_box_selection.as_ref() {
+            let rect = PanelRect::new(
+                box_selection
+                    .pointer_origin
+                    .x
+                    .min(box_selection.pointer_current.x),
+                box_selection
+                    .pointer_origin
+                    .y
+                    .min(box_selection.pointer_current.y),
+                (box_selection.pointer_current.x - box_selection.pointer_origin.x).abs(),
+                (box_selection.pointer_current.y - box_selection.pointer_origin.y).abs(),
+            );
+            if rect.w > 0.0 || rect.h > 0.0 {
+                canvas.rect(
+                    rect.x,
+                    rect.y,
+                    rect.w,
+                    rect.h,
+                    Color::from_rgba8(82, 146, 188, 48),
+                );
+                draw_outline(canvas, rect, Color::from_rgba8(116, 196, 210, 255));
+            }
         }
 
         canvas.pop_clip();
