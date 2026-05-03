@@ -94,6 +94,12 @@ impl SceneNodeKind {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SceneNodeReorderDirection {
+    Up,
+    Down,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SceneNode {
     pub id: u64,
@@ -220,7 +226,46 @@ impl SceneDocument {
             .collect()
     }
 
-    pub fn translate_subtree(&mut self, node_id: u64, delta: [f32; 2]) {
+    pub fn is_descendant_of(&self, node_id: u64, ancestor_id: u64) -> bool {
+        let mut current = self.node(node_id).and_then(|node| node.parent);
+        while let Some(parent_id) = current {
+            if parent_id == ancestor_id {
+                return true;
+            }
+            current = self.node(parent_id).and_then(|node| node.parent);
+        }
+
+        false
+    }
+
+    pub fn selected_root_ids(&self, node_ids: &[u64]) -> Vec<u64> {
+        let selected: HashSet<u64> = node_ids
+            .iter()
+            .copied()
+            .filter(|node_id| self.node(*node_id).is_some())
+            .collect();
+
+        self.nodes
+            .iter()
+            .filter_map(|node| {
+                if !selected.contains(&node.id) {
+                    return None;
+                }
+
+                let mut current = node.parent;
+                while let Some(parent_id) = current {
+                    if selected.contains(&parent_id) {
+                        return None;
+                    }
+                    current = self.node(parent_id).and_then(|parent| parent.parent);
+                }
+
+                Some(node.id)
+            })
+            .collect()
+    }
+
+    pub fn subtree_ids(&self, node_id: u64) -> Vec<u64> {
         let mut children_by_parent: HashMap<u64, Vec<u64>> = HashMap::new();
         for node in &self.nodes {
             if let Some(parent) = node.parent {
@@ -236,9 +281,184 @@ impl SceneDocument {
             }
 
             if let Some(child_ids) = children_by_parent.get(&current_id) {
-                stack.extend(child_ids.iter().copied());
+                stack.extend(child_ids.iter().rev().copied());
             }
         }
+
+        self.nodes
+            .iter()
+            .filter(|node| subtree_ids.contains(&node.id))
+            .map(|node| node.id)
+            .collect()
+    }
+
+    pub fn duplicate_nodes(&mut self, node_ids: &[u64], position_delta: [f32; 2]) -> Vec<u64> {
+        let root_ids = self.selected_root_ids(node_ids);
+        if root_ids.is_empty() {
+            return Vec::new();
+        }
+
+        let source_nodes = self.nodes.clone();
+        let source_by_id: HashMap<u64, SceneNode> = source_nodes
+            .iter()
+            .cloned()
+            .map(|node| (node.id, node))
+            .collect();
+        let mut children_by_parent: HashMap<u64, Vec<u64>> = HashMap::new();
+        for node in &source_nodes {
+            if let Some(parent) = node.parent {
+                children_by_parent.entry(parent).or_default().push(node.id);
+            }
+        }
+
+        let mut duplicated_root_ids = Vec::new();
+        for root_id in root_ids {
+            if let Some(duplicated_root_id) = self.duplicate_subtree(
+                root_id,
+                None,
+                position_delta,
+                &source_by_id,
+                &children_by_parent,
+            ) {
+                duplicated_root_ids.push(duplicated_root_id);
+            }
+        }
+
+        duplicated_root_ids
+    }
+
+    pub fn reparent_nodes(&mut self, node_ids: &[u64], new_parent: Option<u64>) -> bool {
+        let root_ids = self.selected_root_ids(node_ids);
+        if root_ids.is_empty() {
+            return false;
+        }
+
+        if root_ids
+            .iter()
+            .any(|root_id| !self.can_reparent_node(*root_id, new_parent))
+        {
+            return false;
+        }
+
+        let moved_ids: HashSet<u64> = root_ids
+            .iter()
+            .flat_map(|root_id| self.subtree_ids(*root_id))
+            .collect();
+        let root_id_set: HashSet<u64> = root_ids.iter().copied().collect();
+        let mut moved_nodes = self.extract_nodes_by_ids(&moved_ids);
+        for node in &mut moved_nodes {
+            if root_id_set.contains(&node.id) {
+                node.parent = new_parent;
+            }
+        }
+        self.nodes.extend(moved_nodes);
+        true
+    }
+
+    pub fn reorder_nodes(
+        &mut self,
+        node_ids: &[u64],
+        direction: SceneNodeReorderDirection,
+    ) -> bool {
+        let root_ids = self.selected_root_ids(node_ids);
+        if root_ids.is_empty() {
+            return false;
+        }
+
+        let Some(first_root) = root_ids.first().copied() else {
+            return false;
+        };
+        let Some(parent) = self.node(first_root).map(|node| node.parent) else {
+            return false;
+        };
+
+        if root_ids
+            .iter()
+            .copied()
+            .any(|root_id| self.node(root_id).map(|node| node.parent) != Some(parent))
+        {
+            return false;
+        }
+
+        let sibling_root_ids = if let Some(parent_id) = parent {
+            self.child_ids(parent_id)
+        } else {
+            self.root_ids()
+        };
+        let selected_positions: Vec<usize> = sibling_root_ids
+            .iter()
+            .enumerate()
+            .filter_map(|(index, sibling_id)| root_ids.contains(sibling_id).then_some(index))
+            .collect();
+        if selected_positions.is_empty() {
+            return false;
+        }
+
+        let min_index = selected_positions[0];
+        let max_index = *selected_positions.last().unwrap_or(&min_index);
+        let insert_index = match direction {
+            SceneNodeReorderDirection::Up => {
+                if min_index == 0 {
+                    return false;
+                }
+                min_index - 1
+            }
+            SceneNodeReorderDirection::Down => {
+                if max_index + 1 >= sibling_root_ids.len() {
+                    return false;
+                }
+                min_index + 1
+            }
+        };
+
+        let selected_root_set: HashSet<u64> = root_ids.iter().copied().collect();
+        let mut reordered_root_ids: Vec<u64> = sibling_root_ids
+            .iter()
+            .copied()
+            .filter(|sibling_id| !selected_root_set.contains(sibling_id))
+            .collect();
+        reordered_root_ids.splice(insert_index..insert_index, root_ids.iter().copied());
+
+        let mut subtree_root_by_id = HashMap::new();
+        for root_id in &sibling_root_ids {
+            for subtree_id in self.subtree_ids(*root_id) {
+                subtree_root_by_id.insert(subtree_id, *root_id);
+            }
+        }
+
+        let mut blocks: HashMap<u64, Vec<SceneNode>> = sibling_root_ids
+            .iter()
+            .copied()
+            .map(|root_id| (root_id, Vec::new()))
+            .collect();
+        let mut insertion_index = None;
+        let mut remaining_nodes = Vec::with_capacity(self.nodes.len());
+
+        for node in std::mem::take(&mut self.nodes) {
+            if let Some(root_id) = subtree_root_by_id.get(&node.id).copied() {
+                if insertion_index.is_none() {
+                    insertion_index = Some(remaining_nodes.len());
+                }
+                blocks.entry(root_id).or_default().push(node);
+            } else {
+                remaining_nodes.push(node);
+            }
+        }
+
+        let insert_at = insertion_index.unwrap_or(remaining_nodes.len());
+        let mut reordered_nodes = Vec::new();
+        for root_id in reordered_root_ids {
+            if let Some(mut block) = blocks.remove(&root_id) {
+                reordered_nodes.append(&mut block);
+            }
+        }
+        remaining_nodes.splice(insert_at..insert_at, reordered_nodes);
+        self.nodes = remaining_nodes;
+        true
+    }
+
+    pub fn translate_subtree(&mut self, node_id: u64, delta: [f32; 2]) {
+        let subtree_ids: HashSet<u64> = self.subtree_ids(node_id).into_iter().collect();
 
         for node in &mut self.nodes {
             if subtree_ids.contains(&node.id) {
@@ -251,6 +471,74 @@ impl SceneDocument {
     pub fn pretty_json(&self) -> String {
         serde_json::to_string_pretty(self)
             .unwrap_or_else(|error| format!("{{\n  \"error\": \"{}\"\n}}", error))
+    }
+
+    fn duplicate_subtree(
+        &mut self,
+        source_id: u64,
+        duplicated_parent: Option<u64>,
+        position_delta: [f32; 2],
+        source_by_id: &HashMap<u64, SceneNode>,
+        children_by_parent: &HashMap<u64, Vec<u64>>,
+    ) -> Option<u64> {
+        let source = source_by_id.get(&source_id)?.clone();
+        let new_id = self.next_id;
+        self.next_id = self.next_id.saturating_add(1);
+
+        let mut duplicate = source;
+        duplicate.id = new_id;
+        duplicate.parent = duplicated_parent.or(duplicate.parent);
+        duplicate.position[0] += position_delta[0];
+        duplicate.position[1] += position_delta[1];
+        self.nodes.push(duplicate);
+
+        if let Some(child_ids) = children_by_parent.get(&source_id) {
+            for child_id in child_ids {
+                self.duplicate_subtree(
+                    *child_id,
+                    Some(new_id),
+                    position_delta,
+                    source_by_id,
+                    children_by_parent,
+                );
+            }
+        }
+
+        Some(new_id)
+    }
+
+    fn can_reparent_node(&self, node_id: u64, new_parent: Option<u64>) -> bool {
+        let Some(node) = self.node(node_id) else {
+            return false;
+        };
+
+        if node.parent == new_parent {
+            return false;
+        }
+
+        if let Some(parent_id) = new_parent {
+            if parent_id == node_id || self.is_descendant_of(parent_id, node_id) {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    fn extract_nodes_by_ids(&mut self, node_ids: &HashSet<u64>) -> Vec<SceneNode> {
+        let mut extracted = Vec::new();
+        let mut remaining = Vec::with_capacity(self.nodes.len());
+
+        for node in std::mem::take(&mut self.nodes) {
+            if node_ids.contains(&node.id) {
+                extracted.push(node);
+            } else {
+                remaining.push(node);
+            }
+        }
+
+        self.nodes = remaining;
+        extracted
     }
 }
 

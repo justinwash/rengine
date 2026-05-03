@@ -1,4 +1,4 @@
-use crate::scene::{SceneDocument, SceneNode, SceneNodeKind};
+use crate::scene::{SceneDocument, SceneNode, SceneNodeKind, SceneNodeReorderDirection};
 use rengine::*;
 use rfd::FileDialog;
 use std::{
@@ -195,6 +195,7 @@ impl Game for RengineNativeEditor {
         self.update_inspector_ui(engine, &layout);
         self.update_scene_autosave(engine.dt());
         self.handle_scene_history_shortcuts(engine);
+        self.handle_scene_selection_shortcuts(engine);
 
         if !self.ui_has_focus() && engine.input().is_key_pressed(KeyCode::F5) {
             self.refresh_project_tree();
