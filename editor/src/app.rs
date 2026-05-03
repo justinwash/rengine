@@ -196,6 +196,9 @@ impl Game for RengineNativeEditor {
         self.update_scene_autosave(engine.dt());
         self.handle_scene_history_shortcuts(engine);
         self.handle_scene_selection_shortcuts(engine);
+        if !self.ui_has_focus() && engine.input().is_key_pressed(KeyCode::KeyF) {
+            self.frame_active_scene_view();
+        }
 
         if !self.ui_has_focus() && engine.input().is_key_pressed(KeyCode::F5) {
             self.refresh_project_tree();
