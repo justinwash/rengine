@@ -623,7 +623,7 @@ impl RengineNativeEditor {
                 }
             }
             tab.mark_dirty();
-            tab.selected_node = Some(node_id);
+            tab.select_only_node(Some(node_id));
             tab.push_undo_entry(history_entry);
             node_id
         };

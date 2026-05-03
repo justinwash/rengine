@@ -23,6 +23,7 @@ The current shell already has:
 - content-aware list scrolling with native scroll indicators
 - Camera2D bounds preview driven by adjustable scene window size, camera zoom, and optional camera-local view size
 - native open/save/save-as scene flow through file dialogs
+- multi-select hierarchy and viewport selection with duplicate, reparent, reorder, grouped dragging, and selection-history shortcuts
 - a `Scene2D` runtime bridge that supports marker export, single-sprite export, and grouped multi-sprite prefab export
 
 The migration is now in the toolkit-rebuild phase: the editor no longer depends on egui for bootstrap, and the inspector now uses the engine's own UI layer for text inputs, toggles, sliders, transform editing, sprite-file assignment, and popup-based kind changes. The project browser and scene hierarchy now support native filtering, collapse state, and content-aware scrolling, while the viewport now supports real sprite previews and middle-mouse panning, but the shell still needs richer engine-native widgets such as split panes, reusable tree controls, and broader editing flows before it reaches feature parity.
@@ -83,7 +84,7 @@ That means the editor must eventually cover:
 ### Hierarchy, Outliner, and Selection
 
 - Tree hierarchy with nesting, reparenting, folders, visibility toggles, and lock toggles.
-- Marquee selection, multi-select, and batch edits.
+- Box selection, multi-select, and batch edits.
 - Searchable outliner filtering.
 - Selection history and frame-selection shortcuts.
 - Override indicators for nested scenes and prefab instances.
@@ -243,7 +244,7 @@ If the goal is to stop hardcoding most game content in Rust, the first genuinely
 If the goal is to make building games in rengine materially easier, the editor work should land in this order:
 
 1. undo/redo plus autosave and recovery so the shell stops feeling fragile
-2. multi-select, marquee, duplicate, reparent, reorder, and selection-history workflows
+2. multi-select, box selection, duplicate, reparent, reorder, and selection-history workflows
 3. snapping, guides, frame-selection, and first transform gizmos for reliable spatial editing
 4. gameplay markers, trigger volumes, and path tools aimed at checkpoints, route loops, encounter nodes, and camera rails
 5. prefab assets, nested scenes, and reusable authored chunks for repeated gameplay setups and prop assemblies
@@ -300,8 +301,6 @@ If the goal is to make building games in rengine materially easier, the editor w
 
 ## Immediate Next Steps
 
-- Add undo or redo support plus autosave before editing tools multiply further.
-- Add multi-select, marquee, duplicate, reparent, reorder, and richer viewport selection ergonomics.
 - Add snapping, guides, frame-selection, and first transform gizmos.
 - Add marker, trigger, and path workflows aimed directly at route loops, checkpoints, encounter nodes, and camera anchors.
 - Add basic prefab and reusable authored-chunk workflows aimed directly at the top-down, platformer, and content-heavy 2D examples.
