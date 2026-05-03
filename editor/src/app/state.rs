@@ -2,11 +2,20 @@ use super::*;
 
 const MAX_SCENE_HISTORY_STEPS: usize = 128;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ViewportDragConstraint {
+    Free,
+    AxisX,
+    AxisY,
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct ViewportDrag {
-    pub(crate) anchor_node_id: u64,
     pub(crate) node_ids: Vec<u64>,
-    pub(crate) pointer_offset: Vec2,
+    pub(crate) transform_origin: [f32; 2],
+    pub(crate) pointer_scene_origin: [f32; 2],
+    pub(crate) applied_delta: [f32; 2],
+    pub(crate) constraint: ViewportDragConstraint,
     pub(crate) history_captured: bool,
 }
 
@@ -290,6 +299,7 @@ impl SceneTab {
         self.scene = entry.scene;
         self.set_selection(entry.selected_node, entry.selected_nodes);
         self.viewport_drag = None;
+        self.viewport_box_selection = None;
         self.viewport_pan_drag = None;
         self.collapsed_nodes
             .retain(|node_id| self.scene.node(*node_id).is_some());

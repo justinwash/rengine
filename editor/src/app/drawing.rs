@@ -1,5 +1,40 @@
 use super::*;
 
+pub(crate) const VIEWPORT_GRID_STEP: f32 = 32.0;
+const VIEWPORT_GIZMO_AXIS_LENGTH: f32 = 56.0;
+const VIEWPORT_GIZMO_AXIS_THICKNESS: f32 = 10.0;
+const VIEWPORT_GIZMO_CENTER_SIZE: f32 = 16.0;
+const VIEWPORT_GIZMO_TIP_SIZE: f32 = 10.0;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ViewportTranslateHandle {
+    Plane,
+    AxisX,
+    AxisY,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct ViewportTranslateGizmo {
+    pub(crate) center: Vec2,
+    pub(crate) plane_rect: PanelRect,
+    pub(crate) x_axis_rect: PanelRect,
+    pub(crate) y_axis_rect: PanelRect,
+}
+
+impl ViewportTranslateGizmo {
+    pub(crate) fn hit_test(self, point: Vec2) -> Option<ViewportTranslateHandle> {
+        if self.plane_rect.contains(point) {
+            Some(ViewportTranslateHandle::Plane)
+        } else if self.x_axis_rect.contains(point) {
+            Some(ViewportTranslateHandle::AxisX)
+        } else if self.y_axis_rect.contains(point) {
+            Some(ViewportTranslateHandle::AxisY)
+        } else {
+            None
+        }
+    }
+}
+
 impl RengineNativeEditor {
     pub(crate) fn draw_shell(&mut self, engine: &Engine, frame: &mut Frame) {
         let layout = ShellLayout::new(engine, &self.panel_layout);
@@ -554,8 +589,53 @@ impl RengineNativeEditor {
 
     fn draw_viewport(&self, engine: &Engine, canvas: &mut Canvas, viewport: PanelRect) {
         let pan = self.active_scene_tab().viewport_pan;
+        let selection_bounds = scene_nodes_bounds(
+            self.active_scene_tab()
+                .scene
+                .nodes
+                .iter()
+                .filter(|node| self.active_scene_tab().is_node_selected(node.id)),
+        );
+        let selection_gizmo =
+            selection_bounds.map(|bounds| selection_translate_gizmo(bounds, viewport, pan));
         canvas.push_clip(viewport.x, viewport.y, viewport.w, viewport.h);
         draw_grid(canvas, viewport, pan);
+
+        if let Some(bounds) = selection_bounds {
+            let selection_rect = scene_bounds_rect(bounds, viewport, pan);
+            let selection_center = selection_rect.center();
+            let guide_color = if self.active_scene_tab().viewport_drag.is_some() {
+                Color::from_rgba8(132, 212, 224, 180)
+            } else {
+                Color::from_rgba8(88, 156, 176, 140)
+            };
+            canvas.line(
+                selection_center.x,
+                viewport.y,
+                selection_center.x,
+                viewport.top(),
+                1.0,
+                guide_color,
+            );
+            canvas.line(
+                viewport.x,
+                selection_center.y,
+                viewport.right(),
+                selection_center.y,
+                1.0,
+                guide_color,
+            );
+            canvas.rect(
+                selection_center.x - 2.0,
+                selection_center.y - 2.0,
+                4.0,
+                4.0,
+                guide_color,
+            );
+            if self.active_scene_tab().selection_count() > 1 {
+                draw_outline(canvas, selection_rect, Color::from_rgba8(88, 168, 186, 180));
+            }
+        }
 
         for node in self
             .active_scene_tab()
@@ -698,6 +778,106 @@ impl RengineNativeEditor {
                 20.0,
                 Color::from_rgba8(214, 220, 232, 255),
                 TextAlign::Center,
+            );
+        }
+
+        if let Some(gizmo) = selection_gizmo {
+            let hovered_handle = gizmo.hit_test(engine.mouse_screen_pos());
+            let active_handle =
+                self.active_scene_tab()
+                    .viewport_drag
+                    .as_ref()
+                    .map(|drag| match drag.constraint {
+                        ViewportDragConstraint::Free => ViewportTranslateHandle::Plane,
+                        ViewportDragConstraint::AxisX => ViewportTranslateHandle::AxisX,
+                        ViewportDragConstraint::AxisY => ViewportTranslateHandle::AxisY,
+                    });
+
+            let x_color = viewport_gizmo_handle_color(
+                active_handle == Some(ViewportTranslateHandle::AxisX),
+                hovered_handle == Some(ViewportTranslateHandle::AxisX),
+                Color::from_rgba8(224, 112, 92, 255),
+            );
+            let y_color = viewport_gizmo_handle_color(
+                active_handle == Some(ViewportTranslateHandle::AxisY),
+                hovered_handle == Some(ViewportTranslateHandle::AxisY),
+                Color::from_rgba8(116, 204, 126, 255),
+            );
+            let plane_color = viewport_gizmo_handle_color(
+                active_handle == Some(ViewportTranslateHandle::Plane),
+                hovered_handle == Some(ViewportTranslateHandle::Plane),
+                Color::from_rgba8(92, 188, 214, 255),
+            );
+
+            canvas.line(
+                gizmo.center.x,
+                gizmo.center.y,
+                gizmo.x_axis_rect.right(),
+                gizmo.center.y,
+                2.0,
+                x_color,
+            );
+            canvas.line(
+                gizmo.center.x,
+                gizmo.center.y,
+                gizmo.center.x,
+                gizmo.y_axis_rect.top(),
+                2.0,
+                y_color,
+            );
+            canvas.rect(
+                gizmo.x_axis_rect.right() - VIEWPORT_GIZMO_TIP_SIZE,
+                gizmo.center.y - VIEWPORT_GIZMO_TIP_SIZE * 0.5,
+                VIEWPORT_GIZMO_TIP_SIZE,
+                VIEWPORT_GIZMO_TIP_SIZE,
+                x_color,
+            );
+            canvas.rect(
+                gizmo.center.x - VIEWPORT_GIZMO_TIP_SIZE * 0.5,
+                gizmo.y_axis_rect.top() - VIEWPORT_GIZMO_TIP_SIZE,
+                VIEWPORT_GIZMO_TIP_SIZE,
+                VIEWPORT_GIZMO_TIP_SIZE,
+                y_color,
+            );
+            canvas.rect(
+                gizmo.plane_rect.x,
+                gizmo.plane_rect.y,
+                gizmo.plane_rect.w,
+                gizmo.plane_rect.h,
+                Color::new(plane_color.r, plane_color.g, plane_color.b, 0.28),
+            );
+            draw_outline(canvas, gizmo.plane_rect, plane_color);
+        }
+
+        if self.active_scene_tab().viewport_drag.is_some() {
+            let drag_label = match self.active_scene_tab().viewport_drag.as_ref() {
+                Some(ViewportDrag {
+                    constraint: ViewportDragConstraint::AxisX,
+                    ..
+                }) => "Move X",
+                Some(ViewportDrag {
+                    constraint: ViewportDragConstraint::AxisY,
+                    ..
+                }) => "Move Y",
+                _ => "Move XY",
+            };
+            let snap_label = if viewport_snap_enabled(engine) {
+                format!(
+                    "{}  Snap {:.0}px  Shift: free move",
+                    drag_label, VIEWPORT_GRID_STEP
+                )
+            } else {
+                format!(
+                    "{}  Free move  Release Shift for {:.0}px snap",
+                    drag_label, VIEWPORT_GRID_STEP
+                )
+            };
+            canvas.text(
+                viewport.x + 12.0,
+                viewport.top() - 18.0,
+                &snap_label,
+                11.0,
+                Color::from_rgba8(168, 186, 202, 255),
             );
         }
 
@@ -1058,7 +1238,7 @@ fn draw_outline(canvas: &mut Canvas, rect: PanelRect, color: Color) {
 
 fn draw_grid(canvas: &mut Canvas, viewport: PanelRect, pan: Vec2) {
     let center = viewport.center() + pan;
-    let step = 32.0;
+    let step = VIEWPORT_GRID_STEP;
     let minor = Color::from_rgba8(28, 34, 42, 255);
     let major = Color::from_rgba8(53, 68, 79, 255);
 
@@ -1086,6 +1266,85 @@ fn draw_grid(canvas: &mut Canvas, viewport: PanelRect, pan: Vec2) {
 
     canvas.line(center.x, viewport.y, center.x, viewport.top(), 1.0, major);
     canvas.line(viewport.x, center.y, viewport.right(), center.y, 1.0, major);
+}
+
+pub(crate) fn viewport_snap_enabled(engine: &Engine) -> bool {
+    let input = engine.input();
+    !input.is_key_down(KeyCode::ShiftLeft) && !input.is_key_down(KeyCode::ShiftRight)
+}
+
+pub(crate) fn scene_nodes_bounds<'a>(
+    nodes: impl IntoIterator<Item = &'a SceneNode>,
+) -> Option<[f32; 4]> {
+    let mut min_x = f32::INFINITY;
+    let mut min_y = f32::INFINITY;
+    let mut max_x = f32::NEG_INFINITY;
+    let mut max_y = f32::NEG_INFINITY;
+    let mut saw_node = false;
+
+    for node in nodes {
+        saw_node = true;
+        min_x = min_x.min(node.position[0] - node.size[0] * 0.5);
+        min_y = min_y.min(node.position[1] - node.size[1] * 0.5);
+        max_x = max_x.max(node.position[0] + node.size[0] * 0.5);
+        max_y = max_y.max(node.position[1] + node.size[1] * 0.5);
+    }
+
+    saw_node.then_some([min_x, min_y, max_x, max_y])
+}
+
+pub(crate) fn scene_bounds_center(bounds: [f32; 4]) -> [f32; 2] {
+    [(bounds[0] + bounds[2]) * 0.5, (bounds[1] + bounds[3]) * 0.5]
+}
+
+pub(crate) fn selection_translate_gizmo(
+    bounds: [f32; 4],
+    viewport: PanelRect,
+    pan: Vec2,
+) -> ViewportTranslateGizmo {
+    let center = scene_to_screen(scene_bounds_center(bounds), viewport, pan);
+    ViewportTranslateGizmo {
+        center,
+        plane_rect: PanelRect::new(
+            center.x - VIEWPORT_GIZMO_CENTER_SIZE * 0.5,
+            center.y - VIEWPORT_GIZMO_CENTER_SIZE * 0.5,
+            VIEWPORT_GIZMO_CENTER_SIZE,
+            VIEWPORT_GIZMO_CENTER_SIZE,
+        ),
+        x_axis_rect: PanelRect::new(
+            center.x + VIEWPORT_GIZMO_CENTER_SIZE * 0.5,
+            center.y - VIEWPORT_GIZMO_AXIS_THICKNESS * 0.5,
+            VIEWPORT_GIZMO_AXIS_LENGTH,
+            VIEWPORT_GIZMO_AXIS_THICKNESS,
+        ),
+        y_axis_rect: PanelRect::new(
+            center.x - VIEWPORT_GIZMO_AXIS_THICKNESS * 0.5,
+            center.y + VIEWPORT_GIZMO_CENTER_SIZE * 0.5,
+            VIEWPORT_GIZMO_AXIS_THICKNESS,
+            VIEWPORT_GIZMO_AXIS_LENGTH,
+        ),
+    }
+}
+
+fn scene_bounds_rect(bounds: [f32; 4], viewport: PanelRect, pan: Vec2) -> PanelRect {
+    let bottom_left = scene_to_screen([bounds[0], bounds[1]], viewport, pan);
+    let top_right = scene_to_screen([bounds[2], bounds[3]], viewport, pan);
+    PanelRect::new(
+        bottom_left.x,
+        bottom_left.y,
+        (top_right.x - bottom_left.x).max(0.0),
+        (top_right.y - bottom_left.y).max(0.0),
+    )
+}
+
+fn viewport_gizmo_handle_color(active: bool, hovered: bool, base: Color) -> Color {
+    if active {
+        Color::from_rgba8(246, 246, 246, 255)
+    } else if hovered {
+        Color::new(base.r, base.g, base.b, 0.9)
+    } else {
+        base
+    }
 }
 
 fn viewport_node_rect(
@@ -1125,5 +1384,69 @@ fn node_fill_color(kind: SceneNodeKind) -> Color {
         SceneNodeKind::Sprite => Color::from_rgba8(64, 114, 176, 255),
         SceneNodeKind::Trigger => Color::from_rgba8(176, 125, 58, 255),
         SceneNodeKind::UiRoot => Color::from_rgba8(70, 142, 104, 255),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::scene::{Camera2dNodeSettings, SpriteNodeSettings};
+
+    fn test_node(id: u64, position: [f32; 2], size: [f32; 2]) -> SceneNode {
+        SceneNode {
+            id,
+            parent: None,
+            name: format!("Node {id}"),
+            kind: SceneNodeKind::Empty,
+            position,
+            size,
+            visible: true,
+            script_path: String::new(),
+            runtime_prefab: String::new(),
+            asset_alias: String::new(),
+            sprite: SpriteNodeSettings::default(),
+            camera2d: Camera2dNodeSettings::default(),
+            properties: std::collections::HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn scene_nodes_bounds_uses_node_extents() {
+        let nodes = vec![
+            test_node(1, [10.0, 20.0], [20.0, 10.0]),
+            test_node(2, [70.0, 40.0], [10.0, 30.0]),
+        ];
+
+        assert_eq!(
+            scene_nodes_bounds(nodes.iter()),
+            Some([0.0, 15.0, 75.0, 55.0])
+        );
+    }
+
+    #[test]
+    fn scene_nodes_bounds_returns_none_for_empty_input() {
+        assert_eq!(scene_nodes_bounds(std::iter::empty()), None);
+    }
+
+    #[test]
+    fn selection_translate_gizmo_hits_expected_handles() {
+        let gizmo = selection_translate_gizmo(
+            [0.0, 0.0, 48.0, 48.0],
+            PanelRect::new(-100.0, -100.0, 200.0, 200.0),
+            Vec2::ZERO,
+        );
+
+        assert_eq!(
+            gizmo.hit_test(gizmo.plane_rect.center()),
+            Some(ViewportTranslateHandle::Plane)
+        );
+        assert_eq!(
+            gizmo.hit_test(gizmo.x_axis_rect.center()),
+            Some(ViewportTranslateHandle::AxisX)
+        );
+        assert_eq!(
+            gizmo.hit_test(gizmo.y_axis_rect.center()),
+            Some(ViewportTranslateHandle::AxisY)
+        );
     }
 }

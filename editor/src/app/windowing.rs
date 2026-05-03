@@ -946,8 +946,45 @@ impl RengineNativeEditor {
 
         let additive = history_modifier_down(engine);
 
+        if !additive {
+            let gizmo_drag = {
+                let tab = self.active_scene_tab();
+                scene_nodes_bounds(
+                    tab.scene
+                        .nodes
+                        .iter()
+                        .filter(|node| tab.is_node_selected(node.id)),
+                )
+                .and_then(|bounds| {
+                    selection_translate_gizmo(bounds, layout.viewport, tab.viewport_pan)
+                        .hit_test(mouse)
+                        .map(|handle| ViewportDrag {
+                            node_ids: tab.selected_root_ids(),
+                            transform_origin: scene_bounds_center(bounds),
+                            pointer_scene_origin: screen_to_scene(
+                                mouse,
+                                layout.viewport,
+                                tab.viewport_pan,
+                            ),
+                            applied_delta: [0.0, 0.0],
+                            constraint: match handle {
+                                ViewportTranslateHandle::Plane => ViewportDragConstraint::Free,
+                                ViewportTranslateHandle::AxisX => ViewportDragConstraint::AxisX,
+                                ViewportTranslateHandle::AxisY => ViewportDragConstraint::AxisY,
+                            },
+                            history_captured: false,
+                        })
+                })
+            };
+            if let Some(gizmo_drag) = gizmo_drag {
+                self.active_scene_tab_mut().viewport_box_selection = None;
+                self.active_scene_tab_mut().viewport_drag = Some(gizmo_drag);
+                return;
+            }
+        }
+
         let node_rects = self.viewport_node_rects(layout.viewport);
-        if let Some((node_id, rect)) = node_rects
+        if let Some((node_id, _rect)) = node_rects
             .iter()
             .rev()
             .find(|(_, rect)| rect.contains(mouse))
@@ -967,10 +1004,22 @@ impl RengineNativeEditor {
             }
 
             let drag_node_ids = self.active_scene_tab().selected_root_ids();
+            let drag_origin = self
+                .active_scene_tab()
+                .scene
+                .node(*node_id)
+                .map(|node| node.position)
+                .unwrap_or([0.0, 0.0]);
             self.active_scene_tab_mut().viewport_drag = Some(ViewportDrag {
-                anchor_node_id: *node_id,
                 node_ids: drag_node_ids,
-                pointer_offset: mouse - rect.center(),
+                transform_origin: drag_origin,
+                pointer_scene_origin: screen_to_scene(
+                    mouse,
+                    layout.viewport,
+                    self.active_scene_tab().viewport_pan,
+                ),
+                applied_delta: [0.0, 0.0],
+                constraint: ViewportDragConstraint::Free,
                 history_captured: false,
             });
         } else {
@@ -1038,23 +1087,25 @@ impl RengineNativeEditor {
             return;
         };
 
-        let target_center = pointer - drag.pointer_offset;
-        let next_position = screen_to_scene(
-            target_center,
+        let pointer_scene = screen_to_scene(
+            pointer,
             layout.viewport,
             self.active_scene_tab().viewport_pan,
         );
-
-        let delta = {
-            let tab = self.active_scene_tab();
-            let Some(node) = tab.scene.node(drag.anchor_node_id) else {
-                return;
-            };
-            [
-                next_position[0] - node.position[0],
-                next_position[1] - node.position[1],
-            ]
-        };
+        let target_position = viewport_drag_target(
+            pointer_scene,
+            &drag,
+            viewport_snap_enabled(engine),
+            VIEWPORT_GRID_STEP,
+        );
+        let desired_delta = [
+            target_position[0] - drag.transform_origin[0],
+            target_position[1] - drag.transform_origin[1],
+        ];
+        let delta = [
+            desired_delta[0] - drag.applied_delta[0],
+            desired_delta[1] - drag.applied_delta[1],
+        ];
 
         if delta != [0.0, 0.0] {
             let history_entry = (!drag.history_captured)
@@ -1068,6 +1119,9 @@ impl RengineNativeEditor {
             }
             for node_id in &drag.node_ids {
                 tab.scene.translate_subtree(*node_id, delta);
+            }
+            if let Some(active_drag) = tab.viewport_drag.as_mut() {
+                active_drag.applied_delta = desired_delta;
             }
             tab.mark_dirty();
         }
@@ -1239,6 +1293,46 @@ impl RengineNativeEditor {
             })
             .collect()
     }
+
+    pub(crate) fn frame_active_scene_view(&mut self) {
+        let (target_center, frame_label) = {
+            let tab = self.active_scene_tab();
+            if tab.has_selection() {
+                (
+                    scene_nodes_frame_center(
+                        tab.scene
+                            .nodes
+                            .iter()
+                            .filter(|node| tab.is_node_selected(node.id)),
+                    ),
+                    format!("Framed {} selected node(s)", tab.selection_count()),
+                )
+            } else {
+                (
+                    scene_nodes_frame_center(tab.scene.nodes.iter()),
+                    if tab.scene.nodes.is_empty() {
+                        "Centered viewport on scene origin".to_string()
+                    } else {
+                        format!("Framed scene ({}) node(s)", tab.scene.nodes.len())
+                    },
+                )
+            }
+        };
+
+        let next_pan = target_center
+            .map(|center| Vec2::new(-center[0], -center[1]))
+            .unwrap_or(Vec2::ZERO);
+        let tab = self.active_scene_tab_mut();
+        if tab.viewport_pan == next_pan {
+            return;
+        }
+
+        tab.viewport_pan = next_pan;
+        tab.viewport_pan_drag = None;
+        tab.viewport_drag = None;
+        tab.viewport_box_selection = None;
+        self.push_log(frame_label);
+    }
 }
 
 pub(crate) fn list_line_rect(list_rect: PanelRect, index: usize, scroll: f32) -> PanelRect {
@@ -1268,8 +1362,153 @@ fn panel_rects_overlap(left: PanelRect, right: PanelRect) -> bool {
         && left.top() >= right.y
 }
 
+fn scene_nodes_frame_center<'a>(
+    nodes: impl IntoIterator<Item = &'a SceneNode>,
+) -> Option<[f32; 2]> {
+    scene_nodes_bounds(nodes).map(scene_bounds_center)
+}
+
+fn snap_scene_position(position: [f32; 2], step: f32) -> [f32; 2] {
+    if step <= f32::EPSILON {
+        return position;
+    }
+
+    [
+        (position[0] / step).round() * step,
+        (position[1] / step).round() * step,
+    ]
+}
+
+fn constrain_drag_delta(delta: [f32; 2], constraint: ViewportDragConstraint) -> [f32; 2] {
+    match constraint {
+        ViewportDragConstraint::Free => delta,
+        ViewportDragConstraint::AxisX => [delta[0], 0.0],
+        ViewportDragConstraint::AxisY => [0.0, delta[1]],
+    }
+}
+
+fn snap_drag_target(
+    target: [f32; 2],
+    origin: [f32; 2],
+    constraint: ViewportDragConstraint,
+    step: f32,
+) -> [f32; 2] {
+    if step <= f32::EPSILON {
+        return target;
+    }
+
+    match constraint {
+        ViewportDragConstraint::Free => snap_scene_position(target, step),
+        ViewportDragConstraint::AxisX => [snap_scene_position(target, step)[0], origin[1]],
+        ViewportDragConstraint::AxisY => [origin[0], snap_scene_position(target, step)[1]],
+    }
+}
+
+fn viewport_drag_target(
+    pointer_scene: [f32; 2],
+    drag: &ViewportDrag,
+    snap_enabled: bool,
+    step: f32,
+) -> [f32; 2] {
+    let raw_delta = [
+        pointer_scene[0] - drag.pointer_scene_origin[0],
+        pointer_scene[1] - drag.pointer_scene_origin[1],
+    ];
+    let constrained_delta = constrain_drag_delta(raw_delta, drag.constraint);
+    let target = [
+        drag.transform_origin[0] + constrained_delta[0],
+        drag.transform_origin[1] + constrained_delta[1],
+    ];
+    if snap_enabled {
+        snap_drag_target(target, drag.transform_origin, drag.constraint, step)
+    } else {
+        target
+    }
+}
+
 pub(crate) fn button_preferred_width(label: &str) -> f32 {
     label.chars().count() as f32 * 8.6 + 30.0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::scene::{Camera2dNodeSettings, SpriteNodeSettings};
+
+    fn test_node(id: u64, position: [f32; 2], size: [f32; 2]) -> SceneNode {
+        SceneNode {
+            id,
+            parent: None,
+            name: format!("Node {id}"),
+            kind: SceneNodeKind::Empty,
+            position,
+            size,
+            visible: true,
+            script_path: String::new(),
+            runtime_prefab: String::new(),
+            asset_alias: String::new(),
+            sprite: SpriteNodeSettings::default(),
+            camera2d: Camera2dNodeSettings::default(),
+            properties: std::collections::HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn scene_nodes_frame_center_uses_node_bounds() {
+        let nodes = vec![
+            test_node(1, [10.0, 20.0], [20.0, 10.0]),
+            test_node(2, [70.0, 40.0], [10.0, 30.0]),
+        ];
+
+        assert_eq!(scene_nodes_frame_center(nodes.iter()), Some([37.5, 35.0]));
+    }
+
+    #[test]
+    fn scene_nodes_frame_center_returns_none_for_empty_input() {
+        assert_eq!(scene_nodes_frame_center(std::iter::empty()), None);
+    }
+
+    #[test]
+    fn snap_scene_position_rounds_to_grid() {
+        assert_eq!(
+            snap_scene_position([17.0, -47.0], VIEWPORT_GRID_STEP),
+            [32.0, -32.0]
+        );
+    }
+
+    #[test]
+    fn snap_scene_position_preserves_position_for_zero_step() {
+        assert_eq!(snap_scene_position([19.0, 11.0], 0.0), [19.0, 11.0]);
+    }
+
+    #[test]
+    fn constrain_drag_delta_locks_axis_motion() {
+        assert_eq!(
+            constrain_drag_delta([12.0, -7.0], ViewportDragConstraint::AxisX),
+            [12.0, 0.0]
+        );
+        assert_eq!(
+            constrain_drag_delta([12.0, -7.0], ViewportDragConstraint::AxisY),
+            [0.0, -7.0]
+        );
+    }
+
+    #[test]
+    fn viewport_drag_target_snaps_only_the_active_axis() {
+        let drag = ViewportDrag {
+            node_ids: vec![1],
+            transform_origin: [10.0, 18.0],
+            pointer_scene_origin: [10.0, 18.0],
+            applied_delta: [0.0, 0.0],
+            constraint: ViewportDragConstraint::AxisX,
+            history_captured: false,
+        };
+
+        assert_eq!(
+            viewport_drag_target([41.0, 65.0], &drag, true, VIEWPORT_GRID_STEP),
+            [32.0, 18.0]
+        );
+    }
 }
 
 pub(crate) fn distribute_button_widths(
