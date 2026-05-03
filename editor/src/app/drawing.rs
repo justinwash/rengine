@@ -23,12 +23,12 @@ pub(crate) struct ViewportTranslateGizmo {
 
 impl ViewportTranslateGizmo {
     pub(crate) fn hit_test(self, point: Vec2) -> Option<ViewportTranslateHandle> {
-        if self.plane_rect.contains(point) {
-            Some(ViewportTranslateHandle::Plane)
-        } else if self.x_axis_rect.contains(point) {
+        if self.x_axis_rect.contains(point) {
             Some(ViewportTranslateHandle::AxisX)
         } else if self.y_axis_rect.contains(point) {
             Some(ViewportTranslateHandle::AxisY)
+        } else if self.plane_rect.contains(point) {
+            Some(ViewportTranslateHandle::Plane)
         } else {
             None
         }
@@ -874,7 +874,7 @@ impl RengineNativeEditor {
             };
             canvas.text(
                 viewport.x + 12.0,
-                viewport.top() - 18.0,
+                viewport.y + 18.0,
                 &snap_label,
                 11.0,
                 Color::from_rgba8(168, 186, 202, 255),
