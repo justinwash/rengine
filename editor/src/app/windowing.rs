@@ -633,6 +633,8 @@ impl RengineNativeEditor {
             return;
         }
 
+        // Any click outside the viewport loses viewport focus for W/E/R shortcuts.
+        self.viewport_focused = false;
         self.clear_text_input_owner();
 
         let mouse = engine.mouse_screen_pos();
@@ -944,6 +946,7 @@ impl RengineNativeEditor {
             return;
         }
 
+        self.viewport_focused = true;
         let additive = history_modifier_down(engine);
 
         if !additive {
@@ -991,12 +994,13 @@ impl RengineNativeEditor {
                         if rotate_gizmo.hit_test(mouse) {
                             let node_ids = tab.selected_root_ids();
                             let pivot = scene_bounds_center(bounds);
-                            let angle_start = rotate_gizmo.pointer_angle(mouse);
+                            let angle_prev = rotate_gizmo.pointer_angle(mouse);
                             Some(Box::new(move |tab_mut: &mut SceneTab| {
                                 tab_mut.viewport_rotate_drag = Some(ViewportRotateDrag {
                                     node_ids,
                                     pivot_scene: pivot,
-                                    angle_start,
+                                    angle_prev,
+                                    accumulated_raw_degrees: 0.0,
                                     applied_degrees: 0.0,
                                     history_captured: false,
                                 });
@@ -1010,13 +1014,20 @@ impl RengineNativeEditor {
                         let scale_gizmo =
                             selection_scale_gizmo(bounds, layout.viewport, tab.viewport_pan);
                         if scale_gizmo.hit_test(mouse).is_some() {
-                            let node_ids = tab.selected_root_ids();
+                            let root_ids = tab.selected_root_ids();
                             let pivot = scene_bounds_center(bounds);
                             let pivot_screen =
                                 scene_to_screen(pivot, layout.viewport, tab.viewport_pan);
                             let dx = mouse.x - pivot_screen.x;
                             let dy = mouse.y - pivot_screen.y;
                             let dist = (dx * dx + dy * dy).sqrt().max(1.0);
+                            // Expand to all nodes in each selected subtree so that
+                            // children scale in place rather than staying at their
+                            // original world positions.
+                            let node_ids: Vec<u64> = root_ids
+                                .iter()
+                                .flat_map(|id| tab.scene.subtree_ids(*id))
+                                .collect();
                             let original_offsets: Vec<[f32; 2]> = node_ids
                                 .iter()
                                 .filter_map(|id| tab.scene.node(*id))
@@ -1224,11 +1235,21 @@ impl RengineNativeEditor {
             let dy = pointer.y - pivot_screen.y;
             dy.atan2(dx)
         };
-        let raw_degrees = (current_angle - drag.angle_start).to_degrees();
+        // Wrap the per-frame delta to [-π, π] to avoid jumps across the ±π seam.
+        let per_frame_rad = {
+            let d = current_angle - drag.angle_prev;
+            let d = d.rem_euclid(2.0 * std::f32::consts::PI);
+            if d > std::f32::consts::PI {
+                d - 2.0 * std::f32::consts::PI
+            } else {
+                d
+            }
+        };
+        let accumulated = drag.accumulated_raw_degrees + per_frame_rad.to_degrees();
         let target_degrees = if viewport_snap_enabled(engine) {
-            (raw_degrees / 15.0).round() * 15.0
+            (accumulated / 15.0).round() * 15.0
         } else {
-            raw_degrees
+            accumulated
         };
         let delta_degrees = target_degrees - drag.applied_degrees;
 
@@ -1249,6 +1270,11 @@ impl RengineNativeEditor {
                 d.applied_degrees = target_degrees;
             }
             tab.mark_dirty();
+        }
+        // Always advance angle_prev and accumulated so the next frame delta is correct.
+        if let Some(d) = self.active_scene_tab_mut().viewport_rotate_drag.as_mut() {
+            d.angle_prev = current_angle;
+            d.accumulated_raw_degrees = accumulated;
         }
     }
 

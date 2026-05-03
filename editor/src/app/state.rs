@@ -31,7 +31,11 @@ pub(crate) struct ViewportDrag {
 pub(crate) struct ViewportRotateDrag {
     pub(crate) node_ids: Vec<u64>,
     pub(crate) pivot_scene: [f32; 2],
-    pub(crate) angle_start: f32,
+    /// Angle (radians) of the pointer at the previous frame, used to compute
+    /// seam-safe per-frame deltas instead of a raw total from a fixed start angle.
+    pub(crate) angle_prev: f32,
+    /// Running sum of per-frame angle deltas in degrees, used for snapping.
+    pub(crate) accumulated_raw_degrees: f32,
     pub(crate) applied_degrees: f32,
     pub(crate) history_captured: bool,
 }
@@ -509,8 +513,11 @@ impl RengineNativeEditor {
     }
 
     pub(crate) fn scene_json_preview_text(&mut self) -> &str {
-        let defer_refresh = self.active_scene_tab().scene_json_dirty
-            && self.active_scene_tab().viewport_drag.is_some();
+        let tab = self.active_scene_tab();
+        let defer_refresh = tab.scene_json_dirty
+            && (tab.viewport_drag.is_some()
+                || tab.viewport_rotate_drag.is_some()
+                || tab.viewport_scale_drag.is_some());
         let tab = self.active_scene_tab_mut();
         if defer_refresh {
             &tab.scene_json_cache

@@ -91,15 +91,6 @@ impl ViewportScaleGizmo {
             None
         }
     }
-
-    pub(crate) fn all_rects(self) -> [PanelRect; 4] {
-        [
-            self.top_left,
-            self.top_right,
-            self.bottom_left,
-            self.bottom_right,
-        ]
-    }
 }
 
 impl RengineNativeEditor {
@@ -772,21 +763,24 @@ impl RengineNativeEditor {
                     Color::from_rgba8(20, 26, 32, 255),
                 );
                 canvas.image(texture, rect.x, rect.y, rect.w, rect.h);
+            } else if node.rotation.abs() > f32::EPSILON {
+                draw_rotated_rect_filled(canvas, rect, node.rotation, node_fill_color(node.kind));
             } else {
                 canvas.rect(rect.x, rect.y, rect.w, rect.h, node_fill_color(node.kind));
             }
 
-            draw_outline(
-                canvas,
-                rect,
-                if self.active_scene_tab().selected_node == Some(node.id) {
-                    Color::from_rgba8(247, 214, 93, 255)
-                } else if self.active_scene_tab().is_node_selected(node.id) {
-                    Color::from_rgba8(116, 196, 210, 255)
-                } else {
-                    Color::from_rgba8(36, 44, 52, 255)
-                },
-            );
+            let outline_color = if self.active_scene_tab().selected_node == Some(node.id) {
+                Color::from_rgba8(247, 214, 93, 255)
+            } else if self.active_scene_tab().is_node_selected(node.id) {
+                Color::from_rgba8(116, 196, 210, 255)
+            } else {
+                Color::from_rgba8(36, 44, 52, 255)
+            };
+            if node.rotation.abs() > f32::EPSILON {
+                draw_rotated_outline(canvas, rect, node.rotation, outline_color);
+            } else {
+                draw_outline(canvas, rect, outline_color);
+            }
 
             if sprite_texture.is_none() {
                 canvas.text_aligned(
@@ -957,12 +951,15 @@ impl RengineNativeEditor {
                     };
                     let active_color = Color::from_rgba8(246, 246, 246, 255);
                     let base_color = Color::from_rgba8(246, 186, 92, 255);
-                    for handle_rect in scale_gizmo.all_rects() {
+                    for (handle, handle_rect) in [
+                        (ScaleHandle::TopLeft, scale_gizmo.top_left),
+                        (ScaleHandle::TopRight, scale_gizmo.top_right),
+                        (ScaleHandle::BottomLeft, scale_gizmo.bottom_left),
+                        (ScaleHandle::BottomRight, scale_gizmo.bottom_right),
+                    ] {
                         let color = if is_active {
                             active_color
-                        } else if hovered_handle.is_some()
-                            && scale_gizmo.hit_test(mouse) == hovered_handle
-                        {
+                        } else if hovered_handle == Some(handle) {
                             Color::new(base_color.r, base_color.g, base_color.b, 0.9)
                         } else {
                             base_color
@@ -1585,6 +1582,50 @@ fn node_fill_color(kind: SceneNodeKind) -> Color {
         SceneNodeKind::Sprite => Color::from_rgba8(64, 114, 176, 255),
         SceneNodeKind::Trigger => Color::from_rgba8(176, 125, 58, 255),
         SceneNodeKind::UiRoot => Color::from_rgba8(70, 142, 104, 255),
+    }
+}
+
+/// Returns the 4 screen-space corners of a rectangle after rotating by `angle_deg`
+/// around its center, in order [TL, TR, BR, BL].
+fn rotated_corners(rect: PanelRect, angle_deg: f32) -> [(f32, f32); 4] {
+    let cx = rect.x + rect.w * 0.5;
+    let cy = rect.y + rect.h * 0.5;
+    let hw = rect.w * 0.5;
+    let hh = rect.h * 0.5;
+    let rad = angle_deg.to_radians();
+    let cos = rad.cos();
+    let sin = rad.sin();
+    let rot = |lx: f32, ly: f32| (cx + lx * cos - ly * sin, cy + lx * sin + ly * cos);
+    [rot(-hw, -hh), rot(hw, -hh), rot(hw, hh), rot(-hw, hh)]
+}
+
+/// Draws a filled rotated rectangle using two triangles via `canvas.shape()`.
+fn draw_rotated_rect_filled(canvas: &mut Canvas, rect: PanelRect, angle_deg: f32, color: Color) {
+    let screen_size = canvas.screen_size();
+    let [tl, tr, br, bl] = rotated_corners(rect, angle_deg);
+    let ndc = |x: f32, y: f32| screen_to_ndc(x, y, screen_size);
+    let c = color.to_array();
+    let uv = [0.5, 0.5]; // white UV region
+    let v = |x: f32, y: f32| CanvasVertex {
+        position: ndc(x, y),
+        color: c,
+        uv,
+    };
+    canvas.shape(&[
+        v(tl.0, tl.1),
+        v(tr.0, tr.1),
+        v(br.0, br.1),
+        v(tl.0, tl.1),
+        v(br.0, br.1),
+        v(bl.0, bl.1),
+    ]);
+}
+
+/// Draws the outline of a rotated rectangle as four lines.
+fn draw_rotated_outline(canvas: &mut Canvas, rect: PanelRect, angle_deg: f32, color: Color) {
+    let [tl, tr, br, bl] = rotated_corners(rect, angle_deg);
+    for (a, b) in [(tl, tr), (tr, br), (br, bl), (bl, tl)] {
+        canvas.line(a.0, a.1, b.0, b.1, 1.0, color);
     }
 }
 

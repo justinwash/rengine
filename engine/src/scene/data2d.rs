@@ -21,6 +21,9 @@ pub struct PrefabSprite2DDef {
     pub flip_x: bool,
     #[serde(default)]
     pub flip_y: bool,
+    /// Rotation in radians, stored from the editor's degrees value.
+    #[serde(default)]
+    pub rotation: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -56,6 +59,7 @@ pub struct PrefabSprite2D {
     pub uv_rect: [f32; 4],
     pub flip_x: bool,
     pub flip_y: bool,
+    pub rotation: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -89,7 +93,8 @@ impl SceneInstance2D {
                 .with_color(sprite.color)
                 .with_uv_rect(sprite.uv_rect)
                 .with_flip_x(sprite.flip_x)
-                .with_flip_y(sprite.flip_y),
+                .with_flip_y(sprite.flip_y)
+                .with_rotation(sprite.rotation),
             );
         }
     }
@@ -193,6 +198,7 @@ fn compile_prefabs(
                 uv_rect: sprite.uv_rect.unwrap_or([0.0, 0.0, 1.0, 1.0]),
                 flip_x: sprite.flip_x,
                 flip_y: sprite.flip_y,
+                rotation: sprite.rotation,
             });
         }
 
@@ -244,6 +250,9 @@ struct EditorSceneNodeDef {
     asset_alias: String,
     #[serde(default)]
     properties: HashMap<String, String>,
+    /// Rotation in degrees as stored by the editor.
+    #[serde(default)]
+    rotation: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -646,6 +655,7 @@ fn prefab_sprite_from_editor_node(
         uv_rect: None,
         flip_x: false,
         flip_y: false,
+        rotation: node.rotation.to_radians(),
     })
 }
 
@@ -723,6 +733,7 @@ mod tests {
                     runtime_prefab: String::new(),
                     asset_alias: String::new(),
                     properties: spawn_properties,
+                    rotation: 0.0,
                 },
                 EditorSceneNodeDef {
                     id: 2,
@@ -736,6 +747,7 @@ mod tests {
                     runtime_prefab: String::new(),
                     asset_alias: String::new(),
                     properties: HashMap::new(),
+                    rotation: 0.0,
                 },
                 EditorSceneNodeDef {
                     id: 3,
@@ -749,6 +761,7 @@ mod tests {
                     runtime_prefab: String::new(),
                     asset_alias: "tree".to_string(),
                     properties: HashMap::new(),
+                    rotation: 0.0,
                 },
                 EditorSceneNodeDef {
                     id: 4,
@@ -762,6 +775,7 @@ mod tests {
                     runtime_prefab: String::new(),
                     asset_alias: "gem".to_string(),
                     properties: HashMap::new(),
+                    rotation: 0.0,
                 },
             ],
         };
@@ -785,6 +799,7 @@ mod tests {
                     uv_rect: None,
                     flip_x: false,
                     flip_y: false,
+                    rotation: 0.0,
                 }],
             }
         );
@@ -826,6 +841,7 @@ mod tests {
                     runtime_prefab: String::new(),
                     asset_alias: String::new(),
                     properties: HashMap::new(),
+                    rotation: 0.0,
                 },
                 EditorSceneNodeDef {
                     id: 2,
@@ -839,6 +855,7 @@ mod tests {
                     runtime_prefab: String::new(),
                     asset_alias: "tree".to_string(),
                     properties: HashMap::new(),
+                    rotation: 0.0,
                 },
                 EditorSceneNodeDef {
                     id: 3,
@@ -852,6 +869,7 @@ mod tests {
                     runtime_prefab: String::new(),
                     asset_alias: String::new(),
                     properties: HashMap::new(),
+                    rotation: 0.0,
                 },
                 EditorSceneNodeDef {
                     id: 4,
@@ -865,6 +883,7 @@ mod tests {
                     runtime_prefab: String::new(),
                     asset_alias: "gem".to_string(),
                     properties: HashMap::new(),
+                    rotation: 0.0,
                 },
             ],
         };
@@ -894,6 +913,7 @@ mod tests {
                     runtime_prefab: String::new(),
                     asset_alias: String::new(),
                     properties: HashMap::new(),
+                    rotation: 0.0,
                 },
                 EditorSceneNodeDef {
                     id: 2,
@@ -907,6 +927,7 @@ mod tests {
                     runtime_prefab: String::new(),
                     asset_alias: "tree".to_string(),
                     properties: HashMap::new(),
+                    rotation: 0.0,
                 },
                 EditorSceneNodeDef {
                     id: 3,
@@ -920,6 +941,7 @@ mod tests {
                     runtime_prefab: String::new(),
                     asset_alias: "gem".to_string(),
                     properties: HashMap::new(),
+                    rotation: 0.0,
                 },
                 EditorSceneNodeDef {
                     id: 4,
@@ -933,6 +955,7 @@ mod tests {
                     runtime_prefab: String::new(),
                     asset_alias: String::new(),
                     properties: HashMap::new(),
+                    rotation: 0.0,
                 },
                 EditorSceneNodeDef {
                     id: 5,
@@ -946,6 +969,7 @@ mod tests {
                     runtime_prefab: String::new(),
                     asset_alias: "gem".to_string(),
                     properties: HashMap::new(),
+                    rotation: 0.0,
                 },
                 EditorSceneNodeDef {
                     id: 6,
@@ -959,6 +983,7 @@ mod tests {
                     runtime_prefab: String::new(),
                     asset_alias: "tree".to_string(),
                     properties: HashMap::new(),
+                    rotation: 0.0,
                 },
             ],
         };
@@ -991,6 +1016,7 @@ mod tests {
                     runtime_prefab: String::new(),
                     asset_alias: String::new(),
                     properties: HashMap::new(),
+                    rotation: 0.0,
                 },
                 EditorSceneNodeDef {
                     id: 1,
@@ -1004,6 +1030,7 @@ mod tests {
                     runtime_prefab: String::new(),
                     asset_alias: String::new(),
                     properties: HashMap::new(),
+                    rotation: 0.0,
                 },
             ],
         };
@@ -1032,6 +1059,7 @@ mod tests {
                 runtime_prefab: String::new(),
                 asset_alias: "tree".to_string(),
                 properties: HashMap::new(),
+                rotation: 0.0,
             }],
         };
 
@@ -1059,6 +1087,7 @@ mod tests {
                 runtime_prefab: String::new(),
                 asset_alias: String::new(),
                 properties: HashMap::new(),
+                rotation: 0.0,
             }],
         };
 
@@ -1087,6 +1116,7 @@ mod tests {
                     runtime_prefab: String::new(),
                     asset_alias: String::new(),
                     properties: HashMap::new(),
+                    rotation: 0.0,
                 },
                 EditorSceneNodeDef {
                     id: 2,
@@ -1100,6 +1130,7 @@ mod tests {
                     runtime_prefab: String::new(),
                     asset_alias: String::new(),
                     properties: HashMap::new(),
+                    rotation: 0.0,
                 },
             ],
         };
@@ -1129,6 +1160,7 @@ mod tests {
                     runtime_prefab: String::new(),
                     asset_alias: String::new(),
                     properties: HashMap::new(),
+                    rotation: 0.0,
                 },
                 EditorSceneNodeDef {
                     id: 2,
@@ -1142,6 +1174,7 @@ mod tests {
                     runtime_prefab: String::new(),
                     asset_alias: String::new(),
                     properties: HashMap::new(),
+                    rotation: 0.0,
                 },
                 EditorSceneNodeDef {
                     id: 3,
@@ -1155,6 +1188,7 @@ mod tests {
                     runtime_prefab: String::new(),
                     asset_alias: "crate".to_string(),
                     properties: HashMap::new(),
+                    rotation: 0.0,
                 },
             ],
         };
@@ -1190,6 +1224,7 @@ mod tests {
                     runtime_prefab: String::new(),
                     asset_alias: String::new(),
                     properties: HashMap::new(),
+                    rotation: 0.0,
                 },
                 EditorSceneNodeDef {
                     id: 2,
@@ -1203,6 +1238,7 @@ mod tests {
                     runtime_prefab: String::new(),
                     asset_alias: "tree".to_string(),
                     properties: HashMap::new(),
+                    rotation: 0.0,
                 },
                 EditorSceneNodeDef {
                     id: 3,
@@ -1216,6 +1252,7 @@ mod tests {
                     runtime_prefab: String::new(),
                     asset_alias: String::new(),
                     properties: HashMap::new(),
+                    rotation: 0.0,
                 },
                 EditorSceneNodeDef {
                     id: 4,
@@ -1229,6 +1266,7 @@ mod tests {
                     runtime_prefab: String::new(),
                     asset_alias: "gem".to_string(),
                     properties: HashMap::new(),
+                    rotation: 0.0,
                 },
             ],
         };

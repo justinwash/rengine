@@ -127,6 +127,8 @@ pub struct RengineNativeEditor {
     recent_project_click: Option<ProjectEntryClickState>,
     active_text_input_owner: Option<TextInputOwner>,
     popup_menu: Option<PopupMenuState>,
+    /// True when the last left-mouse-down was in the viewport panel.
+    viewport_focused: bool,
     quit_requested: bool,
 }
 
@@ -163,6 +165,7 @@ impl Game for RengineNativeEditor {
             recent_project_click: None,
             active_text_input_owner: None,
             popup_menu: None,
+            viewport_focused: false,
             quit_requested: false,
         };
 
@@ -199,13 +202,22 @@ impl Game for RengineNativeEditor {
         if !self.ui_has_focus() && engine.input().is_key_pressed(KeyCode::KeyF) {
             self.frame_active_scene_view();
         }
-        if !self.ui_has_focus() && engine.input().is_key_pressed(KeyCode::KeyW) {
+        if !self.ui_has_focus()
+            && self.viewport_focused
+            && engine.input().is_key_pressed(KeyCode::KeyW)
+        {
             self.active_scene_tab_mut().gizmo_mode = GizmoMode::Translate;
         }
-        if !self.ui_has_focus() && engine.input().is_key_pressed(KeyCode::KeyE) {
+        if !self.ui_has_focus()
+            && self.viewport_focused
+            && engine.input().is_key_pressed(KeyCode::KeyE)
+        {
             self.active_scene_tab_mut().gizmo_mode = GizmoMode::Rotate;
         }
-        if !self.ui_has_focus() && engine.input().is_key_pressed(KeyCode::KeyR) {
+        if !self.ui_has_focus()
+            && self.viewport_focused
+            && engine.input().is_key_pressed(KeyCode::KeyR)
+        {
             self.active_scene_tab_mut().gizmo_mode = GizmoMode::Scale;
         }
 
