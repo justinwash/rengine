@@ -5,6 +5,7 @@ use std::{
     cmp::Ordering,
     collections::HashSet,
     fs,
+    io::Write,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -70,18 +71,29 @@ const INSPECTOR_SPRITE_TEXTURE_ID: usize = 121;
 const INSPECTOR_SPRITE_ASSIGN_SELECTED_ID: usize = 122;
 const INSPECTOR_SPRITE_CLEAR_TEXTURE_ID: usize = 123;
 const INSPECTOR_SPRITE_BROWSE_IMAGE_ID: usize = 124;
+const INSPECTOR_NODE_SCRIPT_PARAM_KEY_ID: usize = 125;
+const INSPECTOR_NODE_GEOMETRY_POINTS_ID: usize = 126;
+const INSPECTOR_NODE_PATH_POINTS_ID: usize = 127;
+const INSPECTOR_TRIGGER_TAG_ID: usize = 128;
+const INSPECTOR_NODE_SCRIPT_PARAM_VALUE_ID: usize = 129;
 const INSPECTOR_CAMERA_ZOOM_ID: usize = 130;
 const INSPECTOR_CAMERA_SHOW_BOUNDS_ID: usize = 131;
 const INSPECTOR_CAMERA_USE_SCENE_SIZE_ID: usize = 132;
 const INSPECTOR_CAMERA_VIEW_WIDTH_ID: usize = 133;
 const INSPECTOR_CAMERA_VIEW_HEIGHT_ID: usize = 134;
+const INSPECTOR_NODE_SCRIPT_PARAM_SET_ID: usize = 135;
+const INSPECTOR_TRIGGER_ONCE_ID: usize = 136;
+const INSPECTOR_TRIGGER_COOLDOWN_ID: usize = 137;
+const INSPECTOR_TRIGGER_LAYER_MASK_ID: usize = 138;
 const INSPECTOR_SCROLL_REGION_ID: usize = 140;
 
-const NODE_KIND_OPTIONS: [SceneNodeKind; 6] = [
+const NODE_KIND_OPTIONS: [SceneNodeKind; 8] = [
     SceneNodeKind::Group,
     SceneNodeKind::Empty,
     SceneNodeKind::Camera2d,
     SceneNodeKind::Sprite,
+    SceneNodeKind::Polygon,
+    SceneNodeKind::Path,
     SceneNodeKind::Trigger,
     SceneNodeKind::UiRoot,
 ];
@@ -115,10 +127,8 @@ pub struct RengineNativeEditor {
     bottom_scroll: f32,
     file_browser_ui: Ui,
     file_browser_form: FileBrowserFormState,
-    file_browser_ui_focused: bool,
     inspector_ui: Ui,
     inspector_form: InspectorFormState,
-    inspector_ui_focused: bool,
     panel_layout: PanelLayoutState,
     panel_resize_drag: Option<PanelResizeDrag>,
     inspector_scroll: f32,
@@ -126,6 +136,7 @@ pub struct RengineNativeEditor {
     canvas_tooltip_targets: Vec<CanvasTooltipTarget>,
     recent_project_click: Option<ProjectEntryClickState>,
     active_text_input_owner: Option<TextInputOwner>,
+    automation_log_path: Option<PathBuf>,
     popup_menu: Option<PopupMenuState>,
     /// True when the last left-mouse-down was in the viewport panel.
     viewport_focused: bool,
@@ -137,6 +148,15 @@ impl Game for RengineNativeEditor {
         let workspace_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let project_tree = ProjectTreeEntry::scan(&workspace_root);
         let branch_name = read_git_branch(&workspace_root);
+        let automation_log_path =
+            std::env::var_os("RENGINE_EDITOR_AUTOMATION_LOG").map(PathBuf::from);
+
+        if let Some(path) = automation_log_path.as_ref() {
+            if let Some(parent) = path.parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+            let _ = fs::write(path, "");
+        }
 
         let mut editor = Self {
             workspace_root,
@@ -153,10 +173,8 @@ impl Game for RengineNativeEditor {
             bottom_scroll: 0.0,
             file_browser_ui: make_file_browser_ui(),
             file_browser_form: FileBrowserFormState::default(),
-            file_browser_ui_focused: false,
             inspector_ui: make_inspector_ui(),
             inspector_form: InspectorFormState::default(),
-            inspector_ui_focused: false,
             panel_layout: PanelLayoutState::default(),
             panel_resize_drag: None,
             inspector_scroll: 0.0,
@@ -164,6 +182,7 @@ impl Game for RengineNativeEditor {
             canvas_tooltip_targets: Vec::new(),
             recent_project_click: None,
             active_text_input_owner: None,
+            automation_log_path,
             popup_menu: None,
             viewport_focused: false,
             quit_requested: false,
@@ -199,38 +218,51 @@ impl Game for RengineNativeEditor {
         self.update_scene_autosave(engine.dt());
         self.handle_scene_history_shortcuts(engine);
         self.handle_scene_selection_shortcuts(engine);
-        if !self.ui_has_focus() && engine.input().is_key_pressed(KeyCode::KeyF) {
+        let key_f = engine.input().is_key_pressed(KeyCode::KeyF);
+        let key_w = engine.input().is_key_pressed(KeyCode::KeyW);
+        let key_e = engine.input().is_key_pressed(KeyCode::KeyE);
+        let key_r = engine.input().is_key_pressed(KeyCode::KeyR);
+        let key_f5 = engine.input().is_key_pressed(KeyCode::F5);
+        let key_n = engine.input().is_key_pressed(KeyCode::KeyN);
+        let key_o = engine.input().is_key_pressed(KeyCode::KeyO);
+        let key_s = engine.input().is_key_pressed(KeyCode::KeyS);
+
+        if !self.keyboard_captured_by_text_input() && key_f {
             self.frame_active_scene_view();
         }
-        if !self.ui_has_focus()
-            && self.viewport_focused
-            && engine.input().is_key_pressed(KeyCode::KeyW)
-        {
+
+        if key_w && self.keyboard_captured_by_text_input() {
+            self.log_automation_event("shortcut_blocked:KeyW:text_input");
+        }
+        if !self.keyboard_captured_by_text_input() && self.viewport_focused && key_w {
             self.active_scene_tab_mut().gizmo_mode = GizmoMode::Translate;
+            self.log_automation_event("shortcut:gizmo:translate");
         }
-        if !self.ui_has_focus()
-            && self.viewport_focused
-            && engine.input().is_key_pressed(KeyCode::KeyE)
-        {
+        if key_e && self.keyboard_captured_by_text_input() {
+            self.log_automation_event("shortcut_blocked:KeyE:text_input");
+        }
+        if !self.keyboard_captured_by_text_input() && self.viewport_focused && key_e {
             self.active_scene_tab_mut().gizmo_mode = GizmoMode::Rotate;
+            self.log_automation_event("shortcut:gizmo:rotate");
         }
-        if !self.ui_has_focus()
-            && self.viewport_focused
-            && engine.input().is_key_pressed(KeyCode::KeyR)
-        {
+        if key_r && self.keyboard_captured_by_text_input() {
+            self.log_automation_event("shortcut_blocked:KeyR:text_input");
+        }
+        if !self.keyboard_captured_by_text_input() && self.viewport_focused && key_r {
             self.active_scene_tab_mut().gizmo_mode = GizmoMode::Scale;
+            self.log_automation_event("shortcut:gizmo:scale");
         }
 
-        if !self.ui_has_focus() && engine.input().is_key_pressed(KeyCode::F5) {
+        if !self.keyboard_captured_by_text_input() && key_f5 {
             self.refresh_project_tree();
         }
-        if !self.ui_has_focus() && engine.input().is_key_pressed(KeyCode::KeyN) {
+        if !self.keyboard_captured_by_text_input() && key_n {
             self.new_scene();
         }
-        if !self.ui_has_focus() && engine.input().is_key_pressed(KeyCode::KeyO) {
+        if !self.keyboard_captured_by_text_input() && key_o {
             self.open_scene();
         }
-        if !self.ui_has_focus() && engine.input().is_key_pressed(KeyCode::KeyS) {
+        if !self.keyboard_captured_by_text_input() && key_s {
             self.save_scene();
         }
     }

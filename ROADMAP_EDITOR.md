@@ -30,6 +30,9 @@ The current shell already has:
 - a rotate gizmo ring (W/E/R mode switcher) with 15° snap and free-rotate support
 - a uniform scale gizmo with four corner handles that scale from the selection center
 - `rotation: f32` stored per node with serde default so existing scenes load cleanly
+- first-pass track-authoring nodes for Polygon and Path geometry with viewport overlays
+- trigger-shape point editing and trigger-tag metadata in the inspector
+- script-args metadata editing for selected nodes in the inspector
 - a `Scene2D` runtime bridge that supports marker export, single-sprite export, and grouped multi-sprite prefab export
 
 The migration is now in the toolkit-rebuild phase: the editor no longer depends on egui for bootstrap, and the inspector now uses the engine's own UI layer for text inputs, toggles, sliders, transform editing, sprite-file assignment, and popup-based kind changes. The project browser and scene hierarchy now support native filtering, collapse state, and content-aware scrolling, while the viewport now supports real sprite previews and middle-mouse panning, but the shell still needs richer engine-native widgets such as split panes, reusable tree controls, and broader editing flows before it reaches feature parity.
@@ -252,7 +255,7 @@ If the goal is to make building games in rengine materially easier, the editor w
 1. undo/redo plus autosave and recovery so the shell stops feeling fragile
 2. multi-select, box selection, duplicate, reparent, reorder, and selection-history workflows
 3. rotate or scale gizmo follow-up plus richer spatial-editing polish on top of the current snapping, guides, and translate-gizmo baseline ✓ **done** — rotate ring + scale corner handles + W/E/R mode switcher landed
-4. gameplay markers, trigger volumes, and path tools aimed at checkpoints, route loops, encounter nodes, and camera rails
+4. gameplay markers, trigger volumes, and path tools aimed at checkpoints, route loops, encounter nodes, and camera rails (first pass landed: polygon/path nodes + trigger shape/tag editing)
 5. prefab assets, nested scenes, and reusable authored chunks for repeated gameplay setups and prop assemblies
 6. stronger exposed-property editing plus structured data documents for gameplay tables and content metadata
 7. play-in-editor, fast restart, log filtering, and runtime inspection once authored content can drive a level

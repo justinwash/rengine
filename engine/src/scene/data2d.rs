@@ -261,6 +261,8 @@ enum EditorSceneNodeKind {
     Empty,
     Camera2d,
     Sprite,
+    Polygon,
+    Path,
     Trigger,
     UiRoot,
 }
@@ -272,6 +274,8 @@ impl EditorSceneNodeKind {
             Self::Empty => "Empty",
             Self::Camera2d => "Camera2D",
             Self::Sprite => "Sprite",
+            Self::Polygon => "Polygon",
+            Self::Path => "Path",
             Self::Trigger => "Trigger",
             Self::UiRoot => "UI Root",
         }

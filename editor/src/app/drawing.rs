@@ -7,7 +7,7 @@ const VIEWPORT_GIZMO_CENTER_SIZE: f32 = 16.0;
 const VIEWPORT_GIZMO_TIP_SIZE: f32 = 10.0;
 const VIEWPORT_ROTATE_RING_RADIUS: f32 = 72.0;
 const VIEWPORT_ROTATE_RING_HIT_HALF: f32 = 10.0;
-const VIEWPORT_SCALE_HANDLE_SIZE: f32 = 10.0;
+const VIEWPORT_SCALE_HANDLE_SIZE: f32 = 24.0; // Increased from 10.0 for visibility
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ViewportTranslateHandle {
@@ -782,6 +782,18 @@ impl RengineNativeEditor {
                 draw_outline(canvas, rect, outline_color);
             }
 
+            match node.kind {
+                SceneNodeKind::Path => {
+                    let points = node_path_points(node);
+                    draw_node_path(canvas, viewport, pan, node.position, &points, outline_color);
+                }
+                SceneNodeKind::Polygon | SceneNodeKind::Trigger => {
+                    let points = node_shape_points(node);
+                    draw_node_polygon(canvas, viewport, pan, node.position, &points, outline_color);
+                }
+                _ => {}
+            }
+
             if sprite_texture.is_none() {
                 canvas.text_aligned(
                     rect.x + rect.w * 0.5,
@@ -1038,12 +1050,22 @@ impl RengineNativeEditor {
             GizmoMode::Rotate => "E  Rotate",
             GizmoMode::Scale => "R  Scale",
         };
-        canvas.text(
-            viewport.right() - 100.0,
-            viewport.y + 18.0,
+        // Draw mode indicator with background for visibility
+        let mode_bg_rect = PanelRect::new(viewport.right() - 150.0, viewport.y + 8.0, 140.0, 28.0);
+        canvas.rect(
+            mode_bg_rect.x,
+            mode_bg_rect.y,
+            mode_bg_rect.w,
+            mode_bg_rect.h,
+            Color::from_rgba8(40, 50, 60, 180),
+        );
+        canvas.text_aligned(
+            mode_bg_rect.x + mode_bg_rect.w * 0.5,
+            mode_bg_rect.y + mode_bg_rect.h * 0.5 - 5.0,
             mode_label,
-            11.0,
-            Color::from_rgba8(148, 162, 180, 200),
+            14.0,
+            Color::from_rgba8(200, 220, 255, 255),
+            TextAlign::Center,
         );
 
         if let Some(box_selection) = self.active_scene_tab().viewport_box_selection.as_ref() {
@@ -1580,8 +1602,64 @@ fn node_fill_color(kind: SceneNodeKind) -> Color {
         SceneNodeKind::Empty => Color::from_rgba8(92, 103, 112, 255),
         SceneNodeKind::Camera2d => Color::from_rgba8(53, 125, 132, 255),
         SceneNodeKind::Sprite => Color::from_rgba8(64, 114, 176, 255),
+        SceneNodeKind::Polygon => Color::from_rgba8(126, 88, 181, 255),
+        SceneNodeKind::Path => Color::from_rgba8(70, 146, 196, 255),
         SceneNodeKind::Trigger => Color::from_rgba8(176, 125, 58, 255),
         SceneNodeKind::UiRoot => Color::from_rgba8(70, 142, 104, 255),
+    }
+}
+
+fn draw_node_polygon(
+    canvas: &mut Canvas,
+    viewport: PanelRect,
+    pan: Vec2,
+    position: [f32; 2],
+    points: &[[f32; 2]],
+    color: Color,
+) {
+    if points.len() < 3 {
+        return;
+    }
+
+    let mut screen_points = Vec::with_capacity(points.len());
+    for point in points {
+        let world = [position[0] + point[0], position[1] + point[1]];
+        screen_points.push(scene_to_screen(world, viewport, pan));
+    }
+
+    for i in 0..screen_points.len() {
+        let a = screen_points[i];
+        let b = screen_points[(i + 1) % screen_points.len()];
+        canvas.line(a.x, a.y, b.x, b.y, 2.0, color);
+        canvas.circle_filled(a.x, a.y, 3.0, 10, color);
+    }
+}
+
+fn draw_node_path(
+    canvas: &mut Canvas,
+    viewport: PanelRect,
+    pan: Vec2,
+    position: [f32; 2],
+    points: &[[f32; 2]],
+    color: Color,
+) {
+    if points.len() < 2 {
+        return;
+    }
+
+    let mut screen_points = Vec::with_capacity(points.len());
+    for point in points {
+        let world = [position[0] + point[0], position[1] + point[1]];
+        screen_points.push(scene_to_screen(world, viewport, pan));
+    }
+
+    for i in 0..screen_points.len() - 1 {
+        let a = screen_points[i];
+        let b = screen_points[i + 1];
+        canvas.line(a.x, a.y, b.x, b.y, 2.0, color);
+    }
+    for point in screen_points {
+        canvas.circle_filled(point.x, point.y, 3.0, 10, color);
     }
 }
 

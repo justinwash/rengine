@@ -51,6 +51,8 @@ pub enum SceneNodeKind {
     Empty,
     Camera2d,
     Sprite,
+    Polygon,
+    Path,
     Trigger,
     UiRoot,
 }
@@ -62,6 +64,8 @@ impl SceneNodeKind {
             Self::Empty => "Empty",
             Self::Camera2d => "Camera2D",
             Self::Sprite => "Sprite",
+            Self::Polygon => "Polygon",
+            Self::Path => "Path",
             Self::Trigger => "Trigger",
             Self::UiRoot => "UI Root",
         }
@@ -73,6 +77,8 @@ impl SceneNodeKind {
             Self::Empty => "EMP",
             Self::Camera2d => "CAM",
             Self::Sprite => "SPR",
+            Self::Polygon => "POL",
+            Self::Path => "PTH",
             Self::Trigger => "TRG",
             Self::UiRoot => "UI",
         }
@@ -84,6 +90,8 @@ impl SceneNodeKind {
             Self::Empty => [88.0, 56.0],
             Self::Camera2d => [96.0, 68.0],
             Self::Sprite => [112.0, 72.0],
+            Self::Polygon => [180.0, 120.0],
+            Self::Path => [220.0, 140.0],
             Self::Trigger => [148.0, 88.0],
             Self::UiRoot => [220.0, 136.0],
         }

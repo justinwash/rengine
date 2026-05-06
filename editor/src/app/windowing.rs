@@ -324,13 +324,11 @@ impl RengineNativeEditor {
         if !is_open {
             match kind {
                 DockPanelKind::Files => {
-                    self.file_browser_ui_focused = false;
                     if self.active_text_input_owner == Some(TextInputOwner::FileBrowser) {
                         self.active_text_input_owner = None;
                     }
                 }
                 DockPanelKind::Inspector => {
-                    self.inspector_ui_focused = false;
                     if self.active_text_input_owner == Some(TextInputOwner::Inspector) {
                         self.active_text_input_owner = None;
                     }
@@ -511,26 +509,22 @@ impl RengineNativeEditor {
         hovered: Option<usize>,
         mouse_pressed: bool,
     ) {
-        let hovered_text_input = match (owner, hovered) {
-            (TextInputOwner::FileBrowser, Some(id)) if is_file_browser_text_input(id) => Some(id),
-            (TextInputOwner::Inspector, Some(id)) if is_inspector_text_input(id) => Some(id),
-            _ => None,
-        };
-        let focused_text_input = match (owner, focused) {
-            (TextInputOwner::FileBrowser, Some(id)) if is_file_browser_text_input(id) => Some(id),
-            (TextInputOwner::Inspector, Some(id)) if is_inspector_text_input(id) => Some(id),
-            _ => None,
-        };
+        let previous = self.active_text_input_owner;
+        self.active_text_input_owner = next_text_input_owner(
+            self.active_text_input_owner,
+            owner,
+            focused,
+            hovered,
+            mouse_pressed,
+        );
 
-        if mouse_pressed {
-            if hovered_text_input.is_some() {
-                self.active_text_input_owner = Some(owner);
-            }
-            return;
-        }
-
-        if self.active_text_input_owner == Some(owner) && focused_text_input.is_some() {
-            self.active_text_input_owner = Some(owner);
+        if previous != self.active_text_input_owner {
+            let event = match self.active_text_input_owner {
+                Some(TextInputOwner::FileBrowser) => "text_owner:file_browser",
+                Some(TextInputOwner::Inspector) => "text_owner:inspector",
+                None => "text_owner:none",
+            };
+            self.log_automation_event(event);
         }
     }
 
@@ -949,6 +943,10 @@ impl RengineNativeEditor {
         self.viewport_focused = true;
         let additive = history_modifier_down(engine);
 
+        if self.try_begin_point_edit(engine, mouse, layout) {
+            return;
+        }
+
         if !additive {
             let gizmo_consumed = {
                 let tab = self.active_scene_tab();
@@ -1142,6 +1140,7 @@ impl RengineNativeEditor {
                 tab.viewport_drag = None;
                 tab.viewport_rotate_drag = None;
                 tab.viewport_scale_drag = None;
+                tab.viewport_point_drag = None;
                 tab.viewport_box_selection = None;
             }
             if let Some(box_selection) = box_selection {
@@ -1174,6 +1173,11 @@ impl RengineNativeEditor {
 
         if self.active_scene_tab().viewport_scale_drag.is_some() {
             self.update_scale_drag(engine, layout, pointer);
+            return;
+        }
+
+        if self.active_scene_tab().viewport_point_drag.is_some() {
+            self.update_point_drag(layout, pointer);
             return;
         }
 
@@ -1319,6 +1323,139 @@ impl RengineNativeEditor {
             }
             tab.mark_dirty();
         }
+    }
+
+    fn update_point_drag(&mut self, layout: &ShellLayout, pointer: Vec2) {
+        let Some(drag) = self.active_scene_tab().viewport_point_drag.clone() else {
+            return;
+        };
+
+        let Some(node) = self.active_scene_tab().scene.node(drag.node_id) else {
+            return;
+        };
+
+        let mut points = if drag.property_key == "path_points" {
+            node_path_points(node)
+        } else {
+            node_shape_points(node)
+        };
+        if drag.point_index >= points.len() {
+            return;
+        }
+
+        let pointer_scene = screen_to_scene(
+            pointer,
+            layout.viewport,
+            self.active_scene_tab().viewport_pan,
+        );
+        let local = [
+            pointer_scene[0] - node.position[0],
+            pointer_scene[1] - node.position[1],
+        ];
+
+        if (points[drag.point_index][0] - local[0]).abs() <= f32::EPSILON
+            && (points[drag.point_index][1] - local[1]).abs() <= f32::EPSILON
+        {
+            return;
+        }
+
+        let history_entry =
+            (!drag.history_captured).then(|| SceneHistoryEntry::capture(self.active_scene_tab()));
+        let tab = self.active_scene_tab_mut();
+        if let Some(history_entry) = history_entry {
+            tab.push_undo_entry(history_entry);
+            if let Some(active_drag) = tab.viewport_point_drag.as_mut() {
+                active_drag.history_captured = true;
+            }
+        }
+
+        if let Some(node_mut) = tab.scene.node_mut(drag.node_id) {
+            points[drag.point_index] = local;
+            node_mut
+                .properties
+                .insert(drag.property_key.to_string(), format_points_text(&points));
+            tab.mark_dirty();
+        }
+    }
+
+    fn try_begin_point_edit(&mut self, engine: &Engine, mouse: Vec2, layout: &ShellLayout) -> bool {
+        let Some(node_id) = self.active_scene_tab().selected_node else {
+            return false;
+        };
+
+        let Some(node) = self.active_scene_tab().scene.node(node_id) else {
+            return false;
+        };
+
+        let (property_key, min_points, mut points) = match node.kind {
+            SceneNodeKind::Path => ("path_points", 2usize, node_path_points(node)),
+            SceneNodeKind::Polygon | SceneNodeKind::Trigger => {
+                ("shape_points", 3usize, node_shape_points(node))
+            }
+            _ => return false,
+        };
+
+        let hovered_point = points.iter().enumerate().find_map(|(index, point)| {
+            let world = [node.position[0] + point[0], node.position[1] + point[1]];
+            let screen =
+                scene_to_screen(world, layout.viewport, self.active_scene_tab().viewport_pan);
+            let dx = screen.x - mouse.x;
+            let dy = screen.y - mouse.y;
+            ((dx * dx + dy * dy) <= 9.0 * 9.0).then_some(index)
+        });
+
+        if selection_alt_down(engine) {
+            if let Some(index) = hovered_point {
+                if points.len() > min_points {
+                    let history_entry = SceneHistoryEntry::capture(self.active_scene_tab());
+                    let tab = self.active_scene_tab_mut();
+                    if let Some(node_mut) = tab.scene.node_mut(node_id) {
+                        points.remove(index);
+                        node_mut
+                            .properties
+                            .insert(property_key.to_string(), format_points_text(&points));
+                        tab.push_undo_entry(history_entry);
+                        tab.mark_dirty();
+                    }
+                    self.refresh_inspector_form();
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        if history_modifier_down(engine) && hovered_point.is_none() {
+            let pointer_scene =
+                screen_to_scene(mouse, layout.viewport, self.active_scene_tab().viewport_pan);
+            points.push([
+                pointer_scene[0] - node.position[0],
+                pointer_scene[1] - node.position[1],
+            ]);
+
+            let history_entry = SceneHistoryEntry::capture(self.active_scene_tab());
+            let tab = self.active_scene_tab_mut();
+            if let Some(node_mut) = tab.scene.node_mut(node_id) {
+                node_mut
+                    .properties
+                    .insert(property_key.to_string(), format_points_text(&points));
+                tab.push_undo_entry(history_entry);
+                tab.mark_dirty();
+            }
+            self.refresh_inspector_form();
+            return true;
+        }
+
+        if let Some(index) = hovered_point {
+            self.active_scene_tab_mut().viewport_point_drag = Some(ViewportPointDrag {
+                node_id,
+                property_key,
+                point_index: index,
+                history_captured: false,
+            });
+            return true;
+        }
+
+        false
     }
 
     pub(crate) fn finish_viewport_box_selection(
@@ -1524,6 +1661,7 @@ impl RengineNativeEditor {
         tab.viewport_pan = next_pan;
         tab.viewport_pan_drag = None;
         tab.viewport_drag = None;
+        tab.viewport_point_drag = None;
         tab.viewport_box_selection = None;
         self.push_log(frame_label);
     }
@@ -1624,6 +1762,42 @@ pub(crate) fn button_preferred_width(label: &str) -> f32 {
     label.chars().count() as f32 * 8.6 + 30.0
 }
 
+pub(crate) fn next_text_input_owner(
+    current_owner: Option<TextInputOwner>,
+    owner: TextInputOwner,
+    focused: Option<usize>,
+    hovered: Option<usize>,
+    mouse_pressed: bool,
+) -> Option<TextInputOwner> {
+    let hovered_text_input = match (owner, hovered) {
+        (TextInputOwner::FileBrowser, Some(id)) if is_file_browser_text_input(id) => Some(id),
+        (TextInputOwner::Inspector, Some(id)) if is_inspector_text_input(id) => Some(id),
+        _ => None,
+    };
+    let focused_text_input = match (owner, focused) {
+        (TextInputOwner::FileBrowser, Some(id)) if is_file_browser_text_input(id) => Some(id),
+        (TextInputOwner::Inspector, Some(id)) if is_inspector_text_input(id) => Some(id),
+        _ => None,
+    };
+
+    if mouse_pressed {
+        if hovered_text_input.is_some() {
+            return Some(owner);
+        }
+        return current_owner;
+    }
+
+    if focused_text_input.is_some() {
+        return Some(owner);
+    }
+
+    if current_owner == Some(owner) {
+        None
+    } else {
+        current_owner
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1703,6 +1877,54 @@ mod tests {
             viewport_drag_target([41.0, 65.0], &drag, true, VIEWPORT_GRID_STEP),
             [32.0, 18.0]
         );
+    }
+
+    #[test]
+    fn text_input_owner_is_captured_on_text_input_click() {
+        let next = next_text_input_owner(
+            None,
+            TextInputOwner::Inspector,
+            None,
+            Some(INSPECTOR_NODE_NAME_ID),
+            true,
+        );
+        assert_eq!(next, Some(TextInputOwner::Inspector));
+    }
+
+    #[test]
+    fn text_input_owner_is_released_when_focus_is_lost() {
+        let next = next_text_input_owner(
+            Some(TextInputOwner::Inspector),
+            TextInputOwner::Inspector,
+            None,
+            None,
+            false,
+        );
+        assert_eq!(next, None);
+    }
+
+    #[test]
+    fn non_text_click_does_not_capture_keyboard() {
+        let next = next_text_input_owner(
+            None,
+            TextInputOwner::Inspector,
+            None,
+            Some(INSPECTOR_NODE_KIND_BUTTON_ID),
+            true,
+        );
+        assert_eq!(next, None);
+    }
+
+    #[test]
+    fn unrelated_owner_update_preserves_current_text_input_owner() {
+        let next = next_text_input_owner(
+            Some(TextInputOwner::FileBrowser),
+            TextInputOwner::Inspector,
+            None,
+            None,
+            false,
+        );
+        assert_eq!(next, Some(TextInputOwner::FileBrowser));
     }
 }
 
