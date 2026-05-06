@@ -467,6 +467,14 @@ impl SceneDocument {
         true
     }
 
+    pub fn remove_nodes(&mut self, node_ids: &[u64]) {
+        let mut ids_to_remove = HashSet::new();
+        for &id in node_ids {
+            ids_to_remove.extend(self.subtree_ids(id));
+        }
+        self.nodes.retain(|node| !ids_to_remove.contains(&node.id));
+    }
+
     pub fn translate_subtree(&mut self, node_id: u64, delta: [f32; 2]) {
         let subtree_ids: HashSet<u64> = self.subtree_ids(node_id).into_iter().collect();
 

@@ -38,17 +38,18 @@ impl ViewportTranslateGizmo {
 impl RengineNativeEditor {
     pub(crate) fn draw_shell(&mut self, engine: &Engine, frame: &mut Frame) {
         let layout = ShellLayout::new(engine, &self.panel_layout);
-        frame.clear_color = Color::from_rgba8(14, 19, 24, 255);
+        let colors = editor_theme_colors(self.editor_theme);
+        frame.clear_color = colors.window_bg;
 
         let canvas = frame.canvas(0);
 
-        draw_panel(canvas, layout.top_bar, Color::from_rgba8(20, 26, 33, 255));
-        draw_panel(canvas, layout.files, Color::from_rgba8(21, 26, 33, 255));
-        draw_panel(canvas, layout.hierarchy, Color::from_rgba8(21, 26, 33, 255));
-        draw_panel(canvas, layout.inspector, Color::from_rgba8(21, 26, 33, 255));
-        draw_panel(canvas, layout.center, Color::from_rgba8(21, 26, 33, 255));
-        draw_panel(canvas, layout.bottom, Color::from_rgba8(21, 26, 33, 255));
-        draw_panel(canvas, layout.viewport, Color::from_rgba8(17, 22, 28, 255));
+        draw_panel(canvas, layout.top_bar, colors.top_bar_bg);
+        draw_panel(canvas, layout.files, colors.panel_bg);
+        draw_panel(canvas, layout.hierarchy, colors.panel_bg);
+        draw_panel(canvas, layout.inspector, colors.panel_bg);
+        draw_panel(canvas, layout.center, colors.panel_bg);
+        draw_panel(canvas, layout.bottom, colors.panel_bg);
+        draw_panel(canvas, layout.viewport, colors.viewport_bg);
         if let Some(rect) = layout.files_resize {
             draw_resize_handle(canvas, rect);
         }
@@ -101,8 +102,13 @@ impl RengineNativeEditor {
         rect: PanelRect,
         tooltip_targets: &mut Vec<CanvasTooltipTarget>,
     ) {
-        for (label, button_rect) in self.top_bar_buttons(rect) {
+        let colors = editor_theme_colors(self.editor_theme);
+        let window_buttons = self.top_bar_window_buttons(rect);
+        for (label, button_rect) in self.top_bar_menu_buttons(rect) {
             draw_button(canvas, button_rect, label, false, true, tooltip_targets);
+        }
+        for (label, button_rect) in &window_buttons {
+            draw_button(canvas, *button_rect, label, false, true, tooltip_targets);
         }
 
         let scene_label = self.active_scene_tab().tab_label();
@@ -115,38 +121,45 @@ impl RengineNativeEditor {
         let header_row = PanelRect::new(rect.x, rect.y + 28.0, rect.w, 18.0);
         let meta_row = PanelRect::new(rect.x, rect.y + 8.0, rect.w, 18.0);
 
-        canvas.text_aligned(
-            rect.right() - PANEL_PADDING,
-            text_baseline_in_rect(canvas, header_row, 16.0),
-            &scene_label,
-            16.0,
-            Color::from_rgba8(214, 222, 232, 255),
-            TextAlign::Right,
-        );
-
         let branch_size = 11.0;
         let branch_label = self.branch_name.as_str();
         let (branch_width, _) = canvas.measure_text(branch_label, branch_size);
+        let right_block_x = window_buttons
+            .first()
+            .map(|(_, rect)| rect.x - 10.0)
+            .unwrap_or(rect.right() - PANEL_PADDING);
         let branch_rect = PanelRect::new(
-            rect.right() - PANEL_PADDING - (branch_width + 18.0),
+            right_block_x - (branch_width + 18.0),
             rect.y + 6.0,
             branch_width + 18.0,
             22.0,
         );
+
+        // Constrain the scene title so it does not overlap the right-side
+        // window buttons (Refresh / Quit).
+        canvas.text_aligned(
+            right_block_x - 10.0,
+            text_baseline_in_rect(canvas, header_row, 16.0),
+            &scene_label,
+            16.0,
+            colors.title_text,
+            TextAlign::Right,
+        );
+
         canvas.rect(
             branch_rect.x,
             branch_rect.y,
             branch_rect.w,
             branch_rect.h,
-            Color::from_rgba8(28, 38, 48, 255),
+            colors.badge_bg,
         );
-        draw_outline(canvas, branch_rect, Color::from_rgba8(56, 74, 90, 255));
+        draw_outline(canvas, branch_rect, colors.badge_border);
         canvas.text_aligned(
             branch_rect.x + branch_rect.w * 0.5,
             text_baseline_in_rect(canvas, branch_rect, branch_size),
             branch_label,
             branch_size,
-            Color::from_rgba8(170, 192, 212, 255),
+            colors.badge_text,
             TextAlign::Center,
         );
         canvas.text_aligned(
@@ -154,7 +167,7 @@ impl RengineNativeEditor {
             text_baseline_in_rect(canvas, meta_row, 12.0),
             &scene_path,
             12.0,
-            Color::from_rgba8(132, 144, 160, 255),
+            colors.meta_text,
             TextAlign::Right,
         );
     }
@@ -215,6 +228,14 @@ impl RengineNativeEditor {
 
         let filter = self.file_browser_form.filter.trim().to_ascii_lowercase();
         let list_rect = project_browser_list_rect(panel);
+        canvas.line(
+            list_rect.x,
+            list_rect.top(),
+            list_rect.right(),
+            list_rect.top(),
+            1.0,
+            Color::from_rgba8(40, 50, 62, 255),
+        );
         let lines = flattened_project_tree(
             &self.project_tree,
             &self.collapsed_project_paths,
@@ -342,7 +363,20 @@ impl RengineNativeEditor {
             Color::from_rgba8(148, 162, 180, 255),
         );
 
+        let has_selection = self.active_scene_tab().has_selection();
+        for (label, rect, enabled) in hierarchy_action_buttons(panel, has_selection) {
+            draw_button(canvas, rect, label, false, enabled, tooltip_targets);
+        }
+
         let list_rect = scene_hierarchy_list_rect(panel);
+        canvas.line(
+            list_rect.x,
+            list_rect.top(),
+            list_rect.right(),
+            list_rect.top(),
+            1.0,
+            Color::from_rgba8(40, 50, 62, 255),
+        );
         let lines = self.scene_node_lines();
         canvas.push_clip(list_rect.x, list_rect.y, list_rect.w, list_rect.h);
         if lines.is_empty() {
@@ -907,6 +941,55 @@ impl RengineNativeEditor {
         }
 
         canvas.pop_clip();
+
+        // Viewport toolbar overlay — drawn outside the clip so it's always visible
+        let toolbar_rect = viewport_toolbar_rect(viewport);
+        canvas.rect(
+            toolbar_rect.x,
+            toolbar_rect.y,
+            toolbar_rect.w,
+            toolbar_rect.h,
+            Color::from_rgba8(18, 22, 28, 210),
+        );
+        canvas.line(
+            toolbar_rect.x,
+            toolbar_rect.y,
+            toolbar_rect.right(),
+            toolbar_rect.y,
+            1.0,
+            Color::from_rgba8(48, 56, 70, 255),
+        );
+        let mut tooltip_targets_toolbar = Vec::new();
+        for (label, rect) in viewport_toolbar_buttons(viewport) {
+            draw_button(
+                canvas,
+                rect,
+                label,
+                false,
+                true,
+                &mut tooltip_targets_toolbar,
+            );
+        }
+
+        let snap_on = viewport_snap_enabled(engine);
+        let snap_label = if snap_on {
+            "Snap: On"
+        } else {
+            "Snap: Off (Shift)"
+        };
+        let snap_color = if snap_on {
+            Color::from_rgba8(116, 196, 142, 200)
+        } else {
+            Color::from_rgba8(200, 148, 80, 200)
+        };
+        canvas.text_aligned(
+            toolbar_rect.right() - PANEL_PADDING,
+            text_baseline_in_rect(canvas, toolbar_rect, 11.0),
+            snap_label,
+            11.0,
+            snap_color,
+            TextAlign::Right,
+        );
     }
 
     pub(crate) fn draw_popup_menu(
@@ -1234,6 +1317,57 @@ fn draw_outline(canvas: &mut Canvas, rect: PanelRect, color: Color) {
         color,
     );
     canvas.line(rect.x, rect.y + rect.h, rect.x, rect.y, 1.0, color);
+}
+
+#[derive(Clone, Copy)]
+struct EditorThemeColors {
+    window_bg: Color,
+    top_bar_bg: Color,
+    panel_bg: Color,
+    viewport_bg: Color,
+    title_text: Color,
+    meta_text: Color,
+    badge_bg: Color,
+    badge_border: Color,
+    badge_text: Color,
+}
+
+fn editor_theme_colors(theme: EditorTheme) -> EditorThemeColors {
+    match theme {
+        EditorTheme::Slate => EditorThemeColors {
+            window_bg: Color::from_rgba8(14, 19, 24, 255),
+            top_bar_bg: Color::from_rgba8(20, 26, 33, 255),
+            panel_bg: Color::from_rgba8(21, 26, 33, 255),
+            viewport_bg: Color::from_rgba8(17, 22, 28, 255),
+            title_text: Color::from_rgba8(214, 222, 232, 255),
+            meta_text: Color::from_rgba8(132, 144, 160, 255),
+            badge_bg: Color::from_rgba8(28, 38, 48, 255),
+            badge_border: Color::from_rgba8(56, 74, 90, 255),
+            badge_text: Color::from_rgba8(170, 192, 212, 255),
+        },
+        EditorTheme::Graphite => EditorThemeColors {
+            window_bg: Color::from_rgba8(20, 20, 20, 255),
+            top_bar_bg: Color::from_rgba8(32, 31, 30, 255),
+            panel_bg: Color::from_rgba8(38, 36, 34, 255),
+            viewport_bg: Color::from_rgba8(27, 26, 25, 255),
+            title_text: Color::from_rgba8(234, 226, 214, 255),
+            meta_text: Color::from_rgba8(188, 170, 148, 255),
+            badge_bg: Color::from_rgba8(53, 48, 42, 255),
+            badge_border: Color::from_rgba8(118, 102, 82, 255),
+            badge_text: Color::from_rgba8(236, 208, 168, 255),
+        },
+        EditorTheme::Ember => EditorThemeColors {
+            window_bg: Color::from_rgba8(24, 13, 14, 255),
+            top_bar_bg: Color::from_rgba8(44, 18, 20, 255),
+            panel_bg: Color::from_rgba8(52, 23, 24, 255),
+            viewport_bg: Color::from_rgba8(34, 14, 17, 255),
+            title_text: Color::from_rgba8(255, 223, 196, 255),
+            meta_text: Color::from_rgba8(224, 170, 146, 255),
+            badge_bg: Color::from_rgba8(68, 26, 26, 255),
+            badge_border: Color::from_rgba8(164, 78, 60, 255),
+            badge_text: Color::from_rgba8(255, 210, 154, 255),
+        },
+    }
 }
 
 fn draw_grid(canvas: &mut Canvas, viewport: PanelRect, pan: Vec2) {

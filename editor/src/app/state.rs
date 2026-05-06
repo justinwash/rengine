@@ -46,12 +46,33 @@ pub(crate) enum TextInputOwner {
     Inspector,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum EditorTheme {
+    Slate,
+    Graphite,
+    Ember,
+}
+
 impl BottomTab {
     pub(crate) fn label(self) -> &'static str {
         match self {
             Self::Activity => "Activity",
             Self::SceneJson => "Scene JSON",
         }
+    }
+}
+
+impl EditorTheme {
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::Slate => "Slate",
+            Self::Graphite => "Graphite",
+            Self::Ember => "Ember",
+        }
+    }
+
+    pub(crate) fn all() -> [EditorTheme; 3] {
+        [Self::Slate, Self::Graphite, Self::Ember]
     }
 }
 
@@ -711,6 +732,24 @@ impl RengineNativeEditor {
 
         self.refresh_inspector_form();
         self.push_log(format!("Duplicated {} node(s)", duplicated_root_ids.len()));
+    }
+
+    pub(crate) fn delete_selected_nodes(&mut self) {
+        let selected_root_ids = self.active_scene_tab().selected_root_ids();
+        if selected_root_ids.is_empty() {
+            return;
+        }
+        let count = selected_root_ids.len();
+        let history_entry = SceneHistoryEntry::capture(self.active_scene_tab());
+        {
+            let tab = self.active_scene_tab_mut();
+            tab.scene.remove_nodes(&selected_root_ids);
+            tab.set_selection(None, Vec::new());
+            tab.mark_dirty();
+            tab.push_undo_entry(history_entry);
+        }
+        self.refresh_inspector_form();
+        self.push_log(format!("Deleted {} node(s)", count));
     }
 
     pub(crate) fn reorder_selected_nodes(&mut self, direction: SceneNodeReorderDirection) {
