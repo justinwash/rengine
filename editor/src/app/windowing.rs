@@ -900,6 +900,25 @@ impl RengineNativeEditor {
 
         let additive = history_modifier_down(engine);
 
+        for (label, rect, enabled) in
+            hierarchy_action_buttons(layout.hierarchy, self.active_scene_tab().has_selection())
+        {
+            if rect.contains(mouse) {
+                if enabled {
+                    match label {
+                        "+ Add" => {
+                            let parent = self.active_scene_tab().selected_node;
+                            self.open_add_node_menu(mouse, parent, None);
+                        }
+                        "Dup" => self.duplicate_selected_nodes(),
+                        "Del" => self.delete_selected_nodes(),
+                        _ => {}
+                    }
+                }
+                return true;
+            }
+        }
+
         let header_rect = scene_hierarchy_header_rect(layout.hierarchy);
         if header_rect.contains(mouse) {
             if !additive {
@@ -949,6 +968,19 @@ impl RengineNativeEditor {
         layout: &ShellLayout,
     ) {
         if !layout.viewport.contains(mouse) {
+            return;
+        }
+
+        let toolbar_rect = viewport_toolbar_rect(layout.viewport);
+        if toolbar_rect.contains(mouse) {
+            for (label, rect) in viewport_toolbar_buttons(layout.viewport) {
+                if rect.contains(mouse) {
+                    match label {
+                        "Frame (F)" => self.frame_active_scene_view(),
+                        _ => {}
+                    }
+                }
+            }
             return;
         }
 
@@ -1608,14 +1640,78 @@ pub(crate) fn project_browser_list_rect(panel: PanelRect) -> PanelRect {
     )
 }
 
+const HIERARCHY_HEADER_HEIGHT: f32 = 70.0;
+const HIERARCHY_ACTION_BAR_HEIGHT: f32 = 24.0;
+
 pub(crate) fn scene_hierarchy_list_rect(panel: PanelRect) -> PanelRect {
     let inner = panel.inset(PANEL_PADDING);
-    PanelRect::new(inner.x, inner.y, inner.w, (inner.h - 46.0).max(0.0))
+    PanelRect::new(
+        inner.x,
+        inner.y,
+        inner.w,
+        (inner.h - HIERARCHY_HEADER_HEIGHT).max(0.0),
+    )
 }
 
 pub(crate) fn scene_hierarchy_header_rect(panel: PanelRect) -> PanelRect {
     let inner = panel.inset(PANEL_PADDING);
-    PanelRect::new(inner.x, inner.top() - 46.0, inner.w, 46.0)
+    PanelRect::new(
+        inner.x,
+        inner.top() - HIERARCHY_HEADER_HEIGHT,
+        inner.w,
+        HIERARCHY_HEADER_HEIGHT,
+    )
+}
+
+pub(crate) fn hierarchy_action_bar_rect(panel: PanelRect) -> PanelRect {
+    let inner = panel.inset(PANEL_PADDING);
+    let y = inner.top() - HIERARCHY_HEADER_HEIGHT + 2.0;
+    PanelRect::new(inner.x, y, inner.w, HIERARCHY_ACTION_BAR_HEIGHT)
+}
+
+pub(crate) fn hierarchy_action_buttons(
+    panel: PanelRect,
+    has_selection: bool,
+) -> Vec<(&'static str, PanelRect, bool)> {
+    let bar = hierarchy_action_bar_rect(panel);
+    let button_h = (bar.h - 4.0).max(0.0);
+    let y = bar.y + 2.0;
+    let entries: &[(&str, bool)] = &[
+        ("+ Add", true),
+        ("Dup", has_selection),
+        ("Del", has_selection),
+    ];
+    let mut x = bar.x;
+    entries
+        .iter()
+        .map(|(label, enabled)| {
+            let w = button_preferred_width(label);
+            let rect = PanelRect::new(x, y, w, button_h);
+            x += w + BUTTON_GAP;
+            (*label, rect, *enabled)
+        })
+        .collect()
+}
+
+pub(crate) fn viewport_toolbar_rect(viewport: PanelRect) -> PanelRect {
+    PanelRect::new(viewport.x, viewport.top() - 34.0, viewport.w, 34.0)
+}
+
+pub(crate) fn viewport_toolbar_buttons(viewport: PanelRect) -> Vec<(&'static str, PanelRect)> {
+    let toolbar = viewport_toolbar_rect(viewport);
+    let button_h = BUTTON_HEIGHT;
+    let y = toolbar.y + (toolbar.h - button_h) * 0.5;
+    let mut x = toolbar.x + PANEL_PADDING;
+    let labels: &[&str] = &["Frame (F)"];
+    labels
+        .iter()
+        .map(|label| {
+            let w = button_preferred_width(label);
+            let rect = PanelRect::new(x, y, w, button_h);
+            x += w + BUTTON_GAP;
+            (*label, rect)
+        })
+        .collect()
 }
 
 pub(crate) fn tree_toggle_rect(line_rect: PanelRect, depth: usize) -> PanelRect {
