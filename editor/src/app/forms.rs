@@ -20,7 +20,16 @@ pub(crate) struct InspectorFormState {
     pub(crate) node_size_width: String,
     pub(crate) node_size_height: String,
     pub(crate) script_path: String,
+    pub(crate) script_param_key: String,
+    pub(crate) script_param_value: String,
+    pub(crate) script_params: Vec<(String, String)>,
     pub(crate) runtime_prefab: String,
+    pub(crate) geometry_points: String,
+    pub(crate) path_points: String,
+    pub(crate) trigger_tag: String,
+    pub(crate) trigger_once: bool,
+    pub(crate) trigger_cooldown: String,
+    pub(crate) trigger_layer_mask: String,
     pub(crate) asset_alias: String,
     pub(crate) sprite_texture_path: String,
     pub(crate) camera_zoom: f32,
@@ -49,7 +58,39 @@ impl InspectorFormState {
                 self.node_size_width = format!("{:.0}", node.size[0]);
                 self.node_size_height = format!("{:.0}", node.size[1]);
                 self.script_path = node.script_path.clone();
+                self.script_param_key.clear();
+                self.script_param_value.clear();
+                self.script_params = script_param_pairs_from_node(node);
                 self.runtime_prefab = node.runtime_prefab.clone();
+                self.geometry_points = node
+                    .properties
+                    .get("shape_points")
+                    .cloned()
+                    .unwrap_or_default();
+                self.path_points = node
+                    .properties
+                    .get("path_points")
+                    .cloned()
+                    .unwrap_or_default();
+                self.trigger_tag = node
+                    .properties
+                    .get("trigger_tag")
+                    .cloned()
+                    .unwrap_or_default();
+                self.trigger_once = node
+                    .properties
+                    .get("trigger_once")
+                    .is_some_and(|value| value == "true" || value == "1");
+                self.trigger_cooldown = node
+                    .properties
+                    .get("trigger_cooldown_s")
+                    .cloned()
+                    .unwrap_or_default();
+                self.trigger_layer_mask = node
+                    .properties
+                    .get("trigger_layer_mask")
+                    .cloned()
+                    .unwrap_or_default();
                 self.asset_alias = node.asset_alias.clone();
                 self.sprite_texture_path = node.sprite.texture_path.clone();
                 self.camera_zoom = node.camera2d.zoom;
@@ -69,7 +110,16 @@ impl InspectorFormState {
         self.node_size_width.clear();
         self.node_size_height.clear();
         self.script_path.clear();
+        self.script_param_key.clear();
+        self.script_param_value.clear();
+        self.script_params.clear();
         self.runtime_prefab.clear();
+        self.geometry_points.clear();
+        self.path_points.clear();
+        self.trigger_tag.clear();
+        self.trigger_once = false;
+        self.trigger_cooldown.clear();
+        self.trigger_layer_mask.clear();
         self.asset_alias.clear();
         self.sprite_texture_path.clear();
         self.camera_zoom = 1.0;
@@ -83,7 +133,6 @@ impl InspectorFormState {
 impl RengineNativeEditor {
     pub(crate) fn update_file_browser_ui(&mut self, engine: &Engine, layout: &ShellLayout) {
         if !layout.files_open {
-            self.file_browser_ui_focused = false;
             if self.active_text_input_owner == Some(TextInputOwner::FileBrowser) {
                 self.active_text_input_owner = None;
             }
@@ -108,7 +157,6 @@ impl RengineNativeEditor {
             &mut file_browser_form,
             Self::build_file_browser_ui,
             |response, state| {
-                self.file_browser_ui_focused = response.focused_id.is_some();
                 self.capture_text_input_owner(
                     TextInputOwner::FileBrowser,
                     response.focused_id,
@@ -130,7 +178,6 @@ impl RengineNativeEditor {
 
     pub(crate) fn update_inspector_ui(&mut self, engine: &Engine, layout: &ShellLayout) {
         if !layout.inspector_open {
-            self.inspector_ui_focused = false;
             if self.active_text_input_owner == Some(TextInputOwner::Inspector) {
                 self.active_text_input_owner = None;
             }
@@ -172,7 +219,6 @@ impl RengineNativeEditor {
             |response, state| {
                 let request_kind_menu = response.was_activated(INSPECTOR_NODE_KIND_BUTTON_ID);
                 let request_child_menu = response.was_activated(INSPECTOR_CREATE_CHILD_BUTTON_ID);
-                self.inspector_ui_focused = response.focused_id.is_some();
                 self.capture_text_input_owner(
                     TextInputOwner::Inspector,
                     response.focused_id,
@@ -293,6 +339,19 @@ impl RengineNativeEditor {
                 &state.script_path,
                 "scripts/example.rs",
             );
+            ui.label("Script Params", 11.0, Color::from_rgba8(148, 162, 180, 255));
+            ui.row(2);
+            ui.text_input(
+                INSPECTOR_NODE_SCRIPT_PARAM_KEY_ID,
+                &state.script_param_key,
+                "param_key",
+            );
+            ui.text_input(
+                INSPECTOR_NODE_SCRIPT_PARAM_VALUE_ID,
+                &state.script_param_value,
+                "value",
+            );
+            ui.button(INSPECTOR_NODE_SCRIPT_PARAM_SET_ID, "Set Script Param");
             ui.label(
                 "Runtime Prefab",
                 11.0,
@@ -303,6 +362,82 @@ impl RengineNativeEditor {
                 &state.runtime_prefab,
                 "runtime prefab id",
             );
+
+            if kind == SceneNodeKind::Polygon || kind == SceneNodeKind::Trigger {
+                ui.separator(8.0);
+                ui.label(
+                    "Polygon Points",
+                    11.0,
+                    Color::from_rgba8(148, 162, 180, 255),
+                );
+                ui.text_input(
+                    INSPECTOR_NODE_GEOMETRY_POINTS_ID,
+                    &state.geometry_points,
+                    "-90,-40; 90,-40; 120,30; -70,70",
+                );
+            }
+
+            if kind == SceneNodeKind::Path {
+                ui.separator(8.0);
+                ui.label("Path Points", 11.0, Color::from_rgba8(148, 162, 180, 255));
+                ui.text_input(
+                    INSPECTOR_NODE_PATH_POINTS_ID,
+                    &state.path_points,
+                    "-120,0; -40,50; 40,-20; 120,30",
+                );
+            }
+
+            if kind == SceneNodeKind::Trigger {
+                ui.label("Trigger Tag", 11.0, Color::from_rgba8(148, 162, 180, 255));
+                ui.text_input(
+                    INSPECTOR_TRIGGER_TAG_ID,
+                    &state.trigger_tag,
+                    "checkpoint_start",
+                );
+                ui.checkbox(
+                    INSPECTOR_TRIGGER_ONCE_ID,
+                    "Trigger Once",
+                    state.trigger_once,
+                );
+                ui.label(
+                    "Trigger Cooldown (s)",
+                    11.0,
+                    Color::from_rgba8(148, 162, 180, 255),
+                );
+                ui.text_input(
+                    INSPECTOR_TRIGGER_COOLDOWN_ID,
+                    &state.trigger_cooldown,
+                    "0.0",
+                );
+                ui.label(
+                    "Trigger Layer Mask",
+                    11.0,
+                    Color::from_rgba8(148, 162, 180, 255),
+                );
+                ui.text_input(
+                    INSPECTOR_TRIGGER_LAYER_MASK_ID,
+                    &state.trigger_layer_mask,
+                    "player,ai",
+                );
+            }
+
+            let script_pairs = script_param_pairs_from_fields(state);
+            if !script_pairs.is_empty() {
+                ui.separator(8.0);
+                ui.label(
+                    "Active Script Params",
+                    11.0,
+                    Color::from_rgba8(148, 162, 180, 255),
+                );
+                for (index, (key, value)) in script_pairs.iter().enumerate() {
+                    ui.label(
+                        &format!("{} = {}", key, value),
+                        10.0,
+                        Color::from_rgba8(176, 196, 218, 255),
+                    );
+                    ui.button(script_param_remove_button_id(index), "Remove Param");
+                }
+            }
 
             if kind == SceneNodeKind::Sprite {
                 ui.separator(8.0);
@@ -449,6 +584,14 @@ impl RengineNativeEditor {
 
             if let Some(node_id) = tab.selected_node {
                 if let Some(node) = tab.scene.node_mut(node_id) {
+                    if let Some(text) = response.text_for(INSPECTOR_NODE_SCRIPT_PARAM_KEY_ID) {
+                        state.script_param_key = text.to_string();
+                    }
+
+                    if let Some(text) = response.text_for(INSPECTOR_NODE_SCRIPT_PARAM_VALUE_ID) {
+                        state.script_param_value = text.to_string();
+                    }
+
                     if let Some(text) = response.text_for(INSPECTOR_NODE_NAME_ID) {
                         state.node_name = text.to_string();
                         if node.name != state.node_name {
@@ -517,11 +660,146 @@ impl RengineNativeEditor {
                         }
                     }
 
+                    if response.was_activated(INSPECTOR_NODE_SCRIPT_PARAM_SET_ID) {
+                        let key = state.script_param_key.trim();
+                        let value = state.script_param_value.trim().to_string();
+                        if is_valid_script_param_key(key) {
+                            let prop_key = format!("script_param:{}", key);
+                            if node.properties.get(&prop_key) != Some(&value) {
+                                node.properties.insert(prop_key, value);
+                                changed = true;
+                                resync_form = true;
+                            }
+                        } else if !key.is_empty() {
+                            log_messages.push(format!(
+                                "Ignored script param key '{}' (use letters, numbers, _, -, .)",
+                                key
+                            ));
+                        }
+                    }
+
+                    let script_pairs = script_param_pairs_from_node(node);
+                    for (index, (key, _)) in script_pairs.iter().enumerate() {
+                        if response.was_activated(script_param_remove_button_id(index)) {
+                            let prop_key = format!("script_param:{}", key);
+                            if node.properties.remove(&prop_key).is_some() {
+                                changed = true;
+                                resync_form = true;
+                            }
+                            if state.script_param_key.trim() == key {
+                                state.script_param_key.clear();
+                                state.script_param_value.clear();
+                            }
+                        }
+                    }
+
                     if let Some(text) = response.text_for(INSPECTOR_NODE_PREFAB_ID) {
                         state.runtime_prefab = text.to_string();
                         if node.runtime_prefab != state.runtime_prefab {
                             node.runtime_prefab = state.runtime_prefab.clone();
                             changed = true;
+                        }
+                    }
+
+                    if node.kind == SceneNodeKind::Polygon || node.kind == SceneNodeKind::Trigger {
+                        if let Some(text) = response.text_for(INSPECTOR_NODE_GEOMETRY_POINTS_ID) {
+                            state.geometry_points = text.to_string();
+                            let points = state.geometry_points.trim().to_string();
+                            if points.is_empty() {
+                                if node.properties.remove("shape_points").is_some() {
+                                    changed = true;
+                                }
+                            } else if node.properties.get("shape_points") != Some(&points) {
+                                node.properties.insert("shape_points".to_string(), points);
+                                changed = true;
+                            }
+                        }
+                    }
+
+                    if node.kind == SceneNodeKind::Path {
+                        if let Some(text) = response.text_for(INSPECTOR_NODE_PATH_POINTS_ID) {
+                            state.path_points = text.to_string();
+                            let points = state.path_points.trim().to_string();
+                            if points.is_empty() {
+                                if node.properties.remove("path_points").is_some() {
+                                    changed = true;
+                                }
+                            } else if node.properties.get("path_points") != Some(&points) {
+                                node.properties.insert("path_points".to_string(), points);
+                                changed = true;
+                            }
+                        }
+                    }
+
+                    if node.kind == SceneNodeKind::Trigger {
+                        if let Some(text) = response.text_for(INSPECTOR_TRIGGER_TAG_ID) {
+                            state.trigger_tag = text.to_string();
+                            let tag = state.trigger_tag.trim().to_string();
+                            if tag.is_empty() {
+                                if node.properties.remove("trigger_tag").is_some() {
+                                    changed = true;
+                                }
+                            } else if node.properties.get("trigger_tag") != Some(&tag) {
+                                node.properties.insert("trigger_tag".to_string(), tag);
+                                changed = true;
+                            }
+                        }
+
+                        if response.was_toggled(INSPECTOR_TRIGGER_ONCE_ID) {
+                            state.trigger_once = !state.trigger_once;
+                            let value = if state.trigger_once { "true" } else { "false" };
+                            if node.properties.get("trigger_once") != Some(&value.to_string()) {
+                                node.properties
+                                    .insert("trigger_once".to_string(), value.to_string());
+                                changed = true;
+                            }
+                        }
+
+                        if let Some(text) = response.text_for(INSPECTOR_TRIGGER_COOLDOWN_ID) {
+                            state.trigger_cooldown = text.to_string();
+                            let cooldown = state.trigger_cooldown.trim();
+                            if cooldown.is_empty() {
+                                if node.properties.remove("trigger_cooldown_s").is_some() {
+                                    changed = true;
+                                }
+                            } else if let Ok(value) = cooldown.parse::<f32>() {
+                                if (0.0..=600.0).contains(&value) {
+                                    let stored = format!("{value:.3}");
+                                    if node.properties.get("trigger_cooldown_s") != Some(&stored) {
+                                        node.properties
+                                            .insert("trigger_cooldown_s".to_string(), stored);
+                                        changed = true;
+                                    }
+                                } else {
+                                    log_messages.push(
+                                        "Trigger cooldown must be between 0 and 600 seconds"
+                                            .to_string(),
+                                    );
+                                }
+                            } else {
+                                log_messages
+                                    .push("Trigger cooldown must be a numeric value".to_string());
+                            }
+                        }
+
+                        if let Some(text) = response.text_for(INSPECTOR_TRIGGER_LAYER_MASK_ID) {
+                            state.trigger_layer_mask = text.to_string();
+                            let mask = state.trigger_layer_mask.trim().to_string();
+                            if mask.is_empty() {
+                                if node.properties.remove("trigger_layer_mask").is_some() {
+                                    changed = true;
+                                }
+                            } else if is_valid_trigger_layer_mask(&mask) {
+                                if node.properties.get("trigger_layer_mask") != Some(&mask) {
+                                    node.properties
+                                        .insert("trigger_layer_mask".to_string(), mask);
+                                    changed = true;
+                                }
+                            } else {
+                                log_messages.push(
+                                    "Trigger layer mask must be comma-separated tokens".to_string(),
+                                );
+                            }
                         }
                     }
 
@@ -691,7 +969,24 @@ fn inspector_form_widget_count(
     let mut count = 7;
 
     if let Some(kind) = state.selected_node_kind {
-        count += 18;
+        count += 24;
+
+        if kind == SceneNodeKind::Polygon || kind == SceneNodeKind::Trigger {
+            count += 3;
+        }
+
+        if kind == SceneNodeKind::Path {
+            count += 3;
+        }
+
+        if kind == SceneNodeKind::Trigger {
+            count += 8;
+        }
+
+        let script_pairs = script_param_pairs_from_fields(state);
+        if !script_pairs.is_empty() {
+            count += 2 + script_pairs.len() * 2;
+        }
 
         if kind == SceneNodeKind::Sprite {
             count += 6;
@@ -731,6 +1026,13 @@ pub(crate) fn is_inspector_text_input(id: usize) -> bool {
             | INSPECTOR_NODE_NAME_ID
             | INSPECTOR_NODE_SCRIPT_ID
             | INSPECTOR_NODE_PREFAB_ID
+            | INSPECTOR_NODE_SCRIPT_PARAM_KEY_ID
+            | INSPECTOR_NODE_SCRIPT_PARAM_VALUE_ID
+            | INSPECTOR_NODE_GEOMETRY_POINTS_ID
+            | INSPECTOR_NODE_PATH_POINTS_ID
+            | INSPECTOR_TRIGGER_TAG_ID
+            | INSPECTOR_TRIGGER_COOLDOWN_ID
+            | INSPECTOR_TRIGGER_LAYER_MASK_ID
             | INSPECTOR_NODE_POSITION_X_ID
             | INSPECTOR_NODE_POSITION_Y_ID
             | INSPECTOR_NODE_SIZE_WIDTH_ID
@@ -762,6 +1064,88 @@ pub(crate) fn make_inspector_ui() -> Ui {
     style.slider_thumb_color = Color::from_rgba8(236, 241, 246, 255);
     style.panel_bg = Color::new(0.0, 0.0, 0.0, 0.0);
     ui
+}
+
+pub(crate) fn parse_points_text(text: &str) -> Vec<[f32; 2]> {
+    text.split(';')
+        .filter_map(|entry| {
+            let mut parts = entry.trim().split(',');
+            let x = parts.next()?.trim().parse::<f32>().ok()?;
+            let y = parts.next()?.trim().parse::<f32>().ok()?;
+            Some([x, y])
+        })
+        .collect()
+}
+
+pub(crate) fn format_points_text(points: &[[f32; 2]]) -> String {
+    points
+        .iter()
+        .map(|point| format!("{:.2},{:.2}", point[0], point[1]))
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+pub(crate) fn node_shape_points(node: &SceneNode) -> Vec<[f32; 2]> {
+    if let Some(text) = node.properties.get("shape_points") {
+        let points = parse_points_text(text);
+        if points.len() >= 3 {
+            return points;
+        }
+    }
+
+    let hw = node.size[0] * 0.5;
+    let hh = node.size[1] * 0.5;
+    vec![[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]]
+}
+
+pub(crate) fn node_path_points(node: &SceneNode) -> Vec<[f32; 2]> {
+    if let Some(text) = node.properties.get("path_points") {
+        let points = parse_points_text(text);
+        if points.len() >= 2 {
+            return points;
+        }
+    }
+
+    let hw = node.size[0] * 0.5;
+    vec![[-hw, 0.0], [0.0, 0.0], [hw, 0.0]]
+}
+
+fn script_param_pairs_from_node(node: &SceneNode) -> Vec<(String, String)> {
+    let mut pairs: Vec<(String, String)> = node
+        .properties
+        .iter()
+        .filter_map(|(key, value)| {
+            key.strip_prefix("script_param:")
+                .map(|trimmed| (trimmed.to_string(), value.clone()))
+        })
+        .collect();
+    pairs.sort_by(|left, right| left.0.cmp(&right.0));
+    pairs
+}
+
+fn script_param_pairs_from_fields(state: &InspectorFormState) -> Vec<(String, String)> {
+    state.script_params.clone()
+}
+
+fn script_param_remove_button_id(index: usize) -> usize {
+    2000 + index
+}
+
+fn is_valid_script_param_key(key: &str) -> bool {
+    !key.trim().is_empty()
+        && key
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.'))
+}
+
+fn is_valid_trigger_layer_mask(mask: &str) -> bool {
+    !mask.trim().is_empty()
+        && mask.split(',').map(str::trim).all(|part| {
+            !part.is_empty()
+                && part
+                    .chars()
+                    .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+        })
 }
 
 fn parse_editor_float(text: &str) -> Option<f32> {

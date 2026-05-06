@@ -1,0 +1,33 @@
+name: Editor Windows UI Automation
+
+on:
+  workflow_dispatch:
+
+jobs:
+  windows-ui-focus-suite:
+    runs-on: [self-hosted, windows, rengine-ui]
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python deps
+        shell: pwsh
+        run: python -m pip install -r editor/automation/windows_ui/requirements.txt
+
+      - name: Verify desktop session flag
+        shell: pwsh
+        run: |
+          if ($env:RENGINE_UI_DESKTOP_READY -ne "1") {
+            Write-Error "Set RENGINE_UI_DESKTOP_READY=1 on the self-hosted runner after confirming an active desktop session."
+            exit 1
+          }
+
+      - name: Run desktop focus suite
+        shell: pwsh
+        run: python editor/automation/windows_ui/run_focus_suite.py

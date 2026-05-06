@@ -2,6 +2,14 @@ use super::*;
 
 const MAX_SCENE_HISTORY_STEPS: usize = 128;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub(crate) enum GizmoMode {
+    #[default]
+    Translate,
+    Rotate,
+    Scale,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ViewportDragConstraint {
     Free,
@@ -16,6 +24,38 @@ pub(crate) struct ViewportDrag {
     pub(crate) pointer_scene_origin: [f32; 2],
     pub(crate) applied_delta: [f32; 2],
     pub(crate) constraint: ViewportDragConstraint,
+    pub(crate) history_captured: bool,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct ViewportRotateDrag {
+    pub(crate) node_ids: Vec<u64>,
+    pub(crate) pivot_scene: [f32; 2],
+    /// Angle (radians) of the pointer at the previous frame, used to compute
+    /// seam-safe per-frame deltas instead of a raw total from a fixed start angle.
+    pub(crate) angle_prev: f32,
+    /// Running sum of per-frame angle deltas in degrees, used for snapping.
+    pub(crate) accumulated_raw_degrees: f32,
+    pub(crate) applied_degrees: f32,
+    pub(crate) history_captured: bool,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct ViewportScaleDrag {
+    pub(crate) node_ids: Vec<u64>,
+    pub(crate) pivot_scene: [f32; 2],
+    pub(crate) pointer_start_dist: f32,
+    pub(crate) original_offsets: Vec<[f32; 2]>,
+    pub(crate) original_sizes: Vec<[f32; 2]>,
+    pub(crate) applied_factor: f32,
+    pub(crate) history_captured: bool,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct ViewportPointDrag {
+    pub(crate) node_id: u64,
+    pub(crate) property_key: &'static str,
+    pub(crate) point_index: usize,
     pub(crate) history_captured: bool,
 }
 
@@ -99,7 +139,11 @@ pub(crate) struct SceneTab {
     pub(crate) scene_path: Option<PathBuf>,
     pub(crate) selected_node: Option<u64>,
     pub(crate) selected_nodes: Vec<u64>,
+    pub(crate) gizmo_mode: GizmoMode,
     pub(crate) viewport_drag: Option<ViewportDrag>,
+    pub(crate) viewport_rotate_drag: Option<ViewportRotateDrag>,
+    pub(crate) viewport_scale_drag: Option<ViewportScaleDrag>,
+    pub(crate) viewport_point_drag: Option<ViewportPointDrag>,
     pub(crate) viewport_box_selection: Option<ViewportBoxSelection>,
     pub(crate) viewport_pan: Vec2,
     pub(crate) viewport_pan_drag: Option<ViewportPanDrag>,
@@ -126,7 +170,11 @@ impl SceneTab {
             scene_path,
             selected_node: None,
             selected_nodes: Vec::new(),
+            gizmo_mode: GizmoMode::Translate,
             viewport_drag: None,
+            viewport_rotate_drag: None,
+            viewport_scale_drag: None,
+            viewport_point_drag: None,
             viewport_box_selection: None,
             viewport_pan: Vec2::ZERO,
             viewport_pan_drag: None,
@@ -299,6 +347,9 @@ impl SceneTab {
         self.scene = entry.scene;
         self.set_selection(entry.selected_node, entry.selected_nodes);
         self.viewport_drag = None;
+        self.viewport_rotate_drag = None;
+        self.viewport_scale_drag = None;
+        self.viewport_point_drag = None;
         self.viewport_box_selection = None;
         self.viewport_pan_drag = None;
         self.collapsed_nodes
@@ -458,7 +509,7 @@ fn history_shift_down(engine: &Engine) -> bool {
     input.is_key_down(KeyCode::ShiftLeft) || input.is_key_down(KeyCode::ShiftRight)
 }
 
-fn selection_alt_down(engine: &Engine) -> bool {
+pub(crate) fn selection_alt_down(engine: &Engine) -> bool {
     let input = engine.input();
     input.is_key_down(KeyCode::AltLeft) || input.is_key_down(KeyCode::AltRight)
 }
@@ -473,8 +524,12 @@ impl RengineNativeEditor {
     }
 
     pub(crate) fn scene_json_preview_text(&mut self) -> &str {
-        let defer_refresh = self.active_scene_tab().scene_json_dirty
-            && self.active_scene_tab().viewport_drag.is_some();
+        let tab = self.active_scene_tab();
+        let defer_refresh = tab.scene_json_dirty
+            && (tab.viewport_drag.is_some()
+                || tab.viewport_rotate_drag.is_some()
+                || tab.viewport_scale_drag.is_some()
+                || tab.viewport_point_drag.is_some());
         let tab = self.active_scene_tab_mut();
         if defer_refresh {
             &tab.scene_json_cache
@@ -510,12 +565,22 @@ impl RengineNativeEditor {
         }
     }
 
-    pub(crate) fn ui_has_focus(&self) -> bool {
-        self.file_browser_ui_focused || self.inspector_ui_focused
+    pub(crate) fn text_input_enabled_for(&self, owner: TextInputOwner) -> bool {
+        self.active_text_input_owner == Some(owner)
     }
 
-    pub(crate) fn text_input_enabled_for(&self, owner: TextInputOwner) -> bool {
-        self.active_text_input_owner.is_none() || self.active_text_input_owner == Some(owner)
+    pub(crate) fn keyboard_captured_by_text_input(&self) -> bool {
+        self.active_text_input_owner.is_some()
+    }
+
+    pub(crate) fn log_automation_event(&self, event: &str) {
+        let Some(path) = self.automation_log_path.as_ref() else {
+            return;
+        };
+
+        if let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(path) {
+            let _ = writeln!(file, "{event}");
+        }
     }
 
     pub(crate) fn clear_text_input_owner(&mut self) {

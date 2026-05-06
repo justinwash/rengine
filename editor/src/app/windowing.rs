@@ -324,13 +324,11 @@ impl RengineNativeEditor {
         if !is_open {
             match kind {
                 DockPanelKind::Files => {
-                    self.file_browser_ui_focused = false;
                     if self.active_text_input_owner == Some(TextInputOwner::FileBrowser) {
                         self.active_text_input_owner = None;
                     }
                 }
                 DockPanelKind::Inspector => {
-                    self.inspector_ui_focused = false;
                     if self.active_text_input_owner == Some(TextInputOwner::Inspector) {
                         self.active_text_input_owner = None;
                     }
@@ -511,26 +509,22 @@ impl RengineNativeEditor {
         hovered: Option<usize>,
         mouse_pressed: bool,
     ) {
-        let hovered_text_input = match (owner, hovered) {
-            (TextInputOwner::FileBrowser, Some(id)) if is_file_browser_text_input(id) => Some(id),
-            (TextInputOwner::Inspector, Some(id)) if is_inspector_text_input(id) => Some(id),
-            _ => None,
-        };
-        let focused_text_input = match (owner, focused) {
-            (TextInputOwner::FileBrowser, Some(id)) if is_file_browser_text_input(id) => Some(id),
-            (TextInputOwner::Inspector, Some(id)) if is_inspector_text_input(id) => Some(id),
-            _ => None,
-        };
+        let previous = self.active_text_input_owner;
+        self.active_text_input_owner = next_text_input_owner(
+            self.active_text_input_owner,
+            owner,
+            focused,
+            hovered,
+            mouse_pressed,
+        );
 
-        if mouse_pressed {
-            if hovered_text_input.is_some() {
-                self.active_text_input_owner = Some(owner);
-            }
-            return;
-        }
-
-        if self.active_text_input_owner == Some(owner) && focused_text_input.is_some() {
-            self.active_text_input_owner = Some(owner);
+        if previous != self.active_text_input_owner {
+            let event = match self.active_text_input_owner {
+                Some(TextInputOwner::FileBrowser) => "text_owner:file_browser",
+                Some(TextInputOwner::Inspector) => "text_owner:inspector",
+                None => "text_owner:none",
+            };
+            self.log_automation_event(event);
         }
     }
 
@@ -633,6 +627,8 @@ impl RengineNativeEditor {
             return;
         }
 
+        // Any click outside the viewport loses viewport focus for W/E/R shortcuts.
+        self.viewport_focused = false;
         self.clear_text_input_owner();
 
         let mouse = engine.mouse_screen_pos();
@@ -944,41 +940,125 @@ impl RengineNativeEditor {
             return;
         }
 
+        self.viewport_focused = true;
         let additive = history_modifier_down(engine);
 
+        if self.try_begin_point_edit(engine, mouse, layout) {
+            return;
+        }
+
         if !additive {
-            let gizmo_drag = {
+            let gizmo_consumed = {
                 let tab = self.active_scene_tab();
-                scene_nodes_bounds(
+                let bounds = scene_nodes_bounds(
                     tab.scene
                         .nodes
                         .iter()
                         .filter(|node| tab.is_node_selected(node.id)),
-                )
-                .and_then(|bounds| {
-                    selection_translate_gizmo(bounds, layout.viewport, tab.viewport_pan)
-                        .hit_test(mouse)
-                        .map(|handle| ViewportDrag {
-                            node_ids: tab.selected_root_ids(),
-                            transform_origin: scene_bounds_center(bounds),
-                            pointer_scene_origin: screen_to_scene(
-                                mouse,
-                                layout.viewport,
-                                tab.viewport_pan,
-                            ),
-                            applied_delta: [0.0, 0.0],
-                            constraint: match handle {
-                                ViewportTranslateHandle::Plane => ViewportDragConstraint::Free,
-                                ViewportTranslateHandle::AxisX => ViewportDragConstraint::AxisX,
-                                ViewportTranslateHandle::AxisY => ViewportDragConstraint::AxisY,
-                            },
-                            history_captured: false,
-                        })
-                })
+                );
+                match (bounds, tab.gizmo_mode) {
+                    (Some(bounds), GizmoMode::Translate) => {
+                        if let Some(handle) =
+                            selection_translate_gizmo(bounds, layout.viewport, tab.viewport_pan)
+                                .hit_test(mouse)
+                        {
+                            let drag = ViewportDrag {
+                                node_ids: tab.selected_root_ids(),
+                                transform_origin: scene_bounds_center(bounds),
+                                pointer_scene_origin: screen_to_scene(
+                                    mouse,
+                                    layout.viewport,
+                                    tab.viewport_pan,
+                                ),
+                                applied_delta: [0.0, 0.0],
+                                constraint: match handle {
+                                    ViewportTranslateHandle::Plane => ViewportDragConstraint::Free,
+                                    ViewportTranslateHandle::AxisX => ViewportDragConstraint::AxisX,
+                                    ViewportTranslateHandle::AxisY => ViewportDragConstraint::AxisY,
+                                },
+                                history_captured: false,
+                            };
+                            Some(Box::new(move |tab_mut: &mut SceneTab| {
+                                tab_mut.viewport_drag = Some(drag);
+                            })
+                                as Box<dyn FnOnce(&mut SceneTab)>)
+                        } else {
+                            None
+                        }
+                    }
+                    (Some(bounds), GizmoMode::Rotate) => {
+                        let rotate_gizmo =
+                            selection_rotate_gizmo(bounds, layout.viewport, tab.viewport_pan);
+                        if rotate_gizmo.hit_test(mouse) {
+                            let node_ids = tab.selected_root_ids();
+                            let pivot = scene_bounds_center(bounds);
+                            let angle_prev = rotate_gizmo.pointer_angle(mouse);
+                            Some(Box::new(move |tab_mut: &mut SceneTab| {
+                                tab_mut.viewport_rotate_drag = Some(ViewportRotateDrag {
+                                    node_ids,
+                                    pivot_scene: pivot,
+                                    angle_prev,
+                                    accumulated_raw_degrees: 0.0,
+                                    applied_degrees: 0.0,
+                                    history_captured: false,
+                                });
+                            })
+                                as Box<dyn FnOnce(&mut SceneTab)>)
+                        } else {
+                            None
+                        }
+                    }
+                    (Some(bounds), GizmoMode::Scale) => {
+                        let scale_gizmo =
+                            selection_scale_gizmo(bounds, layout.viewport, tab.viewport_pan);
+                        if scale_gizmo.hit_test(mouse).is_some() {
+                            let root_ids = tab.selected_root_ids();
+                            let pivot = scene_bounds_center(bounds);
+                            let pivot_screen =
+                                scene_to_screen(pivot, layout.viewport, tab.viewport_pan);
+                            let dx = mouse.x - pivot_screen.x;
+                            let dy = mouse.y - pivot_screen.y;
+                            let dist = (dx * dx + dy * dy).sqrt().max(1.0);
+                            // Expand to all nodes in each selected subtree so that
+                            // children scale in place rather than staying at their
+                            // original world positions.
+                            let node_ids: Vec<u64> = root_ids
+                                .iter()
+                                .flat_map(|id| tab.scene.subtree_ids(*id))
+                                .collect();
+                            let original_offsets: Vec<[f32; 2]> = node_ids
+                                .iter()
+                                .filter_map(|id| tab.scene.node(*id))
+                                .map(|n| [n.position[0] - pivot[0], n.position[1] - pivot[1]])
+                                .collect();
+                            let original_sizes: Vec<[f32; 2]> = node_ids
+                                .iter()
+                                .filter_map(|id| tab.scene.node(*id))
+                                .map(|n| n.size)
+                                .collect();
+                            Some(Box::new(move |tab_mut: &mut SceneTab| {
+                                tab_mut.viewport_scale_drag = Some(ViewportScaleDrag {
+                                    node_ids,
+                                    pivot_scene: pivot,
+                                    pointer_start_dist: dist,
+                                    original_offsets,
+                                    original_sizes,
+                                    applied_factor: 1.0,
+                                    history_captured: false,
+                                });
+                            })
+                                as Box<dyn FnOnce(&mut SceneTab)>)
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
+                }
             };
-            if let Some(gizmo_drag) = gizmo_drag {
-                self.active_scene_tab_mut().viewport_box_selection = None;
-                self.active_scene_tab_mut().viewport_drag = Some(gizmo_drag);
+            if let Some(apply) = gizmo_consumed {
+                let tab = self.active_scene_tab_mut();
+                tab.viewport_box_selection = None;
+                apply(tab);
                 return;
             }
         }
@@ -1058,6 +1138,9 @@ impl RengineNativeEditor {
             {
                 let tab = self.active_scene_tab_mut();
                 tab.viewport_drag = None;
+                tab.viewport_rotate_drag = None;
+                tab.viewport_scale_drag = None;
+                tab.viewport_point_drag = None;
                 tab.viewport_box_selection = None;
             }
             if let Some(box_selection) = box_selection {
@@ -1080,6 +1163,21 @@ impl RengineNativeEditor {
         let pointer = engine.mouse_screen_pos();
         if let Some(box_selection) = self.active_scene_tab_mut().viewport_box_selection.as_mut() {
             box_selection.pointer_current = pointer;
+            return;
+        }
+
+        if self.active_scene_tab().viewport_rotate_drag.is_some() {
+            self.update_rotate_drag(engine, layout, pointer);
+            return;
+        }
+
+        if self.active_scene_tab().viewport_scale_drag.is_some() {
+            self.update_scale_drag(engine, layout, pointer);
+            return;
+        }
+
+        if self.active_scene_tab().viewport_point_drag.is_some() {
+            self.update_point_drag(layout, pointer);
             return;
         }
 
@@ -1125,6 +1223,234 @@ impl RengineNativeEditor {
             }
             tab.mark_dirty();
         }
+    }
+
+    fn update_rotate_drag(&mut self, engine: &Engine, layout: &ShellLayout, pointer: Vec2) {
+        let Some(drag) = self.active_scene_tab().viewport_rotate_drag.clone() else {
+            return;
+        };
+        let pivot_screen = scene_to_screen(
+            drag.pivot_scene,
+            layout.viewport,
+            self.active_scene_tab().viewport_pan,
+        );
+        let current_angle = {
+            let dx = pointer.x - pivot_screen.x;
+            let dy = pointer.y - pivot_screen.y;
+            dy.atan2(dx)
+        };
+        // Wrap the per-frame delta to [-π, π] to avoid jumps across the ±π seam.
+        let per_frame_rad = {
+            let d = current_angle - drag.angle_prev;
+            let d = d.rem_euclid(2.0 * std::f32::consts::PI);
+            if d > std::f32::consts::PI {
+                d - 2.0 * std::f32::consts::PI
+            } else {
+                d
+            }
+        };
+        let accumulated = drag.accumulated_raw_degrees + per_frame_rad.to_degrees();
+        let target_degrees = if viewport_snap_enabled(engine) {
+            (accumulated / 15.0).round() * 15.0
+        } else {
+            accumulated
+        };
+        let delta_degrees = target_degrees - drag.applied_degrees;
+
+        if delta_degrees.abs() > f32::EPSILON {
+            let history_entry = (!drag.history_captured)
+                .then(|| SceneHistoryEntry::capture(self.active_scene_tab()));
+            let tab = self.active_scene_tab_mut();
+            if let Some(history_entry) = history_entry {
+                tab.push_undo_entry(history_entry);
+                if let Some(d) = tab.viewport_rotate_drag.as_mut() {
+                    d.history_captured = true;
+                }
+            }
+            for node_id in &drag.node_ids {
+                tab.scene.rotate_node(*node_id, delta_degrees);
+            }
+            if let Some(d) = tab.viewport_rotate_drag.as_mut() {
+                d.applied_degrees = target_degrees;
+            }
+            tab.mark_dirty();
+        }
+        // Always advance angle_prev and accumulated so the next frame delta is correct.
+        if let Some(d) = self.active_scene_tab_mut().viewport_rotate_drag.as_mut() {
+            d.angle_prev = current_angle;
+            d.accumulated_raw_degrees = accumulated;
+        }
+    }
+
+    fn update_scale_drag(&mut self, _engine: &Engine, layout: &ShellLayout, pointer: Vec2) {
+        let viewport_pan = self.active_scene_tab().viewport_pan;
+        let Some(mut drag) = self.active_scene_tab_mut().viewport_scale_drag.take() else {
+            return;
+        };
+        let pivot_screen = scene_to_screen(drag.pivot_scene, layout.viewport, viewport_pan);
+        let dx = pointer.x - pivot_screen.x;
+        let dy = pointer.y - pivot_screen.y;
+        let current_dist = (dx * dx + dy * dy).sqrt().max(1.0);
+        let new_factor = (current_dist / drag.pointer_start_dist).max(0.05);
+        let factor_delta = new_factor / drag.applied_factor;
+
+        if (factor_delta - 1.0).abs() > 0.001 {
+            let history_entry = (!drag.history_captured)
+                .then(|| SceneHistoryEntry::capture(self.active_scene_tab()));
+            let tab = self.active_scene_tab_mut();
+            if let Some(history_entry) = history_entry {
+                tab.push_undo_entry(history_entry);
+                drag.history_captured = true;
+            }
+            for (i, node_id) in drag.node_ids.iter().enumerate() {
+                let orig_offset = drag.original_offsets[i];
+                let orig_size = drag.original_sizes[i];
+                let new_position = [
+                    drag.pivot_scene[0] + orig_offset[0] * new_factor,
+                    drag.pivot_scene[1] + orig_offset[1] * new_factor,
+                ];
+                let new_size = [orig_size[0] * new_factor, orig_size[1] * new_factor];
+                tab.scene
+                    .set_node_position_and_size(*node_id, new_position, new_size);
+            }
+            drag.applied_factor = new_factor;
+            tab.mark_dirty();
+        }
+
+        self.active_scene_tab_mut().viewport_scale_drag = Some(drag);
+    }
+
+    fn update_point_drag(&mut self, layout: &ShellLayout, pointer: Vec2) {
+        let Some(drag) = self.active_scene_tab().viewport_point_drag.clone() else {
+            return;
+        };
+
+        let Some(node) = self.active_scene_tab().scene.node(drag.node_id) else {
+            return;
+        };
+
+        let mut points = if drag.property_key == "path_points" {
+            node_path_points(node)
+        } else {
+            node_shape_points(node)
+        };
+        if drag.point_index >= points.len() {
+            return;
+        }
+
+        let pointer_scene = screen_to_scene(
+            pointer,
+            layout.viewport,
+            self.active_scene_tab().viewport_pan,
+        );
+        let local = [
+            pointer_scene[0] - node.position[0],
+            pointer_scene[1] - node.position[1],
+        ];
+
+        if (points[drag.point_index][0] - local[0]).abs() <= f32::EPSILON
+            && (points[drag.point_index][1] - local[1]).abs() <= f32::EPSILON
+        {
+            return;
+        }
+
+        let history_entry =
+            (!drag.history_captured).then(|| SceneHistoryEntry::capture(self.active_scene_tab()));
+        let tab = self.active_scene_tab_mut();
+        if let Some(history_entry) = history_entry {
+            tab.push_undo_entry(history_entry);
+            if let Some(active_drag) = tab.viewport_point_drag.as_mut() {
+                active_drag.history_captured = true;
+            }
+        }
+
+        if let Some(node_mut) = tab.scene.node_mut(drag.node_id) {
+            points[drag.point_index] = local;
+            node_mut
+                .properties
+                .insert(drag.property_key.to_string(), format_points_text(&points));
+            tab.mark_dirty();
+        }
+    }
+
+    fn try_begin_point_edit(&mut self, engine: &Engine, mouse: Vec2, layout: &ShellLayout) -> bool {
+        let Some(node_id) = self.active_scene_tab().selected_node else {
+            return false;
+        };
+
+        let Some(node) = self.active_scene_tab().scene.node(node_id) else {
+            return false;
+        };
+
+        let (property_key, min_points, mut points) = match node.kind {
+            SceneNodeKind::Path => ("path_points", 2usize, node_path_points(node)),
+            SceneNodeKind::Polygon | SceneNodeKind::Trigger => {
+                ("shape_points", 3usize, node_shape_points(node))
+            }
+            _ => return false,
+        };
+
+        let hovered_point = points.iter().enumerate().find_map(|(index, point)| {
+            let world = [node.position[0] + point[0], node.position[1] + point[1]];
+            let screen =
+                scene_to_screen(world, layout.viewport, self.active_scene_tab().viewport_pan);
+            let dx = screen.x - mouse.x;
+            let dy = screen.y - mouse.y;
+            ((dx * dx + dy * dy) <= 9.0 * 9.0).then_some(index)
+        });
+
+        if selection_alt_down(engine) {
+            if let Some(index) = hovered_point {
+                if points.len() > min_points {
+                    let history_entry = SceneHistoryEntry::capture(self.active_scene_tab());
+                    let tab = self.active_scene_tab_mut();
+                    if let Some(node_mut) = tab.scene.node_mut(node_id) {
+                        points.remove(index);
+                        node_mut
+                            .properties
+                            .insert(property_key.to_string(), format_points_text(&points));
+                        tab.push_undo_entry(history_entry);
+                        tab.mark_dirty();
+                    }
+                    self.refresh_inspector_form();
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        if history_modifier_down(engine) && hovered_point.is_none() {
+            let pointer_scene =
+                screen_to_scene(mouse, layout.viewport, self.active_scene_tab().viewport_pan);
+            points.push([
+                pointer_scene[0] - node.position[0],
+                pointer_scene[1] - node.position[1],
+            ]);
+
+            let history_entry = SceneHistoryEntry::capture(self.active_scene_tab());
+            let tab = self.active_scene_tab_mut();
+            if let Some(node_mut) = tab.scene.node_mut(node_id) {
+                node_mut
+                    .properties
+                    .insert(property_key.to_string(), format_points_text(&points));
+                tab.push_undo_entry(history_entry);
+                tab.mark_dirty();
+            }
+            self.refresh_inspector_form();
+            return true;
+        }
+
+        if let Some(index) = hovered_point {
+            self.active_scene_tab_mut().viewport_point_drag = Some(ViewportPointDrag {
+                node_id,
+                property_key,
+                point_index: index,
+                history_captured: false,
+            });
+            return true;
+        }
+
+        false
     }
 
     pub(crate) fn finish_viewport_box_selection(
@@ -1330,6 +1656,7 @@ impl RengineNativeEditor {
         tab.viewport_pan = next_pan;
         tab.viewport_pan_drag = None;
         tab.viewport_drag = None;
+        tab.viewport_point_drag = None;
         tab.viewport_box_selection = None;
         self.push_log(frame_label);
     }
@@ -1430,6 +1757,42 @@ pub(crate) fn button_preferred_width(label: &str) -> f32 {
     label.chars().count() as f32 * 8.6 + 30.0
 }
 
+pub(crate) fn next_text_input_owner(
+    current_owner: Option<TextInputOwner>,
+    owner: TextInputOwner,
+    focused: Option<usize>,
+    hovered: Option<usize>,
+    mouse_pressed: bool,
+) -> Option<TextInputOwner> {
+    let hovered_text_input = match (owner, hovered) {
+        (TextInputOwner::FileBrowser, Some(id)) if is_file_browser_text_input(id) => Some(id),
+        (TextInputOwner::Inspector, Some(id)) if is_inspector_text_input(id) => Some(id),
+        _ => None,
+    };
+    let focused_text_input = match (owner, focused) {
+        (TextInputOwner::FileBrowser, Some(id)) if is_file_browser_text_input(id) => Some(id),
+        (TextInputOwner::Inspector, Some(id)) if is_inspector_text_input(id) => Some(id),
+        _ => None,
+    };
+
+    if mouse_pressed {
+        if hovered_text_input.is_some() {
+            return Some(owner);
+        }
+        return current_owner;
+    }
+
+    if focused_text_input.is_some() {
+        return Some(owner);
+    }
+
+    if current_owner == Some(owner) {
+        None
+    } else {
+        current_owner
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1443,6 +1806,7 @@ mod tests {
             kind: SceneNodeKind::Empty,
             position,
             size,
+            rotation: 0.0,
             visible: true,
             script_path: String::new(),
             runtime_prefab: String::new(),
@@ -1508,6 +1872,54 @@ mod tests {
             viewport_drag_target([41.0, 65.0], &drag, true, VIEWPORT_GRID_STEP),
             [32.0, 18.0]
         );
+    }
+
+    #[test]
+    fn text_input_owner_is_captured_on_text_input_click() {
+        let next = next_text_input_owner(
+            None,
+            TextInputOwner::Inspector,
+            None,
+            Some(INSPECTOR_NODE_NAME_ID),
+            true,
+        );
+        assert_eq!(next, Some(TextInputOwner::Inspector));
+    }
+
+    #[test]
+    fn text_input_owner_is_released_when_focus_is_lost() {
+        let next = next_text_input_owner(
+            Some(TextInputOwner::Inspector),
+            TextInputOwner::Inspector,
+            None,
+            None,
+            false,
+        );
+        assert_eq!(next, None);
+    }
+
+    #[test]
+    fn non_text_click_does_not_capture_keyboard() {
+        let next = next_text_input_owner(
+            None,
+            TextInputOwner::Inspector,
+            None,
+            Some(INSPECTOR_NODE_KIND_BUTTON_ID),
+            true,
+        );
+        assert_eq!(next, None);
+    }
+
+    #[test]
+    fn unrelated_owner_update_preserves_current_text_input_owner() {
+        let next = next_text_input_owner(
+            Some(TextInputOwner::FileBrowser),
+            TextInputOwner::Inspector,
+            None,
+            None,
+            false,
+        );
+        assert_eq!(next, Some(TextInputOwner::FileBrowser));
     }
 }
 
