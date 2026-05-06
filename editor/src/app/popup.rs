@@ -212,7 +212,7 @@ impl RengineNativeEditor {
         match action {
             PopupMenuAction::AppShortcutHelp => {
                 self.bottom_tab = BottomTab::Activity;
-                self.push_log("Shortcuts: F frame selection | Ctrl+N new | Ctrl+O open | Ctrl+S save | Shift drag to disable snap");
+                self.push_log("Shortcuts: Ctrl+N new | Ctrl+O open | Ctrl+S save | F frame | Shift drag: disable snap");
             }
             PopupMenuAction::FileNewScene => self.new_scene(),
             PopupMenuAction::FileOpenScene => self.open_scene(),
