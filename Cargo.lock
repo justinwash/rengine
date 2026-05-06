@@ -3233,6 +3233,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rengine-motorsport-prototype"
+version = "0.1.0"
+dependencies = [
+ "rengine",
+]
+
+[[package]]
 name = "rengine-platformer"
 version = "0.1.0"
 dependencies = [
