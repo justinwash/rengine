@@ -776,7 +776,7 @@ impl RengineNativeEditor {
             } else {
                 Color::from_rgba8(36, 44, 52, 255)
             };
-            if node.rotation.abs() > f32::EPSILON {
+            if sprite_texture.is_none() && node.rotation.abs() > f32::EPSILON {
                 draw_rotated_outline(canvas, rect, node.rotation, outline_color);
             } else {
                 draw_outline(canvas, rect, outline_color);

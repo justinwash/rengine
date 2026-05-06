@@ -25,6 +25,7 @@ jobs:
         run: |
           if ($env:RENGINE_UI_DESKTOP_READY -ne "1") {
             Write-Error "Set RENGINE_UI_DESKTOP_READY=1 on the self-hosted runner after confirming an active desktop session."
+            exit 1
           }
 
       - name: Run desktop focus suite

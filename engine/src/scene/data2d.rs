@@ -90,6 +90,7 @@ impl SceneInstance2D {
                     self.position + sprite.offset * self.scale,
                     sprite.size * self.scale,
                 )
+                .with_centered_origin()
                 .with_color(sprite.color)
                 .with_uv_rect(sprite.uv_rect)
                 .with_flip_x(sprite.flip_x)
@@ -554,6 +555,7 @@ fn compare_prefab_sprites(left: &PrefabSprite2DDef, right: &PrefabSprite2DDef) -
         .cmp(&right.asset)
         .then_with(|| compare_f32_arrays(&left.offset, &right.offset))
         .then_with(|| compare_f32_arrays(&left.size, &right.size))
+        .then_with(|| left.rotation.total_cmp(&right.rotation))
         .then_with(|| compare_f32_arrays(&left.color, &right.color))
         .then_with(|| compare_optional_f32_arrays(&left.uv_rect, &right.uv_rect))
         .then_with(|| left.flip_x.cmp(&right.flip_x))

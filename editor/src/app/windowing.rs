@@ -1283,14 +1283,11 @@ impl RengineNativeEditor {
     }
 
     fn update_scale_drag(&mut self, _engine: &Engine, layout: &ShellLayout, pointer: Vec2) {
-        let Some(drag) = self.active_scene_tab().viewport_scale_drag.clone() else {
+        let viewport_pan = self.active_scene_tab().viewport_pan;
+        let Some(mut drag) = self.active_scene_tab_mut().viewport_scale_drag.take() else {
             return;
         };
-        let pivot_screen = scene_to_screen(
-            drag.pivot_scene,
-            layout.viewport,
-            self.active_scene_tab().viewport_pan,
-        );
+        let pivot_screen = scene_to_screen(drag.pivot_scene, layout.viewport, viewport_pan);
         let dx = pointer.x - pivot_screen.x;
         let dy = pointer.y - pivot_screen.y;
         let current_dist = (dx * dx + dy * dy).sqrt().max(1.0);
@@ -1303,9 +1300,7 @@ impl RengineNativeEditor {
             let tab = self.active_scene_tab_mut();
             if let Some(history_entry) = history_entry {
                 tab.push_undo_entry(history_entry);
-                if let Some(d) = tab.viewport_scale_drag.as_mut() {
-                    d.history_captured = true;
-                }
+                drag.history_captured = true;
             }
             for (i, node_id) in drag.node_ids.iter().enumerate() {
                 let orig_offset = drag.original_offsets[i];
@@ -1318,11 +1313,11 @@ impl RengineNativeEditor {
                 tab.scene
                     .set_node_position_and_size(*node_id, new_position, new_size);
             }
-            if let Some(d) = tab.viewport_scale_drag.as_mut() {
-                d.applied_factor = new_factor;
-            }
+            drag.applied_factor = new_factor;
             tab.mark_dirty();
         }
+
+        self.active_scene_tab_mut().viewport_scale_drag = Some(drag);
     }
 
     fn update_point_drag(&mut self, layout: &ShellLayout, pointer: Vec2) {
