@@ -233,6 +233,14 @@ impl RengineNativeEditor {
 
         let filter = self.file_browser_form.filter.trim().to_ascii_lowercase();
         let list_rect = project_browser_list_rect(panel);
+        canvas.line(
+            list_rect.x,
+            list_rect.top(),
+            list_rect.right(),
+            list_rect.top(),
+            1.0,
+            Color::from_rgba8(40, 50, 62, 255),
+        );
         let lines = flattened_project_tree(
             &self.project_tree,
             &self.collapsed_project_paths,
@@ -360,7 +368,20 @@ impl RengineNativeEditor {
             Color::from_rgba8(148, 162, 180, 255),
         );
 
+        let has_selection = self.active_scene_tab().has_selection();
+        for (label, rect, enabled) in hierarchy_action_buttons(panel, has_selection) {
+            draw_button(canvas, rect, label, false, enabled, tooltip_targets);
+        }
+
         let list_rect = scene_hierarchy_list_rect(panel);
+        canvas.line(
+            list_rect.x,
+            list_rect.top(),
+            list_rect.right(),
+            list_rect.top(),
+            1.0,
+            Color::from_rgba8(40, 50, 62, 255),
+        );
         let lines = self.scene_node_lines();
         canvas.push_clip(list_rect.x, list_rect.y, list_rect.w, list_rect.h);
         if lines.is_empty() {
@@ -925,6 +946,55 @@ impl RengineNativeEditor {
         }
 
         canvas.pop_clip();
+
+        // Viewport toolbar overlay — drawn outside the clip so it's always visible
+        let toolbar_rect = viewport_toolbar_rect(viewport);
+        canvas.rect(
+            toolbar_rect.x,
+            toolbar_rect.y,
+            toolbar_rect.w,
+            toolbar_rect.h,
+            Color::from_rgba8(18, 22, 28, 210),
+        );
+        canvas.line(
+            toolbar_rect.x,
+            toolbar_rect.y,
+            toolbar_rect.right(),
+            toolbar_rect.y,
+            1.0,
+            Color::from_rgba8(48, 56, 70, 255),
+        );
+        let mut tooltip_targets_toolbar = Vec::new();
+        for (label, rect) in viewport_toolbar_buttons(viewport) {
+            draw_button(
+                canvas,
+                rect,
+                label,
+                false,
+                true,
+                &mut tooltip_targets_toolbar,
+            );
+        }
+
+        let snap_on = viewport_snap_enabled(engine);
+        let snap_label = if snap_on {
+            "Snap: On"
+        } else {
+            "Snap: Off (Shift)"
+        };
+        let snap_color = if snap_on {
+            Color::from_rgba8(116, 196, 142, 200)
+        } else {
+            Color::from_rgba8(200, 148, 80, 200)
+        };
+        canvas.text_aligned(
+            toolbar_rect.right() - PANEL_PADDING,
+            text_baseline_in_rect(canvas, toolbar_rect, 11.0),
+            snap_label,
+            11.0,
+            snap_color,
+            TextAlign::Right,
+        );
     }
 
     pub(crate) fn draw_popup_menu(
