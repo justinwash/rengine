@@ -27,6 +27,8 @@ The current shell already has:
 - a frame-selection shortcut that recenters the viewport on the current selection or whole scene
 - grid-snapped viewport dragging with selection-center guides and live snap feedback
 - a first translate gizmo with plane, X-axis, and Y-axis dragging for selected nodes
+- explicit top-left App/File/View/Theme menu entry points so key actions are no longer hidden behind shortcuts
+- switchable editor shell themes (Slate, Graphite, Ember) for readability and preference
 - a `Scene2D` runtime bridge that supports marker export, single-sprite export, and grouped multi-sprite prefab export
 
 The migration is now in the toolkit-rebuild phase: the editor no longer depends on egui for bootstrap, and the inspector now uses the engine's own UI layer for text inputs, toggles, sliders, transform editing, sprite-file assignment, and popup-based kind changes. The project browser and scene hierarchy now support native filtering, collapse state, and content-aware scrolling, while the viewport now supports real sprite previews and middle-mouse panning, but the shell still needs richer engine-native widgets such as split panes, reusable tree controls, and broader editing flows before it reaches feature parity.

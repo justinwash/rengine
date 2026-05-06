@@ -103,6 +103,7 @@ pub(crate) use windowing::*;
 pub struct RengineNativeEditor {
     workspace_root: PathBuf,
     branch_name: String,
+    editor_theme: EditorTheme,
     project_tree: ProjectTreeEntry,
     scene_tabs: Vec<SceneTab>,
     active_scene_tab: usize,
@@ -139,6 +140,7 @@ impl Game for RengineNativeEditor {
         let mut editor = Self {
             workspace_root,
             branch_name,
+            editor_theme: EditorTheme::Slate,
             project_tree,
             scene_tabs: vec![SceneTab::untitled()],
             active_scene_tab: 0,
@@ -203,13 +205,22 @@ impl Game for RengineNativeEditor {
         if !self.ui_has_focus() && engine.input().is_key_pressed(KeyCode::F5) {
             self.refresh_project_tree();
         }
-        if !self.ui_has_focus() && engine.input().is_key_pressed(KeyCode::KeyN) {
+        if !self.ui_has_focus()
+            && history_modifier_down(engine)
+            && engine.input().is_key_pressed(KeyCode::KeyN)
+        {
             self.new_scene();
         }
-        if !self.ui_has_focus() && engine.input().is_key_pressed(KeyCode::KeyO) {
+        if !self.ui_has_focus()
+            && history_modifier_down(engine)
+            && engine.input().is_key_pressed(KeyCode::KeyO)
+        {
             self.open_scene();
         }
-        if !self.ui_has_focus() && engine.input().is_key_pressed(KeyCode::KeyS) {
+        if !self.ui_has_focus()
+            && history_modifier_down(engine)
+            && engine.input().is_key_pressed(KeyCode::KeyS)
+        {
             self.save_scene();
         }
     }

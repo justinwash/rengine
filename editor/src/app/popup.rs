@@ -2,6 +2,10 @@ use super::*;
 
 #[derive(Clone)]
 pub(crate) enum PopupMenuKind {
+    AppMenu,
+    FileMenu,
+    ViewMenu,
+    ThemeMenu,
     AddNode {
         parent: Option<u64>,
         position: Option<[f32; 2]>,
@@ -22,6 +26,19 @@ pub(crate) struct PopupMenuState {
 
 #[derive(Clone)]
 pub(crate) enum PopupMenuAction {
+    AppShortcutHelp,
+    FileNewScene,
+    FileOpenScene,
+    FileSaveScene,
+    FileSaveSceneAs,
+    FileQuitEditor,
+    ViewFrameSelection,
+    ViewTogglePanel {
+        panel: DockPanelKind,
+    },
+    ThemeSet {
+        theme: EditorTheme,
+    },
     AddNode {
         kind: SceneNodeKind,
         parent: Option<u64>,
@@ -64,6 +81,39 @@ impl RengineNativeEditor {
 
     pub(crate) fn popup_menu_actions(&self, kind: &PopupMenuKind) -> Vec<PopupMenuAction> {
         match kind {
+            PopupMenuKind::AppMenu => {
+                vec![
+                    PopupMenuAction::AppShortcutHelp,
+                    PopupMenuAction::FileQuitEditor,
+                ]
+            }
+            PopupMenuKind::FileMenu => vec![
+                PopupMenuAction::FileNewScene,
+                PopupMenuAction::FileOpenScene,
+                PopupMenuAction::FileSaveScene,
+                PopupMenuAction::FileSaveSceneAs,
+                PopupMenuAction::ProjectRefreshBrowser,
+                PopupMenuAction::FileQuitEditor,
+            ],
+            PopupMenuKind::ViewMenu => vec![
+                PopupMenuAction::ViewFrameSelection,
+                PopupMenuAction::ViewTogglePanel {
+                    panel: DockPanelKind::Files,
+                },
+                PopupMenuAction::ViewTogglePanel {
+                    panel: DockPanelKind::Hierarchy,
+                },
+                PopupMenuAction::ViewTogglePanel {
+                    panel: DockPanelKind::Inspector,
+                },
+                PopupMenuAction::ViewTogglePanel {
+                    panel: DockPanelKind::Bottom,
+                },
+            ],
+            PopupMenuKind::ThemeMenu => EditorTheme::all()
+                .into_iter()
+                .map(|theme| PopupMenuAction::ThemeSet { theme })
+                .collect(),
             PopupMenuKind::AddNode { parent, position } => NODE_KIND_OPTIONS
                 .into_iter()
                 .map(|kind| PopupMenuAction::AddNode {
@@ -93,6 +143,28 @@ impl RengineNativeEditor {
 
     pub(crate) fn popup_action_label(&self, action: &PopupMenuAction) -> String {
         match action {
+            PopupMenuAction::AppShortcutHelp => "Show Shortcuts".to_string(),
+            PopupMenuAction::FileNewScene => "New Scene (Ctrl+N)".to_string(),
+            PopupMenuAction::FileOpenScene => "Open Scene (Ctrl+O)".to_string(),
+            PopupMenuAction::FileSaveScene => "Save Scene (Ctrl+S)".to_string(),
+            PopupMenuAction::FileSaveSceneAs => "Save Scene As".to_string(),
+            PopupMenuAction::FileQuitEditor => "Quit Editor".to_string(),
+            PopupMenuAction::ViewFrameSelection => "Frame Selection (F)".to_string(),
+            PopupMenuAction::ViewTogglePanel { panel } => {
+                let open = self.panel_state(*panel).open;
+                let panel_label = match panel {
+                    DockPanelKind::Files => "Files Panel",
+                    DockPanelKind::Hierarchy => "Hierarchy Panel",
+                    DockPanelKind::Inspector => "Inspector Panel",
+                    DockPanelKind::Bottom => "Bottom Panel",
+                };
+                if open {
+                    format!("Hide {panel_label}")
+                } else {
+                    format!("Show {panel_label}")
+                }
+            }
+            PopupMenuAction::ThemeSet { theme } => format!("{} Theme", theme.label()),
             PopupMenuAction::AddNode {
                 kind,
                 parent,
@@ -115,12 +187,21 @@ impl RengineNativeEditor {
 
     pub(crate) fn popup_action_active(&self, action: &PopupMenuAction) -> bool {
         match action {
+            PopupMenuAction::ThemeSet { theme } => self.editor_theme == *theme,
+            PopupMenuAction::ViewTogglePanel { panel } => self.panel_state(*panel).open,
             PopupMenuAction::ChangeNodeKind { node_id, kind } => self
                 .active_scene_tab()
                 .scene
                 .node(*node_id)
                 .is_some_and(|node| node.kind == *kind),
-            PopupMenuAction::AddNode { .. }
+            PopupMenuAction::AppShortcutHelp
+            | PopupMenuAction::FileNewScene
+            | PopupMenuAction::FileOpenScene
+            | PopupMenuAction::FileSaveScene
+            | PopupMenuAction::FileSaveSceneAs
+            | PopupMenuAction::FileQuitEditor
+            | PopupMenuAction::ViewFrameSelection
+            | PopupMenuAction::AddNode { .. }
             | PopupMenuAction::ProjectOpenScene { .. }
             | PopupMenuAction::ProjectRevealInExplorer { .. }
             | PopupMenuAction::ProjectRefreshBrowser => false,
@@ -129,6 +210,23 @@ impl RengineNativeEditor {
 
     pub(crate) fn apply_popup_action(&mut self, action: PopupMenuAction) {
         match action {
+            PopupMenuAction::AppShortcutHelp => {
+                self.bottom_tab = BottomTab::Activity;
+                self.push_log("Shortcuts: Ctrl+N new | Ctrl+O open | Ctrl+S save | F frame | Shift drag: disable snap");
+            }
+            PopupMenuAction::FileNewScene => self.new_scene(),
+            PopupMenuAction::FileOpenScene => self.open_scene(),
+            PopupMenuAction::FileSaveScene => self.save_scene(),
+            PopupMenuAction::FileSaveSceneAs => self.save_scene_as(),
+            PopupMenuAction::FileQuitEditor => self.quit_requested = true,
+            PopupMenuAction::ViewFrameSelection => self.frame_active_scene_view(),
+            PopupMenuAction::ViewTogglePanel { panel } => self.toggle_panel(panel),
+            PopupMenuAction::ThemeSet { theme } => {
+                if self.editor_theme != theme {
+                    self.editor_theme = theme;
+                    self.push_log(format!("Switched editor theme to {}", theme.label()));
+                }
+            }
             PopupMenuAction::AddNode {
                 kind,
                 parent,
@@ -209,6 +307,10 @@ pub(crate) fn popup_menu_rect(
 
 pub(crate) fn popup_menu_item_count(kind: &PopupMenuKind) -> usize {
     match kind {
+        PopupMenuKind::AppMenu => 2,
+        PopupMenuKind::FileMenu => 6,
+        PopupMenuKind::ViewMenu => 5,
+        PopupMenuKind::ThemeMenu => EditorTheme::all().len(),
         PopupMenuKind::AddNode { .. } | PopupMenuKind::ChangeNodeKind { .. } => {
             NODE_KIND_OPTIONS.len()
         }
