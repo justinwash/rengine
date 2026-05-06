@@ -121,15 +121,6 @@ impl RengineNativeEditor {
         let header_row = PanelRect::new(rect.x, rect.y + 28.0, rect.w, 18.0);
         let meta_row = PanelRect::new(rect.x, rect.y + 8.0, rect.w, 18.0);
 
-        canvas.text_aligned(
-            rect.right() - PANEL_PADDING,
-            text_baseline_in_rect(canvas, header_row, 16.0),
-            &scene_label,
-            16.0,
-            colors.title_text,
-            TextAlign::Right,
-        );
-
         let branch_size = 11.0;
         let branch_label = self.branch_name.as_str();
         let (branch_width, _) = canvas.measure_text(branch_label, branch_size);
@@ -143,6 +134,18 @@ impl RengineNativeEditor {
             branch_width + 18.0,
             22.0,
         );
+
+        // Constrain the scene title so it does not overlap the right-side
+        // window buttons (Refresh / Quit).
+        canvas.text_aligned(
+            right_block_x - 10.0,
+            text_baseline_in_rect(canvas, header_row, 16.0),
+            &scene_label,
+            16.0,
+            colors.title_text,
+            TextAlign::Right,
+        );
+
         canvas.rect(
             branch_rect.x,
             branch_rect.y,
@@ -166,14 +169,6 @@ impl RengineNativeEditor {
             12.0,
             colors.meta_text,
             TextAlign::Right,
-        );
-
-        canvas.text(
-            rect.x + PANEL_PADDING,
-            text_baseline_in_rect(canvas, meta_row, 12.0),
-            &format!("Theme: {}", self.editor_theme.label()),
-            12.0,
-            colors.meta_text,
         );
     }
 

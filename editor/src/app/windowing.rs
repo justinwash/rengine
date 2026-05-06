@@ -800,7 +800,10 @@ impl RengineNativeEditor {
         if let Some(action) = selected_action {
             self.apply_popup_action(action);
         }
-        true
+        // Return false when the click was outside the popup so subsequent
+        // handlers (e.g. a top-bar menu button) can still act on it.
+        // This lets users switch menus with a single click.
+        rect.contains(mouse)
     }
 
     pub(crate) fn handle_scene_tab_click(&mut self, mouse: Vec2, layout: &ShellLayout) -> bool {

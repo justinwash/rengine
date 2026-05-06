@@ -205,13 +205,22 @@ impl Game for RengineNativeEditor {
         if !self.ui_has_focus() && engine.input().is_key_pressed(KeyCode::F5) {
             self.refresh_project_tree();
         }
-        if !self.ui_has_focus() && engine.input().is_key_pressed(KeyCode::KeyN) {
+        if !self.ui_has_focus()
+            && history_modifier_down(engine)
+            && engine.input().is_key_pressed(KeyCode::KeyN)
+        {
             self.new_scene();
         }
-        if !self.ui_has_focus() && engine.input().is_key_pressed(KeyCode::KeyO) {
+        if !self.ui_has_focus()
+            && history_modifier_down(engine)
+            && engine.input().is_key_pressed(KeyCode::KeyO)
+        {
             self.open_scene();
         }
-        if !self.ui_has_focus() && engine.input().is_key_pressed(KeyCode::KeyS) {
+        if !self.ui_has_focus()
+            && history_modifier_down(engine)
+            && engine.input().is_key_pressed(KeyCode::KeyS)
+        {
             self.save_scene();
         }
     }
