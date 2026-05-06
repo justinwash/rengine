@@ -666,14 +666,22 @@ impl RengineNativeEditor {
     }
 
     pub(crate) fn handle_top_bar_click(&mut self, mouse: Vec2, layout: &ShellLayout) -> bool {
-        let buttons = self.top_bar_buttons(layout.top_bar);
-        for (label, rect) in buttons {
+        for (label, rect) in self.top_bar_menu_buttons(layout.top_bar) {
             if rect.contains(mouse) {
                 match label {
-                    "New" => self.new_scene(),
-                    "Open" => self.open_scene(),
-                    "Save" => self.save_scene(),
-                    "Save As" => self.save_scene_as(),
+                    "App" => self.open_popup_menu(rect.center(), PopupMenuKind::AppMenu),
+                    "File" => self.open_popup_menu(rect.center(), PopupMenuKind::FileMenu),
+                    "View" => self.open_popup_menu(rect.center(), PopupMenuKind::ViewMenu),
+                    "Theme" => self.open_popup_menu(rect.center(), PopupMenuKind::ThemeMenu),
+                    _ => {}
+                }
+                return true;
+            }
+        }
+
+        for (label, rect) in self.top_bar_window_buttons(layout.top_bar) {
+            if rect.contains(mouse) {
+                match label {
                     "Refresh" => self.refresh_project_tree(),
                     "Quit" => self.quit_requested = true,
                     _ => {}
@@ -1162,10 +1170,13 @@ impl RengineNativeEditor {
         self.update_scene_selection(|tab| tab.set_selection(next_selected_node, box_hit_ids));
     }
 
-    pub(crate) fn top_bar_buttons(&self, top_bar: PanelRect) -> Vec<(&'static str, PanelRect)> {
-        let labels = ["New", "Open", "Save", "Save As", "Refresh", "Quit"];
-        let available_width =
-            (top_bar.w - PANEL_PADDING * 2.0 - (top_bar.w * 0.32).clamp(320.0, 460.0)).max(0.0);
+    pub(crate) fn top_bar_menu_buttons(
+        &self,
+        top_bar: PanelRect,
+    ) -> Vec<(&'static str, PanelRect)> {
+        let labels = ["App", "File", "View", "Theme"];
+        let reserve_right = 184.0;
+        let available_width = (top_bar.w - PANEL_PADDING * 2.0 - reserve_right).max(0.0);
         if available_width <= 0.0 {
             return Vec::new();
         }
@@ -1182,6 +1193,25 @@ impl RengineNativeEditor {
         let y = top_bar.y + 14.0;
         for (index, label) in labels.iter().enumerate() {
             let width = widths[index];
+            buttons.push((*label, PanelRect::new(x, y, width, BUTTON_HEIGHT)));
+            x += width + BUTTON_GAP;
+        }
+        buttons
+    }
+
+    pub(crate) fn top_bar_window_buttons(
+        &self,
+        top_bar: PanelRect,
+    ) -> Vec<(&'static str, PanelRect)> {
+        let labels = ["Refresh", "Quit"];
+        let preferred_widths = labels.map(button_preferred_width);
+        let total_gap = BUTTON_GAP * (labels.len().saturating_sub(1)) as f32;
+        let total_width = preferred_widths.iter().sum::<f32>() + total_gap;
+        let mut x = top_bar.right() - PANEL_PADDING - total_width;
+        let y = top_bar.y + 14.0;
+        let mut buttons = Vec::with_capacity(labels.len());
+        for (index, label) in labels.iter().enumerate() {
+            let width = preferred_widths[index];
             buttons.push((*label, PanelRect::new(x, y, width, BUTTON_HEIGHT)));
             x += width + BUTTON_GAP;
         }

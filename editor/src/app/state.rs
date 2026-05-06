@@ -46,12 +46,33 @@ pub(crate) enum TextInputOwner {
     Inspector,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum EditorTheme {
+    Slate,
+    Graphite,
+    Ember,
+}
+
 impl BottomTab {
     pub(crate) fn label(self) -> &'static str {
         match self {
             Self::Activity => "Activity",
             Self::SceneJson => "Scene JSON",
         }
+    }
+}
+
+impl EditorTheme {
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::Slate => "Slate",
+            Self::Graphite => "Graphite",
+            Self::Ember => "Ember",
+        }
+    }
+
+    pub(crate) fn all() -> [EditorTheme; 3] {
+        [Self::Slate, Self::Graphite, Self::Ember]
     }
 }
 

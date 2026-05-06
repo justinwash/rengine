@@ -103,6 +103,7 @@ pub(crate) use windowing::*;
 pub struct RengineNativeEditor {
     workspace_root: PathBuf,
     branch_name: String,
+    editor_theme: EditorTheme,
     project_tree: ProjectTreeEntry,
     scene_tabs: Vec<SceneTab>,
     active_scene_tab: usize,
@@ -139,6 +140,7 @@ impl Game for RengineNativeEditor {
         let mut editor = Self {
             workspace_root,
             branch_name,
+            editor_theme: EditorTheme::Slate,
             project_tree,
             scene_tabs: vec![SceneTab::untitled()],
             active_scene_tab: 0,
