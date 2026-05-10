@@ -412,11 +412,19 @@ impl RengineNativeEditor {
         let mut scene = match serde_json::from_str::<SceneDocument>(&text) {
             Ok(scene) => scene,
             Err(error) => {
-                self.push_log(format!(
-                    "Failed to parse {} as an editor scene: {}",
-                    self.display_path(&path),
-                    error
-                ));
+                if is_json_path(&path) {
+                    self.selected_project_path = Some(path.clone());
+                    self.push_log(format!(
+                        "Opened {} as generic JSON",
+                        self.display_path(&path)
+                    ));
+                } else {
+                    self.push_log(format!(
+                        "Failed to parse {} as an editor scene: {}",
+                        self.display_path(&path),
+                        error
+                    ));
+                }
                 return;
             }
         };
@@ -747,6 +755,12 @@ pub(crate) fn read_git_branch(workspace_root: &Path) -> String {
 }
 
 pub(crate) fn is_scene_path(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.ends_with(".scene.json"))
+}
+
+pub(crate) fn is_json_path(path: &Path) -> bool {
     matches!(
         path.extension()
             .and_then(|extension| extension.to_str())

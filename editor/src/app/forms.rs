@@ -1,4 +1,7 @@
 use super::*;
+use serde_json::Value;
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 
 #[derive(Default)]
 pub(crate) struct FileBrowserFormState {
@@ -80,6 +83,54 @@ impl InspectorFormState {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum GenericJsonFieldKind {
+    String,
+    Number,
+    Bool,
+    Null,
+}
+
+#[derive(Clone, Copy, Default)]
+struct JsonFieldHint {
+    min: Option<f32>,
+    max: Option<f32>,
+    step: Option<f32>,
+    slider: Option<bool>,
+}
+
+#[derive(Clone)]
+struct GenericJsonField {
+    pointer: String,
+    label: String,
+    section: String,
+    kind: GenericJsonFieldKind,
+    text: String,
+    parse_error: Option<String>,
+    slider_range: Option<(f32, f32)>,
+    slider_step: Option<f32>,
+    text_input_id: usize,
+    slider_id: usize,
+    checkbox_id: usize,
+}
+
+#[derive(Default)]
+pub(crate) struct GenericJsonFormState {
+    loaded_path: Option<PathBuf>,
+    root: Value,
+    fields: Vec<GenericJsonField>,
+    hints: HashMap<String, JsonFieldHint>,
+    load_error: Option<String>,
+    dirty: bool,
+    scroll: f32,
+}
+
+impl GenericJsonFormState {
+    fn clear(&mut self) {
+        *self = Self::default();
+    }
+}
+
 impl RengineNativeEditor {
     pub(crate) fn update_file_browser_ui(&mut self, engine: &Engine, layout: &ShellLayout) {
         if !layout.files_open {
@@ -135,6 +186,16 @@ impl RengineNativeEditor {
                 self.active_text_input_owner = None;
             }
             return;
+        }
+
+        if let Some(path) = self.selected_generic_json_path() {
+            self.ensure_generic_json_form_loaded(&path);
+            self.update_generic_json_inspector_ui(engine, layout);
+            return;
+        }
+
+        if self.generic_json_form.loaded_path.is_some() {
+            self.generic_json_form.clear();
         }
 
         self.sync_inspector_form_context();
@@ -218,6 +279,269 @@ impl RengineNativeEditor {
                 Some(node_id),
                 None,
             );
+        }
+    }
+
+    fn selected_generic_json_path(&self) -> Option<PathBuf> {
+        self.selected_project_path.as_ref().and_then(|path| {
+            if path.is_file() && is_json_path(path) && !is_scene_path(path) {
+                Some(path.clone())
+            } else {
+                None
+            }
+        })
+    }
+
+    fn ensure_generic_json_form_loaded(&mut self, path: &Path) {
+        if self
+            .generic_json_form
+            .loaded_path
+            .as_deref()
+            .is_some_and(|loaded| loaded == path)
+        {
+            return;
+        }
+
+        let mut form = GenericJsonFormState::default();
+        form.loaded_path = Some(path.to_path_buf());
+
+        match fs::read_to_string(path) {
+            Ok(text) => match serde_json::from_str::<Value>(&text) {
+                Ok(root) => {
+                    form.hints = extract_editor_hints(&root);
+                    form.root = root;
+                    form.fields = build_generic_json_fields(&form.root, &form.hints);
+                    self.push_log(format!("Opened JSON {}", self.display_path(path)));
+                }
+                Err(error) => {
+                    form.load_error = Some(format!("Invalid JSON: {}", error));
+                    self.push_log(format!(
+                        "Failed to parse {} as JSON: {}",
+                        self.display_path(path),
+                        error
+                    ));
+                }
+            },
+            Err(error) => {
+                form.load_error = Some(format!("Read failed: {}", error));
+                self.push_log(format!(
+                    "Failed to read {}: {}",
+                    self.display_path(path),
+                    error
+                ));
+            }
+        }
+
+        self.generic_json_form = form;
+    }
+
+    fn update_generic_json_inspector_ui(&mut self, engine: &Engine, layout: &ShellLayout) {
+        let ui_x = layout.inspector.x + PANEL_PADDING;
+        let ui_y = inspector_form_top(layout.inspector);
+        let ui_width = (layout.inspector.w - PANEL_PADDING * 2.0).max(0.0);
+        let scroll_height = inspector_form_height(layout.inspector);
+
+        let mut inspector_ui = std::mem::take(&mut self.inspector_ui);
+        let mut generic_json_form = std::mem::take(&mut self.generic_json_form);
+        inspector_ui.set_text_input_enabled(self.text_input_enabled_for(TextInputOwner::Inspector));
+        let mouse_pressed = engine.input().is_mouse_pressed(0);
+        inspector_ui.sync_at_with(
+            engine,
+            ui_x,
+            ui_y,
+            ui_width,
+            &mut generic_json_form,
+            |ui, state| Self::build_generic_json_form_ui(ui, state, scroll_height),
+            |response, state| {
+                self.inspector_ui_focused = response.focused_id.is_some();
+                self.capture_text_input_owner(
+                    TextInputOwner::Inspector,
+                    response.focused_id,
+                    response.hovered,
+                    mouse_pressed,
+                );
+                if let Some(scroll) = response.scroll_for(INSPECTOR_JSON_SCROLL_REGION_ID) {
+                    state.scroll = scroll;
+                }
+                self.apply_generic_json_form_response(response, state);
+            },
+        );
+
+        self.generic_json_form = generic_json_form;
+        self.inspector_ui = inspector_ui;
+    }
+
+    fn build_generic_json_form_ui(ui: &mut Ui, state: &GenericJsonFormState, scroll_height: f32) {
+        if scroll_height <= 0.0 {
+            return;
+        }
+
+        ui.scroll(
+            INSPECTOR_JSON_SCROLL_REGION_ID,
+            scroll_height,
+            state.scroll,
+            generic_json_widget_count(state),
+        );
+
+        if let Some(path) = &state.loaded_path {
+            ui.label(
+                &format!("Editing JSON: {}", path.display()),
+                11.0,
+                Color::from_rgba8(176, 186, 202, 255),
+            );
+        }
+
+        if state.dirty {
+            ui.label(
+                "Unsaved changes",
+                11.0,
+                Color::from_rgba8(248, 196, 120, 255),
+            );
+        }
+
+        ui.row(2);
+        ui.button(INSPECTOR_JSON_SAVE_ID, "Save JSON");
+        ui.button(INSPECTOR_JSON_RELOAD_ID, "Reload JSON");
+        ui.separator(8.0);
+
+        if let Some(error) = &state.load_error {
+            ui.label(error, 11.0, Color::from_rgba8(236, 140, 140, 255));
+            return;
+        }
+
+        let mut last_section: Option<&str> = None;
+        for field in &state.fields {
+            if last_section != Some(field.section.as_str()) {
+                ui.separator(8.0);
+                ui.label(&field.section, 12.0, Color::from_rgba8(208, 220, 236, 255));
+                last_section = Some(field.section.as_str());
+            }
+            ui.label(&field.label, 11.0, Color::from_rgba8(148, 162, 180, 255));
+
+            if field.kind == GenericJsonFieldKind::Bool {
+                let checked = field.text.eq_ignore_ascii_case("true");
+                ui.checkbox(field.checkbox_id, "Toggle", checked);
+            }
+
+            if let Some((min, max)) = field.slider_range {
+                let slider_value = field
+                    .text
+                    .trim()
+                    .parse::<f32>()
+                    .ok()
+                    .unwrap_or(min)
+                    .clamp(min, max);
+                ui.slider(field.slider_id, "Value", slider_value, min, max);
+            }
+
+            let placeholder = match field.kind {
+                GenericJsonFieldKind::String => "text",
+                GenericJsonFieldKind::Number => "number",
+                GenericJsonFieldKind::Bool => "true / false",
+                GenericJsonFieldKind::Null => "null",
+            };
+            ui.text_input(field.text_input_id, &field.text, placeholder);
+
+            if let Some(error) = &field.parse_error {
+                ui.label(error, 10.0, Color::from_rgba8(236, 140, 140, 255));
+            }
+
+            ui.separator(6.0);
+        }
+    }
+
+    fn apply_generic_json_form_response(
+        &mut self,
+        response: UiResponse,
+        state: &mut GenericJsonFormState,
+    ) {
+        let mut changed = false;
+
+        if response.was_activated(INSPECTOR_JSON_RELOAD_ID) {
+            if let Some(path) = state.loaded_path.clone() {
+                self.ensure_generic_json_form_loaded(&path);
+                *state = std::mem::take(&mut self.generic_json_form);
+            }
+            return;
+        }
+
+        for field in &mut state.fields {
+            if response.was_toggled(field.checkbox_id) && field.kind == GenericJsonFieldKind::Bool {
+                let toggled = !field.text.eq_ignore_ascii_case("true");
+                field.text = if toggled {
+                    "true".to_string()
+                } else {
+                    "false".to_string()
+                };
+                if set_json_pointer_scalar(&mut state.root, &field.pointer, Value::Bool(toggled)) {
+                    field.parse_error = None;
+                    changed = true;
+                }
+            }
+
+            if let Some(value) = response.value_for(field.slider_id) {
+                let value = if let Some(step) = field.slider_step {
+                    if step > 0.0 {
+                        (value / step).round() * step
+                    } else {
+                        value
+                    }
+                } else {
+                    value
+                };
+                field.text = format_float_for_editor(value);
+                if set_json_pointer_scalar(
+                    &mut state.root,
+                    &field.pointer,
+                    Value::from(value as f64),
+                ) {
+                    field.parse_error = None;
+                    changed = true;
+                }
+            }
+
+            if let Some(text) = response.text_for(field.text_input_id) {
+                field.text = text.to_string();
+                match parse_scalar_text(&field.text, field.kind) {
+                    Ok(parsed) => {
+                        if set_json_pointer_scalar(&mut state.root, &field.pointer, parsed) {
+                            field.parse_error = None;
+                            changed = true;
+                        }
+                    }
+                    Err(error) => {
+                        field.parse_error = Some(error);
+                    }
+                }
+            }
+        }
+
+        if changed {
+            state.dirty = true;
+        }
+
+        if response.was_activated(INSPECTOR_JSON_SAVE_ID) {
+            let Some(path) = state.loaded_path.clone() else {
+                return;
+            };
+            match serde_json::to_string_pretty(&state.root) {
+                Ok(pretty) => match fs::write(&path, pretty) {
+                    Ok(()) => {
+                        state.dirty = false;
+                        self.push_log(format!("Saved JSON {}", self.display_path(&path)));
+                    }
+                    Err(error) => {
+                        self.push_log(format!(
+                            "Failed to save {}: {}",
+                            self.display_path(&path),
+                            error
+                        ));
+                    }
+                },
+                Err(error) => {
+                    self.push_log(format!("Failed to serialize JSON: {}", error));
+                }
+            }
         }
     }
 
@@ -674,6 +998,288 @@ impl RengineNativeEditor {
     }
 }
 
+fn extract_editor_hints(root: &Value) -> HashMap<String, JsonFieldHint> {
+    let mut hints = HashMap::new();
+    let Some(meta) = root.get("__editor") else {
+        return hints;
+    };
+    let Some(fields) = meta.get("fields") else {
+        return hints;
+    };
+    let Some(map) = fields.as_object() else {
+        return hints;
+    };
+
+    for (pointer, spec) in map {
+        let Some(spec_obj) = spec.as_object() else {
+            continue;
+        };
+        let min = spec_obj
+            .get("min")
+            .and_then(|v| v.as_f64())
+            .map(|v| v as f32);
+        let max = spec_obj
+            .get("max")
+            .and_then(|v| v.as_f64())
+            .map(|v| v as f32);
+        let step = spec_obj
+            .get("step")
+            .and_then(|v| v.as_f64())
+            .map(|v| v as f32);
+        let slider = spec_obj
+            .get("widget")
+            .and_then(|v| v.as_str())
+            .map(|widget| widget.eq_ignore_ascii_case("slider"));
+        hints.insert(
+            pointer.to_string(),
+            JsonFieldHint {
+                min,
+                max,
+                step,
+                slider,
+            },
+        );
+    }
+
+    hints
+}
+
+fn build_generic_json_fields(
+    root: &Value,
+    hints: &HashMap<String, JsonFieldHint>,
+) -> Vec<GenericJsonField> {
+    let mut fields = Vec::new();
+    collect_json_fields(root, "", "", hints, &mut fields);
+    fields
+}
+
+fn collect_json_fields(
+    value: &Value,
+    pointer: &str,
+    display_path: &str,
+    hints: &HashMap<String, JsonFieldHint>,
+    out: &mut Vec<GenericJsonField>,
+) {
+    match value {
+        Value::Object(map) => {
+            let mut keys: Vec<&str> = map.keys().map(String::as_str).collect();
+            keys.sort_unstable();
+            for key in keys {
+                if pointer.is_empty() && key == "__editor" {
+                    continue;
+                }
+                let Some(child) = map.get(key) else {
+                    continue;
+                };
+                let child_pointer = format!("{}/{}", pointer, escape_json_pointer_token(key));
+                let child_display = if display_path.is_empty() {
+                    key.to_string()
+                } else {
+                    format!("{}.{}", display_path, key)
+                };
+                collect_json_fields(child, &child_pointer, &child_display, hints, out);
+            }
+        }
+        Value::Array(items) => {
+            for (index, child) in items.iter().enumerate() {
+                let child_pointer = format!("{}/{}", pointer, index);
+                let child_display = format!("{}[{}]", display_path, index);
+                collect_json_fields(child, &child_pointer, &child_display, hints, out);
+            }
+        }
+        Value::String(text) => {
+            out.push(make_generic_json_field(
+                pointer,
+                display_path,
+                GenericJsonFieldKind::String,
+                text.clone(),
+                hints.get(pointer).copied().unwrap_or_default(),
+            ));
+        }
+        Value::Number(number) => {
+            out.push(make_generic_json_field(
+                pointer,
+                display_path,
+                GenericJsonFieldKind::Number,
+                number.to_string(),
+                hints.get(pointer).copied().unwrap_or_default(),
+            ));
+        }
+        Value::Bool(flag) => {
+            out.push(make_generic_json_field(
+                pointer,
+                display_path,
+                GenericJsonFieldKind::Bool,
+                if *flag { "true" } else { "false" }.to_string(),
+                hints.get(pointer).copied().unwrap_or_default(),
+            ));
+        }
+        Value::Null => {
+            out.push(make_generic_json_field(
+                pointer,
+                display_path,
+                GenericJsonFieldKind::Null,
+                "null".to_string(),
+                hints.get(pointer).copied().unwrap_or_default(),
+            ));
+        }
+    }
+}
+
+fn make_generic_json_field(
+    pointer: &str,
+    display_path: &str,
+    kind: GenericJsonFieldKind,
+    text: String,
+    hint: JsonFieldHint,
+) -> GenericJsonField {
+    let label = if display_path.is_empty() {
+        "<root>".to_string()
+    } else {
+        display_path.to_string()
+    };
+    let section = display_path
+        .rfind('.')
+        .map(|idx| display_path[..idx].to_string())
+        .unwrap_or_else(|| "Root".to_string());
+    let hash = hash_string(pointer);
+    let text_input_id = INSPECTOR_JSON_TEXT_INPUT_BASE_ID + (hash % 8_000);
+    let slider_id = INSPECTOR_JSON_SLIDER_BASE_ID + (hash % 8_000);
+    let checkbox_id = INSPECTOR_JSON_CHECKBOX_BASE_ID + (hash % 8_000);
+    let parsed_value = text.trim().parse::<f32>().ok();
+
+    let slider_range = if kind == GenericJsonFieldKind::Number {
+        let use_slider = hint.slider.unwrap_or(true);
+        if use_slider {
+            if let (Some(min), Some(max)) = (hint.min, hint.max) {
+                Some((min.min(max), max.max(min)))
+            } else if let Some(v) = parsed_value {
+                Some(guess_slider_range(v))
+            } else {
+                Some((-1.0, 1.0))
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    GenericJsonField {
+        pointer: pointer.to_string(),
+        label,
+        section,
+        kind,
+        text,
+        parse_error: None,
+        slider_range,
+        slider_step: hint.step,
+        text_input_id,
+        slider_id,
+        checkbox_id,
+    }
+}
+
+fn generic_json_widget_count(state: &GenericJsonFormState) -> usize {
+    let mut count = 6;
+    if state.load_error.is_some() {
+        return count + 1;
+    }
+    let mut last_section: Option<&str> = None;
+    for field in &state.fields {
+        if last_section != Some(field.section.as_str()) {
+            count += 2;
+            last_section = Some(field.section.as_str());
+        }
+        count += 3;
+        if field.kind == GenericJsonFieldKind::Bool {
+            count += 1;
+        }
+        if field.slider_range.is_some() {
+            count += 1;
+        }
+        if field.parse_error.is_some() {
+            count += 1;
+        }
+    }
+    count
+}
+
+fn parse_scalar_text(text: &str, kind: GenericJsonFieldKind) -> Result<Value, String> {
+    match kind {
+        GenericJsonFieldKind::String => Ok(Value::String(text.to_string())),
+        GenericJsonFieldKind::Number => {
+            let value = text
+                .trim()
+                .parse::<f64>()
+                .map_err(|_| "Expected a number".to_string())?;
+            Ok(Value::from(value))
+        }
+        GenericJsonFieldKind::Bool => match text.trim().to_ascii_lowercase().as_str() {
+            "true" => Ok(Value::Bool(true)),
+            "false" => Ok(Value::Bool(false)),
+            _ => Err("Expected true or false".to_string()),
+        },
+        GenericJsonFieldKind::Null => {
+            if text.trim().eq_ignore_ascii_case("null") {
+                Ok(Value::Null)
+            } else {
+                Err("Expected null".to_string())
+            }
+        }
+    }
+}
+
+fn set_json_pointer_scalar(root: &mut Value, pointer: &str, value: Value) -> bool {
+    if pointer.is_empty() {
+        *root = value;
+        return true;
+    }
+    if let Some(slot) = root.pointer_mut(pointer) {
+        *slot = value;
+        true
+    } else {
+        false
+    }
+}
+
+fn escape_json_pointer_token(token: &str) -> String {
+    token.replace('~', "~0").replace('/', "~1")
+}
+
+fn hash_string(value: &str) -> usize {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    value.hash(&mut hasher);
+    hasher.finish() as usize
+}
+
+fn guess_slider_range(value: f32) -> (f32, f32) {
+    if value.abs() <= 1.0 {
+        (-1.0, 1.0)
+    } else if value.abs() <= 10.0 {
+        if value >= 0.0 {
+            (0.0, 20.0)
+        } else {
+            (-20.0, 0.0)
+        }
+    } else {
+        let span = (value.abs() * 2.0).max(10.0);
+        if value >= 0.0 {
+            (0.0, span)
+        } else {
+            (-span, 0.0)
+        }
+    }
+}
+
+fn format_float_for_editor(value: f32) -> String {
+    if (value.round() - value).abs() < 0.000_1 {
+        format!("{:.0}", value)
+    } else {
+        format!("{:.4}", value)
+    }
+}
+
 fn inspector_form_top(panel: PanelRect) -> f32 {
     let inner = panel.inset(PANEL_PADDING);
     inner.top() - 134.0
@@ -739,7 +1345,7 @@ pub(crate) fn is_inspector_text_input(id: usize) -> bool {
             | INSPECTOR_SPRITE_TEXTURE_ID
             | INSPECTOR_CAMERA_VIEW_WIDTH_ID
             | INSPECTOR_CAMERA_VIEW_HEIGHT_ID
-    )
+    ) || (INSPECTOR_JSON_TEXT_INPUT_BASE_ID..INSPECTOR_JSON_SLIDER_BASE_ID).contains(&id)
 }
 
 pub(crate) fn make_inspector_ui() -> Ui {

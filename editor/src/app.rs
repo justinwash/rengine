@@ -76,6 +76,12 @@ const INSPECTOR_CAMERA_USE_SCENE_SIZE_ID: usize = 132;
 const INSPECTOR_CAMERA_VIEW_WIDTH_ID: usize = 133;
 const INSPECTOR_CAMERA_VIEW_HEIGHT_ID: usize = 134;
 const INSPECTOR_SCROLL_REGION_ID: usize = 140;
+const INSPECTOR_JSON_SAVE_ID: usize = 180;
+const INSPECTOR_JSON_RELOAD_ID: usize = 181;
+const INSPECTOR_JSON_SCROLL_REGION_ID: usize = 182;
+const INSPECTOR_JSON_TEXT_INPUT_BASE_ID: usize = 10_000;
+const INSPECTOR_JSON_SLIDER_BASE_ID: usize = 20_000;
+const INSPECTOR_JSON_CHECKBOX_BASE_ID: usize = 30_000;
 
 const NODE_KIND_OPTIONS: [SceneNodeKind; 6] = [
     SceneNodeKind::Group,
@@ -119,6 +125,7 @@ pub struct RengineNativeEditor {
     file_browser_ui_focused: bool,
     inspector_ui: Ui,
     inspector_form: InspectorFormState,
+    generic_json_form: GenericJsonFormState,
     inspector_ui_focused: bool,
     panel_layout: PanelLayoutState,
     panel_resize_drag: Option<PanelResizeDrag>,
@@ -156,6 +163,7 @@ impl Game for RengineNativeEditor {
             file_browser_ui_focused: false,
             inspector_ui: make_inspector_ui(),
             inspector_form: InspectorFormState::default(),
+            generic_json_form: GenericJsonFormState::default(),
             inspector_ui_focused: false,
             panel_layout: PanelLayoutState::default(),
             panel_resize_drag: None,
