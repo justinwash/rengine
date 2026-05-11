@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use winit::window::Window;
 
 use serde::de::DeserializeOwned;
 use winit::dpi::LogicalSize;
@@ -523,9 +524,29 @@ pub struct Engine {
     pub(crate) postfx_chain: PostFxChain,
     pending_texture_requests: RefCell<Vec<PathBuf>>,
     failed_texture_requests: RefCell<HashMap<PathBuf, f32>>,
+    pub(crate) window: Arc<Window>,
 }
 
 impl Engine {
+    /// Set the window size at runtime (in logical pixels)
+    pub fn set_window_size(&self, width: u32, height: u32) {
+        use winit::dpi::LogicalSize;
+        let _ = self
+            .window
+            .request_inner_size(LogicalSize::new(width as f64, height as f64));
+    }
+
+    /// Set fullscreen mode at runtime
+    pub fn set_fullscreen(&self, enabled: bool) {
+        use winit::window::Fullscreen;
+        if enabled {
+            self.window
+                .as_ref()
+                .set_fullscreen(Some(Fullscreen::Borderless(None)));
+        } else {
+            self.window.as_ref().set_fullscreen(None);
+        }
+    }
     pub fn input(&self) -> &InputState {
         &self.input
     }
@@ -1220,6 +1241,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
         postfx_chain: PostFxChain::new(),
         pending_texture_requests: RefCell::new(Vec::new()),
         failed_texture_requests: RefCell::new(HashMap::new()),
+        window: window.clone(),
     };
     engine.time.set_fixed_dt(fixed_dt);
     if let Some((rw, rh)) = render_res {
@@ -1407,6 +1429,7 @@ where
         postfx_chain: PostFxChain::new(),
         pending_texture_requests: RefCell::new(Vec::new()),
         failed_texture_requests: RefCell::new(HashMap::new()),
+        window: window.clone(),
     };
     engine.time.set_fixed_dt(fixed_dt);
     if let Some((rw, rh)) = render_res {
