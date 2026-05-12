@@ -78,6 +78,37 @@ impl SceneInstance2D {
         self.properties.get(name).map(String::as_str)
     }
 
+    pub fn property_bool(&self, name: &str) -> Option<bool> {
+        self.property(name).and_then(parse_bool_property)
+    }
+
+    pub fn property_u64(&self, name: &str) -> Option<u64> {
+        self.property(name)
+            .and_then(|value| value.parse::<u64>().ok())
+    }
+
+    pub fn editor_node_id(&self) -> Option<u64> {
+        self.property_u64("editor_node_id")
+    }
+
+    pub fn editor_parent_id(&self) -> Option<u64> {
+        self.property_u64("editor_parent_id")
+    }
+
+    pub fn editor_visible(&self) -> Option<bool> {
+        self.property_bool("editor_visible")
+    }
+
+    pub fn editor_name(&self) -> Option<&str> {
+        self.property("editor_name")
+    }
+
+    pub fn script_path(&self) -> Option<&str> {
+        self.property("script_path")
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+    }
+
     pub fn draw(&self, frame: &mut Frame) {
         for sprite in &self.sprites {
             frame.draw_sprite(
@@ -93,6 +124,16 @@ impl SceneInstance2D {
             );
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SceneScriptBinding2D {
+    pub instance_index: usize,
+    pub prefab: String,
+    pub script_path: String,
+    pub editor_node_id: Option<u64>,
+    pub editor_parent_id: Option<u64>,
+    pub editor_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -151,6 +192,24 @@ impl Scene2D {
         self.instances
             .iter()
             .filter(move |instance| instance.prefab == prefab)
+    }
+
+    pub fn script_bindings(&self) -> Vec<SceneScriptBinding2D> {
+        self.instances
+            .iter()
+            .enumerate()
+            .filter_map(|(instance_index, instance)| {
+                let script_path = instance.script_path()?.to_string();
+                Some(SceneScriptBinding2D {
+                    instance_index,
+                    prefab: instance.prefab.clone(),
+                    script_path,
+                    editor_node_id: instance.editor_node_id(),
+                    editor_parent_id: instance.editor_parent_id(),
+                    editor_name: instance.editor_name().map(str::to_string),
+                })
+            })
+            .collect()
     }
 
     pub fn draw(&self, frame: &mut Frame) {
@@ -214,6 +273,14 @@ fn default_color() -> [f32; 4] {
 
 fn default_scale() -> [f32; 2] {
     [1.0, 1.0]
+}
+
+fn parse_bool_property(value: &str) -> Option<bool> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "true" | "1" | "yes" | "on" => Some(true),
+        "false" | "0" | "no" | "off" => Some(false),
+        _ => None,
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -703,6 +770,68 @@ fn default_editor_visible() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn scene_instance_typed_property_helpers_parse_metadata() {
+        let mut properties = HashMap::new();
+        properties.insert("editor_visible".to_string(), "true".to_string());
+        properties.insert("editor_node_id".to_string(), "42".to_string());
+        properties.insert("editor_parent_id".to_string(), "7".to_string());
+        properties.insert("editor_name".to_string(), "pit_wall".to_string());
+        properties.insert("script_path".to_string(), "scripts/pit_wall.rs".to_string());
+
+        let instance = SceneInstance2D {
+            prefab: "pit_panel".to_string(),
+            position: Vec2::ZERO,
+            scale: Vec2::new(1.0, 1.0),
+            properties,
+            sprites: Vec::new(),
+        };
+
+        assert_eq!(instance.editor_visible(), Some(true));
+        assert_eq!(instance.editor_node_id(), Some(42));
+        assert_eq!(instance.editor_parent_id(), Some(7));
+        assert_eq!(instance.editor_name(), Some("pit_wall"));
+        assert_eq!(instance.script_path(), Some("scripts/pit_wall.rs"));
+    }
+
+    #[test]
+    fn scene_script_bindings_collect_only_instances_with_scripts() {
+        let mut with_script = HashMap::new();
+        with_script.insert("script_path".to_string(), "scripts/title.rs".to_string());
+        with_script.insert("editor_node_id".to_string(), "1".to_string());
+        with_script.insert("editor_name".to_string(), "title_root".to_string());
+
+        let mut without_script = HashMap::new();
+        without_script.insert("editor_node_id".to_string(), "2".to_string());
+
+        let scene = Scene2D {
+            instances: vec![
+                SceneInstance2D {
+                    prefab: "title_ui".to_string(),
+                    position: Vec2::ZERO,
+                    scale: Vec2::new(1.0, 1.0),
+                    properties: with_script,
+                    sprites: Vec::new(),
+                },
+                SceneInstance2D {
+                    prefab: "decor".to_string(),
+                    position: Vec2::ZERO,
+                    scale: Vec2::new(1.0, 1.0),
+                    properties: without_script,
+                    sprites: Vec::new(),
+                },
+            ],
+        };
+
+        let bindings = scene.script_bindings();
+        assert_eq!(bindings.len(), 1);
+        assert_eq!(bindings[0].instance_index, 0);
+        assert_eq!(bindings[0].prefab, "title_ui");
+        assert_eq!(bindings[0].script_path, "scripts/title.rs");
+        assert_eq!(bindings[0].editor_node_id, Some(1));
+        assert_eq!(bindings[0].editor_name.as_deref(), Some("title_root"));
+    }
 
     #[test]
     fn converts_editor_scene_document_into_runtime_scene_definition() {

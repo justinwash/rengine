@@ -53,7 +53,9 @@ pub use assets::{
 pub use canvas::{screen_to_ndc, wrap_text, Canvas, CanvasVertex, TextAlign};
 pub use scene::{
     Globals, Prefab2D, Prefab2DDef, PrefabSprite2D, PrefabSprite2DDef, Scene, Scene2D, Scene2DDef,
-    SceneInstance2D, SceneInstance2DDef, SceneOp, Transition,
+    SceneInstance2D, SceneInstance2DDef, SceneOp, SceneScript2D, SceneScriptBinding2D,
+    SceneScriptEvent2D, SceneScriptHost2D, SceneScriptInputEvent2D, SceneScriptRegistry2D,
+    Transition,
 };
 pub use text::FontAtlas;
 pub use text::FontId;

@@ -1,12 +1,17 @@
 mod data2d;
 mod globals;
+mod script2d;
 
 pub use data2d::{
     Prefab2D, Prefab2DDef, PrefabSprite2D, PrefabSprite2DDef, Scene2D, Scene2DDef, SceneInstance2D,
-    SceneInstance2DDef,
+    SceneInstance2DDef, SceneScriptBinding2D,
 };
 
 pub use globals::Globals;
+pub use script2d::{
+    SceneScript2D, SceneScriptEvent2D, SceneScriptHost2D, SceneScriptInputEvent2D,
+    SceneScriptRegistry2D,
+};
 
 use crate::app::{Engine, Engine3D};
 use crate::assets::Color;
