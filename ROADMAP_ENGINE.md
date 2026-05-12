@@ -31,6 +31,7 @@ What still matters most on the engine side is closing the remaining runtime gaps
 - OBJ and glTF mesh import groundwork for the 3D path
 - debug overlay, console, and configurable log capacity
 - scene-script host scaffolding now includes targeted dispatch helpers (by script path/editor name) and binding lookups for scene-authored event routing
+- Scene2D now exposes typed scalar/tag parsing helpers plus direct lookup helpers by editor node id, editor name, and conventional tags
 
 ## Runtime Priorities
 
@@ -98,7 +99,7 @@ What still matters most on the engine side is closing the remaining runtime gaps
 ## Next Runtime Milestones
 
 0. Land scene binding helpers and script host scaffolding so scene-authored behavior can run without game-specific glue.
-   - Status: In progress (scene binding helpers, SceneScript2D registry/host scaffolding, targeted event routing, and binding lookups are landed; remaining work is broader runtime ergonomics and higher-level scripting workflows).
+   - Status: In progress (scene binding helpers, SceneScript2D registry/host scaffolding, targeted event routing, binding lookups, and Scene2D editor-name/id/tag lookup helpers are landed; remaining work is broader runtime ergonomics and higher-level scripting workflows).
 1. Stabilize runtime serialization, IDs, and dependency tracking so the editor has trustworthy data contracts.
 2. Add a stronger object or component model that scenes and scripts can target consistently.
 3. Finish the missing 3D transform and material basics so imported content stops being fragile.

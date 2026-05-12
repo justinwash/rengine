@@ -82,9 +82,37 @@ impl SceneInstance2D {
         self.property(name).and_then(parse_bool_property)
     }
 
+    pub fn property_i64(&self, name: &str) -> Option<i64> {
+        self.property(name)
+            .and_then(|value| value.parse::<i64>().ok())
+    }
+
+    pub fn property_f32(&self, name: &str) -> Option<f32> {
+        self.property(name)
+            .and_then(|value| value.parse::<f32>().ok())
+    }
+
     pub fn property_u64(&self, name: &str) -> Option<u64> {
         self.property(name)
             .and_then(|value| value.parse::<u64>().ok())
+    }
+
+    pub fn property_tags(&self, name: &str) -> Vec<&str> {
+        self.property(name)
+            .map(|value| {
+                value
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|tag| !tag.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    pub fn has_tag(&self, tag: &str) -> bool {
+        self.property_tags("tags")
+            .into_iter()
+            .any(|item| item == tag)
     }
 
     pub fn editor_node_id(&self) -> Option<u64> {
@@ -192,6 +220,24 @@ impl Scene2D {
         self.instances
             .iter()
             .filter(move |instance| instance.prefab == prefab)
+    }
+
+    pub fn instance_by_editor_name(&self, editor_name: &str) -> Option<&SceneInstance2D> {
+        self.instances
+            .iter()
+            .find(|instance| instance.editor_name() == Some(editor_name))
+    }
+
+    pub fn instance_by_editor_node_id(&self, editor_node_id: u64) -> Option<&SceneInstance2D> {
+        self.instances
+            .iter()
+            .find(|instance| instance.editor_node_id() == Some(editor_node_id))
+    }
+
+    pub fn by_tag<'a>(&'a self, tag: &'a str) -> impl Iterator<Item = &'a SceneInstance2D> {
+        self.instances
+            .iter()
+            .filter(move |instance| instance.has_tag(tag))
     }
 
     pub fn script_bindings(&self) -> Vec<SceneScriptBinding2D> {
@@ -778,6 +824,9 @@ mod tests {
         properties.insert("editor_node_id".to_string(), "42".to_string());
         properties.insert("editor_parent_id".to_string(), "7".to_string());
         properties.insert("editor_name".to_string(), "pit_wall".to_string());
+        properties.insert("priority".to_string(), "-3".to_string());
+        properties.insert("opacity".to_string(), "0.75".to_string());
+        properties.insert("tags".to_string(), "hud, overlay, telemetry".to_string());
         properties.insert("script_path".to_string(), "scripts/pit_wall.rs".to_string());
 
         let instance = SceneInstance2D {
@@ -792,6 +841,13 @@ mod tests {
         assert_eq!(instance.editor_node_id(), Some(42));
         assert_eq!(instance.editor_parent_id(), Some(7));
         assert_eq!(instance.editor_name(), Some("pit_wall"));
+        assert_eq!(instance.property_i64("priority"), Some(-3));
+        assert_eq!(instance.property_f32("opacity"), Some(0.75));
+        assert_eq!(
+            instance.property_tags("tags"),
+            vec!["hud", "overlay", "telemetry"]
+        );
+        assert!(instance.has_tag("overlay"));
         assert_eq!(instance.script_path(), Some("scripts/pit_wall.rs"));
     }
 
@@ -831,6 +887,57 @@ mod tests {
         assert_eq!(bindings[0].script_path, "scripts/title.rs");
         assert_eq!(bindings[0].editor_node_id, Some(1));
         assert_eq!(bindings[0].editor_name.as_deref(), Some("title_root"));
+    }
+
+    #[test]
+    fn scene_can_lookup_instances_by_editor_metadata_and_tags() {
+        let mut title_properties = HashMap::new();
+        title_properties.insert("editor_node_id".to_string(), "1".to_string());
+        title_properties.insert("editor_name".to_string(), "title_root".to_string());
+        title_properties.insert("tags".to_string(), "menu, root".to_string());
+
+        let mut hud_properties = HashMap::new();
+        hud_properties.insert("editor_node_id".to_string(), "2".to_string());
+        hud_properties.insert("editor_name".to_string(), "hud_panel".to_string());
+        hud_properties.insert("tags".to_string(), "hud, overlay".to_string());
+
+        let scene = Scene2D {
+            instances: vec![
+                SceneInstance2D {
+                    prefab: "title_ui".to_string(),
+                    position: Vec2::ZERO,
+                    scale: Vec2::new(1.0, 1.0),
+                    properties: title_properties,
+                    sprites: Vec::new(),
+                },
+                SceneInstance2D {
+                    prefab: "hud".to_string(),
+                    position: Vec2::ZERO,
+                    scale: Vec2::new(1.0, 1.0),
+                    properties: hud_properties,
+                    sprites: Vec::new(),
+                },
+            ],
+        };
+
+        assert_eq!(
+            scene
+                .instance_by_editor_name("title_root")
+                .map(|instance| instance.prefab.as_str()),
+            Some("title_ui")
+        );
+        assert_eq!(
+            scene
+                .instance_by_editor_node_id(2)
+                .map(|instance| instance.prefab.as_str()),
+            Some("hud")
+        );
+
+        let hud_tags: Vec<_> = scene
+            .by_tag("hud")
+            .map(|instance| instance.prefab.as_str())
+            .collect();
+        assert_eq!(hud_tags, vec!["hud"]);
     }
 
     #[test]
