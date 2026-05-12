@@ -245,7 +245,7 @@ The `headless` flag is critical for testing:
 - The engine still creates a wgpu surface and device (needed for texture/buffer creation).
 - The window is invisible (`with_visible(false)`).
 - Audio is muted (master volume set to 0).
-- The `run` function uses a tight `loop {}` instead of the platform event loop.
+- The `run` function uses a tight `loop {}` instead of the platform event loop, and can now optionally render the final 2D frame into a screenshot artifact during headless smoke runs.
 
 ### 3.2 The [`Engine`](https://github.com/justinwash/rengine/blob/master/engine/src/app.rs#L47) struct (2D)
 

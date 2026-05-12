@@ -26,6 +26,7 @@ use winit::window::Window;
 const MAX_SPRITES: usize = 10_000;
 const MAX_VERTICES: usize = MAX_SPRITES * 4;
 const MAX_INDICES: usize = MAX_SPRITES * 6;
+const BYTES_PER_PIXEL: u32 = 4;
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub struct RenderTarget {
@@ -196,6 +197,13 @@ struct GpuTexture {
     _texture: wgpu::Texture,
     view: wgpu::TextureView,
     bind_group: wgpu::BindGroup,
+}
+
+#[derive(Debug, Clone)]
+pub struct CapturedFrame {
+    pub width: u32,
+    pub height: u32,
+    pub rgba8: Vec<u8>,
 }
 
 struct OffscreenTarget {
@@ -541,6 +549,12 @@ impl Renderer {
         }
     }
 
+    fn padded_bytes_per_row(width: u32) -> u32 {
+        let unpadded = width * BYTES_PER_PIXEL;
+        let alignment = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+        unpadded.div_ceil(alignment) * alignment
+    }
+
     pub fn create_texture(&mut self, width: u32, height: u32, pixels: &[u8]) -> TextureId {
         let id = TextureId(self.textures.len());
         self.textures.push(self.build_texture(
@@ -788,22 +802,14 @@ impl Renderer {
         }
     }
 
-    pub fn render_frame(&mut self, frame: &mut Frame, postfx_chain: &PostFxChain) {
-        let output = match self.surface.get_current_texture() {
-            Ok(t) => t,
-            Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                self.surface.configure(&self.device, &self.surface_config);
-                return;
-            }
-            Err(e) => {
-                log::error!("Surface error: {e:?}");
-                return;
-            }
-        };
-        let swap_view = output
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-
+    fn encode_frame_to_view(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        frame: &mut Frame,
+        postfx_chain: &PostFxChain,
+        final_view: &wgpu::TextureView,
+        final_size: (u32, u32),
+    ) {
         {
             let effects = postfx_chain.effects.borrow();
             let is_dirty = *postfx_chain.dirty.borrow();
@@ -831,13 +837,8 @@ impl Renderer {
             }
         }
 
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("frame_encoder"),
-            });
         let mut active_targets = Vec::new();
-        self.render_nested_targets(&mut encoder, frame, &mut active_targets);
+        self.render_nested_targets(encoder, frame, &mut active_targets);
 
         let (proj_w, proj_h) = match self.offscreen {
             Some(ref ofs) => (ofs.width as f32, ofs.height as f32),
@@ -849,7 +850,7 @@ impl Renderer {
         let batches = self.upload_frame_batches(frame, proj_w, proj_h);
         let sprite_target = match self.offscreen {
             Some(ref ofs) => &ofs.view,
-            None => &swap_view,
+            None => final_view,
         };
 
         {
@@ -891,7 +892,7 @@ impl Renderer {
             let blit_source_bg = if let Some(ref pfx) = self.postfx {
                 if pfx.pass_count() > 0 {
                     let effects = postfx_chain.effects.borrow();
-                    pfx.run(&mut encoder, &self.queue, &effects);
+                    pfx.run(encoder, &self.queue, &effects);
                     pfx.last_output_bind_group(pfx.pass_count())
                 } else {
                     &ofs.bind_group
@@ -904,13 +905,13 @@ impl Renderer {
                 ofs.scale_mode.get(),
                 ofs.width,
                 ofs.height,
-                self.surface_config.width,
-                self.surface_config.height,
+                final_size.0,
+                final_size.1,
             );
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("blit_pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &swap_view,
+                    view: final_view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
@@ -938,8 +939,8 @@ impl Renderer {
         let textures = &self.textures;
         canvas::render_pass(
             device,
-            &mut encoder,
-            &swap_view,
+            encoder,
+            final_view,
             canvas_pipeline,
             canvas_vb,
             canvas_vb_capacity,
@@ -948,9 +949,143 @@ impl Renderer {
             fonts,
             |texture_id| textures.get(texture_id).map(|texture| &texture.bind_group),
         );
+    }
+
+    pub fn render_frame(&mut self, frame: &mut Frame, postfx_chain: &PostFxChain) {
+        let output = match self.surface.get_current_texture() {
+            Ok(t) => t,
+            Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                self.surface.configure(&self.device, &self.surface_config);
+                return;
+            }
+            Err(e) => {
+                log::error!("Surface error: {e:?}");
+                return;
+            }
+        };
+        let swap_view = output
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("frame_encoder"),
+            });
+        self.encode_frame_to_view(
+            &mut encoder,
+            frame,
+            postfx_chain,
+            &swap_view,
+            (self.surface_config.width, self.surface_config.height),
+        );
 
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
+    }
+
+    pub fn capture_frame_rgba(
+        &mut self,
+        frame: &mut Frame,
+        postfx_chain: &PostFxChain,
+    ) -> Result<CapturedFrame, String> {
+        let width = self.surface_config.width.max(1);
+        let height = self.surface_config.height.max(1);
+        let capture_texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("capture_texture"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: self.surface_config.format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let capture_view = capture_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        let padded_bytes_per_row = Self::padded_bytes_per_row(width);
+        let output_size = padded_bytes_per_row as u64 * height as u64;
+        let readback_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("capture_readback_buffer"),
+            size: output_size,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("capture_frame_encoder"),
+            });
+        self.encode_frame_to_view(
+            &mut encoder,
+            frame,
+            postfx_chain,
+            &capture_view,
+            (width, height),
+        );
+        encoder.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo {
+                texture: &capture_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyBufferInfo {
+                buffer: &readback_buffer,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(padded_bytes_per_row),
+                    rows_per_image: Some(height),
+                },
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+
+        let slice = readback_buffer.slice(..);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = sender.send(result.map_err(|error| error.to_string()));
+        });
+        let _ = self.device.poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: None,
+        });
+
+        let map_result = receiver
+            .recv()
+            .map_err(|error| format!("capture readback channel failed: {error}"))?;
+        map_result?;
+
+        let mapped = slice.get_mapped_range();
+        let mut rgba8 = vec![0; (width * height * BYTES_PER_PIXEL) as usize];
+        let row_bytes = (width * BYTES_PER_PIXEL) as usize;
+        let padded_row_bytes = padded_bytes_per_row as usize;
+        for row in 0..height as usize {
+            let source_start = row * padded_row_bytes;
+            let source_end = source_start + row_bytes;
+            let dest_start = row * row_bytes;
+            let dest_end = dest_start + row_bytes;
+            rgba8[dest_start..dest_end].copy_from_slice(&mapped[source_start..source_end]);
+        }
+        drop(mapped);
+        readback_buffer.unmap();
+
+        Ok(CapturedFrame {
+            width,
+            height,
+            rgba8,
+        })
     }
 
     #[allow(dead_code)]

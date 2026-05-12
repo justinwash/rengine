@@ -482,6 +482,7 @@ pub struct EngineConfig {
 
     pub render_width: Option<u32>,
     pub render_height: Option<u32>,
+    pub headless_capture_path: Option<PathBuf>,
     pub scale_mode: ScaleMode,
     pub gamepad_assign: GamepadAssignMode,
 }
@@ -501,6 +502,7 @@ impl Default for EngineConfig {
             fixed_dt: 1.0 / 60.0,
             render_width: None,
             render_height: None,
+            headless_capture_path: None,
             scale_mode: ScaleMode::default(),
             gamepad_assign: GamepadAssignMode::default(),
         }
@@ -1191,6 +1193,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
     let headless = config.headless;
     let show_fps = config.show_fps;
     let fixed_dt = config.fixed_dt;
+    let headless_capture_path = config.headless_capture_path.clone();
     let gamepad_assign = config.gamepad_assign;
     assert!(
         config.render_width.is_some() == config.render_height.is_some(),
@@ -1264,7 +1267,26 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
             }
             headless_frame.begin(engine.window_size(), engine.font_atlas());
             game.update(&engine, &mut headless_frame);
+            game.render(&engine, &mut headless_frame);
             if game.should_exit() {
+                if let Some(path) = &headless_capture_path {
+                    let captured = engine
+                        .renderer
+                        .capture_frame_rgba(&mut headless_frame, &engine.postfx_chain)
+                        .map_err(|error| format!("failed to capture headless frame: {error}"))?;
+                    if let Some(parent) = path.parent() {
+                        if !parent.as_os_str().is_empty() {
+                            std::fs::create_dir_all(parent)?;
+                        }
+                    }
+                    image::save_buffer(
+                        path,
+                        &captured.rgba8,
+                        captured.width,
+                        captured.height,
+                        image::ColorType::Rgba8,
+                    )?;
+                }
                 return Ok(());
             }
             engine.input.end_frame();

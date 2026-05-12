@@ -32,6 +32,7 @@ What still matters most on the engine side is closing the remaining runtime gaps
 - debug overlay, console, and configurable log capacity
 - scene-script host scaffolding now includes targeted dispatch helpers (by script path/editor name) and binding lookups for scene-authored event routing
 - Scene2D now exposes typed scalar/tag parsing helpers plus direct lookup helpers by editor node id, editor name, and conventional tags
+- headless 2D runs can now render their final frame and optionally capture it to an RGBA screenshot artifact for smoke coverage
 
 ## Runtime Priorities
 
