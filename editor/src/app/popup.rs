@@ -31,6 +31,9 @@ pub(crate) enum PopupMenuAction {
     FileOpenScene,
     FileSaveScene,
     FileSaveSceneAs,
+    FileOpenProject,
+    FileNewProject,
+    FileProjectSettings,
     FileQuitEditor,
     ViewFrameSelection,
     ViewTogglePanel {
@@ -90,8 +93,11 @@ impl RengineNativeEditor {
             PopupMenuKind::FileMenu => vec![
                 PopupMenuAction::FileNewScene,
                 PopupMenuAction::FileOpenScene,
+                PopupMenuAction::FileOpenProject,
+                PopupMenuAction::FileNewProject,
                 PopupMenuAction::FileSaveScene,
                 PopupMenuAction::FileSaveSceneAs,
+                PopupMenuAction::FileProjectSettings,
                 PopupMenuAction::ProjectRefreshBrowser,
                 PopupMenuAction::FileQuitEditor,
             ],
@@ -148,6 +154,9 @@ impl RengineNativeEditor {
             PopupMenuAction::FileOpenScene => "Open Scene (Ctrl+O)".to_string(),
             PopupMenuAction::FileSaveScene => "Save Scene (Ctrl+S)".to_string(),
             PopupMenuAction::FileSaveSceneAs => "Save Scene As".to_string(),
+            PopupMenuAction::FileOpenProject => "Open Project...".to_string(),
+            PopupMenuAction::FileNewProject => "New Project...".to_string(),
+            PopupMenuAction::FileProjectSettings => "Project Settings".to_string(),
             PopupMenuAction::FileQuitEditor => "Quit Editor".to_string(),
             PopupMenuAction::ViewFrameSelection => "Frame Selection (F)".to_string(),
             PopupMenuAction::ViewTogglePanel { panel } => {
@@ -199,6 +208,9 @@ impl RengineNativeEditor {
             | PopupMenuAction::FileOpenScene
             | PopupMenuAction::FileSaveScene
             | PopupMenuAction::FileSaveSceneAs
+            | PopupMenuAction::FileOpenProject
+            | PopupMenuAction::FileNewProject
+            | PopupMenuAction::FileProjectSettings
             | PopupMenuAction::FileQuitEditor
             | PopupMenuAction::ViewFrameSelection
             | PopupMenuAction::AddNode { .. }
@@ -216,8 +228,17 @@ impl RengineNativeEditor {
             }
             PopupMenuAction::FileNewScene => self.new_scene(),
             PopupMenuAction::FileOpenScene => self.open_scene(),
+            PopupMenuAction::FileOpenProject => self.open_project_manifest_dialog(),
+            PopupMenuAction::FileNewProject => self.create_project_wizard(),
             PopupMenuAction::FileSaveScene => self.save_scene(),
             PopupMenuAction::FileSaveSceneAs => self.save_scene_as(),
+            PopupMenuAction::FileProjectSettings => {
+                if let Some(path) = self.project_manifest_path.clone() {
+                    self.selected_project_path = Some(path);
+                } else {
+                    self.push_log("No project manifest is currently loaded");
+                }
+            }
             PopupMenuAction::FileQuitEditor => self.quit_requested = true,
             PopupMenuAction::ViewFrameSelection => self.frame_active_scene_view(),
             PopupMenuAction::ViewTogglePanel { panel } => self.toggle_panel(panel),
@@ -308,7 +329,7 @@ pub(crate) fn popup_menu_rect(
 pub(crate) fn popup_menu_item_count(kind: &PopupMenuKind) -> usize {
     match kind {
         PopupMenuKind::AppMenu => 2,
-        PopupMenuKind::FileMenu => 6,
+        PopupMenuKind::FileMenu => 8,
         PopupMenuKind::ViewMenu => 5,
         PopupMenuKind::ThemeMenu => EditorTheme::all().len(),
         PopupMenuKind::AddNode { .. } | PopupMenuKind::ChangeNodeKind { .. } => {

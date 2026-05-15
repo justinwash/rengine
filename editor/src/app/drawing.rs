@@ -212,6 +212,9 @@ impl RengineNativeEditor {
         }
 
         let inner = panel.inset(PANEL_PADDING);
+        for (label, rect) in project_browser_nav_buttons(panel) {
+            draw_button(canvas, rect, label, false, true, tooltip_targets);
+        }
         draw_fitted_text_left(
             canvas,
             PanelRect::new(
@@ -225,6 +228,28 @@ impl RengineNativeEditor {
             Color::WHITE,
             tooltip_targets,
         );
+        draw_fitted_text_left(
+            canvas,
+            project_browser_root_label_rect(panel),
+            &self.project_browser_root_label(),
+            11.0,
+            Color::from_rgba8(148, 162, 180, 255),
+            tooltip_targets,
+        );
+
+        if let Some(issue) = &self.project_issue {
+            draw_fitted_text_left(
+                canvas,
+                project_browser_issue_label_rect(panel),
+                issue,
+                10.0,
+                Color::from_rgba8(236, 140, 140, 255),
+                tooltip_targets,
+            );
+            for (label, rect) in project_browser_recovery_buttons(panel) {
+                draw_button(canvas, rect, label, false, true, tooltip_targets);
+            }
+        }
 
         let filter = self.file_browser_form.filter.trim().to_ascii_lowercase();
         let list_rect = project_browser_list_rect(panel);
@@ -236,12 +261,8 @@ impl RengineNativeEditor {
             1.0,
             Color::from_rgba8(40, 50, 62, 255),
         );
-        let lines = flattened_project_tree(
-            &self.project_tree,
-            &self.collapsed_project_paths,
-            &self.workspace_root,
-            &filter,
-        );
+        let lines =
+            flattened_project_tree(&self.project_tree, &self.collapsed_project_paths, &filter);
         canvas.push_clip(list_rect.x, list_rect.y, list_rect.w, list_rect.h);
         if !filter.is_empty() && !project_tree_matches_filter(&self.project_tree, &filter) {
             draw_list_text(

@@ -1,4 +1,34 @@
 use super::*;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
+const PROJECT_TREE_SCAN_MAX_NODES: usize = 4000;
+const PROJECT_TREE_SCAN_MAX_DEPTH: usize = 8;
+
+#[derive(Default)]
+struct ProjectTreeScanBudget {
+    remaining_nodes: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct EditorProjectManifest {
+    #[serde(alias = "name")]
+    project_name: String,
+    #[serde(alias = "root")]
+    project_root: String,
+    #[serde(default)]
+    cached_files: Vec<String>,
+    #[serde(default)]
+    preferences: Option<Value>,
+}
+
+pub(crate) struct StartupProjectSelection {
+    pub(crate) workspace_root: PathBuf,
+    pub(crate) project_name: String,
+    pub(crate) project_file: Option<PathBuf>,
+    pub(crate) project_issue: Option<String>,
+    pub(crate) startup_logs: Vec<String>,
+}
 
 #[derive(Clone, Debug)]
 pub(crate) struct ProjectTreeEntry {
@@ -10,6 +40,13 @@ pub(crate) struct ProjectTreeEntry {
 
 impl ProjectTreeEntry {
     pub(crate) fn scan(path: &Path) -> Self {
+        let mut budget = ProjectTreeScanBudget {
+            remaining_nodes: PROJECT_TREE_SCAN_MAX_NODES,
+        };
+        Self::scan_limited(path, 0, &mut budget)
+    }
+
+    fn scan_limited(path: &Path, depth: usize, budget: &mut ProjectTreeScanBudget) -> Self {
         let name = path
             .file_name()
             .and_then(|name| name.to_str())
@@ -19,9 +56,13 @@ impl ProjectTreeEntry {
         let is_dir = is_project_tree_directory(path);
         let mut children = Vec::new();
 
-        if is_dir {
+        if is_dir && budget.remaining_nodes > 0 && depth < PROJECT_TREE_SCAN_MAX_DEPTH {
             if let Ok(entries) = fs::read_dir(path) {
                 for entry in entries.flatten() {
+                    if budget.remaining_nodes == 0 {
+                        break;
+                    }
+
                     let child_path = entry.path();
                     if is_symlinked_directory(&child_path) {
                         continue;
@@ -32,7 +73,8 @@ impl ProjectTreeEntry {
                         continue;
                     }
 
-                    children.push(Self::scan(&child_path));
+                    budget.remaining_nodes = budget.remaining_nodes.saturating_sub(1);
+                    children.push(Self::scan_limited(&child_path, depth + 1, budget));
                 }
             }
 
@@ -57,6 +99,102 @@ impl ProjectTreeEntry {
     pub(crate) fn contains_path(&self, path: &Path) -> bool {
         self.path == path || self.children.iter().any(|child| child.contains_path(path))
     }
+}
+
+pub(crate) fn resolve_startup_project_selection() -> StartupProjectSelection {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+
+    if let Some(cli_project_path) = cli_project_argument_path() {
+        let path = absolute_path_from(&cwd, &cli_project_path);
+        if let Ok(selection) = load_project_manifest_selection(&path) {
+            return selection;
+        }
+
+        let mut fallback = StartupProjectSelection {
+            workspace_root: cwd.clone(),
+            project_name: "Workspace".to_string(),
+            project_file: None,
+            project_issue: Some(format!(
+                "Failed to open project file from CLI: {}",
+                path.display()
+            )),
+            startup_logs: vec![format!(
+                "Failed to open project file from CLI: {}",
+                path.display()
+            )],
+        };
+        fallback
+            .startup_logs
+            .push("Falling back to current working directory".to_string());
+        return fallback;
+    }
+
+    if let Some(project_path) = find_project_manifest_in_directory(&cwd) {
+        if let Ok(selection) = load_project_manifest_selection(&project_path) {
+            return selection;
+        }
+
+        return StartupProjectSelection {
+            workspace_root: cwd,
+            project_name: "Workspace".to_string(),
+            project_file: Some(project_path.clone()),
+            project_issue: Some(format!(
+                "Project manifest exists but could not be loaded: {}",
+                project_path.display()
+            )),
+            startup_logs: vec![format!(
+                "Project manifest exists but could not be loaded: {}",
+                project_path.display()
+            )],
+        };
+    }
+
+    if let Some(project_path) = FileDialog::new()
+        .set_title("Open rengine project")
+        .set_directory(&cwd)
+        .add_filter("Rengine project", &["project", "json"])
+        .pick_file()
+    {
+        if let Ok(selection) = load_project_manifest_selection(&project_path) {
+            return selection;
+        }
+
+        return StartupProjectSelection {
+            workspace_root: cwd.clone(),
+            project_name: "Workspace".to_string(),
+            project_file: None,
+            project_issue: None,
+            startup_logs: vec![format!(
+                "Selected project file was invalid: {}",
+                project_path.display()
+            )],
+        };
+    }
+
+    StartupProjectSelection {
+        workspace_root: cwd,
+        project_name: "Workspace".to_string(),
+        project_file: None,
+        project_issue: Some("No project manifest found in the working directory".to_string()),
+        startup_logs: vec!["No project file selected; using working directory".to_string()],
+    }
+}
+
+pub(crate) fn pick_project_manifest_path() -> Option<PathBuf> {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    FileDialog::new()
+        .set_title("Open rengine project")
+        .set_directory(&cwd)
+        .add_filter("Rengine project", &["project", "json"])
+        .pick_file()
+}
+
+pub(crate) fn pick_project_folder_path() -> Option<PathBuf> {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    FileDialog::new()
+        .set_title("Choose project folder")
+        .set_directory(&cwd)
+        .pick_folder()
 }
 
 pub(crate) struct ProjectEntryLine<'a> {
@@ -109,7 +247,29 @@ impl RengineNativeEditor {
             }
         }
 
-        self.workspace_root.clone()
+        self.project_browser_root.clone()
+    }
+
+    pub(crate) fn project_browser_root_label(&self) -> String {
+        self.display_path(&self.project_browser_root)
+    }
+
+    pub(crate) fn project_cached_file_paths(&self) -> Vec<String> {
+        let mut files = Vec::new();
+        collect_project_tree_file_paths(&self.project_tree, &mut files);
+        files
+            .into_iter()
+            .map(|path| self.stored_workspace_path(&path))
+            .collect()
+    }
+
+    pub(crate) fn project_manifest_cached_files_json(&self) -> Option<Value> {
+        Some(Value::Array(
+            self.project_cached_file_paths()
+                .into_iter()
+                .map(Value::String)
+                .collect(),
+        ))
     }
 
     pub(crate) fn suggested_scene_file_name(&self) -> String {
@@ -343,18 +503,138 @@ impl RengineNativeEditor {
     }
 
     pub(crate) fn refresh_project_tree(&mut self) {
-        self.project_tree = ProjectTreeEntry::scan(&self.workspace_root);
+        self.project_tree = ProjectTreeEntry::scan(&self.project_browser_root);
         self.recent_project_click = None;
-        self.push_log("Workspace browser refreshed");
+        self.push_log(format!(
+            "Workspace browser refreshed at {}",
+            self.display_path(&self.project_browser_root)
+        ));
     }
 
     pub(crate) fn toggle_project_entry(&mut self, path: &Path) {
-        if path == self.workspace_root {
+        if !self.collapsed_project_paths.insert(path.to_path_buf()) {
+            self.collapsed_project_paths.remove(path);
+        }
+    }
+
+    pub(crate) fn set_project_browser_root(&mut self, path: PathBuf) {
+        self.project_browser_root = path;
+        self.collapsed_project_paths.clear();
+        self.refresh_project_tree();
+    }
+
+    pub(crate) fn navigate_project_browser_up(&mut self) {
+        let Some(parent) = self.project_browser_root.parent() else {
+            return;
+        };
+
+        if is_project_browser_unsafe_root(parent) {
+            self.push_log(format!(
+                "Blocked navigation to {} to keep the project browser responsive",
+                self.display_path(parent)
+            ));
             return;
         }
 
-        if !self.collapsed_project_paths.insert(path.to_path_buf()) {
-            self.collapsed_project_paths.remove(path);
+        self.set_project_browser_root(parent.to_path_buf());
+    }
+
+    pub(crate) fn navigate_project_browser_workspace_root(&mut self) {
+        self.set_project_browser_root(self.workspace_root.clone());
+    }
+
+    pub(crate) fn open_project_manifest_dialog(&mut self) {
+        let Some(path) = pick_project_manifest_path() else {
+            return;
+        };
+
+        self.open_project_manifest_path(path);
+    }
+
+    pub(crate) fn create_project_wizard(&mut self) {
+        let Some(folder) = pick_project_folder_path() else {
+            return;
+        };
+
+        let project_name = folder
+            .file_name()
+            .and_then(|name| name.to_str())
+            .filter(|name| !name.trim().is_empty())
+            .unwrap_or("rengine_project")
+            .to_string();
+        let manifest_path = folder.join(".project");
+        if manifest_path.exists() {
+            self.push_log(format!(
+                "Project manifest already exists at {}; opening it",
+                self.display_path(&manifest_path)
+            ));
+            self.open_project_manifest_path(manifest_path);
+            return;
+        }
+
+        let manifest = EditorProjectManifest {
+            project_name: project_name.clone(),
+            project_root: ".".to_string(),
+            cached_files: Vec::new(),
+            preferences: None,
+        };
+
+        let serialized = match serde_json::to_string_pretty(&manifest) {
+            Ok(text) => text,
+            Err(error) => {
+                self.push_log(format!(
+                    "Failed to serialize new project manifest: {}",
+                    error
+                ));
+                return;
+            }
+        };
+
+        match fs::write(&manifest_path, serialized) {
+            Ok(()) => {
+                self.push_log(format!(
+                    "Created project {} at {}",
+                    project_name,
+                    self.display_path(&manifest_path)
+                ));
+                self.open_project_manifest_path(manifest_path);
+            }
+            Err(error) => {
+                self.push_log(format!(
+                    "Failed to create project manifest {}: {}",
+                    self.display_path(&manifest_path),
+                    error
+                ));
+            }
+        }
+    }
+
+    pub(crate) fn open_project_manifest_path(&mut self, path: PathBuf) {
+        let Ok(selection) = load_project_manifest_selection(&path) else {
+            self.push_log(format!(
+                "Failed to open project {}",
+                self.display_path(&path)
+            ));
+            return;
+        };
+
+        self.workspace_root = selection.workspace_root;
+        self.project_browser_root = self.workspace_root.clone();
+        self.project_manifest_path = Some(path.clone());
+        self.project_name = selection.project_name.clone();
+        self.project_issue = selection.project_issue.clone();
+        self.project_tree = ProjectTreeEntry::scan(&self.project_browser_root);
+        self.branch_name = read_git_branch(&self.workspace_root);
+        self.selected_project_path = None;
+        self.collapsed_project_paths.clear();
+        self.refresh_inspector_form();
+        self.push_log(format!(
+            "Loaded project {} from {}",
+            selection.project_name,
+            self.display_path(&path)
+        ));
+        for line in selection.startup_logs {
+            self.push_log(line);
         }
     }
 
@@ -412,7 +692,7 @@ impl RengineNativeEditor {
         let mut scene = match serde_json::from_str::<SceneDocument>(&text) {
             Ok(scene) => scene,
             Err(error) => {
-                if is_json_path(&path) {
+                if is_json_path(&path) && !is_scene_path(&path) {
                     self.selected_project_path = Some(path.clone());
                     self.push_log(format!(
                         "Opened {} as generic JSON",
@@ -666,11 +946,10 @@ impl RengineNativeEditor {
 pub(crate) fn flattened_project_tree<'a>(
     root: &'a ProjectTreeEntry,
     collapsed_paths: &HashSet<PathBuf>,
-    workspace_root: &Path,
     filter: &str,
 ) -> Vec<ProjectEntryLine<'a>> {
     let mut lines = Vec::new();
-    collect_project_tree_lines(root, 0, collapsed_paths, workspace_root, filter, &mut lines);
+    collect_project_tree_lines(root, 0, collapsed_paths, filter, &mut lines);
     lines
 }
 
@@ -678,7 +957,6 @@ pub(crate) fn collect_project_tree_lines<'a>(
     entry: &'a ProjectTreeEntry,
     depth: usize,
     collapsed_paths: &HashSet<PathBuf>,
-    workspace_root: &Path,
     filter: &str,
     lines: &mut Vec<ProjectEntryLine<'a>>,
 ) {
@@ -687,8 +965,7 @@ pub(crate) fn collect_project_tree_lines<'a>(
         return;
     }
 
-    let is_collapsed =
-        !filter_active && entry.path != workspace_root && collapsed_paths.contains(&entry.path);
+    let is_collapsed = !filter_active && collapsed_paths.contains(&entry.path);
     lines.push(ProjectEntryLine {
         entry,
         depth,
@@ -697,14 +974,7 @@ pub(crate) fn collect_project_tree_lines<'a>(
 
     if !is_collapsed {
         for child in &entry.children {
-            collect_project_tree_lines(
-                child,
-                depth + 1,
-                collapsed_paths,
-                workspace_root,
-                filter,
-                lines,
-            );
+            collect_project_tree_lines(child, depth + 1, collapsed_paths, filter, lines);
         }
     }
 }
@@ -724,6 +994,16 @@ pub(crate) fn is_project_tree_directory(path: &Path) -> bool {
         .unwrap_or_else(|_| path.is_dir())
 }
 
+fn collect_project_tree_file_paths(entry: &ProjectTreeEntry, files: &mut Vec<PathBuf>) {
+    if entry.is_dir {
+        for child in &entry.children {
+            collect_project_tree_file_paths(child, files);
+        }
+    } else {
+        files.push(entry.path.clone());
+    }
+}
+
 pub(crate) fn is_symlinked_directory(path: &Path) -> bool {
     fs::symlink_metadata(path)
         .map(|metadata| metadata.file_type().is_symlink() && path.is_dir())
@@ -739,6 +1019,14 @@ pub(crate) fn should_skip_entry(path: &Path, is_dir: bool) -> bool {
         path.file_name().and_then(|name| name.to_str()),
         Some(".git" | "target")
     )
+}
+
+fn is_project_browser_unsafe_root(path: &Path) -> bool {
+    if path.parent().is_none() {
+        return true;
+    }
+
+    false
 }
 
 pub(crate) fn read_git_branch(workspace_root: &Path) -> String {
@@ -798,4 +1086,126 @@ fn sanitize_autosave_stem(stem: &str) -> String {
     } else {
         sanitized.to_string()
     }
+}
+
+fn cli_project_argument_path() -> Option<PathBuf> {
+    let mut args = std::env::args().skip(1).peekable();
+    while let Some(arg) = args.next() {
+        if let Some(value) = arg.strip_prefix("--project=") {
+            if !value.trim().is_empty() {
+                return Some(PathBuf::from(value));
+            }
+            continue;
+        }
+
+        if arg == "--project" {
+            if let Some(value) = args.next() {
+                return Some(PathBuf::from(value));
+            }
+            continue;
+        }
+
+        let path = PathBuf::from(&arg);
+        if is_project_manifest_path(&path) {
+            return Some(path);
+        }
+    }
+
+    None
+}
+
+pub(crate) fn is_project_manifest_path(path: &Path) -> bool {
+    if path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name == ".project" || name.eq_ignore_ascii_case("rengine.project"))
+    {
+        return true;
+    }
+
+    matches!(
+        path.extension()
+            .and_then(|extension| extension.to_str())
+            .map(|extension| extension.to_ascii_lowercase())
+            .as_deref(),
+        Some("project")
+    )
+}
+
+fn find_project_manifest_in_directory(directory: &Path) -> Option<PathBuf> {
+    let preferred = [
+        directory.join(".project"),
+        directory.join("rengine.project"),
+        directory.join(".project.json"),
+        directory.join("rengine.project.json"),
+    ];
+    for path in preferred {
+        if path.is_file() {
+            return Some(path);
+        }
+    }
+
+    let entries = fs::read_dir(directory).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_file() && is_project_manifest_path(&path) {
+            return Some(path);
+        }
+    }
+
+    None
+}
+
+fn load_project_manifest_selection(path: &Path) -> Result<StartupProjectSelection, String> {
+    let text = fs::read_to_string(path)
+        .map_err(|error| format!("failed to read {}: {}", path.display(), error))?;
+    let manifest: EditorProjectManifest = serde_json::from_str(&text)
+        .map_err(|error| format!("failed to parse {}: {}", path.display(), error))?;
+
+    let root_value = manifest.project_root.trim();
+    if root_value.is_empty() {
+        return Err(format!("project_root was empty in {}", path.display()));
+    }
+
+    let root_path = PathBuf::from(root_value);
+    let parent = path.parent().unwrap_or(Path::new("."));
+    let resolved_root = absolute_path_from(parent, &root_path);
+    if !resolved_root.is_dir() {
+        return Err(format!(
+            "project_root {} from {} is not a directory",
+            resolved_root.display(),
+            path.display()
+        ));
+    }
+
+    let mut startup_logs = vec![format!(
+        "Opened project {} ({})",
+        manifest.project_name,
+        path.display()
+    )];
+    if !manifest.cached_files.is_empty() {
+        startup_logs.push(format!(
+            "Project cache has {} file hints",
+            manifest.cached_files.len()
+        ));
+    }
+    if manifest.preferences.is_some() {
+        startup_logs.push("Loaded project preferences".to_string());
+    }
+
+    Ok(StartupProjectSelection {
+        workspace_root: resolved_root,
+        project_name: manifest.project_name,
+        project_file: Some(path.to_path_buf()),
+        project_issue: None,
+        startup_logs,
+    })
+}
+
+fn absolute_path_from(base: &Path, path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        return path.to_path_buf();
+    }
+
+    base.join(path)
 }

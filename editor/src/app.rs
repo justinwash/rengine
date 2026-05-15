@@ -108,6 +108,10 @@ pub(crate) use windowing::*;
 
 pub struct RengineNativeEditor {
     workspace_root: PathBuf,
+    project_browser_root: PathBuf,
+    project_manifest_path: Option<PathBuf>,
+    project_issue: Option<String>,
+    project_name: String,
     branch_name: String,
     editor_theme: EditorTheme,
     project_tree: ProjectTreeEntry,
@@ -140,12 +144,23 @@ pub struct RengineNativeEditor {
 
 impl Game for RengineNativeEditor {
     fn new(_engine: &mut Engine) -> Self {
-        let workspace_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let startup_selection = resolve_startup_project_selection();
+        let StartupProjectSelection {
+            workspace_root,
+            project_name,
+            project_file,
+            project_issue,
+            startup_logs,
+        } = startup_selection;
         let project_tree = ProjectTreeEntry::scan(&workspace_root);
         let branch_name = read_git_branch(&workspace_root);
 
         let mut editor = Self {
             workspace_root,
+            project_browser_root: project_tree.path.clone(),
+            project_manifest_path: project_file.clone(),
+            project_issue,
+            project_name,
             branch_name,
             editor_theme: EditorTheme::Slate,
             project_tree,
@@ -179,10 +194,21 @@ impl Game for RengineNativeEditor {
         editor.refresh_inspector_form();
 
         editor.push_log("Booted rengine-native editor shell");
+        editor.push_log(format!("Project name: {}", editor.project_name));
+        if let Some(project_file) = &project_file {
+            editor.push_log(format!(
+                "Loaded project {} from {}",
+                editor.project_name,
+                editor.display_path(project_file)
+            ));
+        }
         editor.push_log(format!(
             "Opened workspace {}",
             editor.display_path(&editor.workspace_root)
         ));
+        for line in startup_logs {
+            editor.push_log(line);
+        }
         editor.push_log("Started new empty scene");
         editor
     }

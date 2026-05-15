@@ -537,13 +537,7 @@ impl RengineNativeEditor {
     pub(crate) fn update_scrolls(&mut self, engine: &Engine, layout: &ShellLayout) {
         let filter = self.file_browser_form.filter.trim().to_ascii_lowercase();
         let project_line_count = if layout.files_open {
-            flattened_project_tree(
-                &self.project_tree,
-                &self.collapsed_project_paths,
-                &self.workspace_root,
-                &filter,
-            )
-            .len()
+            flattened_project_tree(&self.project_tree, &self.collapsed_project_paths, &filter).len()
         } else {
             0
         };
@@ -836,6 +830,10 @@ impl RengineNativeEditor {
     }
 
     pub(crate) fn handle_project_tree_click(&mut self, mouse: Vec2, layout: &ShellLayout) -> bool {
+        if self.handle_project_browser_nav_click(mouse, layout) {
+            return true;
+        }
+
         if let Some((toggle_only, path)) = self.project_tree_hit(mouse, layout) {
             if toggle_only {
                 self.toggle_project_entry(&path);
@@ -847,6 +845,42 @@ impl RengineNativeEditor {
                 }
             }
             return true;
+        }
+
+        false
+    }
+
+    pub(crate) fn handle_project_browser_nav_click(
+        &mut self,
+        mouse: Vec2,
+        layout: &ShellLayout,
+    ) -> bool {
+        if !layout.files_open || !layout.files.contains(mouse) {
+            return false;
+        }
+
+        for (label, rect) in project_browser_nav_buttons(layout.files) {
+            if rect.contains(mouse) {
+                match label {
+                    "Up" => self.navigate_project_browser_up(),
+                    "Root" => self.navigate_project_browser_workspace_root(),
+                    _ => {}
+                }
+                return true;
+            }
+        }
+
+        if self.project_issue.is_some() {
+            for (label, rect) in project_browser_recovery_buttons(layout.files) {
+                if rect.contains(mouse) {
+                    match label {
+                        "Open Project" => self.open_project_manifest_dialog(),
+                        "New Project" => self.create_project_wizard(),
+                        _ => {}
+                    }
+                    return true;
+                }
+            }
         }
 
         false
@@ -867,12 +901,8 @@ impl RengineNativeEditor {
         }
 
         let filter = self.file_browser_form.filter.trim().to_ascii_lowercase();
-        let lines = flattened_project_tree(
-            &self.project_tree,
-            &self.collapsed_project_paths,
-            &self.workspace_root,
-            &filter,
-        );
+        let lines =
+            flattened_project_tree(&self.project_tree, &self.collapsed_project_paths, &filter);
 
         for (index, line) in lines.iter().enumerate() {
             let rect = list_line_rect(list_rect, index, self.project_scroll);
@@ -1641,6 +1671,68 @@ pub(crate) fn project_browser_list_rect(panel: PanelRect) -> PanelRect {
         inner.w,
         (inner.h - PROJECT_BROWSER_CONTROLS_HEIGHT).max(0.0),
     )
+}
+
+pub(crate) fn project_browser_nav_buttons(panel: PanelRect) -> Vec<(&'static str, PanelRect)> {
+    let inner = panel.inset(PANEL_PADDING);
+    let button_h = 20.0;
+    let y = inner.top() - 22.0;
+    let labels = ["Up", "Root"];
+    let mut x = panel_toggle_rect(panel).x - 6.0;
+    let mut buttons = Vec::new();
+    for label in labels.iter().rev() {
+        let w = button_preferred_width(label).max(48.0);
+        x -= w;
+        buttons.push((*label, PanelRect::new(x, y, w, button_h)));
+        x -= BUTTON_GAP;
+    }
+    buttons.reverse();
+    buttons
+}
+
+pub(crate) fn project_browser_root_label_rect(panel: PanelRect) -> PanelRect {
+    let inner = panel.inset(PANEL_PADDING);
+    let nav_start = project_browser_nav_buttons(panel)
+        .first()
+        .map(|(_, rect)| rect.x)
+        .unwrap_or_else(|| panel_toggle_rect(panel).x);
+    PanelRect::new(
+        inner.x,
+        inner.top() - 44.0,
+        (nav_start - inner.x - 8.0).max(0.0),
+        16.0,
+    )
+}
+
+pub(crate) fn project_browser_issue_label_rect(panel: PanelRect) -> PanelRect {
+    let inner = panel.inset(PANEL_PADDING);
+    let nav_start = project_browser_nav_buttons(panel)
+        .first()
+        .map(|(_, rect)| rect.x)
+        .unwrap_or_else(|| panel_toggle_rect(panel).x);
+    PanelRect::new(
+        inner.x,
+        inner.top() - 60.0,
+        (nav_start - inner.x - 8.0).max(0.0),
+        14.0,
+    )
+}
+
+pub(crate) fn project_browser_recovery_buttons(panel: PanelRect) -> Vec<(&'static str, PanelRect)> {
+    let inner = panel.inset(PANEL_PADDING);
+    let button_h = 20.0;
+    let y = inner.top() - 84.0;
+    let labels = ["Open Project", "New Project"];
+    let mut x = panel_toggle_rect(panel).x - 6.0;
+    let mut buttons = Vec::new();
+    for label in labels.iter().rev() {
+        let w = button_preferred_width(label).max(92.0);
+        x -= w;
+        buttons.push((*label, PanelRect::new(x, y, w, button_h)));
+        x -= BUTTON_GAP;
+    }
+    buttons.reverse();
+    buttons
 }
 
 const HIERARCHY_HEADER_HEIGHT: f32 = 70.0;

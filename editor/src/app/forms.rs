@@ -284,7 +284,9 @@ impl RengineNativeEditor {
 
     fn selected_generic_json_path(&self) -> Option<PathBuf> {
         self.selected_project_path.as_ref().and_then(|path| {
-            if path.is_file() && is_json_path(path) && !is_scene_path(path) {
+            if path.is_file()
+                && ((is_json_path(path) && !is_scene_path(path)) || is_project_manifest_path(path))
+            {
                 Some(path.clone())
             } else {
                 None
@@ -524,6 +526,13 @@ impl RengineNativeEditor {
             let Some(path) = state.loaded_path.clone() else {
                 return;
             };
+            if is_project_manifest_path(&path) {
+                if let Some(cached_files) = self.project_manifest_cached_files_json() {
+                    if let Some(object) = state.root.as_object_mut() {
+                        object.insert("cached_files".to_string(), cached_files);
+                    }
+                }
+            }
             match serde_json::to_string_pretty(&state.root) {
                 Ok(pretty) => match fs::write(&path, pretty) {
                     Ok(()) => {
