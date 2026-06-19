@@ -18,7 +18,7 @@
 use std::collections::HashMap;
 
 use crate::renderer::{DrawParams, Frame};
-use crate::Vec2;
+use crate::{Rect, Vec2};
 
 use super::data2d::{parse_bool_property, PrefabSprite2D, Scene2D};
 
@@ -541,6 +541,81 @@ impl SceneWorld2D {
         }
     }
 
+    /// Axis-aligned world-space bounds used for pointer hit-testing.
+    ///
+    /// Prefers an explicit interactive size from the node's `w`/`h` properties
+    /// (how editor-authored UI/markers carry their box), falling back to the
+    /// union of the node's sprite layers. Returns `None` for nodes with no
+    /// pickable area. Rotation is not yet folded into the hit rect — the bounds
+    /// are the node's axis-aligned extent at its composed world position/scale.
+    pub fn node_bounds(&self, handle: NodeHandle2D) -> Option<Rect> {
+        let node = self.get(handle)?;
+        let world = self.world_transform(handle)?;
+
+        if let (Some(w), Some(h)) = (node.property_f32("w"), node.property_f32("h")) {
+            let size = Vec2::new(w, h) * world.scale;
+            return Some(Rect::from_pos_size(world.position, size));
+        }
+
+        let sprites = node.sprites();
+        if sprites.is_empty() {
+            return None;
+        }
+        let mut min = Vec2::splat(f32::MAX);
+        let mut max = Vec2::splat(f32::MIN);
+        for sprite in sprites {
+            let a = sprite.offset * world.scale;
+            let b = (sprite.offset + sprite.size) * world.scale;
+            min = min.min(a).min(b);
+            max = max.max(a).max(b);
+        }
+        Some(Rect::from_pos_size(world.position + min, max - min))
+    }
+
+    /// Visible nodes in draw order (parents before children, siblings in order),
+    /// skipping invisible subtrees — the same set [`SceneWorld2D::draw`] emits.
+    pub fn visible_draw_order(&self) -> Vec<NodeHandle2D> {
+        let mut out = Vec::new();
+        for root in self.roots.clone() {
+            self.collect_visible(root, &mut out);
+        }
+        out
+    }
+
+    fn collect_visible(&self, handle: NodeHandle2D, out: &mut Vec<NodeHandle2D>) {
+        let Some(node) = self.get(handle) else {
+            return;
+        };
+        if !node.is_visible() {
+            return;
+        }
+        out.push(handle);
+        for child in node.children().to_vec() {
+            self.collect_visible(child, out);
+        }
+    }
+
+    /// Topmost visible node whose bounds contain `point` (in world space).
+    ///
+    /// "Topmost" means last-drawn: children sit above parents and later
+    /// siblings above earlier ones, matching what the player sees.
+    pub fn hit_test(&self, point: Vec2) -> Option<NodeHandle2D> {
+        self.hit_test_all(point).into_iter().next()
+    }
+
+    /// Every visible node whose bounds contain `point`, topmost first.
+    pub fn hit_test_all(&self, point: Vec2) -> Vec<NodeHandle2D> {
+        let mut order = self.visible_draw_order();
+        order.reverse();
+        order
+            .into_iter()
+            .filter(|handle| {
+                self.node_bounds(*handle)
+                    .is_some_and(|rect| rect.contains_point(point))
+            })
+            .collect()
+    }
+
     /// Draw every visible node, parents before children, composing parent
     /// transforms. An invisible node hides its whole subtree.
     pub fn draw(&self, frame: &mut Frame) {
@@ -761,6 +836,40 @@ mod tests {
         assert!((world_t.position.x - 100.0).abs() < 1e-3);
         assert!((world_t.position.y - 20.0).abs() < 1e-3);
         assert!((world_t.scale.x - 2.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn hit_test_picks_topmost_visible_node_in_bounds() {
+        let mut world = SceneWorld2D::new();
+
+        let a = world.spawn(SceneNode2D::new("a").with_position(Vec2::ZERO));
+        {
+            let node = world.get_mut(a).unwrap();
+            node.set_property("w", "100");
+            node.set_property("h", "100");
+        }
+        // `b` is spawned later, so it draws on top of `a` where they overlap.
+        let b = world.spawn(SceneNode2D::new("b").with_position(Vec2::new(50.0, 50.0)));
+        {
+            let node = world.get_mut(b).unwrap();
+            node.set_property("w", "100");
+            node.set_property("h", "100");
+        }
+
+        // Overlap region resolves to the topmost node.
+        assert_eq!(world.hit_test(Vec2::new(75.0, 75.0)), Some(b));
+        // Region only covered by `a`.
+        assert_eq!(world.hit_test(Vec2::new(10.0, 10.0)), Some(a));
+        // Outside everything.
+        assert_eq!(world.hit_test(Vec2::new(500.0, 500.0)), None);
+
+        // Hiding the topmost node falls through to the one beneath it.
+        world.get_mut(b).unwrap().set_visible(false);
+        assert_eq!(world.hit_test(Vec2::new(75.0, 75.0)), Some(a));
+
+        // A node with no sprites and no w/h has no pickable bounds.
+        let empty = world.spawn(SceneNode2D::new("empty").with_position(Vec2::ZERO));
+        assert_eq!(world.node_bounds(empty), None);
     }
 
     #[test]
