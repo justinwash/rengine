@@ -137,6 +137,14 @@ impl SceneInstance2D {
             .filter(|value| !value.is_empty())
     }
 
+    /// Compiled sprite layers for this instance.
+    ///
+    /// Exposed to sibling scene modules (such as the runtime [`SceneWorld2D`])
+    /// so live nodes can reuse the same render data the static scene draws.
+    pub(crate) fn sprite_layers(&self) -> &[PrefabSprite2D] {
+        &self.sprites
+    }
+
     pub fn draw(&self, frame: &mut Frame) {
         for sprite in &self.sprites {
             frame.draw_sprite(
@@ -321,7 +329,7 @@ fn default_scale() -> [f32; 2] {
     [1.0, 1.0]
 }
 
-fn parse_bool_property(value: &str) -> Option<bool> {
+pub(crate) fn parse_bool_property(value: &str) -> Option<bool> {
     match value.trim().to_ascii_lowercase().as_str() {
         "true" | "1" | "yes" | "on" => Some(true),
         "false" | "0" | "no" | "off" => Some(false),
