@@ -106,7 +106,7 @@ What still matters most on the engine side is closing the remaining runtime gaps
 0. Land scene binding helpers and script host scaffolding so scene-authored behavior can run without game-specific glue.
    - Status: In progress (scene binding helpers, SceneScript2D registry/host scaffolding, targeted event routing, binding lookups, and Scene2D editor-name/id/tag lookup helpers are landed; remaining work is broader runtime ergonomics and higher-level scripting workflows).
 1. Stabilize runtime serialization, IDs, and dependency tracking so the editor has trustworthy data contracts.
-   - Status: In progress (non-fatal `validate_editor_scene` report + `CURRENT_EDITOR_SCENE_VERSION` schema-version hook are landed; remaining work is wiring validation into the editor panel/pre-boot checks and dependency ("used-by") tracking).
+   - Status: In progress (non-fatal `validate_editor_scene` report, `CURRENT_EDITOR_SCENE_VERSION` schema-version hook, and project-wide `validate_scene_file`/`validate_scene_dir` sweeps are landed; remaining work is surfacing reports in the editor panel and dependency ("used-by") tracking).
 2. Add a stronger object or component model that scenes and scripts can target consistently.
    - Status: In progress (`SceneWorld2D` runtime graph with generational node handles, `SceneScriptContext2D` for live-node mutation, and engine-owned pointer hit-testing/click routing are all landed; next is stable IDs + versioned scene/prefab schemas + project-wide validation so the editor has trustworthy data contracts, then richer component/property typing).
 3. Finish the missing 3D transform and material basics so imported content stops being fragile.

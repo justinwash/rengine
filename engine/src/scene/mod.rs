@@ -15,8 +15,8 @@ pub use script2d::{
     SceneScriptInputEvent2D, SceneScriptRegistry2D,
 };
 pub use validation::{
-    validate_editor_scene, SceneIssueSeverity, SceneValidationIssue, SceneValidationReport,
-    CURRENT_EDITOR_SCENE_VERSION,
+    validate_editor_scene, validate_scene_dir, validate_scene_file, SceneIssueSeverity,
+    SceneValidationIssue, SceneValidationReport, CURRENT_EDITOR_SCENE_VERSION,
 };
 pub use world2d::{NodeHandle2D, SceneNode2D, SceneWorld2D, Transform2D};
 
