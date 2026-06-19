@@ -10,8 +10,8 @@ pub use data2d::{
 
 pub use globals::Globals;
 pub use script2d::{
-    SceneScript2D, SceneScriptEvent2D, SceneScriptHost2D, SceneScriptInputEvent2D,
-    SceneScriptRegistry2D,
+    SceneScript2D, SceneScriptContext2D, SceneScriptEvent2D, SceneScriptHost2D,
+    SceneScriptInputEvent2D, SceneScriptRegistry2D,
 };
 pub use world2d::{NodeHandle2D, SceneNode2D, SceneWorld2D, Transform2D};
 
