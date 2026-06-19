@@ -1,6 +1,7 @@
 mod data2d;
 mod globals;
 mod script2d;
+mod validation;
 mod world2d;
 
 pub use data2d::{
@@ -12,6 +13,10 @@ pub use globals::Globals;
 pub use script2d::{
     SceneScript2D, SceneScriptContext2D, SceneScriptEvent2D, SceneScriptHost2D,
     SceneScriptInputEvent2D, SceneScriptRegistry2D,
+};
+pub use validation::{
+    validate_editor_scene, SceneIssueSeverity, SceneValidationIssue, SceneValidationReport,
+    CURRENT_EDITOR_SCENE_VERSION,
 };
 pub use world2d::{NodeHandle2D, SceneNode2D, SceneWorld2D, Transform2D};
 
