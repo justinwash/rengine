@@ -16,6 +16,7 @@
 //! [`SceneScriptRegistry2D`] run when those are supplied.
 
 use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
@@ -240,6 +241,83 @@ pub fn validate_editor_scene(
     report
 }
 
+/// Validate a single scene file on disk, reading and parsing it first.
+///
+/// IO and JSON parse failures are reported as error issues (with no node id)
+/// rather than returned as `Err`, so a project-wide pass can keep going and
+/// report every bad file in one sweep instead of stopping at the first.
+pub fn validate_scene_file(
+    path: &Path,
+    assets: Option<&AssetPack>,
+    registry: Option<&SceneScriptRegistry2D>,
+) -> SceneValidationReport {
+    let mut report = SceneValidationReport::default();
+
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(error) => {
+            report.push(SceneValidationIssue::error(
+                None,
+                format!("failed to read '{}': {error}", path.display()),
+            ));
+            return report;
+        }
+    };
+
+    let value: serde_json::Value = match serde_json::from_str(&text) {
+        Ok(value) => value,
+        Err(error) => {
+            report.push(SceneValidationIssue::error(
+                None,
+                format!("failed to parse '{}': {error}", path.display()),
+            ));
+            return report;
+        }
+    };
+
+    validate_editor_scene(&value, assets, registry)
+}
+
+/// Validate every `*.scene.json` file under `dir` (recursively), returning one
+/// report per file in sorted path order for stable, diff-friendly output.
+pub fn validate_scene_dir(
+    dir: &Path,
+    assets: Option<&AssetPack>,
+    registry: Option<&SceneScriptRegistry2D>,
+) -> Vec<(PathBuf, SceneValidationReport)> {
+    let mut files = Vec::new();
+    collect_scene_files(dir, &mut files);
+    files.sort();
+    files
+        .into_iter()
+        .map(|path| {
+            let report = validate_scene_file(&path, assets, registry);
+            (path, report)
+        })
+        .collect()
+}
+
+fn collect_scene_files(dir: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_scene_files(&path, out);
+        } else if is_scene_file(&path) {
+            out.push(path);
+        }
+    }
+}
+
+fn is_scene_file(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| name.ends_with(".scene.json"))
+        .unwrap_or(false)
+}
+
 fn validate_parent(
     node: &EditorNode,
     id_to_parent: &HashMap<u64, Option<u64>>,
@@ -400,6 +478,65 @@ mod tests {
         assert!(report
             .warnings()
             .any(|issue| issue.message.contains("has no 'kind'")));
+    }
+
+    #[test]
+    fn validate_missing_scene_file_is_an_error() {
+        let report = validate_scene_file(
+            Path::new("definitely/does/not/exist.scene.json"),
+            None,
+            None,
+        );
+        assert!(report.has_errors());
+    }
+
+    #[test]
+    fn validate_scene_dir_reports_each_scene_file() {
+        use std::fs;
+
+        let base = std::env::temp_dir().join(format!(
+            "rengine_scene_validation_{}_{}",
+            std::process::id(),
+            CURRENT_EDITOR_SCENE_VERSION
+        ));
+        let _ = fs::remove_dir_all(&base);
+        let nested = base.join("ui");
+        fs::create_dir_all(&nested).unwrap();
+
+        let good = base.join("good.scene.json");
+        let bad = nested.join("bad.scene.json");
+        fs::write(
+            &good,
+            serde_json::to_string(&json!({ "nodes": [sprite_node(1, None, "hero")] })).unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            &bad,
+            serde_json::to_string(
+                &json!({ "nodes": [sprite_node(1, None, "hero"), sprite_node(1, None, "hero")] }),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        // A non-scene file must be ignored.
+        fs::write(base.join("notes.txt"), "ignore me").unwrap();
+
+        let reports = validate_scene_dir(&base, None, None);
+        assert_eq!(reports.len(), 2, "should find exactly the two scene files");
+
+        let by_name: HashMap<String, &SceneValidationReport> = reports
+            .iter()
+            .map(|(path, report)| {
+                (
+                    path.file_name().unwrap().to_str().unwrap().to_string(),
+                    report,
+                )
+            })
+            .collect();
+        assert!(by_name["good.scene.json"].is_ok());
+        assert!(by_name["bad.scene.json"].has_errors());
+
+        let _ = fs::remove_dir_all(&base);
     }
 
     #[test]
