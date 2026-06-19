@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use super::{NodeHandle2D, Scene2D, SceneNode2D, SceneScriptBinding2D, SceneWorld2D};
+use crate::Vec2;
 
 pub trait SceneScript2D: Send {
     fn on_attach(&mut self, _binding: &SceneScriptBinding2D) {}
@@ -180,6 +181,7 @@ struct SceneScriptInstance2D {
 pub struct SceneScriptHost2D {
     instances: Vec<SceneScriptInstance2D>,
     warnings: Vec<String>,
+    pressed_node: Option<NodeHandle2D>,
 }
 
 impl SceneScriptHost2D {
@@ -396,6 +398,109 @@ impl SceneScriptHost2D {
                 payload,
             },
         );
+    }
+
+    // --- Pointer hit-test routing -----------------------------------------
+    //
+    // These let the engine own picking: the host resolves the node under the
+    // pointer via `SceneWorld2D::hit_test` and delivers the event only to the
+    // script bound to that node, instead of every game hand-coding hitboxes.
+
+    /// Route a pointer event to the script on the topmost node under the
+    /// pointer. Positional events (`PointerMove`/`PointerButton`) reach only the
+    /// hit node's script; non-positional events fall back to a broadcast.
+    /// Returns the hit node handle, if any.
+    pub fn route_input_world(
+        &mut self,
+        world: &mut SceneWorld2D,
+        event: &SceneScriptInputEvent2D,
+    ) -> Option<NodeHandle2D> {
+        let position = match event {
+            SceneScriptInputEvent2D::PointerMove { position } => *position,
+            SceneScriptInputEvent2D::PointerButton { position, .. } => *position,
+            _ => {
+                self.input_world(world, event);
+                return None;
+            }
+        };
+        let hit = world.hit_test(Vec2::new(position[0], position[1]))?;
+        self.dispatch_input_to_node(world, hit, event);
+        Some(hit)
+    }
+
+    /// Route a pointer button as a click: remember the topmost hit node on
+    /// press, and on release over that same node emit an `activate` event to its
+    /// script (payload `target` = the node's script path, matching
+    /// [`SceneScriptHost2D::emit_activate_script_path`]). Returns the activated
+    /// node handle, if any.
+    pub fn route_pointer_click(
+        &mut self,
+        world: &mut SceneWorld2D,
+        position: [f32; 2],
+        pressed: bool,
+    ) -> Option<NodeHandle2D> {
+        let hit = world.hit_test(Vec2::new(position[0], position[1]));
+        if pressed {
+            self.pressed_node = hit;
+            return None;
+        }
+
+        let pressed_node = self.pressed_node.take();
+        match (pressed_node, hit) {
+            (Some(down), Some(up)) if down == up => {
+                let mut payload = HashMap::new();
+                if let Some(target) = world.get(up).and_then(|node| node.script_path()) {
+                    payload.insert("target".to_string(), target.to_string());
+                }
+                let event = SceneScriptEvent2D::Custom {
+                    topic: "activate".to_string(),
+                    payload,
+                };
+                self.dispatch_event_to_node(world, up, &event);
+                Some(up)
+            }
+            _ => None,
+        }
+    }
+
+    fn dispatch_input_to_node(
+        &mut self,
+        world: &mut SceneWorld2D,
+        handle: NodeHandle2D,
+        event: &SceneScriptInputEvent2D,
+    ) {
+        let Some(editor_id) = world.get(handle).and_then(|node| node.editor_node_id()) else {
+            return;
+        };
+        for instance in &mut self.instances {
+            if instance.binding.editor_node_id != Some(editor_id) {
+                continue;
+            }
+            let binding = &instance.binding;
+            let script = &mut instance.script;
+            let mut ctx = SceneScriptContext2D::new(&mut *world, binding);
+            script.on_input_world(&mut ctx, event);
+        }
+    }
+
+    fn dispatch_event_to_node(
+        &mut self,
+        world: &mut SceneWorld2D,
+        handle: NodeHandle2D,
+        event: &SceneScriptEvent2D,
+    ) {
+        let Some(editor_id) = world.get(handle).and_then(|node| node.editor_node_id()) else {
+            return;
+        };
+        for instance in &mut self.instances {
+            if instance.binding.editor_node_id != Some(editor_id) {
+                continue;
+            }
+            let binding = &instance.binding;
+            let script = &mut instance.script;
+            let mut ctx = SceneScriptContext2D::new(&mut *world, binding);
+            script.on_event_world(&mut ctx, event);
+        }
     }
 
     pub fn detach_all(&mut self) {
@@ -636,5 +741,98 @@ mod tests {
         );
 
         assert_eq!(hits.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn pointer_click_routes_activate_to_clicked_node_only() {
+        use crate::scene::{Prefab2DDef, Scene2DDef, SceneInstance2DDef};
+        use std::sync::Mutex;
+
+        struct ClickScript {
+            log: Arc<Mutex<Vec<String>>>,
+        }
+        impl SceneScript2D for ClickScript {
+            fn on_event_world(
+                &mut self,
+                ctx: &mut SceneScriptContext2D,
+                event: &SceneScriptEvent2D,
+            ) {
+                let SceneScriptEvent2D::Custom { topic, .. } = event;
+                if topic == "activate" {
+                    if let Some(name) = ctx.binding().editor_name.clone() {
+                        self.log.lock().unwrap().push(name);
+                    }
+                }
+            }
+        }
+
+        fn button(name: &str, id: u64, x: f32) -> SceneInstance2DDef {
+            SceneInstance2DDef {
+                prefab: "btn".to_string(),
+                position: [x, 0.0],
+                scale: [1.0, 1.0],
+                properties: [
+                    ("editor_node_id", id.to_string()),
+                    ("editor_name", name.to_string()),
+                    ("script_path", "scripts/btn.rs".to_string()),
+                    ("w", "100".to_string()),
+                    ("h", "100".to_string()),
+                ]
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.clone()))
+                .collect(),
+            }
+        }
+
+        let definition = Scene2DDef {
+            prefabs: vec![Prefab2DDef {
+                name: "btn".to_string(),
+                sprites: vec![],
+            }],
+            instances: vec![button("start_btn", 1, 0.0), button("quit_btn", 2, 200.0)],
+        };
+        let scene = Scene2D::from_definition(
+            std::path::Path::new("t.scene.json"),
+            definition,
+            &crate::assets::AssetPack::default(),
+        )
+        .unwrap();
+        let mut world = SceneWorld2D::from_scene(&scene);
+
+        let log = Arc::new(Mutex::new(Vec::<String>::new()));
+        let factory_log = log.clone();
+        let mut registry = SceneScriptRegistry2D::new();
+        registry.register("scripts/btn.rs", move || {
+            Box::new(ClickScript {
+                log: factory_log.clone(),
+            })
+        });
+        let mut host = SceneScriptHost2D::new();
+        host.attach_scene(&scene, &registry);
+
+        // Press + release over start_btn activates it.
+        assert_eq!(
+            host.route_pointer_click(&mut world, [50.0, 50.0], true),
+            None
+        );
+        let activated = host.route_pointer_click(&mut world, [50.0, 50.0], false);
+        assert_eq!(
+            activated.and_then(|h| world.get(h)?.editor_node_id()),
+            Some(1)
+        );
+
+        // Press + release over quit_btn activates it.
+        host.route_pointer_click(&mut world, [250.0, 50.0], true);
+        host.route_pointer_click(&mut world, [250.0, 50.0], false);
+
+        // Press on start but release on quit activates neither.
+        host.route_pointer_click(&mut world, [50.0, 50.0], true);
+        assert_eq!(
+            host.route_pointer_click(&mut world, [250.0, 50.0], false),
+            None
+        );
+
+        let log = log.lock().unwrap();
+        assert_eq!(*log, vec!["start_btn".to_string(), "quit_btn".to_string()]);
     }
 }
