@@ -34,6 +34,7 @@ What still matters most on the engine side is closing the remaining runtime gaps
 - Scene2D now exposes typed scalar/tag parsing helpers plus direct lookup helpers by editor node id, editor name, and conventional tags
 - headless 2D runs can now render their final frame and optionally capture it to an RGBA screenshot artifact for smoke coverage
 - a mutable runtime scene graph (`SceneWorld2D`) now sits over the immutable `Scene2D` render data: live nodes addressed by stable generational `NodeHandle2D`s, built from a loaded scene with hierarchy reconstructed from editor node/parent ids, with spawn/despawn/reparent, name/id/tag/prefab lookups, composed parent transforms, and visibility-aware drawing
+- scene scripts can now mutate that live world: a `SceneScriptContext2D` threads `&mut SceneWorld2D` (plus the script's own node, resolved by editor id/name) through world-aware host dispatch (`enter/update/fixed_update/input/event_world`), with default delegation from the new hooks to the existing binding-only hooks so shipping scripts keep working unchanged
 
 ## Runtime Priorities
 
@@ -104,7 +105,7 @@ What still matters most on the engine side is closing the remaining runtime gaps
    - Status: In progress (scene binding helpers, SceneScript2D registry/host scaffolding, targeted event routing, binding lookups, and Scene2D editor-name/id/tag lookup helpers are landed; remaining work is broader runtime ergonomics and higher-level scripting workflows).
 1. Stabilize runtime serialization, IDs, and dependency tracking so the editor has trustworthy data contracts.
 2. Add a stronger object or component model that scenes and scripts can target consistently.
-   - Status: In progress (`SceneWorld2D` runtime graph with generational node handles is landed; next is giving scripts a context that hands them `&mut SceneWorld2D` so behavior can mutate live nodes, then engine-owned hit-testing/input routing).
+   - Status: In progress (`SceneWorld2D` runtime graph with generational node handles is landed, and `SceneScriptContext2D` now hands scripts `&mut SceneWorld2D` so behavior can mutate live nodes; next is engine-owned hit-testing/input routing so pointer events resolve to scene/UI nodes without per-game hitbox math).
 3. Finish the missing 3D transform and material basics so imported content stops being fragile.
 4. Deepen 2D content workflows with better physics and tilemap authoring support.
 5. Add async asset loading and stronger diagnostics so larger projects do not stall on the main thread.

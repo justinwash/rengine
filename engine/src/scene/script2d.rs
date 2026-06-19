@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use super::{Scene2D, SceneScriptBinding2D};
+use super::{NodeHandle2D, Scene2D, SceneNode2D, SceneScriptBinding2D, SceneWorld2D};
 
 pub trait SceneScript2D: Send {
     fn on_attach(&mut self, _binding: &SceneScriptBinding2D) {}
@@ -17,6 +17,91 @@ pub trait SceneScript2D: Send {
     fn on_event(&mut self, _binding: &SceneScriptBinding2D, _event: &SceneScriptEvent2D) {}
 
     fn on_detach(&mut self, _binding: &SceneScriptBinding2D) {}
+
+    // --- World-aware hooks -------------------------------------------------
+    //
+    // These receive a `SceneScriptContext2D` granting mutable access to the
+    // live runtime `SceneWorld2D`. They default to delegating to the
+    // binding-only hooks above so existing scripts keep working unchanged; a
+    // script that wants to read or mutate live nodes simply overrides the
+    // world-aware variant instead.
+
+    fn on_enter_world(&mut self, ctx: &mut SceneScriptContext2D) {
+        self.on_enter(ctx.binding());
+    }
+
+    fn on_update_world(&mut self, ctx: &mut SceneScriptContext2D, dt: f32) {
+        self.on_update(ctx.binding(), dt);
+    }
+
+    fn on_fixed_update_world(&mut self, ctx: &mut SceneScriptContext2D, dt: f32) {
+        self.on_fixed_update(ctx.binding(), dt);
+    }
+
+    fn on_input_world(&mut self, ctx: &mut SceneScriptContext2D, event: &SceneScriptInputEvent2D) {
+        self.on_input(ctx.binding(), event);
+    }
+
+    fn on_event_world(&mut self, ctx: &mut SceneScriptContext2D, event: &SceneScriptEvent2D) {
+        self.on_event(ctx.binding(), event);
+    }
+}
+
+/// Mutable context handed to scene scripts during their world-aware callbacks.
+///
+/// It bundles the script's static [`SceneScriptBinding2D`] with mutable access
+/// to the live [`SceneWorld2D`], so a script can move, hide, retag, spawn, or
+/// despawn nodes in response to updates, input, and events instead of only
+/// inspecting binding metadata. The host constructs one per script per
+/// callback; scripts never build it directly.
+pub struct SceneScriptContext2D<'a> {
+    world: &'a mut SceneWorld2D,
+    binding: &'a SceneScriptBinding2D,
+}
+
+impl<'a> SceneScriptContext2D<'a> {
+    pub fn new(world: &'a mut SceneWorld2D, binding: &'a SceneScriptBinding2D) -> Self {
+        Self { world, binding }
+    }
+
+    pub fn binding(&self) -> &SceneScriptBinding2D {
+        self.binding
+    }
+
+    pub fn world(&self) -> &SceneWorld2D {
+        self.world
+    }
+
+    pub fn world_mut(&mut self) -> &mut SceneWorld2D {
+        self.world
+    }
+
+    /// Handle of the node this script is attached to, resolved from the
+    /// binding's editor node id (falling back to its editor name).
+    pub fn node_handle(&self) -> Option<NodeHandle2D> {
+        if let Some(id) = self.binding.editor_node_id {
+            if let Some(handle) = self.world.find_by_editor_id(id) {
+                return Some(handle);
+            }
+        }
+        self.binding
+            .editor_name
+            .as_deref()
+            .and_then(|name| self.world.find_by_name(name))
+    }
+
+    /// The node this script is attached to, if it resolves in the world.
+    pub fn node(&self) -> Option<&SceneNode2D> {
+        self.node_handle().and_then(|handle| self.world.get(handle))
+    }
+
+    /// Mutable access to the node this script is attached to, if it resolves.
+    pub fn node_mut(&mut self) -> Option<&mut SceneNode2D> {
+        match self.node_handle() {
+            Some(handle) => self.world.get_mut(handle),
+            None => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -213,6 +298,106 @@ impl SceneScriptHost2D {
         self.emit_custom_event_for_script_path(script_path, "activate", payload);
     }
 
+    // --- World-aware dispatch ---------------------------------------------
+    //
+    // Mirror the binding-only dispatch above but thread a `&mut SceneWorld2D`
+    // through to each script via a `SceneScriptContext2D`. Existing callers can
+    // keep using the world-free methods; callers that own a runtime world use
+    // these so scripts can mutate live nodes.
+
+    pub fn enter_world(&mut self, world: &mut SceneWorld2D) {
+        for instance in &mut self.instances {
+            let binding = &instance.binding;
+            let script = &mut instance.script;
+            let mut ctx = SceneScriptContext2D::new(&mut *world, binding);
+            script.on_enter_world(&mut ctx);
+        }
+    }
+
+    pub fn update_world(&mut self, world: &mut SceneWorld2D, dt: f32) {
+        for instance in &mut self.instances {
+            let binding = &instance.binding;
+            let script = &mut instance.script;
+            let mut ctx = SceneScriptContext2D::new(&mut *world, binding);
+            script.on_update_world(&mut ctx, dt);
+        }
+    }
+
+    pub fn fixed_update_world(&mut self, world: &mut SceneWorld2D, dt: f32) {
+        for instance in &mut self.instances {
+            let binding = &instance.binding;
+            let script = &mut instance.script;
+            let mut ctx = SceneScriptContext2D::new(&mut *world, binding);
+            script.on_fixed_update_world(&mut ctx, dt);
+        }
+    }
+
+    pub fn input_world(&mut self, world: &mut SceneWorld2D, event: &SceneScriptInputEvent2D) {
+        for instance in &mut self.instances {
+            let binding = &instance.binding;
+            let script = &mut instance.script;
+            let mut ctx = SceneScriptContext2D::new(&mut *world, binding);
+            script.on_input_world(&mut ctx, event);
+        }
+    }
+
+    pub fn event_world(&mut self, world: &mut SceneWorld2D, event: &SceneScriptEvent2D) {
+        for instance in &mut self.instances {
+            let binding = &instance.binding;
+            let script = &mut instance.script;
+            let mut ctx = SceneScriptContext2D::new(&mut *world, binding);
+            script.on_event_world(&mut ctx, event);
+        }
+    }
+
+    pub fn event_world_for_editor_name(
+        &mut self,
+        world: &mut SceneWorld2D,
+        editor_name: &str,
+        event: &SceneScriptEvent2D,
+    ) {
+        for instance in &mut self.instances {
+            if instance.binding.editor_name.as_deref() != Some(editor_name) {
+                continue;
+            }
+            let binding = &instance.binding;
+            let script = &mut instance.script;
+            let mut ctx = SceneScriptContext2D::new(&mut *world, binding);
+            script.on_event_world(&mut ctx, event);
+        }
+    }
+
+    pub fn event_world_for_script_path(
+        &mut self,
+        world: &mut SceneWorld2D,
+        script_path: &str,
+        event: &SceneScriptEvent2D,
+    ) {
+        let normalized = normalize_script_path(script_path);
+        for instance in &mut self.instances {
+            if normalize_script_path(&instance.binding.script_path) != normalized {
+                continue;
+            }
+            let binding = &instance.binding;
+            let script = &mut instance.script;
+            let mut ctx = SceneScriptContext2D::new(&mut *world, binding);
+            script.on_event_world(&mut ctx, event);
+        }
+    }
+
+    pub fn emit_activate_world(&mut self, world: &mut SceneWorld2D, script_path: &str) {
+        let mut payload = HashMap::new();
+        payload.insert("target".to_string(), script_path.to_string());
+        self.event_world_for_script_path(
+            world,
+            script_path,
+            &SceneScriptEvent2D::Custom {
+                topic: "activate".to_string(),
+                payload,
+            },
+        );
+    }
+
     pub fn detach_all(&mut self) {
         for instance in &mut self.instances {
             instance.script.on_detach(&instance.binding);
@@ -335,5 +520,121 @@ mod tests {
             by_name.map(|b| b.script_path.as_str()),
             Some("scripts/title.rs")
         );
+    }
+
+    fn scene_with_scripted_node() -> Scene2D {
+        use crate::scene::{Prefab2DDef, Scene2DDef, SceneInstance2DDef};
+        let definition = Scene2DDef {
+            prefabs: vec![Prefab2DDef {
+                name: "marker".to_string(),
+                sprites: vec![],
+            }],
+            instances: vec![SceneInstance2DDef {
+                prefab: "marker".to_string(),
+                position: [0.0, 0.0],
+                scale: [1.0, 1.0],
+                properties: [
+                    ("editor_node_id", "1"),
+                    ("editor_name", "hero"),
+                    ("script_path", "scripts/world.rs"),
+                ]
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+            }],
+        };
+        Scene2D::from_definition(
+            std::path::Path::new("t.scene.json"),
+            definition,
+            &crate::assets::AssetPack::default(),
+        )
+        .unwrap()
+    }
+
+    #[derive(Default)]
+    struct WorldMutatingScript;
+
+    impl SceneScript2D for WorldMutatingScript {
+        fn on_event_world(&mut self, ctx: &mut SceneScriptContext2D, _event: &SceneScriptEvent2D) {
+            if let Some(node) = ctx.node_mut() {
+                node.translate(crate::Vec2::new(1.0, 2.0));
+            }
+            if let Some(handle) = ctx.node_handle() {
+                ctx.world_mut()
+                    .spawn_child(handle, SceneNode2D::new("bullet").with_name("bullet"));
+            }
+        }
+    }
+
+    #[test]
+    fn context_lets_script_read_and_mutate_world() {
+        let scene = scene_with_scripted_node();
+        let mut world = SceneWorld2D::from_scene(&scene);
+        let hero = world.find_by_name("hero").unwrap();
+        assert_eq!(world.get(hero).unwrap().position(), crate::Vec2::ZERO);
+
+        let mut registry = SceneScriptRegistry2D::new();
+        registry.register_default::<WorldMutatingScript>("scripts/world.rs");
+        let mut host = SceneScriptHost2D::new();
+        host.attach_scene(&scene, &registry);
+        assert_eq!(host.script_count(), 1);
+
+        host.event_world(
+            &mut world,
+            &SceneScriptEvent2D::Custom {
+                topic: "activate".to_string(),
+                payload: HashMap::new(),
+            },
+        );
+
+        // The script moved its own bound node and spawned a child in the world.
+        assert_eq!(
+            world.get(hero).unwrap().position(),
+            crate::Vec2::new(1.0, 2.0)
+        );
+        let bullet = world.find_by_name("bullet").expect("child was spawned");
+        assert_eq!(world.parent(bullet), Some(hero));
+    }
+
+    #[test]
+    fn legacy_on_event_still_fires_through_world_dispatch() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        struct LegacyScript {
+            hits: Arc<AtomicUsize>,
+        }
+
+        // Only the binding-only hook is overridden, exactly like the shipping
+        // game scripts. World-aware dispatch must still reach it via the
+        // default delegation, so existing content keeps working.
+        impl SceneScript2D for LegacyScript {
+            fn on_event(&mut self, _binding: &SceneScriptBinding2D, _event: &SceneScriptEvent2D) {
+                self.hits.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+
+        let scene = scene_with_scripted_node();
+        let mut world = SceneWorld2D::from_scene(&scene);
+
+        let hits = Arc::new(AtomicUsize::new(0));
+        let factory_hits = hits.clone();
+        let mut registry = SceneScriptRegistry2D::new();
+        registry.register("scripts/world.rs", move || {
+            Box::new(LegacyScript {
+                hits: factory_hits.clone(),
+            })
+        });
+
+        let mut host = SceneScriptHost2D::new();
+        host.attach_scene(&scene, &registry);
+        host.event_world(
+            &mut world,
+            &SceneScriptEvent2D::Custom {
+                topic: "x".to_string(),
+                payload: HashMap::new(),
+            },
+        );
+
+        assert_eq!(hits.load(Ordering::SeqCst), 1);
     }
 }
