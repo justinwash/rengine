@@ -3113,6 +3113,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rengine-feature-scene-scripts"
+version = "0.1.0"
+dependencies = [
+ "rengine",
+]
+
+[[package]]
 name = "rengine-feature-scenes"
 version = "0.1.0"
 dependencies = [
