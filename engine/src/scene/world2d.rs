@@ -15,12 +15,54 @@
 //! handle across frames and mutate the node it refers to without re-parsing
 //! string property maps every tick.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::renderer::{DrawParams, Frame};
 use crate::{Rect, Vec2};
 
 use super::data2d::{parse_bool_property, PrefabSprite2D, Scene2D};
+
+/// The node property that names a nested scene to expand from a [`SceneLibrary`].
+pub const NESTED_SCENE_PROPERTY: &str = "nested_scene";
+
+/// Maximum nested-scene expansion depth, a backstop against runaway recursion
+/// even when the per-path cycle guard would otherwise catch a loop.
+const MAX_NESTED_SCENE_DEPTH: usize = 32;
+
+/// A name-addressed collection of loaded scenes used to expand nested-scene
+/// references (a node carrying a [`NESTED_SCENE_PROPERTY`] property whose value
+/// is a scene alias). Build it once from your loaded assets, then pass it to
+/// [`SceneWorld2D::instantiate_scene_tree`].
+#[derive(Default)]
+pub struct SceneLibrary {
+    scenes: HashMap<String, Scene2D>,
+}
+
+impl SceneLibrary {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn insert(&mut self, alias: impl Into<String>, scene: Scene2D) {
+        self.scenes.insert(alias.into(), scene);
+    }
+
+    pub fn get(&self, alias: &str) -> Option<&Scene2D> {
+        self.scenes.get(alias)
+    }
+
+    pub fn contains(&self, alias: &str) -> bool {
+        self.scenes.contains_key(alias)
+    }
+
+    pub fn len(&self) -> usize {
+        self.scenes.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.scenes.is_empty()
+    }
+}
 
 /// A stable reference to a node inside a [`SceneWorld2D`].
 ///
@@ -390,6 +432,80 @@ impl SceneWorld2D {
                 Some(parent_handle) => self.set_parent_link(root, Some(parent_handle)),
                 None => self.roots.push(root),
             }
+        }
+
+        roots
+    }
+
+    /// Instantiate a scene and recursively expand any nested-scene references it
+    /// (or its expanded children) contain.
+    ///
+    /// After the scene is composed via [`SceneWorld2D::instantiate_scene`], every
+    /// instantiated node carrying a [`NESTED_SCENE_PROPERTY`] property has the
+    /// named scene looked up in `library` and instantiated as a child subtree of
+    /// that node. Expansion is recursive, so nested scenes may themselves nest.
+    ///
+    /// A per-path alias set rejects reference cycles (a scene that nests itself,
+    /// directly or transitively) and a hard depth cap backstops any remaining
+    /// runaway; unknown aliases are skipped. Returns the top-level instance roots.
+    pub fn instantiate_scene_tree(
+        &mut self,
+        scene: &Scene2D,
+        library: &SceneLibrary,
+        parent: Option<NodeHandle2D>,
+        offset: Transform2D,
+    ) -> Vec<NodeHandle2D> {
+        let mut active = HashSet::new();
+        self.instantiate_scene_tree_inner(scene, library, parent, offset, 0, &mut active)
+    }
+
+    fn instantiate_scene_tree_inner(
+        &mut self,
+        scene: &Scene2D,
+        library: &SceneLibrary,
+        parent: Option<NodeHandle2D>,
+        offset: Transform2D,
+        depth: usize,
+        active: &mut HashSet<String>,
+    ) -> Vec<NodeHandle2D> {
+        let roots = self.instantiate_scene(scene, parent, offset);
+        if depth >= MAX_NESTED_SCENE_DEPTH {
+            return roots;
+        }
+
+        // Collect nested-scene references across the freshly instantiated subtree
+        // before expanding any, so a node's expansion does not feed back into this
+        // pass.
+        let mut to_expand: Vec<(NodeHandle2D, String)> = Vec::new();
+        let mut stack = roots.clone();
+        while let Some(handle) = stack.pop() {
+            if let Some(node) = self.get(handle) {
+                stack.extend(node.children().iter().copied());
+                if let Some(alias) = node.property(NESTED_SCENE_PROPERTY) {
+                    to_expand.push((handle, alias.to_string()));
+                }
+            }
+        }
+
+        for (handle, alias) in to_expand {
+            if active.contains(&alias) {
+                continue; // cycle: this alias is already being expanded on this path
+            }
+            let Some(nested) = library.get(&alias) else {
+                continue; // unknown alias: leave the host node as a plain marker
+            };
+            // `library` and `self` are distinct, so the immutable scene borrow
+            // happily coexists with the mutable world borrow during recursion.
+            active.insert(alias.clone());
+            self.instantiate_scene_tree_inner(
+                nested,
+                library,
+                Some(handle),
+                Transform2D::default(),
+                depth + 1,
+                active,
+            );
+            active.remove(&alias);
         }
 
         roots
@@ -1045,5 +1161,72 @@ mod tests {
         // (holder x 10 + root local 5 + child local 2 = 17).
         let child = world.children(roots[0])[0];
         assert!((world.world_transform(child).unwrap().position.x - 17.0).abs() < 1e-3);
+    }
+
+    fn single_node_scene(name: &str, extra: &[(&str, &str)]) -> Scene2D {
+        let mut properties = props(&[("editor_node_id", "1"), ("editor_name", name)]);
+        for (key, value) in extra {
+            properties.insert(key.to_string(), value.to_string());
+        }
+        let definition = Scene2DDef {
+            prefabs: vec![Prefab2DDef {
+                name: "marker".to_string(),
+                sprites: vec![],
+            }],
+            instances: vec![SceneInstance2DDef {
+                prefab: "marker".to_string(),
+                position: [0.0, 0.0],
+                scale: [1.0, 1.0],
+                properties,
+            }],
+        };
+        Scene2D::from_definition(Path::new("t.scene.json"), definition, &AssetPack::default())
+            .unwrap()
+    }
+
+    #[test]
+    fn instantiate_scene_tree_expands_nested_references() {
+        let host = single_node_scene("host", &[("nested_scene", "card")]);
+        let mut library = SceneLibrary::new();
+        library.insert("card", single_node_scene("card_root", &[]));
+
+        let mut world = SceneWorld2D::new();
+        let roots = world.instantiate_scene_tree(&host, &library, None, Transform2D::default());
+
+        assert_eq!(roots.len(), 1);
+        assert_eq!(world.len(), 2, "host node plus the expanded card node");
+        let card_children = world.children(roots[0]);
+        assert_eq!(card_children.len(), 1);
+        assert_eq!(
+            world.get(card_children[0]).unwrap().name(),
+            Some("card_root")
+        );
+    }
+
+    #[test]
+    fn instantiate_scene_tree_breaks_reference_cycles() {
+        // top -> a -> b -> a (the second a->b would loop; the cycle guard stops it)
+        let mut library = SceneLibrary::new();
+        library.insert("a", single_node_scene("a_root", &[("nested_scene", "b")]));
+        library.insert("b", single_node_scene("b_root", &[("nested_scene", "a")]));
+        let top = single_node_scene("top_root", &[("nested_scene", "a")]);
+
+        let mut world = SceneWorld2D::new();
+        world.instantiate_scene_tree(&top, &library, None, Transform2D::default());
+
+        // top + a + b, with the cycle back to "a" rejected — no runaway.
+        assert_eq!(world.len(), 3);
+    }
+
+    #[test]
+    fn instantiate_scene_tree_skips_unknown_aliases() {
+        let host = single_node_scene("host", &[("nested_scene", "missing")]);
+        let library = SceneLibrary::new();
+
+        let mut world = SceneWorld2D::new();
+        let roots = world.instantiate_scene_tree(&host, &library, None, Transform2D::default());
+
+        assert_eq!(roots.len(), 1);
+        assert_eq!(world.len(), 1, "unknown alias leaves the host node alone");
     }
 }
