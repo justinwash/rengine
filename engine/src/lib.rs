@@ -39,8 +39,9 @@ pub use renderer::{
 
 pub use world::tilemap;
 pub use world::{
-    aabb_overlap, aabb_overlap_layered, iso_to_screen, screen_to_iso, BodyId, CollisionLayer,
-    OverlapEvent, TileDef, TileMap, TriggerSystem, TriggerZone, TriggerZoneId,
+    aabb_overlap, aabb_overlap_layered, iso_to_screen, move_and_collide, screen_to_iso, BodyId,
+    CollisionLayer, Contacts2D, KinematicBody2D, MoveResult2D, OverlapEvent, TileDef, TileMap,
+    TriggerSystem, TriggerZone, TriggerZoneId,
 };
 
 pub use assets::pixelart;
