@@ -18,7 +18,9 @@ pub use validation::{
     validate_editor_scene, validate_scene_dir, validate_scene_file, SceneIssueSeverity,
     SceneValidationIssue, SceneValidationReport, CURRENT_EDITOR_SCENE_VERSION,
 };
-pub use world2d::{NodeHandle2D, SceneNode2D, SceneWorld2D, Transform2D};
+pub use world2d::{
+    NodeHandle2D, SceneLibrary, SceneNode2D, SceneWorld2D, Transform2D, NESTED_SCENE_PROPERTY,
+};
 
 use crate::app::{Engine, Engine3D};
 use crate::assets::Color;
