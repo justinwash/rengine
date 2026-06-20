@@ -288,16 +288,38 @@ impl SceneWorld2D {
 
     /// Build a live world from a loaded [`Scene2D`].
     ///
-    /// Hierarchy is reconstructed from each instance's editor node/parent ids:
-    /// an instance whose `editor_parent_id` resolves to another instance in the
-    /// scene becomes that node's child, otherwise it is a root. Instances
-    /// without an editor id are always roots (nothing can reference them as a
-    /// parent). Transform, visibility, tags, and sprite layers are seeded from
-    /// the instance so the world renders identically to the static scene until
-    /// gameplay mutates it.
+    /// Convenience wrapper over [`SceneWorld2D::instantiate_scene`] into a fresh
+    /// world with no parent and no offset.
     pub fn from_scene(scene: &Scene2D) -> Self {
-        let instances = scene.instances();
         let mut world = SceneWorld2D::new();
+        world.instantiate_scene(scene, None, Transform2D::default());
+        world
+    }
+
+    /// Instantiate a loaded [`Scene2D`] into this world as a subtree and return
+    /// the handles of its top-level (instance) roots.
+    ///
+    /// This is the runtime reuse primitive behind nested scenes and prefab
+    /// instances. The scene's own hierarchy is reconstructed from each
+    /// instance's editor node/parent ids (an instance whose `editor_parent_id`
+    /// resolves to another instance becomes its child; everything else is an
+    /// instance root). Instance roots are then attached under `parent` (or added
+    /// as world roots when `None`), and `offset` is composed onto each so the
+    /// whole instance can be placed. Transform, visibility, tags, and sprite
+    /// layers are seeded from the instances so the subtree renders identically
+    /// to the static scene until gameplay mutates it.
+    ///
+    /// Name and editor-id lookups register first-wins, so instantiating the same
+    /// scene twice never clobbers the first copy's entries; later copies stay
+    /// reachable through the returned handles and the node hierarchy.
+    pub fn instantiate_scene(
+        &mut self,
+        scene: &Scene2D,
+        parent: Option<NodeHandle2D>,
+        offset: Transform2D,
+    ) -> Vec<NodeHandle2D> {
+        let parent = parent.filter(|handle| self.contains(*handle));
+        let instances = scene.instances();
 
         // First pass: spawn every instance as a detached node and remember the
         // handle for each editor node id so the second pass can wire parents.
@@ -323,40 +345,54 @@ impl SceneWorld2D {
             node.properties = instance.properties.clone();
             node.sprites = instance.sprite_layers().to_vec();
 
-            let handle = world.insert_detached(node);
+            let handle = self.insert_detached(node);
             handles.push(handle);
             if let Some(editor_id) = instance.editor_node_id() {
                 handle_by_editor_id.insert(editor_id, handle);
             }
         }
 
-        // Second pass: attach each node to its parent (if present) or to the
-        // root set, and populate the name/editor-id lookup tables.
+        // Second pass: attach each node to its in-scene parent or collect it as
+        // an instance root, and populate the name/editor-id lookups (first wins).
+        let mut roots = Vec::new();
         for (instance, handle) in instances.iter().zip(handles.iter().copied()) {
-            let parent = instance
+            let in_scene_parent = instance
                 .editor_parent_id()
                 .and_then(|parent_id| handle_by_editor_id.get(&parent_id).copied());
 
-            match parent {
+            match in_scene_parent {
                 Some(parent_handle) if parent_handle != handle => {
-                    world.set_parent_link(handle, Some(parent_handle));
+                    self.set_parent_link(handle, Some(parent_handle));
                 }
-                _ => world.roots.push(handle),
+                _ => roots.push(handle),
             }
 
-            let name = world
+            let name = self
                 .get(handle)
                 .and_then(|node| node.name().map(str::to_string));
-            let editor_id = world.get(handle).and_then(|node| node.editor_node_id());
+            let editor_id = self.get(handle).and_then(|node| node.editor_node_id());
             if let Some(name) = name {
-                world.by_name.entry(name).or_insert(handle);
+                self.by_name.entry(name).or_insert(handle);
             }
             if let Some(editor_id) = editor_id {
-                world.by_editor_id.entry(editor_id).or_insert(handle);
+                self.by_editor_id.entry(editor_id).or_insert(handle);
             }
         }
 
-        world
+        // Attach the instance roots under the requested parent (or as world
+        // roots) and compose the placement offset onto each.
+        for &root in &roots {
+            if let Some(node) = self.get_mut(root) {
+                let local = node.transform;
+                node.transform = offset.compose(&local);
+            }
+            match parent {
+                Some(parent_handle) => self.set_parent_link(root, Some(parent_handle)),
+                None => self.roots.push(root),
+            }
+        }
+
+        roots
     }
 
     /// Spawn a new node as a root and return its handle.
@@ -929,5 +965,85 @@ mod tests {
         let tagged = world.by_tag("spawn");
         assert_eq!(tagged, vec![root]);
         assert!(world.get(root).unwrap().has_tag("team_a"));
+    }
+
+    fn parent_child_scene() -> Scene2D {
+        let definition = Scene2DDef {
+            prefabs: vec![Prefab2DDef {
+                name: "marker".to_string(),
+                sprites: vec![],
+            }],
+            instances: vec![
+                SceneInstance2DDef {
+                    prefab: "marker".to_string(),
+                    position: [5.0, 0.0],
+                    scale: [1.0, 1.0],
+                    properties: props(&[("editor_node_id", "1"), ("editor_name", "root")]),
+                },
+                SceneInstance2DDef {
+                    prefab: "marker".to_string(),
+                    position: [2.0, 0.0],
+                    scale: [1.0, 1.0],
+                    properties: props(&[
+                        ("editor_node_id", "2"),
+                        ("editor_parent_id", "1"),
+                        ("editor_name", "child"),
+                    ]),
+                },
+            ],
+        };
+        Scene2D::from_definition(Path::new("t.scene.json"), definition, &AssetPack::default())
+            .unwrap()
+    }
+
+    #[test]
+    fn instantiate_scene_composes_multiple_offset_subtrees() {
+        let scene = parent_child_scene();
+        let mut world = SceneWorld2D::new();
+
+        let roots_a = world.instantiate_scene(
+            &scene,
+            None,
+            Transform2D::from_position(Vec2::new(100.0, 0.0)),
+        );
+        let roots_b = world.instantiate_scene(
+            &scene,
+            None,
+            Transform2D::from_position(Vec2::new(-100.0, 0.0)),
+        );
+
+        // Two independent copies of a two-node scene.
+        assert_eq!(roots_a.len(), 1);
+        assert_eq!(roots_b.len(), 1);
+        assert_eq!(world.len(), 4);
+        assert_eq!(world.children(roots_a[0]).len(), 1);
+        assert_eq!(world.children(roots_b[0]).len(), 1);
+
+        // First-wins name lookup: only the first copy is reachable by name.
+        assert_eq!(world.find_by_name("root"), Some(roots_a[0]));
+
+        // The placement offset is composed onto each instance root
+        // (root local x = 5.0).
+        assert!((world.world_transform(roots_a[0]).unwrap().position.x - 105.0).abs() < 1e-3);
+        assert!((world.world_transform(roots_b[0]).unwrap().position.x - (-95.0)).abs() < 1e-3);
+    }
+
+    #[test]
+    fn instantiate_scene_under_parent_nests_the_subtree() {
+        let scene = parent_child_scene();
+        let mut world = SceneWorld2D::new();
+        let holder = world.spawn(SceneNode2D::new("holder").with_position(Vec2::new(10.0, 10.0)));
+
+        let roots = world.instantiate_scene(&scene, Some(holder), Transform2D::default());
+
+        assert_eq!(roots.len(), 1);
+        assert_eq!(world.parent(roots[0]), Some(holder));
+        assert_eq!(world.children(holder), roots);
+        // The holder is still the only world root.
+        assert_eq!(world.roots(), &[holder]);
+        // The nested child folds in both the holder and instance-root transforms
+        // (holder x 10 + root local 5 + child local 2 = 17).
+        let child = world.children(roots[0])[0];
+        assert!((world.world_transform(child).unwrap().position.x - 17.0).abs() < 1e-3);
     }
 }
