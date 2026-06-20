@@ -98,6 +98,41 @@ pub struct MoveResult2D {
     pub contacts: Contacts2D,
 }
 
+/// A static collider for [`move_and_collide_solids`].
+///
+/// A plain solid blocks from every direction. A `one_way` solid (a drop-through
+/// platform) only stops a body landing on it from above: the body passes freely
+/// through it horizontally and when moving upward from below.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Solid2D {
+    pub rect: Rect,
+    pub one_way: bool,
+}
+
+impl Solid2D {
+    /// A fully solid collider that blocks from all sides.
+    pub fn solid(rect: Rect) -> Self {
+        Self {
+            rect,
+            one_way: false,
+        }
+    }
+
+    /// A one-way (drop-through) platform that only stops a downward landing.
+    pub fn one_way(rect: Rect) -> Self {
+        Self {
+            rect,
+            one_way: true,
+        }
+    }
+}
+
+impl From<Rect> for Solid2D {
+    fn from(rect: Rect) -> Self {
+        Self::solid(rect)
+    }
+}
+
 /// Move an axis-aligned `body` by `motion` against static `solids`, resolving
 /// overlaps axis-by-axis (X then Y) and reporting which faces made contact.
 ///
@@ -107,6 +142,8 @@ pub struct MoveResult2D {
 /// mover; it does not perform swept (time-of-impact) tests, so motion larger
 /// than a solid in a single step can tunnel through it — keep per-step motion
 /// below your smallest solid (or substep) for very fast bodies.
+///
+/// See [`move_and_collide_solids`] for one-way (drop-through) platform support.
 pub fn move_and_collide(body: Rect, motion: Vec2, solids: &[Rect]) -> MoveResult2D {
     let mut rect = body;
     let mut contacts = Contacts2D::default();
@@ -137,6 +174,64 @@ pub fn move_and_collide(body: Rect, motion: Vec2, solids: &[Rect]) -> MoveResult
                     contacts.top = true;
                 } else {
                     rect.y = solid.top();
+                    contacts.bottom = true;
+                }
+            }
+        }
+    }
+
+    MoveResult2D {
+        position: Vec2::new(rect.x, rect.y),
+        contacts,
+    }
+}
+
+/// Like [`move_and_collide`] but against [`Solid2D`] colliders, so some can be
+/// one-way (drop-through) platforms.
+///
+/// One-way solids are skipped during horizontal resolution and when the body is
+/// moving upward, and they only stop a downward landing when the body was at or
+/// above the platform's top before this step — so a body can jump up through a
+/// drop-through platform and land on it, but never get shoved sideways or popped
+/// up by one.
+pub fn move_and_collide_solids(body: Rect, motion: Vec2, solids: &[Solid2D]) -> MoveResult2D {
+    let mut rect = body;
+    let mut contacts = Contacts2D::default();
+
+    // X axis first — one-way platforms never block horizontal motion.
+    rect.x += motion.x;
+    if motion.x != 0.0 {
+        for solid in solids {
+            if solid.one_way {
+                continue;
+            }
+            if rect.overlaps(&solid.rect) {
+                if motion.x > 0.0 {
+                    rect.x = solid.rect.left() - rect.width;
+                    contacts.right = true;
+                } else {
+                    rect.x = solid.rect.right();
+                    contacts.left = true;
+                }
+            }
+        }
+    }
+
+    // Then Y axis. Capture the pre-move bottom so a one-way platform only
+    // catches a body that was above it (not one the body is rising through).
+    let pre_move_bottom = rect.y;
+    rect.y += motion.y;
+    if motion.y != 0.0 {
+        for solid in solids {
+            if solid.one_way && !(motion.y < 0.0 && pre_move_bottom >= solid.rect.top()) {
+                continue;
+            }
+            if rect.overlaps(&solid.rect) {
+                if motion.y > 0.0 {
+                    rect.y = solid.rect.bottom() - rect.height;
+                    contacts.top = true;
+                } else {
+                    rect.y = solid.rect.top();
                     contacts.bottom = true;
                 }
             }
@@ -189,14 +284,29 @@ impl KinematicBody2D {
         self.contacts.bottom
     }
 
-    /// Advance one timestep: apply gravity, integrate velocity, resolve against
-    /// `solids`, and zero the velocity components that ran into a solid so the
-    /// body rests (rather than accumulating force) against contacts.
+    /// Advance one timestep against fully-solid `solids`: apply gravity,
+    /// integrate velocity, resolve, and zero the velocity components that ran
+    /// into a solid so the body rests (rather than accumulating force).
     pub fn step(&mut self, dt: f32, solids: &[Rect]) {
-        self.velocity += self.gravity * dt;
-        let motion = self.velocity * dt;
+        let motion = self.integrate(dt);
         let result = move_and_collide(self.bounds, motion, solids);
+        self.apply_move_result(result);
+    }
 
+    /// Like [`KinematicBody2D::step`] but against [`Solid2D`] colliders, so the
+    /// level can include one-way (drop-through) platforms.
+    pub fn step_solids(&mut self, dt: f32, solids: &[Solid2D]) {
+        let motion = self.integrate(dt);
+        let result = move_and_collide_solids(self.bounds, motion, solids);
+        self.apply_move_result(result);
+    }
+
+    fn integrate(&mut self, dt: f32) -> Vec2 {
+        self.velocity += self.gravity * dt;
+        self.velocity * dt
+    }
+
+    fn apply_move_result(&mut self, result: MoveResult2D) {
         self.bounds.x = result.position.x;
         self.bounds.y = result.position.y;
         self.contacts = result.contacts;
@@ -270,5 +380,54 @@ mod tests {
         assert!(body.bounds.y < start_y);
         assert!(!body.on_ground());
         assert!(body.velocity.y < 0.0);
+    }
+
+    #[test]
+    fn one_way_platform_catches_a_downward_landing() {
+        let platform = Solid2D::one_way(rect(-50.0, 0.0, 100.0, 8.0)); // top at y = 8
+        let mut body = KinematicBody2D::new(rect(0.0, 40.0, 10.0, 10.0));
+
+        for _ in 0..120 {
+            body.step_solids(1.0 / 60.0, &[platform]);
+        }
+
+        assert!(body.on_ground());
+        assert!((body.bounds.y - platform.rect.top()).abs() < 1e-2);
+    }
+
+    #[test]
+    fn one_way_platform_is_passable_from_below() {
+        let platform = Solid2D::one_way(rect(-50.0, 30.0, 100.0, 8.0));
+        // Start below the platform, moving fast upward, no gravity.
+        let mut body = KinematicBody2D::new(rect(0.0, 0.0, 10.0, 10.0))
+            .with_gravity(Vec2::ZERO)
+            .with_velocity(Vec2::new(0.0, 600.0));
+
+        body.step_solids(1.0 / 60.0, &[platform]);
+
+        // It rises through without a ceiling contact and ends above its start.
+        assert!(!body.contacts.top);
+        assert!(body.bounds.y > 0.0);
+    }
+
+    #[test]
+    fn one_way_platform_never_blocks_horizontal_motion() {
+        let platform = Solid2D::one_way(rect(0.0, 0.0, 40.0, 40.0));
+        let body = rect(-20.0, 5.0, 10.0, 10.0);
+
+        let result = move_and_collide_solids(body, Vec2::new(40.0, 0.0), &[platform]);
+
+        assert!(!result.contacts.right);
+        assert!((result.position.x - 20.0).abs() < 1e-3); // moved freely through
+    }
+
+    #[test]
+    fn solid_collider_still_blocks_from_all_sides() {
+        let wall = Solid2D::solid(rect(15.0, 0.0, 10.0, 100.0));
+        let result =
+            move_and_collide_solids(rect(0.0, 0.0, 10.0, 10.0), Vec2::new(20.0, 0.0), &[wall]);
+
+        assert!(result.contacts.right);
+        assert!((result.position.x + 10.0 - wall.rect.left()).abs() < 1e-3);
     }
 }
