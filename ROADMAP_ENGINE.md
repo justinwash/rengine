@@ -40,6 +40,7 @@ What still matters most on the engine side is closing the remaining runtime gaps
 - a `feature-scene-scripts` sample now demonstrates the scene-driven stack end to end with no hand-coded hitboxes: menu buttons authored as `SceneWorld2D` nodes, picked by `hit_test`, clicked via `route_pointer_click`, with scripts mutating the live world (spawn/despawn) through `SceneScriptContext2D` — and a headless test drives the same wiring as an integration check
 - runtime scene reuse: `SceneWorld2D::instantiate_scene` composes a loaded `Scene2D` into an existing world as a subtree (under an optional parent, with a placement offset, first-wins name/id lookups), and `from_scene` is now a thin wrapper over it — the primitive behind nested scenes and prefab instances
 - data-driven nested scenes: a `SceneLibrary` of named scenes plus `SceneWorld2D::instantiate_scene_tree` recursively expands any node carrying a `nested_scene` alias into that referenced scene as a child subtree, with a per-path cycle guard and a depth cap so reference loops terminate and unknown aliases are skipped
+- first real 2D physics beyond overlap tests: `move_and_collide` resolves an AABB against static solids axis-by-axis (flush, seam-safe contacts) reporting which faces hit, and `KinematicBody2D` integrates gravity + velocity into that mover for a minimal platformer/top-down character controller with ground/wall/ceiling detection
 
 ## Runtime Priorities
 
