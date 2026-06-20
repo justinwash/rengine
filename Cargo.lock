@@ -3077,6 +3077,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rengine-feature-platformer"
+version = "0.1.0"
+dependencies = [
+ "rengine",
+]
+
+[[package]]
 name = "rengine-feature-postfx"
 version = "0.1.0"
 dependencies = [

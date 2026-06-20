@@ -41,6 +41,7 @@ What still matters most on the engine side is closing the remaining runtime gaps
 - runtime scene reuse: `SceneWorld2D::instantiate_scene` composes a loaded `Scene2D` into an existing world as a subtree (under an optional parent, with a placement offset, first-wins name/id lookups), and `from_scene` is now a thin wrapper over it — the primitive behind nested scenes and prefab instances
 - data-driven nested scenes: a `SceneLibrary` of named scenes plus `SceneWorld2D::instantiate_scene_tree` recursively expands any node carrying a `nested_scene` alias into that referenced scene as a child subtree, with a per-path cycle guard and a depth cap so reference loops terminate and unknown aliases are skipped
 - first real 2D physics beyond overlap tests: `move_and_collide` resolves an AABB against static solids axis-by-axis (flush, seam-safe contacts) reporting which faces hit, and `KinematicBody2D` integrates gravity + velocity into that mover for a minimal platformer/top-down character controller with ground/wall/ceiling detection
+- a `feature-platformer` sample exercises that physics as a real character controller (run/jump/gravity against ground, platforms, and walls), with headless tests asserting it lands on a platform, leaves the ground on jump, and is blocked by a wall
 
 ## Runtime Priorities
 
