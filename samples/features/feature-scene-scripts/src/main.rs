@@ -134,11 +134,10 @@ impl MenuScene {
         }
     }
 
-    /// Convert a top-left-origin window pixel into the centered, y-up space the
-    /// scene nodes and the canvas share.
-    fn to_scene_point(engine: &Engine, mouse: (f32, f32)) -> Vec2 {
-        let (w, h) = engine.window_size();
-        Vec2::new(mouse.0 - w as f32 / 2.0, h as f32 / 2.0 - mouse.1)
+    /// The engine already reports `mouse_position` in the centered, y-up space
+    /// the scene nodes and canvas share, so it is the scene point directly.
+    fn to_scene_point(mouse: (f32, f32)) -> Vec2 {
+        Vec2::new(mouse.0, mouse.1)
     }
 }
 
@@ -147,7 +146,7 @@ impl Scene for MenuScene {
 
     fn update(&mut self, engine: &Engine, _globals: &mut Globals, _frame: &mut Frame) -> SceneOp {
         let input = engine.input();
-        let point = Self::to_scene_point(engine, input.mouse_position());
+        let point = Self::to_scene_point(input.mouse_position());
 
         self.hovered = self.world.hit_test(point);
 
