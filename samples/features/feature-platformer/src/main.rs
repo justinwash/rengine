@@ -20,20 +20,21 @@ fn initial_player() -> KinematicBody2D {
     KinematicBody2D::new(Rect::new(-120.0, 140.0, 28.0, 28.0))
 }
 
-/// The static level geometry: ground, two platforms, and side walls.
-fn level_solids() -> Vec<Rect> {
+/// The static level geometry: ground, a solid platform, a one-way (drop-through)
+/// platform, and side walls.
+fn level_solids() -> Vec<Solid2D> {
     vec![
-        Rect::new(-360.0, -200.0, 720.0, 30.0), // ground
-        Rect::new(-180.0, -110.0, 160.0, 24.0), // left platform
-        Rect::new(60.0, -40.0, 160.0, 24.0),    // right platform
-        Rect::new(-360.0, -200.0, 24.0, 380.0), // left wall
-        Rect::new(336.0, -200.0, 24.0, 380.0),  // right wall
+        Solid2D::solid(Rect::new(-360.0, -200.0, 720.0, 30.0)), // ground
+        Solid2D::solid(Rect::new(-180.0, -110.0, 160.0, 24.0)), // left platform
+        Solid2D::one_way(Rect::new(60.0, -40.0, 160.0, 12.0)),  // right: drop-through
+        Solid2D::solid(Rect::new(-360.0, -200.0, 24.0, 380.0)), // left wall
+        Solid2D::solid(Rect::new(336.0, -200.0, 24.0, 380.0)),  // right wall
     ]
 }
 
 struct PlatformerScene {
     player: KinematicBody2D,
-    solids: Vec<Rect>,
+    solids: Vec<Solid2D>,
 }
 
 impl PlatformerScene {
@@ -68,7 +69,7 @@ impl Scene for PlatformerScene {
             self.player.velocity.y = JUMP_SPEED;
         }
 
-        self.player.step(dt, &self.solids);
+        self.player.step_solids(dt, &self.solids);
 
         if self.player.bounds.y < RESPAWN_BELOW_Y {
             self.player = initial_player();
@@ -92,19 +93,19 @@ impl Scene for PlatformerScene {
         canvas.text(
             -hw + 20.0,
             hh - 28.0,
-            "Platformer physics: A/D or arrows to move, Space/Up to jump, Esc to quit",
+            "Platformer physics: A/D or arrows to move, Space/Up to jump (drop-through the thin platform), Esc to quit",
             15.0,
             Color::WHITE,
         );
 
         for solid in &self.solids {
-            canvas.rect(
-                solid.x,
-                solid.y,
-                solid.width,
-                solid.height,
-                Color::from_rgba8(70, 80, 100, 255),
-            );
+            let r = solid.rect;
+            let color = if solid.one_way {
+                Color::from_rgba8(110, 130, 90, 255)
+            } else {
+                Color::from_rgba8(70, 80, 100, 255)
+            };
+            canvas.rect(r.x, r.y, r.width, r.height, color);
         }
 
         let body = &self.player.bounds;
@@ -137,9 +138,9 @@ mod tests {
 
     const STEP: f32 = 1.0 / 60.0;
 
-    fn settle(player: &mut KinematicBody2D, solids: &[Rect], frames: usize) {
+    fn settle(player: &mut KinematicBody2D, solids: &[Solid2D], frames: usize) {
         for _ in 0..frames {
-            player.step(STEP, solids);
+            player.step_solids(STEP, solids);
         }
     }
 
@@ -163,10 +164,27 @@ mod tests {
         assert!(player.on_ground());
 
         player.velocity.y = JUMP_SPEED;
-        player.step(STEP, &solids);
+        player.step_solids(STEP, &solids);
 
         assert!(!player.on_ground());
         assert!(player.velocity.y > 0.0);
+    }
+
+    #[test]
+    fn can_jump_up_through_and_land_on_the_one_way_platform() {
+        let solids = level_solids();
+        // Start just below the one-way platform (top at y = -28), rising fast.
+        let mut player = KinematicBody2D::new(Rect::new(120.0, -90.0, 28.0, 28.0))
+            .with_velocity(Vec2::new(0.0, JUMP_SPEED));
+
+        // Rising: the body passes through the drop-through platform.
+        player.step_solids(STEP, &solids);
+        assert!(!player.contacts.top);
+
+        // Falling back down: it lands on top of that same platform.
+        settle(&mut player, &solids, 240);
+        assert!(player.on_ground());
+        assert!((player.bounds.y - (-28.0)).abs() < 1e-2);
     }
 
     #[test]
@@ -178,7 +196,7 @@ mod tests {
         // Drive right for plenty of time; gravity keeps it grounded en route.
         for _ in 0..1200 {
             player.velocity.x = MOVE_SPEED;
-            player.step(STEP, &solids);
+            player.step_solids(STEP, &solids);
         }
 
         // The right wall's left edge is x = 336; the body cannot pass it.
