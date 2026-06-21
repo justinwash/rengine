@@ -814,6 +814,7 @@ impl RengineNativeEditor {
                     self.refresh_project_tree();
                 }
                 self.push_log(format!("Saved scene to {}", self.display_path(&path)));
+                self.validate_active_scene_to_log();
             }
             Err(error) => {
                 self.push_log(format!(
@@ -821,6 +822,42 @@ impl RengineNativeEditor {
                     self.display_path(&path),
                     error
                 ));
+            }
+        }
+    }
+
+    /// Validate the active scene with the engine's scene validator and report
+    /// any issues (broken/duplicate ids, missing scripts/assets, sourceless
+    /// sprites, …) to the activity log — authoring safety on every save.
+    pub(crate) fn validate_active_scene_to_log(&mut self) {
+        let scene_json = self.active_scene_tab_mut().cached_scene_json().to_owned();
+        let value: serde_json::Value = match serde_json::from_str(&scene_json) {
+            Ok(value) => value,
+            Err(error) => {
+                self.push_log(format!("Scene validation skipped: invalid JSON ({error})"));
+                return;
+            }
+        };
+
+        let report = rengine::validate_editor_scene(&value, None, None);
+        if report.issues().is_empty() {
+            self.push_log("Scene validation: no issues".to_string());
+            return;
+        }
+
+        self.push_log(format!(
+            "Scene validation: {} error(s), {} warning(s)",
+            report.error_count(),
+            report.warning_count()
+        ));
+        for issue in report.issues() {
+            let tag = match issue.severity {
+                rengine::SceneIssueSeverity::Error => "error",
+                rengine::SceneIssueSeverity::Warning => "warn",
+            };
+            match issue.node_id {
+                Some(id) => self.push_log(format!("  [{tag}] node {id}: {}", issue.message)),
+                None => self.push_log(format!("  [{tag}] {}", issue.message)),
             }
         }
     }

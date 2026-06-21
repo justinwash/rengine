@@ -304,6 +304,10 @@ If the goal is to make building games in rengine materially easier, the editor w
 
 - Add plugin hooks, source control awareness, and stronger project-scale workflows.
 
+## Recently Landed
+
+- Scene validation on save: every save runs the engine's `validate_editor_scene` over the active document and reports issues (duplicate/dangling/self/cyclic node ids, sourceless sprites, missing scripts/assets) to the activity log, with node ids and severities. A headless test guards editor-document → validator format compatibility. Next: a dedicated validation panel with clickable issues that select the offending node, and live (continuous) validation.
+
 ## Immediate Next Steps
 
 - Add rotate and scale gizmo follow-up, plus alignment and distribution workflows, on top of the new grid-snapped dragging, selection guides, and translate gizmo.

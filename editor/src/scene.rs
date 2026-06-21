@@ -584,6 +584,40 @@ mod tests {
         SceneNode::new(id, SceneNodeKind::Empty, None, 0)
     }
 
+    #[test]
+    fn editor_document_validates_with_the_engine_scene_validator() {
+        // A serialized editor document is consumable by rengine's scene
+        // validator (format compatibility), and authoring issues surface.
+        let mut doc = SceneDocument::new("validate_me");
+        let group = doc.add_node(SceneNodeKind::Group, None);
+        let sprite = doc.add_node(SceneNodeKind::Sprite, Some(group));
+
+        // A freshly added sprite has no asset source yet — it should be flagged.
+        let value = serde_json::to_value(&doc).expect("serialize scene document");
+        let report = rengine::validate_editor_scene(&value, None, None);
+        assert!(
+            report
+                .issues()
+                .iter()
+                .any(|issue| issue.node_id == Some(sprite) && issue.message.contains("source")),
+            "sourceless sprite should be reported: {:?}",
+            report.issues()
+        );
+
+        // Giving the sprite an asset alias clears the source warning.
+        doc.node_mut(sprite).unwrap().asset_alias = "player_idle".to_string();
+        let value = serde_json::to_value(&doc).expect("serialize scene document");
+        let report = rengine::validate_editor_scene(&value, None, None);
+        assert!(
+            !report
+                .issues()
+                .iter()
+                .any(|issue| issue.message.contains("source")),
+            "source warning should clear once an asset is set: {:?}",
+            report.issues()
+        );
+    }
+
     fn test_node_with_parent(id: u64, parent: Option<u64>) -> SceneNode {
         let mut node = SceneNode::new(id, SceneNodeKind::Empty, parent, 0);
         node.name = format!("Node {id}");
