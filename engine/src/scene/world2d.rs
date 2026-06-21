@@ -224,6 +224,26 @@ impl SceneNode2D {
         self.transform.scale = scale;
     }
 
+    /// The node's authored pickable size, if any: from explicit `w`/`h`
+    /// properties, falling back to the editor's `editor_size_x`/`editor_size_y`.
+    /// This is what gives a node hit-testable [`bounds`](SceneWorld2D::node_bounds)
+    /// when it has no sprites — so a size set in the editor "just works".
+    pub fn size(&self) -> Option<Vec2> {
+        let explicit = self.property_f32("w").zip(self.property_f32("h"));
+        let authored = explicit.or_else(|| {
+            self.property_f32("editor_size_x")
+                .zip(self.property_f32("editor_size_y"))
+        });
+        authored.map(|(w, h)| Vec2::new(w, h))
+    }
+
+    /// Set the node's pickable size (stored as `w`/`h` properties), so code can
+    /// give a node hit bounds without stringly-typed property writes.
+    pub fn set_size(&mut self, size: Vec2) {
+        self.set_property("w", format!("{}", size.x));
+        self.set_property("h", format!("{}", size.y));
+    }
+
     pub fn is_visible(&self) -> bool {
         self.visible
     }
@@ -704,9 +724,10 @@ impl SceneWorld2D {
         let node = self.get(handle)?;
         let world = self.world_transform(handle)?;
 
-        if let (Some(w), Some(h)) = (node.property_f32("w"), node.property_f32("h")) {
-            let size = Vec2::new(w, h) * world.scale;
-            return Some(Rect::from_pos_size(world.position, size));
+        // An authored size (explicit `w`/`h` or the editor's size) is the
+        // node's pickable box, so editor-set sizes work without extra wiring.
+        if let Some(size) = node.size() {
+            return Some(Rect::from_pos_size(world.position, size * world.scale));
         }
 
         let sprites = node.sprites();
@@ -988,6 +1009,35 @@ mod tests {
         assert!((world_t.position.x - 100.0).abs() < 1e-3);
         assert!((world_t.position.y - 20.0).abs() < 1e-3);
         assert!((world_t.scale.x - 2.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn node_bounds_use_authored_size_from_editor_or_explicit_wh() {
+        let mut world = SceneWorld2D::new();
+
+        // An editor-authored size (editor_size_x/y) makes a sprite-less node
+        // pickable with no extra wiring.
+        let a = world.spawn(SceneNode2D::new("a").with_position(Vec2::ZERO));
+        {
+            let node = world.get_mut(a).unwrap();
+            node.set_property("editor_size_x", "60");
+            node.set_property("editor_size_y", "40");
+        }
+        let bounds = world.node_bounds(a).unwrap();
+        assert_eq!((bounds.width, bounds.height), (60.0, 40.0));
+        assert_eq!(world.hit_test(Vec2::new(30.0, 20.0)), Some(a));
+
+        // Explicit w/h (via the typed setter) overrides the editor size.
+        let b = world.spawn(SceneNode2D::new("b").with_position(Vec2::new(200.0, 0.0)));
+        {
+            let node = world.get_mut(b).unwrap();
+            node.set_property("editor_size_x", "10");
+            node.set_property("editor_size_y", "10");
+            node.set_size(Vec2::new(80.0, 50.0));
+        }
+        assert_eq!(world.get(b).unwrap().size(), Some(Vec2::new(80.0, 50.0)));
+        let bounds_b = world.node_bounds(b).unwrap();
+        assert_eq!((bounds_b.width, bounds_b.height), (80.0, 50.0));
     }
 
     #[test]

@@ -49,10 +49,17 @@ impl InputState {
         self.mouse_delta
     }
 
+    /// Cursor position in the engine's 2D coordinate space: origin at the window
+    /// centre, `+x` right and `+y` **up** — the same space as the `Canvas` and
+    /// `SceneWorld2D` node positions. A point is over a rect when
+    /// `Rect::from_pos_size(pos, size).contains_point(Vec2::new(x, y))`, and it
+    /// can be passed straight to `SceneWorld2D::hit_test` with no conversion.
     pub fn mouse_position(&self) -> (f32, f32) {
         self.mouse_position
     }
 
+    /// Whether a mouse button is held. Button indices: `0` = left, `1` = right,
+    /// `2` = middle.
     pub fn is_mouse_down(&self, button: usize) -> bool {
         self.mouse_buttons.get(button).copied().unwrap_or(false)
     }
