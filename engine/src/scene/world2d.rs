@@ -17,6 +17,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+use crate::canvas::Canvas;
 use crate::renderer::{DrawParams, Frame};
 use crate::{Rect, Vec2};
 
@@ -792,13 +793,28 @@ impl SceneWorld2D {
     /// Draw every visible node, parents before children, composing parent
     /// transforms. An invisible node hides its whole subtree.
     pub fn draw(&self, frame: &mut Frame) {
+        self.draw_at(frame, 0.0);
+    }
+
+    /// Draw with an animation clock so `ui_bob_*` / `ui_sway_*` node animations
+    /// advance; pass `engine.time().total_time()`.
+    pub fn draw_at(&self, frame: &mut Frame, time: f32) {
+        let (sw, sh) = frame.canvas(0).screen_size();
+        let screen = (-(sw as f32) / 2.0, -(sh as f32) / 2.0, sw as f32, sh as f32);
         let roots = self.roots.clone();
         for root in roots {
-            self.draw_node(root, &Transform2D::default(), frame);
+            self.draw_node(root, &Transform2D::default(), screen, time, frame);
         }
     }
 
-    fn draw_node(&self, handle: NodeHandle2D, parent_world: &Transform2D, frame: &mut Frame) {
+    fn draw_node(
+        &self,
+        handle: NodeHandle2D,
+        parent_world: &Transform2D,
+        parent_ui_rect: (f32, f32, f32, f32),
+        time: f32,
+        frame: &mut Frame,
+    ) {
         let Some(node) = self.get(handle) else {
             return;
         };
@@ -823,9 +839,62 @@ impl SceneWorld2D {
             );
         }
 
+        // UI primitive (if any) laid out relative to the parent's rect; the
+        // resolved rect becomes the reference frame for this node's children.
+        let ui_rect = crate::scene::data2d::draw_ui_node(
+            frame,
+            parent_ui_rect,
+            node.transform.position,
+            node.transform.scale,
+            time,
+            |n| node.property(n),
+        );
+
         let children = node.children.clone();
         for child in children {
-            self.draw_node(child, &world, frame);
+            self.draw_node(child, &world, ui_rect, time, frame);
+        }
+    }
+
+    /// Draw the graph's UI primitives directly onto a caller-owned `canvas` (at
+    /// whatever z-position the caller is drawing), rather than to per-node frame
+    /// layers. Lets a HUD region be authored as a scene and dropped into an
+    /// existing immediate-mode render pass. Sprite layers are not drawn here
+    /// (they need the frame's sprite batch); use [`draw_at`](Self::draw_at) for
+    /// sprite scenes. `time` drives `ui_bob_*` / `ui_sway_*` animations.
+    pub fn draw_to_canvas(&self, canvas: &mut Canvas, time: f32) {
+        let (sw, sh) = canvas.screen_size();
+        let screen = (-(sw as f32) / 2.0, -(sh as f32) / 2.0, sw as f32, sh as f32);
+        let roots = self.roots.clone();
+        for root in roots {
+            self.draw_node_on_canvas(root, screen, time, canvas);
+        }
+    }
+
+    fn draw_node_on_canvas(
+        &self,
+        handle: NodeHandle2D,
+        parent_ui_rect: (f32, f32, f32, f32),
+        time: f32,
+        canvas: &mut Canvas,
+    ) {
+        let Some(node) = self.get(handle) else {
+            return;
+        };
+        if !node.visible {
+            return;
+        }
+        let ui_rect = crate::scene::data2d::draw_ui_node_on(
+            canvas,
+            parent_ui_rect,
+            node.transform.position,
+            node.transform.scale,
+            time,
+            |n| node.property(n),
+        );
+        let children = node.children.clone();
+        for child in children {
+            self.draw_node_on_canvas(child, ui_rect, time, canvas);
         }
     }
 

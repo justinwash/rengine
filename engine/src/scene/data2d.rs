@@ -5,6 +5,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::assets::{AssetError, AssetPack, Color};
+use crate::canvas::Canvas;
 use crate::renderer::{DrawParams, Frame};
 use crate::{TextureId, Vec2};
 
@@ -146,6 +147,12 @@ impl SceneInstance2D {
     }
 
     pub fn draw(&self, frame: &mut Frame) {
+        self.draw_at(frame, 0.0);
+    }
+
+    /// Like [`draw`](Self::draw) but with an animation clock, so `ui_bob_*` /
+    /// `ui_sway_*` node animations advance.
+    pub fn draw_at(&self, frame: &mut Frame, time: f32) {
         for sprite in &self.sprites {
             frame.draw_sprite(
                 DrawParams::new(
@@ -159,6 +166,214 @@ impl SceneInstance2D {
                 .with_flip_y(sprite.flip_y),
             );
         }
+        self.draw_ui_primitive(frame, time);
+    }
+
+    /// Render an immediate-mode UI primitive (rect / gradient / bevel / text)
+    /// described by this instance's `ui_*` properties, onto a canvas layer.
+    ///
+    /// This lets HUD/menu scenes be authored as plain scene data rather than
+    /// hand-drawn in game code. Position is taken from the instance's transform
+    /// (canvas units, y-up); colours are authored in sRGB display space.
+    ///
+    /// Recognised properties (all optional unless noted):
+    /// - `ui`: `rect` | `gradient` | `bevel` | `text` | `circle` | `line`
+    /// - `ui_layer`: canvas layer index (default 0; higher = on top)
+    /// - `ui_anchor`: `center` (default) | `top`/`bottom`/`left`/`right` |
+    ///   `top-left`/`top-right`/`bottom-left`/`bottom-right` — position is then an
+    ///   offset from that screen anchor, so HUD nodes survive window resizes
+    /// - `ui_w`, `ui_h`: size, multiplied by the instance scale
+    /// - `ui_w_frac`, `ui_h_frac`: size as a fraction of the viewport (overrides
+    ///   `ui_w`/`ui_h`), e.g. `ui_w_frac: 1.0` spans the full width
+    /// - `ui_color`: `"r,g,b,a"` sRGB for `rect`/`text`
+    /// - `ui_color_bottom`, `ui_color_top`: gradient ends / bevel shadow+highlight
+    /// - `ui_radius`: corner radius for `rect`
+    /// - `ui_line_w`: edge thickness for `bevel`
+    /// - `ui_text`, `ui_text_size`: text contents and size
+    pub fn draw_ui_primitive(&self, frame: &mut Frame, time: f32) {
+        if self.property("ui").is_none() {
+            return;
+        }
+        let (sw, sh) = frame.canvas(0).screen_size();
+        let screen = (-(sw as f32) / 2.0, -(sh as f32) / 2.0, sw as f32, sh as f32);
+        draw_ui_node(frame, screen, self.position, self.scale, time, |n| {
+            self.property(n)
+        });
+    }
+}
+
+/// Resolve a UI node's rect from its `ui_*` properties against a `reference`
+/// rect — the viewport for root nodes, or the parent's resolved rect for
+/// children. `reference` is `(x, y, w, h)` with `(x, y)` the bottom-left corner
+/// in canvas coords (centred, y-up); anchors/fractions/stretch/animation are all
+/// relative to it, so nesting and screen-edge layout share one model.
+fn resolve_ui_rect<'a>(
+    reference: (f32, f32, f32, f32),
+    position: Vec2,
+    scale: Vec2,
+    time: f32,
+    get: impl Fn(&str) -> Option<&'a str>,
+) -> (f32, f32, f32, f32) {
+    let prop_f32 = |n: &str| get(n).and_then(|v| v.trim().parse::<f32>().ok());
+    let prop_bool = |n: &str| matches!(get(n).map(str::trim), Some("true" | "1" | "yes"));
+
+    let (rx, ry, rw, rh) = reference;
+    let w_fixed = match prop_f32("ui_w_frac") {
+        Some(f) => rw * f,
+        None => prop_f32("ui_w").unwrap_or(0.0) * scale.x,
+    };
+    let h_fixed = match prop_f32("ui_h_frac") {
+        Some(f) => rh * f,
+        None => prop_f32("ui_h").unwrap_or(0.0) * scale.y,
+    };
+    // Named anchor (shorthand) or exact `ui_anchor_frac_x`/`_y` (0..1, Godot-style).
+    let (mut ax, mut ay) = match get("ui_anchor").unwrap_or("center") {
+        "left" => (rx, ry + rh * 0.5),
+        "right" => (rx + rw, ry + rh * 0.5),
+        "top" => (rx + rw * 0.5, ry + rh),
+        "bottom" => (rx + rw * 0.5, ry),
+        "top-left" => (rx, ry + rh),
+        "top-right" => (rx + rw, ry + rh),
+        "bottom-left" => (rx, ry),
+        "bottom-right" => (rx + rw, ry),
+        _ => (rx + rw * 0.5, ry + rh * 0.5),
+    };
+    if let Some(fx) = prop_f32("ui_anchor_frac_x") {
+        ax = rx + fx * rw;
+    }
+    if let Some(fy) = prop_f32("ui_anchor_frac_y") {
+        ay = ry + fy * rh;
+    }
+    let (x, w) = if prop_bool("ui_stretch_x") {
+        let ml = prop_f32("ui_margin_left").unwrap_or(0.0);
+        let mr = prop_f32("ui_margin_right").unwrap_or(0.0);
+        (rx + ml, (rw - ml - mr).max(0.0))
+    } else {
+        (ax + position.x, w_fixed)
+    };
+    let (y, h) = if prop_bool("ui_stretch_y") {
+        let mb = prop_f32("ui_margin_bottom").unwrap_or(0.0);
+        let mt = prop_f32("ui_margin_top").unwrap_or(0.0);
+        (ry + mb, (rh - mb - mt).max(0.0))
+    } else {
+        (ay + position.y, h_fixed)
+    };
+    // Optional idle animation: sinusoidal bob (y) / sway (x) with a per-node phase.
+    let phase = prop_f32("ui_phase").unwrap_or(0.0);
+    let bob = prop_f32("ui_bob_amp")
+        .map_or(0.0, |amp| (time * prop_f32("ui_bob_speed").unwrap_or(1.0) + phase).sin() * amp);
+    let sway = prop_f32("ui_sway_amp")
+        .map_or(0.0, |amp| (time * prop_f32("ui_sway_speed").unwrap_or(1.0) + phase).cos() * amp);
+    (x + sway, y + bob, w, h)
+}
+
+/// Draw the `ui` primitive named by a node's props into the resolved `rect`.
+fn draw_ui_kind<'a>(
+    canvas: &mut Canvas,
+    rect: (f32, f32, f32, f32),
+    scale: Vec2,
+    get: impl Fn(&str) -> Option<&'a str>,
+) {
+    let Some(kind) = get("ui") else {
+        return;
+    };
+    let (x, y, w, h) = rect;
+    let prop_f32 = |n: &str| get(n).and_then(|v| v.trim().parse::<f32>().ok());
+    let prop_i64 = |n: &str| get(n).and_then(|v| v.trim().parse::<i64>().ok());
+    match kind {
+        "rect" => {
+            let color = parse_srgb_color(get("ui_color"), Color::WHITE);
+            let radius = prop_f32("ui_radius").unwrap_or(0.0);
+            if radius > 0.5 {
+                canvas.rounded_rect(x, y, w, h, radius, color);
+            } else {
+                canvas.rect(x, y, w, h, color);
+            }
+        }
+        "gradient" => {
+            let bottom = parse_srgb_color(get("ui_color_bottom"), Color::BLACK);
+            let top = parse_srgb_color(get("ui_color_top"), Color::WHITE);
+            canvas.rect_gradient(x, y, w, h, bottom, top);
+        }
+        "bevel" => {
+            let highlight = parse_srgb_color(get("ui_color_top"), Color::WHITE);
+            let shadow = parse_srgb_color(get("ui_color_bottom"), Color::BLACK);
+            let line_w = prop_f32("ui_line_w").unwrap_or(1.5);
+            canvas.bevel_rect(x, y, w, h, highlight, shadow, line_w);
+        }
+        "circle" => {
+            let color = parse_srgb_color(get("ui_color"), Color::WHITE);
+            let radius = prop_f32("ui_radius").unwrap_or(4.0) * scale.x;
+            let segments = prop_i64("ui_segments").unwrap_or(20).clamp(3, 96) as u32;
+            canvas.circle_filled(x, y, radius, segments, color);
+        }
+        "line" => {
+            let color = parse_srgb_color(get("ui_color"), Color::WHITE);
+            let line_w = prop_f32("ui_line_w").unwrap_or(1.0);
+            canvas.line(x, y, x + w, y + h, line_w, color);
+        }
+        "text" => {
+            let color = parse_srgb_color(get("ui_color"), Color::WHITE);
+            let size = prop_f32("ui_text_size").unwrap_or(12.0);
+            let text = get("ui_text").unwrap_or("");
+            canvas.text(x, y, text, size, color);
+        }
+        _ => {}
+    }
+}
+
+/// Resolve + draw a UI node onto its `ui_layer` canvas in `frame`; returns the
+/// resolved rect for child layout.
+pub(crate) fn draw_ui_node<'a>(
+    frame: &mut Frame,
+    reference: (f32, f32, f32, f32),
+    position: Vec2,
+    scale: Vec2,
+    time: f32,
+    get: impl Fn(&str) -> Option<&'a str>,
+) -> (f32, f32, f32, f32) {
+    let rect = resolve_ui_rect(reference, position, scale, time, &get);
+    if get("ui").is_some() {
+        let layer = get("ui_layer")
+            .and_then(|v| v.trim().parse::<i64>().ok())
+            .unwrap_or(0)
+            .max(0) as usize;
+        draw_ui_kind(frame.canvas(layer), rect, scale, &get);
+    }
+    rect
+}
+
+/// Resolve + draw a UI node directly onto a caller-owned `canvas` (ignoring
+/// `ui_layer`), so a whole scene can be drawn into an existing canvas at a
+/// chosen z-position. Returns the resolved rect for child layout.
+pub(crate) fn draw_ui_node_on<'a>(
+    canvas: &mut Canvas,
+    reference: (f32, f32, f32, f32),
+    position: Vec2,
+    scale: Vec2,
+    time: f32,
+    get: impl Fn(&str) -> Option<&'a str>,
+) -> (f32, f32, f32, f32) {
+    let rect = resolve_ui_rect(reference, position, scale, time, &get);
+    draw_ui_kind(canvas, rect, scale, &get);
+    rect
+}
+
+/// Parse a `"r,g,b[,a]"` sRGB triplet/quad (0–255 per channel) into a [`Color`],
+/// falling back to `default` if absent or malformed.
+fn parse_srgb_color(value: Option<&str>, default: Color) -> Color {
+    let Some(value) = value else {
+        return default;
+    };
+    let parts: Vec<f32> = value
+        .split(',')
+        .filter_map(|p| p.trim().parse::<f32>().ok())
+        .collect();
+    let chan = |i: usize| parts.get(i).copied().unwrap_or(0.0).clamp(0.0, 255.0) as u8;
+    match parts.len() {
+        3 => Color::from_srgb8(chan(0), chan(1), chan(2), 255),
+        4 => Color::from_srgb8(chan(0), chan(1), chan(2), chan(3)),
+        _ => default,
     }
 }
 
@@ -269,6 +484,14 @@ impl Scene2D {
     pub fn draw(&self, frame: &mut Frame) {
         for instance in &self.instances {
             instance.draw(frame);
+        }
+    }
+
+    /// Draw with an animation clock so `ui_bob_*` / `ui_sway_*` node animations
+    /// advance; pass `engine.time().total_time()`.
+    pub fn draw_animated(&self, frame: &mut Frame, time: f32) {
+        for instance in &self.instances {
+            instance.draw_at(frame, time);
         }
     }
 }

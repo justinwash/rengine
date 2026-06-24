@@ -79,6 +79,29 @@ impl Color {
         }
     }
 
+    /// Construct a colour from 8-bit **sRGB** (display-space) channels.
+    ///
+    /// [`Color::from_rgba8`] treats its inputs as already-linear, so dark values
+    /// wash out once the renderer applies sRGB gamma on output. This applies the
+    /// sRGB→linear transfer first, so the colour appears on screen as authored.
+    /// Alpha is treated as linear.
+    pub fn from_srgb8(r: u8, g: u8, b: u8, a: u8) -> Self {
+        fn to_linear(c: u8) -> f32 {
+            let s = c as f32 / 255.0;
+            if s <= 0.04045 {
+                s / 12.92
+            } else {
+                ((s + 0.055) / 1.055).powf(2.4)
+            }
+        }
+        Self {
+            r: to_linear(r),
+            g: to_linear(g),
+            b: to_linear(b),
+            a: a as f32 / 255.0,
+        }
+    }
+
     pub fn to_array(self) -> [f32; 4] {
         [self.r, self.g, self.b, self.a]
     }

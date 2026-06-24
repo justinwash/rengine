@@ -197,6 +197,57 @@ impl Canvas {
         self.verts.extend_from_slice(&[v0, v2, v1, v0, v3, v2]);
     }
 
+    /// Fill a rect with a smooth vertical gradient (`bottom` at `y`, `top` at
+    /// `y + h`), interpolated per-vertex by the GPU.
+    pub fn rect_gradient(&mut self, x: f32, y: f32, w: f32, h: f32, bottom: Color, top: Color) {
+        self.set_font(0);
+        let [x0, y0] = screen_to_ndc(x, y, self.screen_size);
+        let [x1, y1] = screen_to_ndc(x + w, y + h, self.screen_size);
+        let cb = bottom.to_array();
+        let ct = top.to_array();
+        let uv = WHITE_UV;
+        let v0 = CanvasVertex { position: [x0, y0], color: cb, uv };
+        let v1 = CanvasVertex { position: [x1, y0], color: cb, uv };
+        let v2 = CanvasVertex { position: [x1, y1], color: ct, uv };
+        let v3 = CanvasVertex { position: [x0, y1], color: ct, uv };
+        self.verts.extend_from_slice(&[v0, v2, v1, v0, v3, v2]);
+    }
+
+    /// Draw a raised-bevel outline around a rect: `highlight` on the top/left
+    /// edges, `shadow` on the bottom/right (assuming a y-up coordinate space,
+    /// i.e. `y + h` is the top edge).
+    pub fn bevel_rect(
+        &mut self,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        highlight: Color,
+        shadow: Color,
+        thickness: f32,
+    ) {
+        self.line(x, y + h, x + w, y + h, thickness, highlight);
+        self.line(x, y, x, y + h, thickness, highlight);
+        self.line(x, y, x + w, y, thickness, shadow);
+        self.line(x + w, y, x + w, y + h, thickness, shadow);
+    }
+
+    /// Fill a rect with rounded corners of the given `radius`.
+    pub fn rounded_rect(&mut self, x: f32, y: f32, w: f32, h: f32, radius: f32, color: Color) {
+        let r = radius.max(0.0).min(w * 0.5).min(h * 0.5);
+        if r <= 0.5 {
+            self.rect(x, y, w, h, color);
+            return;
+        }
+        self.rect(x + r, y, w - 2.0 * r, h, color);
+        self.rect(x, y + r, r, h - 2.0 * r, color);
+        self.rect(x + w - r, y + r, r, h - 2.0 * r, color);
+        self.circle_filled(x + r, y + r, r, 14, color);
+        self.circle_filled(x + w - r, y + r, r, 14, color);
+        self.circle_filled(x + r, y + h - r, r, 14, color);
+        self.circle_filled(x + w - r, y + h - r, r, 14, color);
+    }
+
     pub fn line(&mut self, x0: f32, y0: f32, x1: f32, y1: f32, thickness: f32, color: Color) {
         self.set_font(0);
         let dx = x1 - x0;
