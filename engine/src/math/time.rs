@@ -8,6 +8,10 @@ pub struct TimeState {
     frame_count: u64,
     fixed_dt: f32,
     accumulator: f32,
+    /// When true, `tick()` advances by `fixed_dt` instead of reading the
+    /// wall clock. Used for headless/replay runs so frame output is fully
+    /// reproducible regardless of how long each frame takes to compute.
+    deterministic: bool,
 }
 
 impl TimeState {
@@ -21,6 +25,7 @@ impl TimeState {
             frame_count: 0,
             fixed_dt: 1.0 / 60.0,
             accumulator: 0.0,
+            deterministic: false,
         }
     }
 
@@ -56,15 +61,29 @@ impl TimeState {
         self.fixed_dt = fixed_dt;
     }
 
-    pub(crate) fn tick(&mut self) {
-        let now = Instant::now();
-        self.dt = now.duration_since(self.last_frame).as_secs_f32();
+    /// Switch between wall-clock timing (default) and deterministic fixed-step
+    /// timing. Headless runs enable this so animation/accumulators are
+    /// reproducible frame-for-frame (e.g. visual regression captures).
+    pub(crate) fn set_deterministic(&mut self, deterministic: bool) {
+        self.deterministic = deterministic;
+    }
 
-        if self.dt > 0.1 {
-            self.dt = 0.1;
+    pub(crate) fn tick(&mut self) {
+        if self.deterministic {
+            // Advance by exactly one fixed step; never touch the wall clock so
+            // total_time/dt depend only on the frame number.
+            self.dt = self.fixed_dt;
+            self.total_time += self.fixed_dt;
+        } else {
+            let now = Instant::now();
+            self.dt = now.duration_since(self.last_frame).as_secs_f32();
+
+            if self.dt > 0.1 {
+                self.dt = 0.1;
+            }
+            self.total_time = now.duration_since(self.start_time).as_secs_f32();
+            self.last_frame = now;
         }
-        self.total_time = now.duration_since(self.start_time).as_secs_f32();
-        self.last_frame = now;
         self.frame_count += 1;
         self.accumulator += self.dt;
         let max_accumulator = self.fixed_dt * 10.0;

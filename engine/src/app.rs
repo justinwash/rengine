@@ -1247,6 +1247,9 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
         window: window.clone(),
     };
     engine.time.set_fixed_dt(fixed_dt);
+    // Headless runs (captures, smoke tests, CI) advance time by a fixed step so
+    // output is reproducible frame-for-frame instead of depending on wall clock.
+    engine.time.set_deterministic(headless);
     if let Some((rw, rh)) = render_res {
         engine.renderer.init_offscreen(rw, rh, scale_mode);
     }
@@ -1454,6 +1457,9 @@ where
         window: window.clone(),
     };
     engine.time.set_fixed_dt(fixed_dt);
+    // Headless runs (captures, smoke tests, CI) advance time by a fixed step so
+    // output is reproducible frame-for-frame instead of depending on wall clock.
+    engine.time.set_deterministic(headless);
     if let Some((rw, rh)) = render_res {
         engine.renderer.init_offscreen(rw, rh, scale_mode);
     }
@@ -2303,6 +2309,9 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
         rng: RefCell::new(Rng::from_time()),
     };
     engine.time.set_fixed_dt(fixed_dt);
+    // Headless runs (captures, smoke tests, CI) advance time by a fixed step so
+    // output is reproducible frame-for-frame instead of depending on wall clock.
+    engine.time.set_deterministic(headless);
     if let Some((rw, rh)) = render_res {
         engine.renderer.init_offscreen(rw, rh, scale_mode);
     }
@@ -2539,6 +2548,9 @@ where
         rng: RefCell::new(Rng::from_time()),
     };
     engine.time.set_fixed_dt(fixed_dt);
+    // Headless runs (captures, smoke tests, CI) advance time by a fixed step so
+    // output is reproducible frame-for-frame instead of depending on wall clock.
+    engine.time.set_deterministic(headless);
     if let Some((rw, rh)) = render_res {
         engine.renderer.init_offscreen(rw, rh, scale_mode);
     }
