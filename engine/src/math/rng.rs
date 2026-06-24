@@ -24,6 +24,15 @@ impl Rng {
         Self::new(nanos)
     }
 
+    pub fn state(&self) -> [u64; 4] {
+        self.state
+    }
+
+    pub fn from_state(state: [u64; 4]) -> Self {
+        let state = if state == [0u64; 4] { [1, 0, 0, 0] } else { state };
+        Self { state }
+    }
+
     pub fn fork(&mut self) -> Self {
         Self::new(self.next_u64())
     }
