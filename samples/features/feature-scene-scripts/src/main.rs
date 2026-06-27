@@ -4,7 +4,7 @@
 //! scene-driven initiative without a single hand-coded hitbox:
 //!
 //! - the menu buttons are authored as scene nodes (`SceneWorld2D`)
-//! - the engine resolves which button the pointer is over (`hit_test`)
+//! - `SceneLayer2D::update` routes pointer input to scripts automatically
 //! - clicks are routed to the script bound to that node (`route_pointer_click`)
 //! - the button scripts mutate the live world (`spawn`/`despawn`) through their
 //!   `SceneScriptContext2D`
@@ -59,10 +59,9 @@ impl SceneScript2D for MenuButtonScript {
     }
 }
 
-/// Build the authored menu scene, the live world, and a script host with the
-/// button scripts attached. Shared by the runnable app and the headless test so
-/// both exercise the exact same wiring.
-fn build_menu() -> (SceneWorld2D, SceneScriptHost2D) {
+/// Build the authored menu scene and a fully-wired `SceneLayer2D`. Shared by
+/// the runnable app and the headless test so both exercise the exact same wiring.
+fn build_menu() -> SceneLayer2D {
     let scene = Scene2D::from_definition(
         std::path::Path::new("menu.scene.json"),
         Scene2DDef {
@@ -79,15 +78,12 @@ fn build_menu() -> (SceneWorld2D, SceneScriptHost2D) {
     )
     .expect("menu scene definition is valid");
 
-    let world = SceneWorld2D::from_scene(&scene);
-
     let mut registry = SceneScriptRegistry2D::new();
     registry.register_default::<MenuButtonScript>(SCRIPT_MENU_BUTTON);
 
-    let mut host = SceneScriptHost2D::new();
-    host.attach_scene(&scene, &registry);
-
-    (world, host)
+    let mut layer = SceneLayer2D::from_scene(&scene, &registry);
+    layer.enter();
+    layer
 }
 
 fn button_instance(
@@ -119,25 +115,14 @@ fn button_instance(
 }
 
 struct MenuScene {
-    world: SceneWorld2D,
-    host: SceneScriptHost2D,
-    hovered: Option<NodeHandle2D>,
+    layer: SceneLayer2D,
 }
 
 impl MenuScene {
     fn new() -> Self {
-        let (world, host) = build_menu();
         Self {
-            world,
-            host,
-            hovered: None,
+            layer: build_menu(),
         }
-    }
-
-    /// The engine already reports `mouse_position` in the centered, y-up space
-    /// the scene nodes and canvas share, so it is the scene point directly.
-    fn to_scene_point(mouse: (f32, f32)) -> Vec2 {
-        Vec2::new(mouse.0, mouse.1)
     }
 }
 
@@ -145,21 +130,9 @@ impl Scene for MenuScene {
     fn on_enter(&mut self, _engine: &mut Engine, _globals: &mut Globals) {}
 
     fn update(&mut self, engine: &Engine, _globals: &mut Globals, _frame: &mut Frame) -> SceneOp {
-        let input = engine.input();
-        let point = Self::to_scene_point(input.mouse_position());
+        self.layer.update(engine);
 
-        self.hovered = self.world.hit_test(point);
-
-        if input.is_mouse_pressed(0) {
-            self.host
-                .route_pointer_click(&mut self.world, [point.x, point.y], true);
-        }
-        if input.is_mouse_released(0) {
-            self.host
-                .route_pointer_click(&mut self.world, [point.x, point.y], false);
-        }
-
-        if input.is_key_pressed(KeyCode::Escape) {
+        if engine.input().is_key_pressed(KeyCode::Escape) {
             return SceneOp::Quit;
         }
 
@@ -189,17 +162,17 @@ impl Scene for MenuScene {
             Color::from_rgba8(170, 180, 200, 255),
         );
 
-        for handle in self.world.visible_draw_order() {
-            let Some(bounds) = self.world.node_bounds(handle) else {
+        let hovered = self.layer.hovered();
+        for handle in self.layer.world().visible_draw_order() {
+            let Some(bounds) = self.layer.world().node_bounds(handle) else {
                 continue;
             };
-            let Some(node) = self.world.get(handle) else {
+            let Some(node) = self.layer.world().get(handle) else {
                 continue;
             };
 
             let is_button = node.has_tag("button");
-            let hovered = self.hovered == Some(handle);
-            let color = match (is_button, hovered) {
+            let color = match (is_button, hovered == Some(handle)) {
                 (true, true) => Color::from_rgba8(86, 138, 230, 255),
                 (true, false) => Color::from_rgba8(52, 92, 168, 255),
                 (false, _) => Color::from_rgba8(120, 96, 64, 255),
@@ -220,7 +193,7 @@ impl Scene for MenuScene {
             }
         }
 
-        let spawned = self.world.by_tag("spawned").len();
+        let spawned = self.layer.world().by_tag("spawned").len();
         canvas.text(
             -hw + 20.0,
             -hh + 24.0,
@@ -249,34 +222,34 @@ fn main() {
 mod tests {
     use super::*;
 
-    fn click(host: &mut SceneScriptHost2D, world: &mut SceneWorld2D, point: [f32; 2]) {
-        host.route_pointer_click(world, point, true);
-        host.route_pointer_click(world, point, false);
+    fn click(layer: &mut SceneLayer2D, point: [f32; 2]) {
+        layer.route_click(point, true);
+        layer.route_click(point, false);
     }
 
     #[test]
     fn clicking_scene_buttons_drives_world_mutation_end_to_end() {
-        let (mut world, mut host) = build_menu();
+        let mut layer = build_menu();
 
         // Buttons live at the authored positions; click their centers.
-        let spawn_btn = world.find_by_name("spawn_btn").unwrap();
-        let clear_btn = world.find_by_name("clear_btn").unwrap();
-        let spawn_center = world.node_bounds(spawn_btn).unwrap().center();
-        let clear_center = world.node_bounds(clear_btn).unwrap().center();
+        let spawn_btn = layer.world().find_by_name("spawn_btn").unwrap();
+        let clear_btn = layer.world().find_by_name("clear_btn").unwrap();
+        let spawn_center = layer.world().node_bounds(spawn_btn).unwrap().center();
+        let clear_center = layer.world().node_bounds(clear_btn).unwrap().center();
 
-        assert_eq!(world.by_tag("spawned").len(), 0);
+        assert_eq!(layer.world().by_tag("spawned").len(), 0);
 
-        click(&mut host, &mut world, [spawn_center.x, spawn_center.y]);
-        click(&mut host, &mut world, [spawn_center.x, spawn_center.y]);
+        click(&mut layer, [spawn_center.x, spawn_center.y]);
+        click(&mut layer, [spawn_center.x, spawn_center.y]);
         assert_eq!(
-            world.by_tag("spawned").len(),
+            layer.world().by_tag("spawned").len(),
             2,
             "each click should spawn a box via the routed script"
         );
 
-        click(&mut host, &mut world, [clear_center.x, clear_center.y]);
+        click(&mut layer, [clear_center.x, clear_center.y]);
         assert_eq!(
-            world.by_tag("spawned").len(),
+            layer.world().by_tag("spawned").len(),
             0,
             "clear should despawn every spawned box"
         );
@@ -284,20 +257,19 @@ mod tests {
 
     #[test]
     fn clicking_empty_space_activates_nothing() {
-        let (mut world, mut host) = build_menu();
-        // A point well away from any node.
-        click(&mut host, &mut world, [-380.0, -280.0]);
-        assert_eq!(world.by_tag("spawned").len(), 0);
+        let mut layer = build_menu();
+        click(&mut layer, [-380.0, -280.0]);
+        assert_eq!(layer.world().by_tag("spawned").len(), 0);
     }
 
     #[test]
     fn press_on_button_release_off_button_does_not_activate() {
-        let (mut world, mut host) = build_menu();
-        let spawn_btn = world.find_by_name("spawn_btn").unwrap();
-        let center = world.node_bounds(spawn_btn).unwrap().center();
+        let mut layer = build_menu();
+        let spawn_btn = layer.world().find_by_name("spawn_btn").unwrap();
+        let center = layer.world().node_bounds(spawn_btn).unwrap().center();
 
-        host.route_pointer_click(&mut world, [center.x, center.y], true);
-        host.route_pointer_click(&mut world, [-380.0, -280.0], false);
-        assert_eq!(world.by_tag("spawned").len(), 0);
+        layer.route_click([center.x, center.y], true);
+        layer.route_click([-380.0, -280.0], false);
+        assert_eq!(layer.world().by_tag("spawned").len(), 0);
     }
 }

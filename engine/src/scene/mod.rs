@@ -1,5 +1,6 @@
 mod data2d;
 mod globals;
+mod layer2d;
 mod script2d;
 mod validation;
 mod world2d;
@@ -10,6 +11,7 @@ pub use data2d::{
 };
 
 pub use globals::Globals;
+pub use layer2d::SceneLayer2D;
 pub use script2d::{
     SceneScript2D, SceneScriptContext2D, SceneScriptEvent2D, SceneScriptHost2D,
     SceneScriptInputEvent2D, SceneScriptRegistry2D,
