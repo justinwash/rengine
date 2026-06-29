@@ -262,7 +262,7 @@ The biggest missing pieces are:
 - script field editing beyond a raw script path
 - richer viewport tools such as snapping, guides, and transform gizmos
 - tilemap and collision authoring
-- play-in-editor and runtime inspection
+- runtime inspection while the game is live (play-in-editor itself has landed: the top-bar **Play** button saves the active scene and launches the project's game target via `cargo run`; **Play** while running is a fast restart, and **Stop** kills it)
 - undo or redo
 - safe file operations with reference rewriting
 
@@ -275,6 +275,5 @@ If the goal is to start using the editor on real sample migrations soon, the mos
 1. Expand the current runtime bridge so grouped export grows into fuller prefab and nested-scene composition.
 2. Add prefab/spawn-marker conventions aimed directly at the top-down and platformer samples.
 3. Add undo or redo, snapping, and safer file operations.
-4. Add play-in-editor so authoring and runtime iteration happen in one loop.
 
 That path keeps the editor honest, useful, and directly connected to the actual sample games instead of drifting into mock-tool territory.

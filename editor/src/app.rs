@@ -6,7 +6,7 @@ use std::{
     collections::HashSet,
     fs,
     path::{Path, PathBuf},
-    process::Command,
+    process::{Child, Command},
 };
 
 const MAX_ACTIVITY_LOG_LINES: usize = 96;
@@ -140,6 +140,7 @@ pub struct RengineNativeEditor {
     recent_project_click: Option<ProjectEntryClickState>,
     active_text_input_owner: Option<TextInputOwner>,
     popup_menu: Option<PopupMenuState>,
+    game_process: Option<Child>,
     quit_requested: bool,
 }
 
@@ -190,6 +191,7 @@ impl Game for RengineNativeEditor {
             recent_project_click: None,
             active_text_input_owner: None,
             popup_menu: None,
+            game_process: None,
             quit_requested: false,
         };
 
@@ -216,6 +218,7 @@ impl Game for RengineNativeEditor {
     }
 
     fn update(&mut self, engine: &Engine, _frame: &mut Frame) {
+        self.poll_game_process();
         self.update_recent_project_click(engine.dt());
         self.clamp_panel_layout(engine);
         let layout = ShellLayout::new(engine, &self.panel_layout);
@@ -293,5 +296,84 @@ impl Game for RengineNativeEditor {
 
     fn should_exit(&self) -> bool {
         self.quit_requested
+    }
+}
+
+impl RengineNativeEditor {
+    /// True while a launched game process is still running.
+    pub(crate) fn game_running(&self) -> bool {
+        self.game_process.is_some()
+    }
+
+    /// Save the active scene (if it has a file and unsaved edits) and launch the
+    /// project's game target. If one is already running it's killed first, so
+    /// Play doubles as the fast-restart action.
+    pub(crate) fn play_game(&mut self) {
+        if self.active_scene_tab().scene_dirty && self.active_scene_tab().scene_path.is_some() {
+            self.save_scene();
+        }
+        let restart = self.kill_game_process();
+
+        // ponytail: hardcoded `cargo run` in the project root. Add a manifest
+        // `run_command` override when a project needs a specific target/bin.
+        match Command::new("cargo")
+            .arg("run")
+            .current_dir(&self.workspace_root)
+            .spawn()
+        {
+            Ok(child) => {
+                let pid = child.id();
+                self.game_process = Some(child);
+                self.push_log(if restart {
+                    format!("Restarted game (cargo run, pid {pid})")
+                } else {
+                    format!("Launched game (cargo run, pid {pid})")
+                });
+            }
+            Err(error) => self.push_log(format!("Failed to launch game: {error}")),
+        }
+    }
+
+    pub(crate) fn stop_game(&mut self) {
+        if self.kill_game_process() {
+            self.push_log("Stopped running game".to_string());
+        }
+    }
+
+    /// Kill and reap the running game process, if any. Returns whether one was
+    /// running.
+    fn kill_game_process(&mut self) -> bool {
+        if let Some(mut child) = self.game_process.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Detect a game that exited on its own (window closed, build failed) so the
+    /// Stop button and state clear without a click.
+    fn poll_game_process(&mut self) {
+        let Some(child) = self.game_process.as_mut() else {
+            return;
+        };
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                self.push_log(format!("Game exited ({status})"));
+                self.game_process = None;
+            }
+            Ok(None) => {}
+            Err(error) => {
+                self.push_log(format!("Failed to poll game process: {error}"));
+                self.game_process = None;
+            }
+        }
+    }
+}
+
+impl Drop for RengineNativeEditor {
+    fn drop(&mut self) {
+        self.kill_game_process();
     }
 }

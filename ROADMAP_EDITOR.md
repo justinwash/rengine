@@ -306,6 +306,7 @@ If the goal is to make building games in rengine materially easier, the editor w
 
 ## Recently Landed
 
+- Play-in-editor with fast restart: a top-bar **Play** button saves the active scene and launches the project's game target (`cargo run` in the project root); **Play** while a game is running kills and relaunches it (fast restart), and a **Stop** button (shown only while running) kills it. The editor reaps the child on exit/quit and detects a self-closed game so the buttons clear automatically. Logs land in the activity log; the launched game runs in its own window. Next: a manifest `run_command` override for projects with a specific bin/target, in-editor log capture, and pause/frame-step.
 - Scene validation on save: every save runs the engine's `validate_editor_scene` over the active document and reports issues (duplicate/dangling/self/cyclic node ids, sourceless sprites, missing scripts/assets) to the activity log, with node ids and severities. A headless test guards editor-document → validator format compatibility.
 - Dedicated Validation bottom tab: lists the active scene's issues (errors red, warnings amber) separately from the activity log; clicking a row selects the offending node in the viewport. Stable random node ids + a `version` field on saved documents, plus project-wide validation (including cross-scene id collisions) summarised in the activity log on project open. Next: live (continuous) validation as the document changes, and dependency ("used-by") tracking.
 
@@ -315,4 +316,4 @@ If the goal is to make building games in rengine materially easier, the editor w
 - Add marker, trigger, and path workflows aimed directly at route loops, checkpoints, encounter nodes, and camera anchors.
 - Add basic prefab and reusable authored-chunk workflows aimed directly at the top-down, platformer, and content-heavy 2D examples.
 - Expand the runtime bridge with richer properties, stronger prefab composition, better nested-scene/export workflows, and safer validation.
-- After those land, add play-in-editor and dedicated UI documents as the next productivity jump.
+- With play-in-editor landed, add dedicated UI documents and in-editor log capture as the next productivity jump.

@@ -680,6 +680,8 @@ impl RengineNativeEditor {
         for (label, rect) in self.top_bar_window_buttons(layout.top_bar) {
             if rect.contains(mouse) {
                 match label {
+                    "Play" => self.play_game(),
+                    "Stop" => self.stop_game(),
                     "Refresh" => self.refresh_project_tree(),
                     "Quit" => self.quit_requested = true,
                     _ => {}
@@ -1274,7 +1276,9 @@ impl RengineNativeEditor {
         top_bar: PanelRect,
     ) -> Vec<(&'static str, PanelRect)> {
         let labels = ["App", "File", "View", "Theme"];
-        let reserve_right = 184.0;
+        // Reserve enough width for the right-side window buttons (Play, optional
+        // Stop, Refresh, Quit) so the left menus never overlap them.
+        let reserve_right = 330.0;
         let available_width = (top_bar.w - PANEL_PADDING * 2.0 - reserve_right).max(0.0);
         if available_width <= 0.0 {
             return Vec::new();
@@ -1302,8 +1306,15 @@ impl RengineNativeEditor {
         &self,
         top_bar: PanelRect,
     ) -> Vec<(&'static str, PanelRect)> {
-        let labels = ["Refresh", "Quit"];
-        let preferred_widths = labels.map(button_preferred_width);
+        let mut labels: Vec<&'static str> = vec!["Play"];
+        if self.game_running() {
+            labels.push("Stop");
+        }
+        labels.push("Refresh");
+        labels.push("Quit");
+
+        let preferred_widths: Vec<f32> =
+            labels.iter().map(|label| button_preferred_width(label)).collect();
         let total_gap = BUTTON_GAP * (labels.len().saturating_sub(1)) as f32;
         let total_width = preferred_widths.iter().sum::<f32>() + total_gap;
         let mut x = top_bar.right() - PANEL_PADDING - total_width;
