@@ -614,6 +614,31 @@ impl RengineNativeEditor {
                     );
                 }
             }
+            BottomTab::Validation => {
+                if self.validation_issues.is_empty() {
+                    let line_rect = list_line_rect(content_rect, 0, self.bottom_scroll);
+                    draw_list_text(
+                        line_rect.x,
+                        line_rect,
+                        canvas,
+                        "No validation issues in the active scene.",
+                        12.0,
+                        Color::from_rgba8(120, 196, 140, 255),
+                    );
+                }
+                for (index, issue) in self.validation_issues.iter().enumerate() {
+                    let line_rect = list_line_rect(content_rect, index, self.bottom_scroll);
+                    if line_rect.y > content_rect.top() || line_rect.top() < content_rect.y {
+                        continue;
+                    }
+                    let color = if issue.is_error {
+                        Color::from_rgba8(224, 108, 108, 255)
+                    } else {
+                        Color::from_rgba8(224, 184, 108, 255)
+                    };
+                    draw_list_text(line_rect.x, line_rect, canvas, &issue.text, 12.0, color);
+                }
+            }
             BottomTab::SceneJson => {
                 let bottom_scroll = self.bottom_scroll;
                 let scene_json = self.scene_json_preview_text();
@@ -637,6 +662,7 @@ impl RengineNativeEditor {
         canvas.pop_clip();
         let line_count = match self.bottom_tab {
             BottomTab::Activity => self.activity_log.len(),
+            BottomTab::Validation => self.validation_issues.len().max(1),
             BottomTab::SceneJson => self.scene_json_preview_line_count(),
         };
         draw_scrollbar(canvas, content_rect, line_count, self.bottom_scroll);

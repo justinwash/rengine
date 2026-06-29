@@ -563,6 +563,7 @@ impl RengineNativeEditor {
         let bottom_line_count = if layout.bottom_open {
             match self.bottom_tab {
                 BottomTab::Activity => self.activity_log.len(),
+                BottomTab::Validation => self.validation_issues.len(),
                 BottomTab::SceneJson => self.scene_json_preview_line_count(),
             }
         } else {
@@ -648,6 +649,9 @@ impl RengineNativeEditor {
             return;
         }
         if self.handle_bottom_tab_click(mouse, layout) {
+            return;
+        }
+        if self.handle_bottom_content_click(mouse, layout) {
             return;
         }
         if self.handle_project_tree_click(mouse, layout) {
@@ -827,6 +831,36 @@ impl RengineNativeEditor {
         }
 
         false
+    }
+
+    /// Click a row in the Validation bottom tab to select its offending node in
+    /// the active scene (no-op for issues without a node id, e.g. file-level).
+    pub(crate) fn handle_bottom_content_click(
+        &mut self,
+        mouse: Vec2,
+        layout: &ShellLayout,
+    ) -> bool {
+        if !layout.bottom_open || self.bottom_tab != BottomTab::Validation {
+            return false;
+        }
+        let list_rect = layout.bottom_content;
+        if !list_rect.contains(mouse) {
+            return false;
+        }
+
+        let mut target = None;
+        for (index, issue) in self.validation_issues.iter().enumerate() {
+            if list_line_rect(list_rect, index, self.bottom_scroll).contains(mouse) {
+                target = issue.node_id;
+                break;
+            }
+        }
+        if let Some(node_id) = target {
+            if self.active_scene_tab().scene.node(node_id).is_some() {
+                self.select_only_scene_node(Some(node_id));
+            }
+        }
+        true
     }
 
     pub(crate) fn handle_project_tree_click(&mut self, mouse: Vec2, layout: &ShellLayout) -> bool {
@@ -1314,7 +1348,11 @@ impl RengineNativeEditor {
             return Vec::new();
         }
 
-        let tabs = [BottomTab::Activity, BottomTab::SceneJson];
+        let tabs = [
+            BottomTab::Activity,
+            BottomTab::Validation,
+            BottomTab::SceneJson,
+        ];
         let preferred_widths = tabs.map(|tab| button_preferred_width(tab.label()));
         let widths = distribute_button_widths(
             &preferred_widths,

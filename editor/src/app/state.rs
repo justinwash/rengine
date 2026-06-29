@@ -37,7 +37,17 @@ pub(crate) struct ViewportPanDrag {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum BottomTab {
     Activity,
+    Validation,
     SceneJson,
+}
+
+/// One validation issue surfaced in the Validation bottom tab. `node_id` is the
+/// offending node when known, so clicking the row selects it in the viewport.
+#[derive(Clone, Debug)]
+pub(crate) struct ValidationLine {
+    pub(crate) node_id: Option<u64>,
+    pub(crate) is_error: bool,
+    pub(crate) text: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -57,6 +67,7 @@ impl BottomTab {
     pub(crate) fn label(self) -> &'static str {
         match self {
             Self::Activity => "Activity",
+            Self::Validation => "Validation",
             Self::SceneJson => "Scene JSON",
         }
     }

@@ -836,6 +836,26 @@ impl RengineNativeEditor {
         };
 
         let report = rengine::validate_editor_scene(&value, None, None);
+
+        // Mirror the issues into structured state for the clickable Validation tab.
+        self.validation_issues = report
+            .issues()
+            .iter()
+            .map(|issue| {
+                let is_error = issue.severity == rengine::SceneIssueSeverity::Error;
+                let tag = if is_error { "error" } else { "warn" };
+                let text = match issue.node_id {
+                    Some(id) => format!("[{tag}] node {id}: {}", issue.message),
+                    None => format!("[{tag}] {}", issue.message),
+                };
+                ValidationLine {
+                    node_id: issue.node_id,
+                    is_error,
+                    text,
+                }
+            })
+            .collect();
+
         if report.issues().is_empty() {
             self.push_log("Scene validation: no issues".to_string());
             return;
@@ -846,15 +866,13 @@ impl RengineNativeEditor {
             report.error_count(),
             report.warning_count()
         ));
-        for issue in report.issues() {
-            let tag = match issue.severity {
-                rengine::SceneIssueSeverity::Error => "error",
-                rengine::SceneIssueSeverity::Warning => "warn",
-            };
-            match issue.node_id {
-                Some(id) => self.push_log(format!("  [{tag}] node {id}: {}", issue.message)),
-                None => self.push_log(format!("  [{tag}] {}", issue.message)),
-            }
+        let lines: Vec<String> = self
+            .validation_issues
+            .iter()
+            .map(|issue| format!("  {}", issue.text))
+            .collect();
+        for line in lines {
+            self.push_log(line);
         }
     }
 
