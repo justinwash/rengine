@@ -17,9 +17,10 @@ use rengine::*;
 const SCRIPT_MENU_BUTTON: &str = "scripts/menu_button.rs";
 const PREFAB: &str = "ui";
 
-/// A button script: on activation it reads its node's `action` property and
-/// mutates the shared world accordingly. The same script class backs every
-/// button; behavior is data-driven by the node it is attached to.
+/// A button script: on activation it reads its authored `action` *param* (from
+/// the binding, i.e. the node's `param_action` property) and mutates the shared
+/// world accordingly. The same script class backs every button; behavior is
+/// data-driven by the typed param the editor's inspector writes.
 #[derive(Default)]
 struct MenuButtonScript;
 
@@ -30,10 +31,7 @@ impl SceneScript2D for MenuButtonScript {
             return;
         }
 
-        let action = ctx
-            .node()
-            .and_then(|node| node.property("action"))
-            .map(str::to_string);
+        let action = ctx.binding().param("action").map(str::to_string);
 
         match action.as_deref() {
             Some("spawn") => {
@@ -104,7 +102,7 @@ fn button_instance(
             ("script_path", SCRIPT_MENU_BUTTON.to_string()),
             ("tags", "button".to_string()),
             ("label", label.to_string()),
-            ("action", action.to_string()),
+            ("param_action", action.to_string()),
             ("w", "210".to_string()),
             ("h", "46".to_string()),
         ]
@@ -253,6 +251,35 @@ mod tests {
             0,
             "clear should despawn every spawned box"
         );
+    }
+
+    #[test]
+    fn authored_param_reaches_the_script_binding() {
+        // The `param_action` property is collected onto the binding (prefix
+        // stripped) and read back through the typed accessor — the same path
+        // the editor's typed-param inspector authors.
+        let scene = Scene2D::from_definition(
+            std::path::Path::new("menu.scene.json"),
+            Scene2DDef {
+                prefabs: vec![Prefab2DDef {
+                    name: PREFAB.to_string(),
+                    sprites: vec![],
+                }],
+                instances: vec![button_instance(
+                    1,
+                    "spawn_btn",
+                    "Spawn Box",
+                    "spawn",
+                    [-250.0, 110.0],
+                )],
+            },
+            &AssetPack::default(),
+        )
+        .unwrap();
+
+        let bindings = scene.script_bindings();
+        assert_eq!(bindings.len(), 1);
+        assert_eq!(bindings[0].param("action"), Some("spawn"));
     }
 
     #[test]

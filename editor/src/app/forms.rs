@@ -8,6 +8,16 @@ pub(crate) struct FileBrowserFormState {
     pub(crate) filter: String,
 }
 
+/// One row of the typed-param editor: the manifest schema plus the node's
+/// current value as a string (committed back to `param_<name>`).
+#[derive(Clone)]
+pub(crate) struct ScriptParamEntry {
+    pub(crate) name: String,
+    pub(crate) label: String,
+    pub(crate) kind: rengine::ScriptParamKind,
+    pub(crate) value: String,
+}
+
 #[derive(Default)]
 pub(crate) struct InspectorFormState {
     pub(crate) context_tab: usize,
@@ -23,6 +33,11 @@ pub(crate) struct InspectorFormState {
     pub(crate) node_size_width: String,
     pub(crate) node_size_height: String,
     pub(crate) script_path: String,
+    /// Script choices from the project manifest: (path, display name).
+    pub(crate) script_options: Vec<(String, String)>,
+    /// Typed parameters for the currently attached script (from the manifest),
+    /// pre-filled with the node's authored `param_<name>` values or defaults.
+    pub(crate) script_params: Vec<ScriptParamEntry>,
     pub(crate) runtime_prefab: String,
     pub(crate) asset_alias: String,
     pub(crate) sprite_texture_path: String,
@@ -42,6 +57,17 @@ impl InspectorFormState {
         self.scene_window_width = format!("{:.0}", tab.scene.view.window_size[0]);
         self.scene_window_height = format!("{:.0}", tab.scene.view.window_size[1]);
 
+        self.script_options = editor
+            .script_manifest
+            .as_ref()
+            .map(|m| {
+                m.scripts
+                    .iter()
+                    .map(|s| (s.path.clone(), s.display_name().to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
         if let Some(node_id) = tab.selected_node {
             if let Some(node) = tab.scene.node(node_id) {
                 self.selected_node_kind = Some(node.kind);
@@ -52,6 +78,11 @@ impl InspectorFormState {
                 self.node_size_width = format!("{:.0}", node.size[0]);
                 self.node_size_height = format!("{:.0}", node.size[1]);
                 self.script_path = node.script_path.clone();
+                self.script_params = build_script_params(
+                    editor.script_manifest.as_ref(),
+                    &node.script_path,
+                    &node.properties,
+                );
                 self.runtime_prefab = node.runtime_prefab.clone();
                 self.asset_alias = node.asset_alias.clone();
                 self.sprite_texture_path = node.sprite.texture_path.clone();
@@ -66,6 +97,7 @@ impl InspectorFormState {
 
         self.selected_node_kind = None;
         self.node_name.clear();
+        self.script_params.clear();
         self.node_visible = true;
         self.node_position_x.clear();
         self.node_position_y.clear();
@@ -626,6 +658,47 @@ impl RengineNativeEditor {
                 &state.script_path,
                 "scripts/example.rs",
             );
+
+            // Script picker from scripts.manifest.json: click to attach a known
+            // script (seeds its param defaults). A check marks the current one.
+            for (index, (path, name)) in state.script_options.iter().enumerate() {
+                let attached = state.script_path.trim() == path;
+                let label = if attached {
+                    format!("\u{2713} {name}")
+                } else {
+                    name.clone()
+                };
+                ui.button(INSPECTOR_SCRIPT_PICK_BASE_ID + index, &label);
+            }
+            if !state.script_options.is_empty() {
+                ui.button(INSPECTOR_SCRIPT_CLEAR_ID, "Clear Script");
+            }
+
+            // Typed parameters for the attached script (manifest-declared).
+            if !state.script_params.is_empty() {
+                ui.label(
+                    "Script Parameters",
+                    11.0,
+                    Color::from_rgba8(148, 162, 180, 255),
+                );
+                for (index, param) in state.script_params.iter().enumerate() {
+                    ui.label(&param.label, 11.0, Color::from_rgba8(148, 162, 180, 255));
+                    match param.kind {
+                        rengine::ScriptParamKind::Bool => {
+                            let checked = matches!(param.value.trim(), "true" | "1" | "yes");
+                            ui.checkbox(INSPECTOR_SCRIPT_PARAM_CHECK_BASE_ID + index, "", checked);
+                        }
+                        _ => {
+                            ui.text_input(
+                                INSPECTOR_SCRIPT_PARAM_TEXT_BASE_ID + index,
+                                &param.value,
+                                "",
+                            );
+                        }
+                    }
+                }
+            }
+
             ui.label(
                 "Runtime Prefab",
                 11.0,
@@ -745,6 +818,9 @@ impl RengineNativeEditor {
         let mut use_selected_sprite_for_node = None;
         let mut browse_sprite_for_node = None;
         let mut clear_sprite_for_node = None;
+        // Picking a script from the manifest seeds its param defaults, which
+        // needs the manifest — deferred past the `tab` borrow below.
+        let mut attach_script_for_node: Option<(u64, String)> = None;
         let mut resync_form = false;
 
         {
@@ -846,6 +922,49 @@ impl RengineNativeEditor {
                         state.script_path = text.to_string();
                         if node.script_path != state.script_path {
                             node.script_path = state.script_path.clone();
+                            changed = true;
+                            resync_form = true;
+                        }
+                    }
+
+                    // Script picker buttons: attach the chosen manifest script
+                    // (default-seeding handled after the borrow) or clear it.
+                    for index in 0..state.script_options.len() {
+                        if response.was_activated(INSPECTOR_SCRIPT_PICK_BASE_ID + index) {
+                            attach_script_for_node =
+                                Some((node_id, state.script_options[index].0.clone()));
+                        }
+                    }
+                    if response.was_activated(INSPECTOR_SCRIPT_CLEAR_ID)
+                        && !node.script_path.is_empty()
+                    {
+                        node.script_path.clear();
+                        changed = true;
+                        resync_form = true;
+                    }
+
+                    // Typed param edits commit straight to `param_<name>` props
+                    // (the param name comes from state, so no manifest needed).
+                    for index in 0..state.script_params.len() {
+                        let key = format!("param_{}", state.script_params[index].name);
+                        if let Some(text) =
+                            response.text_for(INSPECTOR_SCRIPT_PARAM_TEXT_BASE_ID + index)
+                        {
+                            state.script_params[index].value = text.to_string();
+                            if node.properties.get(&key).map(String::as_str) != Some(text) {
+                                node.properties.insert(key, text.to_string());
+                                changed = true;
+                            }
+                        } else if response
+                            .was_toggled(INSPECTOR_SCRIPT_PARAM_CHECK_BASE_ID + index)
+                        {
+                            let now = !matches!(
+                                state.script_params[index].value.trim(),
+                                "true" | "1" | "yes"
+                            );
+                            let value = if now { "true" } else { "false" };
+                            state.script_params[index].value = value.to_string();
+                            node.properties.insert(key, value.to_string());
                             changed = true;
                         }
                     }
@@ -959,6 +1078,12 @@ impl RengineNativeEditor {
             self.active_scene_tab_mut().push_undo_entry(history_entry);
         }
 
+        if let Some((node_id, path)) = attach_script_for_node {
+            if self.attach_script_to_node(node_id, path) {
+                resync_form = true;
+            }
+        }
+
         if let Some(node_id) = use_selected_sprite_for_node {
             if let Some(path) = &selected_sprite_path {
                 let texture_changed = self.set_node_sprite_texture_path(node_id, path);
@@ -1004,6 +1129,40 @@ impl RengineNativeEditor {
         for message in log_messages {
             self.push_log(message);
         }
+    }
+
+    /// Attach a manifest script to a node and seed any param defaults the node
+    /// doesn't already carry. Reads the manifest first (immutable) then mutates
+    /// the node (mutable) to keep the borrows disjoint.
+    fn attach_script_to_node(&mut self, node_id: u64, path: String) -> bool {
+        let defaults: Vec<(String, String)> = self
+            .script_manifest
+            .as_ref()
+            .and_then(|m| m.script(&path))
+            .map(|def| {
+                def.params
+                    .iter()
+                    .map(|p| (format!("param_{}", p.name), p.default.clone()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let tab = self.active_scene_tab_mut();
+        let Some(node) = tab.scene.node_mut(node_id) else {
+            return false;
+        };
+        let mut changed = node.script_path != path;
+        node.script_path = path;
+        for (key, default) in defaults {
+            if !node.properties.contains_key(&key) {
+                node.properties.insert(key, default);
+                changed = true;
+            }
+        }
+        if changed {
+            tab.mark_dirty();
+        }
+        changed
     }
 }
 
@@ -1299,6 +1458,35 @@ fn inspector_form_height(panel: PanelRect) -> f32 {
     (inspector_form_top(panel) - inner.y).max(0.0)
 }
 
+/// Resolve the typed-param rows for a node's attached script from the manifest,
+/// pre-filling each with the node's authored `param_<name>` value or the
+/// schema default. Empty when the script isn't in the manifest.
+fn build_script_params(
+    manifest: Option<&rengine::ScriptManifest>,
+    script_path: &str,
+    properties: &HashMap<String, String>,
+) -> Vec<ScriptParamEntry> {
+    let Some(def) = manifest.and_then(|m| m.script(script_path.trim())) else {
+        return Vec::new();
+    };
+    def.params
+        .iter()
+        .map(|p| {
+            let key = format!("param_{}", p.name);
+            let value = properties
+                .get(&key)
+                .cloned()
+                .unwrap_or_else(|| p.default.clone());
+            ScriptParamEntry {
+                name: p.name.clone(),
+                label: p.display_label().to_string(),
+                kind: p.kind,
+                value,
+            }
+        })
+        .collect()
+}
+
 fn inspector_form_widget_count(
     state: &InspectorFormState,
     selected_sprite_label: Option<&str>,
@@ -1307,6 +1495,15 @@ fn inspector_form_widget_count(
 
     if let Some(kind) = state.selected_node_kind {
         count += 18;
+
+        // Script picker buttons (one per manifest script + a Clear button) and
+        // two widgets (label + editor) per typed param row.
+        if !state.script_options.is_empty() {
+            count += state.script_options.len() + 1;
+        }
+        if !state.script_params.is_empty() {
+            count += 1 + state.script_params.len() * 2;
+        }
 
         if kind == SceneNodeKind::Sprite {
             count += 6;
@@ -1355,6 +1552,8 @@ pub(crate) fn is_inspector_text_input(id: usize) -> bool {
             | INSPECTOR_CAMERA_VIEW_WIDTH_ID
             | INSPECTOR_CAMERA_VIEW_HEIGHT_ID
     ) || (INSPECTOR_JSON_TEXT_INPUT_BASE_ID..INSPECTOR_JSON_SLIDER_BASE_ID).contains(&id)
+        || (INSPECTOR_SCRIPT_PARAM_TEXT_BASE_ID..INSPECTOR_SCRIPT_PARAM_CHECK_BASE_ID)
+            .contains(&id)
 }
 
 pub(crate) fn make_inspector_ui() -> Ui {

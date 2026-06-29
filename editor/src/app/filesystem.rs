@@ -505,10 +505,42 @@ impl RengineNativeEditor {
     pub(crate) fn refresh_project_tree(&mut self) {
         self.project_tree = ProjectTreeEntry::scan(&self.project_browser_root);
         self.recent_project_click = None;
+        self.reload_script_manifest();
         self.push_log(format!(
             "Workspace browser refreshed at {}",
             self.display_path(&self.project_browser_root)
         ));
+    }
+
+    /// (Re)load the project's `scripts.manifest.json` from the browser root, if
+    /// present. Drives the inspector's script picker, typed param widgets, and
+    /// unknown-script validation. A missing file just clears the manifest (the
+    /// inspector falls back to a free-text script path).
+    pub(crate) fn reload_script_manifest(&mut self) {
+        let path = self.project_browser_root.join("scripts.manifest.json");
+        if !path.exists() {
+            self.script_manifest = None;
+            return;
+        }
+        match rengine::ScriptManifest::load_from_path(&path) {
+            Ok(manifest) => {
+                let count = manifest.scripts.len();
+                self.script_manifest = Some(manifest);
+                self.push_log(format!("Loaded scripts.manifest.json ({count} script(s))"));
+            }
+            Err(error) => {
+                self.script_manifest = None;
+                self.push_log(format!("Failed to load scripts.manifest.json: {error}"));
+            }
+        }
+    }
+
+    /// Build a validation registry from the loaded script manifest so the
+    /// validator can flag `script_path`s with no matching manifest entry.
+    pub(crate) fn script_validation_registry(&self) -> Option<rengine::SceneScriptRegistry2D> {
+        self.script_manifest
+            .as_ref()
+            .map(|m| rengine::SceneScriptRegistry2D::from_known_paths(m.known_paths()))
     }
 
     pub(crate) fn toggle_project_entry(&mut self, path: &Path) {
@@ -835,7 +867,8 @@ impl RengineNativeEditor {
             }
         };
 
-        let report = rengine::validate_editor_scene(&value, None, None);
+        let registry = self.script_validation_registry();
+        let report = rengine::validate_editor_scene(&value, None, registry.as_ref());
 
         // Mirror the issues into structured state for the clickable Validation tab.
         self.validation_issues = report
@@ -882,7 +915,8 @@ impl RengineNativeEditor {
     /// (duplicate node ids, broken references) before they reach runtime.
     pub(crate) fn validate_project_to_log(&mut self) {
         let root = self.project_browser_root.clone();
-        let reports = rengine::validate_scene_dir(&root, None, None);
+        let registry = self.script_validation_registry();
+        let reports = rengine::validate_scene_dir(&root, None, registry.as_ref());
 
         if reports.is_empty() {
             self.push_log("Project validation: no scene files found".to_string());

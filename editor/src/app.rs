@@ -82,6 +82,12 @@ const INSPECTOR_JSON_SCROLL_REGION_ID: usize = 182;
 const INSPECTOR_JSON_TEXT_INPUT_BASE_ID: usize = 10_000;
 const INSPECTOR_JSON_SLIDER_BASE_ID: usize = 20_000;
 const INSPECTOR_JSON_CHECKBOX_BASE_ID: usize = 30_000;
+// Script picker + typed-param widgets use these per-index bases (script index /
+// param index added) so the inspector can render a variable number of them.
+const INSPECTOR_SCRIPT_PICK_BASE_ID: usize = 40_000;
+const INSPECTOR_SCRIPT_PARAM_TEXT_BASE_ID: usize = 41_000;
+const INSPECTOR_SCRIPT_PARAM_CHECK_BASE_ID: usize = 42_000;
+const INSPECTOR_SCRIPT_CLEAR_ID: usize = 43_000;
 
 const NODE_KIND_OPTIONS: [SceneNodeKind; 6] = [
     SceneNodeKind::Group,
@@ -121,6 +127,9 @@ pub struct RengineNativeEditor {
     collapsed_project_paths: HashSet<PathBuf>,
     activity_log: Vec<String>,
     validation_issues: Vec<ValidationLine>,
+    /// Project `scripts.manifest.json` (script picker + typed params +
+    /// unknown-script validation). Reloaded whenever the project tree refreshes.
+    script_manifest: Option<rengine::ScriptManifest>,
     bottom_tab: BottomTab,
     project_scroll: f32,
     hierarchy_scroll: f32,
@@ -172,6 +181,7 @@ impl Game for RengineNativeEditor {
             collapsed_project_paths: HashSet::new(),
             activity_log: Vec::new(),
             validation_issues: Vec::new(),
+            script_manifest: None,
             bottom_tab: BottomTab::Activity,
             project_scroll: 0.0,
             hierarchy_scroll: 0.0,
@@ -196,6 +206,7 @@ impl Game for RengineNativeEditor {
         };
 
         editor.refresh_inspector_form();
+        editor.reload_script_manifest();
 
         editor.push_log("Booted rengine-native editor shell");
         editor.push_log(format!("Project name: {}", editor.project_name));

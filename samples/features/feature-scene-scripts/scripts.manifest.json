@@ -1,0 +1,16 @@
+{
+  "scripts": [
+    {
+      "path": "scripts/menu_button.rs",
+      "name": "Menu Button",
+      "params": [
+        {
+          "name": "action",
+          "label": "Action",
+          "kind": "string",
+          "default": "spawn"
+        }
+      ]
+    }
+  ]
+}
