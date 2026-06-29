@@ -206,10 +206,26 @@ impl Canvas {
         let cb = bottom.to_array();
         let ct = top.to_array();
         let uv = WHITE_UV;
-        let v0 = CanvasVertex { position: [x0, y0], color: cb, uv };
-        let v1 = CanvasVertex { position: [x1, y0], color: cb, uv };
-        let v2 = CanvasVertex { position: [x1, y1], color: ct, uv };
-        let v3 = CanvasVertex { position: [x0, y1], color: ct, uv };
+        let v0 = CanvasVertex {
+            position: [x0, y0],
+            color: cb,
+            uv,
+        };
+        let v1 = CanvasVertex {
+            position: [x1, y0],
+            color: cb,
+            uv,
+        };
+        let v2 = CanvasVertex {
+            position: [x1, y1],
+            color: ct,
+            uv,
+        };
+        let v3 = CanvasVertex {
+            position: [x0, y1],
+            color: ct,
+            uv,
+        };
         self.verts.extend_from_slice(&[v0, v2, v1, v0, v3, v2]);
     }
 

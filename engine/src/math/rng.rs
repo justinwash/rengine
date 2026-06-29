@@ -29,7 +29,11 @@ impl Rng {
     }
 
     pub fn from_state(state: [u64; 4]) -> Self {
-        let state = if state == [0u64; 4] { [1, 0, 0, 0] } else { state };
+        let state = if state == [0u64; 4] {
+            [1, 0, 0, 0]
+        } else {
+            state
+        };
         Self { state }
     }
 

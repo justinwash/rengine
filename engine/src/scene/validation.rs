@@ -252,49 +252,119 @@ pub fn validate_scene_file(
     registry: Option<&SceneScriptRegistry2D>,
 ) -> SceneValidationReport {
     let mut report = SceneValidationReport::default();
-
-    let text = match std::fs::read_to_string(path) {
-        Ok(text) => text,
-        Err(error) => {
-            report.push(SceneValidationIssue::error(
-                None,
-                format!("failed to read '{}': {error}", path.display()),
-            ));
-            return report;
-        }
-    };
-
-    let value: serde_json::Value = match serde_json::from_str(&text) {
-        Ok(value) => value,
-        Err(error) => {
-            report.push(SceneValidationIssue::error(
-                None,
-                format!("failed to parse '{}': {error}", path.display()),
-            ));
-            return report;
-        }
-    };
-
-    validate_editor_scene(&value, assets, registry)
+    if let Some(value) = read_scene_value(path, &mut report) {
+        let file_report = validate_editor_scene(&value, assets, registry);
+        report.issues.extend(file_report.issues);
+    }
+    report
 }
 
 /// Validate every `*.scene.json` file under `dir` (recursively), returning one
 /// report per file in sorted path order for stable, diff-friendly output.
+///
+/// In addition to per-file checks, a cross-file pass flags any node id that
+/// appears in more than one scene: ids must be unique across the whole project
+/// so that script references and prefab links are unambiguous.
 pub fn validate_scene_dir(
     dir: &Path,
     assets: Option<&AssetPack>,
     registry: Option<&SceneScriptRegistry2D>,
 ) -> Vec<(PathBuf, SceneValidationReport)> {
-    let mut files = Vec::new();
-    collect_scene_files(dir, &mut files);
-    files.sort();
-    files
+    struct ParsedScene {
+        path: PathBuf,
+        value: Option<serde_json::Value>,
+        report: SceneValidationReport,
+    }
+
+    let mut file_paths = Vec::new();
+    collect_scene_files(dir, &mut file_paths);
+    file_paths.sort();
+
+    let mut scenes: Vec<ParsedScene> = file_paths
         .into_iter()
         .map(|path| {
-            let report = validate_scene_file(&path, assets, registry);
-            (path, report)
+            let mut report = SceneValidationReport::default();
+            let value = read_scene_value(&path, &mut report);
+            if let Some(ref v) = value {
+                let file_report = validate_editor_scene(v, assets, registry);
+                report.issues.extend(file_report.issues);
+            }
+            ParsedScene {
+                path,
+                value,
+                report,
+            }
         })
-        .collect()
+        .collect();
+
+    // Cross-file check: a node id that appears in more than one scene file is
+    // a project error — script/prefab references would be ambiguous.
+    let mut id_to_file: HashMap<u64, usize> = HashMap::new();
+    let mut collisions: Vec<(u64, usize, usize)> = Vec::new();
+    for (file_idx, scene) in scenes.iter().enumerate() {
+        let Some(ref value) = scene.value else {
+            continue;
+        };
+        let Some(nodes) = value.get("nodes").and_then(|n| n.as_array()) else {
+            continue;
+        };
+        for node in nodes {
+            let Some(id) = node.get("id").and_then(|v| v.as_u64()) else {
+                continue;
+            };
+            match id_to_file.entry(id) {
+                std::collections::hash_map::Entry::Vacant(e) => {
+                    e.insert(file_idx);
+                }
+                std::collections::hash_map::Entry::Occupied(e) => {
+                    collisions.push((id, *e.get(), file_idx));
+                }
+            }
+        }
+    }
+    for (id, idx_a, idx_b) in collisions {
+        let path_a = scenes[idx_a].path.display().to_string();
+        let path_b = scenes[idx_b].path.display().to_string();
+        scenes[idx_a].report.push(SceneValidationIssue::error(
+            Some(id),
+            format!(
+                "node id {id} also appears in '{path_b}' \
+                 — ids must be unique across the project"
+            ),
+        ));
+        scenes[idx_b].report.push(SceneValidationIssue::error(
+            Some(id),
+            format!(
+                "node id {id} also appears in '{path_a}' \
+                 — ids must be unique across the project"
+            ),
+        ));
+    }
+
+    scenes.into_iter().map(|s| (s.path, s.report)).collect()
+}
+
+fn read_scene_value(path: &Path, report: &mut SceneValidationReport) -> Option<serde_json::Value> {
+    let text = match std::fs::read_to_string(path) {
+        Ok(t) => t,
+        Err(error) => {
+            report.push(SceneValidationIssue::error(
+                None,
+                format!("failed to read '{}': {error}", path.display()),
+            ));
+            return None;
+        }
+    };
+    match serde_json::from_str(&text) {
+        Ok(value) => Some(value),
+        Err(error) => {
+            report.push(SceneValidationIssue::error(
+                None,
+                format!("failed to parse '{}': {error}", path.display()),
+            ));
+            None
+        }
+    }
 }
 
 fn collect_scene_files(dir: &Path, out: &mut Vec<PathBuf>) {
@@ -481,6 +551,61 @@ mod tests {
     }
 
     #[test]
+    fn cross_scene_id_collision_is_flagged_by_validate_scene_dir() {
+        use std::fs;
+
+        let base = std::env::temp_dir().join(format!(
+            "rengine_cross_scene_{}_{}",
+            std::process::id(),
+            CURRENT_EDITOR_SCENE_VERSION
+        ));
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(&base).unwrap();
+
+        // Two scenes sharing node id 1 — cross-scene collision.
+        fs::write(
+            base.join("a.scene.json"),
+            serde_json::to_string(&json!({ "nodes": [sprite_node(1, None, "hero")] })).unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            base.join("b.scene.json"),
+            serde_json::to_string(&json!({ "nodes": [sprite_node(1, None, "enemy")] })).unwrap(),
+        )
+        .unwrap();
+        // A third scene with a unique id is clean.
+        fs::write(
+            base.join("c.scene.json"),
+            serde_json::to_string(&json!({ "nodes": [sprite_node(2, None, "wall")] })).unwrap(),
+        )
+        .unwrap();
+
+        let reports = validate_scene_dir(&base, None, None);
+        let by_name: HashMap<String, &SceneValidationReport> = reports
+            .iter()
+            .map(|(p, r)| (p.file_name().unwrap().to_str().unwrap().to_string(), r))
+            .collect();
+
+        assert!(
+            by_name["a.scene.json"].has_errors(),
+            "collision must be an error in scene a"
+        );
+        assert!(
+            by_name["b.scene.json"].has_errors(),
+            "collision must be an error in scene b"
+        );
+        assert!(by_name["c.scene.json"].is_ok(), "unique id must be clean");
+        assert!(
+            by_name["a.scene.json"]
+                .errors()
+                .any(|i| i.message.contains("unique across the project")),
+            "error message should mention project uniqueness"
+        );
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
     fn validate_missing_scene_file_is_an_error() {
         let report = validate_scene_file(
             Path::new("definitely/does/not/exist.scene.json"),
@@ -505,11 +630,13 @@ mod tests {
 
         let good = base.join("good.scene.json");
         let bad = nested.join("bad.scene.json");
+        // Use a unique id (100) that won't collide with the bad scene's ids.
         fs::write(
             &good,
-            serde_json::to_string(&json!({ "nodes": [sprite_node(1, None, "hero")] })).unwrap(),
+            serde_json::to_string(&json!({ "nodes": [sprite_node(100, None, "hero")] })).unwrap(),
         )
         .unwrap();
+        // bad has two nodes with the same id — intra-scene duplicate.
         fs::write(
             &bad,
             serde_json::to_string(

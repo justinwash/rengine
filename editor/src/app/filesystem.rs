@@ -636,6 +636,8 @@ impl RengineNativeEditor {
         for line in selection.startup_logs {
             self.push_log(line);
         }
+
+        self.validate_project_to_log();
     }
 
     pub(crate) fn open_scene(&mut self) {
@@ -709,13 +711,7 @@ impl RengineNativeEditor {
             }
         };
 
-        if scene.normalize_next_id() {
-            self.push_log(format!(
-                "Normalized next node id for {} to {}",
-                self.display_path(&path),
-                scene.next_id
-            ));
-        }
+        scene.normalize_next_id();
 
         let replace_active_tab =
             self.scene_tabs.len() == 1 && self.active_scene_tab().is_fresh_untitled();
@@ -858,6 +854,52 @@ impl RengineNativeEditor {
             match issue.node_id {
                 Some(id) => self.push_log(format!("  [{tag}] node {id}: {}", issue.message)),
                 None => self.push_log(format!("  [{tag}] {}", issue.message)),
+            }
+        }
+    }
+
+    /// Run the engine's project-wide scene validator over the project root and
+    /// summarise the results in the activity log. Called on project open and
+    /// available as an explicit action so authors catch cross-scene issues
+    /// (duplicate node ids, broken references) before they reach runtime.
+    pub(crate) fn validate_project_to_log(&mut self) {
+        let root = self.project_browser_root.clone();
+        let reports = rengine::validate_scene_dir(&root, None, None);
+
+        if reports.is_empty() {
+            self.push_log("Project validation: no scene files found".to_string());
+            return;
+        }
+
+        let scene_count = reports.len();
+        let total_errors: usize = reports.iter().map(|(_, r)| r.error_count()).sum();
+        let total_warnings: usize = reports.iter().map(|(_, r)| r.warning_count()).sum();
+
+        if total_errors == 0 && total_warnings == 0 {
+            self.push_log(format!(
+                "Project validation: {scene_count} scene(s), no issues"
+            ));
+            return;
+        }
+
+        self.push_log(format!(
+            "Project validation: {scene_count} scene(s), {} error(s), {} warning(s)",
+            total_errors, total_warnings
+        ));
+        for (path, report) in &reports {
+            if report.issues().is_empty() {
+                continue;
+            }
+            self.push_log(format!("  {}:", self.display_path(path)));
+            for issue in report.issues() {
+                let tag = match issue.severity {
+                    rengine::SceneIssueSeverity::Error => "error",
+                    rengine::SceneIssueSeverity::Warning => "warn",
+                };
+                match issue.node_id {
+                    Some(id) => self.push_log(format!("    [{tag}] node {id}: {}", issue.message)),
+                    None => self.push_log(format!("    [{tag}] {}", issue.message)),
+                }
             }
         }
     }

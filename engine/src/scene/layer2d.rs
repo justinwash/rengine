@@ -1,5 +1,5 @@
-use crate::Vec2;
 use crate::app::Engine;
+use crate::Vec2;
 
 use super::{
     NodeHandle2D, Scene2D, SceneScriptHost2D, SceneScriptInputEvent2D, SceneScriptRegistry2D,
@@ -146,7 +146,8 @@ impl SceneLayer2D {
     ///
     /// Useful in tests and for explicit click injection outside of [`update`].
     pub fn route_click(&mut self, position: [f32; 2], pressed: bool) -> Option<NodeHandle2D> {
-        self.host.route_pointer_click(&mut self.world, position, pressed)
+        self.host
+            .route_pointer_click(&mut self.world, position, pressed)
     }
 
     pub fn world(&self) -> &SceneWorld2D {

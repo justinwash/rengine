@@ -260,10 +260,12 @@ fn resolve_ui_rect<'a>(
     };
     // Optional idle animation: sinusoidal bob (y) / sway (x) with a per-node phase.
     let phase = prop_f32("ui_phase").unwrap_or(0.0);
-    let bob = prop_f32("ui_bob_amp")
-        .map_or(0.0, |amp| (time * prop_f32("ui_bob_speed").unwrap_or(1.0) + phase).sin() * amp);
-    let sway = prop_f32("ui_sway_amp")
-        .map_or(0.0, |amp| (time * prop_f32("ui_sway_speed").unwrap_or(1.0) + phase).cos() * amp);
+    let bob = prop_f32("ui_bob_amp").map_or(0.0, |amp| {
+        (time * prop_f32("ui_bob_speed").unwrap_or(1.0) + phase).sin() * amp
+    });
+    let sway = prop_f32("ui_sway_amp").map_or(0.0, |amp| {
+        (time * prop_f32("ui_sway_speed").unwrap_or(1.0) + phase).cos() * amp
+    });
     (x + sway, y + bob, w, h)
 }
 

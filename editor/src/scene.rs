@@ -152,9 +152,17 @@ impl SceneNode {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SceneDocument {
     pub name: String,
+    /// Schema version written on every save. Absent (0) in pre-versioning files
+    /// which are format-compatible with the current version.
+    #[serde(default)]
+    pub version: u32,
     #[serde(default)]
     pub view: SceneViewSettings,
     pub nodes: Vec<SceneNode>,
+    /// Legacy counter kept for backward-compatibility with hand-edited files.
+    /// Node IDs are now assigned randomly; this field is no longer used for
+    /// allocation but is preserved so older tooling can still read the format.
+    #[serde(default)]
     pub next_id: u64,
 }
 
@@ -162,9 +170,10 @@ impl SceneDocument {
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
+            version: rengine::CURRENT_EDITOR_SCENE_VERSION,
             view: SceneViewSettings::default(),
             nodes: Vec::new(),
-            next_id: 1,
+            next_id: 0,
         }
     }
 
@@ -174,13 +183,16 @@ impl SceneDocument {
             .iter()
             .filter(|node| node.parent == parent)
             .count();
-        let id = self.next_id;
-        self.next_id += 1;
+        let id = self.alloc_unique_id();
         self.nodes
             .push(SceneNode::new(id, kind, parent, sibling_index));
         id
     }
 
+    /// Repair `next_id` so it sits above every existing node id.
+    ///
+    /// Called when loading a file that may have been hand-edited or saved by
+    /// an older editor. No-op for well-formed documents with random IDs.
     pub fn normalize_next_id(&mut self) -> bool {
         let normalized_next_id = self
             .nodes
@@ -196,6 +208,27 @@ impl SceneDocument {
         } else {
             false
         }
+    }
+
+    /// Return a node id that is not already in this document.
+    ///
+    /// Uses a thread-local pseudo-random generator seeded from the system
+    /// clock so ids are unique across scenes without any coordination.
+    fn alloc_unique_id(&self) -> u64 {
+        let existing: HashSet<u64> = self.nodes.iter().map(|n| n.id).collect();
+        for _ in 0..128 {
+            let id = new_node_id();
+            if id != 0 && !existing.contains(&id) {
+                return id;
+            }
+        }
+        // Astronomical-odds fallback: sequential above the current maximum.
+        self.nodes
+            .iter()
+            .map(|n| n.id)
+            .max()
+            .unwrap_or(0)
+            .saturating_add(1)
     }
 
     pub fn node(&self, id: u64) -> Option<&SceneNode> {
@@ -295,14 +328,6 @@ impl SceneDocument {
     pub fn duplicate_nodes(&mut self, node_ids: &[u64], position_delta: [f32; 2]) -> Vec<u64> {
         let root_ids = self.selected_root_ids(node_ids);
         if root_ids.is_empty() {
-            return Vec::new();
-        }
-
-        let duplicate_count = root_ids
-            .iter()
-            .map(|root_id| self.subtree_ids(*root_id).len() as u64)
-            .sum::<u64>();
-        if self.next_id.checked_add(duplicate_count).is_none() {
             return Vec::new();
         }
 
@@ -500,8 +525,7 @@ impl SceneDocument {
         children_by_parent: &HashMap<u64, Vec<u64>>,
     ) -> Option<u64> {
         let source = source_by_id.get(&source_id)?.clone();
-        let new_id = self.next_id;
-        self.next_id = self.next_id.checked_add(1)?;
+        let new_id = self.alloc_unique_id();
 
         let mut duplicate = source;
         duplicate.id = new_id;
@@ -558,6 +582,33 @@ impl SceneDocument {
         self.nodes = remaining;
         extracted
     }
+}
+
+/// Generate a pseudo-random non-zero u64 for use as a node id.
+///
+/// Uses a thread-local xorshift64 generator seeded from the system clock on
+/// first call. The 64-bit space makes cross-scene collisions astronomically
+/// unlikely without any global coordination.
+fn new_node_id() -> u64 {
+    use std::cell::Cell;
+    thread_local! {
+        static STATE: Cell<u64> = const { Cell::new(0) };
+    }
+    STATE.with(|s| {
+        let mut v = s.get();
+        if v == 0 {
+            v = std::time::SystemTime::now()
+                .duration_since(std::time::SystemTime::UNIX_EPOCH)
+                .map(|d| d.as_nanos() as u64)
+                .unwrap_or(0xcafe_babe_dead_beef)
+                | 1; // xorshift64 must not be seeded with 0
+        }
+        v ^= v << 13;
+        v ^= v >> 7;
+        v ^= v << 17;
+        s.set(v);
+        v
+    })
 }
 
 fn default_scene_window_size() -> [f32; 2] {
@@ -628,10 +679,9 @@ mod tests {
     #[test]
     fn normalize_next_id_raises_loaded_counter_above_existing_ids() {
         let mut document = SceneDocument {
-            name: "test".to_string(),
-            view: SceneViewSettings::default(),
             nodes: vec![test_node(4), test_node(9)],
             next_id: 3,
+            ..SceneDocument::new("test")
         };
 
         assert!(document.normalize_next_id());
@@ -641,10 +691,9 @@ mod tests {
     #[test]
     fn normalize_next_id_preserves_valid_future_counter() {
         let mut document = SceneDocument {
-            name: "test".to_string(),
-            view: SceneViewSettings::default(),
             nodes: vec![test_node(4), test_node(9)],
             next_id: 25,
+            ..SceneDocument::new("test")
         };
 
         assert!(!document.normalize_next_id());
@@ -654,44 +703,42 @@ mod tests {
     #[test]
     fn duplicate_nodes_prunes_descendants_and_preserves_subtree_structure() {
         let mut document = SceneDocument {
-            name: "test".to_string(),
-            view: SceneViewSettings::default(),
             nodes: vec![
                 test_node_with_parent(1, None),
                 test_node_with_parent(2, Some(1)),
                 test_node_with_parent(3, None),
             ],
-            next_id: 4,
+            ..SceneDocument::new("test")
         };
 
         let duplicated_root_ids = document.duplicate_nodes(&[1, 2], [5.0, 7.0]);
 
-        assert_eq!(duplicated_root_ids, vec![4]);
-        assert_eq!(document.next_id, 6);
+        // Selection of [1, 2] prunes 2 (descendant of 1), so only one root is duplicated.
+        assert_eq!(duplicated_root_ids.len(), 1);
         assert_eq!(document.nodes.len(), 5);
 
-        let duplicated_root = document.node(4).expect("duplicated root exists");
-        assert_eq!(duplicated_root.parent, None);
-        assert_eq!(duplicated_root.position, [15.0, 27.0]);
+        let dup_root_id = duplicated_root_ids[0];
+        let dup_root = document.node(dup_root_id).expect("duplicated root exists");
+        assert_eq!(dup_root.parent, None);
+        assert_eq!(dup_root.position, [15.0, 27.0]); // node 1 pos + delta
 
-        let duplicated_child = document.node(5).expect("duplicated child exists");
-        assert_eq!(duplicated_child.parent, Some(4));
-        assert_eq!(duplicated_child.position, [25.0, 47.0]);
+        let dup_child = document
+            .nodes
+            .iter()
+            .find(|n| n.parent == Some(dup_root_id))
+            .expect("duplicated child exists");
+        assert_eq!(dup_child.position, [25.0, 47.0]); // node 2 pos + delta
     }
 
     #[test]
-    fn duplicate_nodes_fails_cleanly_when_id_space_is_exhausted() {
-        let original = test_node_with_parent(1, None);
+    fn duplicate_nodes_returns_empty_for_empty_selection() {
         let mut document = SceneDocument {
-            name: "test".to_string(),
-            view: SceneViewSettings::default(),
-            nodes: vec![original.clone()],
-            next_id: u64::MAX,
+            nodes: vec![test_node_with_parent(1, None)],
+            ..SceneDocument::new("test")
         };
 
-        assert!(document.duplicate_nodes(&[1], [5.0, 7.0]).is_empty());
-        assert_eq!(document.nodes, vec![original]);
-        assert_eq!(document.next_id, u64::MAX);
+        assert!(document.duplicate_nodes(&[], [0.0, 0.0]).is_empty());
+        assert_eq!(document.nodes.len(), 1);
     }
 
     #[test]
@@ -702,10 +749,8 @@ mod tests {
             test_node_with_parent(3, Some(2)),
         ];
         let mut document = SceneDocument {
-            name: "test".to_string(),
-            view: SceneViewSettings::default(),
             nodes: original_nodes.clone(),
-            next_id: 4,
+            ..SceneDocument::new("test")
         };
 
         assert!(!document.reparent_nodes(&[1], Some(3)));
@@ -715,14 +760,12 @@ mod tests {
     #[test]
     fn reorder_nodes_moves_selection_up_and_down() {
         let mut document = SceneDocument {
-            name: "test".to_string(),
-            view: SceneViewSettings::default(),
             nodes: vec![
                 test_node_with_parent(1, None),
                 test_node_with_parent(2, None),
                 test_node_with_parent(3, None),
             ],
-            next_id: 4,
+            ..SceneDocument::new("test")
         };
 
         assert!(document.reorder_nodes(&[2], SceneNodeReorderDirection::Up));
