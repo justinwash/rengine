@@ -306,7 +306,8 @@ If the goal is to make building games in rengine materially easier, the editor w
 
 ## Recently Landed
 
-- Scene validation on save: every save runs the engine's `validate_editor_scene` over the active document and reports issues (duplicate/dangling/self/cyclic node ids, sourceless sprites, missing scripts/assets) to the activity log, with node ids and severities. A headless test guards editor-document → validator format compatibility. Next: a dedicated validation panel with clickable issues that select the offending node, and live (continuous) validation.
+- Scene validation on save: every save runs the engine's `validate_editor_scene` over the active document and reports issues (duplicate/dangling/self/cyclic node ids, sourceless sprites, missing scripts/assets) to the activity log, with node ids and severities. A headless test guards editor-document → validator format compatibility.
+- Dedicated Validation bottom tab: lists the active scene's issues (errors red, warnings amber) separately from the activity log; clicking a row selects the offending node in the viewport. Stable random node ids + a `version` field on saved documents, plus project-wide validation (including cross-scene id collisions) summarised in the activity log on project open. Next: live (continuous) validation as the document changes, and dependency ("used-by") tracking.
 
 ## Immediate Next Steps
 
