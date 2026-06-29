@@ -761,6 +761,35 @@ impl RengineNativeEditor {
         self.push_log(format!("Opened scene {}", self.display_path(&path)));
     }
 
+    /// Open a node's `script_path` (resolved against the project root) in the
+    /// OS's default editor. Scripts are compiled Rust, so this is a jump-to-
+    /// source convenience — editing + recompiling happen outside the editor.
+    pub(crate) fn open_script_in_os(&mut self, script_path: &str) {
+        let path = self.project_browser_root.join(script_path);
+        if !path.exists() {
+            self.push_log(format!(
+                "Script not found on disk: {}",
+                self.display_path(&path)
+            ));
+            return;
+        }
+        let result = if cfg!(target_os = "windows") {
+            Command::new("cmd").args(["/C", "start", ""]).arg(&path).spawn()
+        } else if cfg!(target_os = "macos") {
+            Command::new("open").arg(&path).spawn()
+        } else {
+            Command::new("xdg-open").arg(&path).spawn()
+        };
+        match result {
+            Ok(_) => self.push_log(format!("Opened script {}", self.display_path(&path))),
+            Err(error) => self.push_log(format!(
+                "Failed to open {}: {}",
+                self.display_path(&path),
+                error
+            )),
+        }
+    }
+
     pub(crate) fn reveal_project_path(&mut self, path: &Path) {
         let result = if cfg!(target_os = "windows") {
             if path.is_dir() {

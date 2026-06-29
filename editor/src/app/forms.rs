@@ -673,6 +673,11 @@ impl RengineNativeEditor {
             if !state.script_options.is_empty() {
                 ui.button(INSPECTOR_SCRIPT_CLEAR_ID, "Clear Script");
             }
+            // Open the attached script's source in the OS editor (scripts are
+            // compiled Rust, so editing + recompiling stays outside the editor).
+            if !state.script_path.trim().is_empty() {
+                ui.button(INSPECTOR_SCRIPT_OPEN_ID, "Open Script in Editor");
+            }
 
             // Typed parameters for the attached script (manifest-declared).
             if !state.script_params.is_empty() {
@@ -821,6 +826,7 @@ impl RengineNativeEditor {
         // Picking a script from the manifest seeds its param defaults, which
         // needs the manifest — deferred past the `tab` borrow below.
         let mut attach_script_for_node: Option<(u64, String)> = None;
+        let mut open_script_path: Option<String> = None;
         let mut resync_form = false;
 
         {
@@ -941,6 +947,11 @@ impl RengineNativeEditor {
                         node.script_path.clear();
                         changed = true;
                         resync_form = true;
+                    }
+                    if response.was_activated(INSPECTOR_SCRIPT_OPEN_ID)
+                        && !node.script_path.trim().is_empty()
+                    {
+                        open_script_path = Some(node.script_path.clone());
                     }
 
                     // Typed param edits commit straight to `param_<name>` props
@@ -1082,6 +1093,10 @@ impl RengineNativeEditor {
             if self.attach_script_to_node(node_id, path) {
                 resync_form = true;
             }
+        }
+
+        if let Some(path) = open_script_path {
+            self.open_script_in_os(&path);
         }
 
         if let Some(node_id) = use_selected_sprite_for_node {
@@ -1500,6 +1515,9 @@ fn inspector_form_widget_count(
         // two widgets (label + editor) per typed param row.
         if !state.script_options.is_empty() {
             count += state.script_options.len() + 1;
+        }
+        if !state.script_path.trim().is_empty() {
+            count += 1;
         }
         if !state.script_params.is_empty() {
             count += 1 + state.script_params.len() * 2;

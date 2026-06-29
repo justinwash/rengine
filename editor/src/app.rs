@@ -88,6 +88,7 @@ const INSPECTOR_SCRIPT_PICK_BASE_ID: usize = 40_000;
 const INSPECTOR_SCRIPT_PARAM_TEXT_BASE_ID: usize = 41_000;
 const INSPECTOR_SCRIPT_PARAM_CHECK_BASE_ID: usize = 42_000;
 const INSPECTOR_SCRIPT_CLEAR_ID: usize = 43_000;
+const INSPECTOR_SCRIPT_OPEN_ID: usize = 43_001;
 
 const NODE_KIND_OPTIONS: [SceneNodeKind; 6] = [
     SceneNodeKind::Group,
