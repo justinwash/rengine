@@ -58,8 +58,9 @@ pub use scene::{
     SceneInstance2D, SceneInstance2DDef, SceneIssueSeverity, SceneLayer2D, SceneLibrary,
     SceneNode2D, SceneOp, SceneScript2D, SceneScriptBinding2D, SceneScriptContext2D,
     SceneScriptEvent2D, SceneScriptHost2D, SceneScriptInputEvent2D, SceneScriptRegistry2D,
-    SceneValidationIssue, SceneValidationReport, SceneWorld2D, Transform2D, Transition,
-    CURRENT_EDITOR_SCENE_VERSION, NESTED_SCENE_PROPERTY,
+    SceneValidationIssue, SceneValidationReport, SceneWorld2D, ScriptDef, ScriptManifest,
+    ScriptParamDef, ScriptParamKind, Transform2D, Transition, CURRENT_EDITOR_SCENE_VERSION,
+    NESTED_SCENE_PROPERTY,
 };
 pub use text::FontAtlas;
 pub use text::FontId;

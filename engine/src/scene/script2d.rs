@@ -134,6 +134,13 @@ pub enum SceneScriptEvent2D {
     },
 }
 
+/// A script with no behavior, used by [`SceneScriptRegistry2D::from_known_paths`]
+/// so a path is "registered" for `contains()`/validation purposes only.
+#[derive(Default)]
+struct NoopScript2D;
+
+impl SceneScript2D for NoopScript2D {}
+
 type SceneScriptFactory2D = Arc<dyn Fn() -> Box<dyn SceneScript2D> + Send + Sync>;
 
 #[derive(Default, Clone)]
@@ -144,6 +151,23 @@ pub struct SceneScriptRegistry2D {
 impl SceneScriptRegistry2D {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Build a registry that only knows *which* script paths exist, with no
+    /// real behavior behind them (each maps to a no-op script). This lets
+    /// tooling that can't link the game's compiled scripts — e.g. the editor
+    /// validating a scene against a `scripts.manifest.json` — reuse the same
+    /// `contains()`/validation path without inventing a parallel check.
+    pub fn from_known_paths<I, S>(paths: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let mut registry = Self::new();
+        for path in paths {
+            registry.register_default::<NoopScript2D>(path);
+        }
+        registry
     }
 
     pub fn register<F>(&mut self, script_path: impl AsRef<str>, factory: F)
@@ -552,6 +576,17 @@ mod tests {
     impl SceneScript2D for DummyScript {}
 
     #[test]
+    fn from_known_paths_registers_each_path_for_validation_lookup() {
+        let registry =
+            SceneScriptRegistry2D::from_known_paths(["scripts/menu_action.rs", "scripts/hud.rs"]);
+        assert!(registry.contains("scripts/menu_action.rs"));
+        assert!(registry.contains("scripts\\HUD.rs")); // normalized
+        assert!(!registry.contains("scripts/unknown.rs"));
+        // The no-op factory still produces a usable (inert) script.
+        assert!(registry.create("scripts/hud.rs").is_some());
+    }
+
+    #[test]
     fn registry_normalizes_paths_for_lookup() {
         let mut registry = SceneScriptRegistry2D::new();
         registry.register_default::<DummyScript>("scripts/Title.rs");
@@ -576,6 +611,7 @@ mod tests {
                     editor_node_id: Some(1),
                     editor_parent_id: None,
                     editor_name: Some("title_root".to_string()),
+                    params: HashMap::new(),
                 },
                 SceneScriptBinding2D {
                     instance_index: 1,
@@ -584,6 +620,7 @@ mod tests {
                     editor_node_id: Some(2),
                     editor_parent_id: None,
                     editor_name: Some("menu_root".to_string()),
+                    params: HashMap::new(),
                 },
             ],
             &registry,
@@ -608,6 +645,7 @@ mod tests {
                 editor_node_id: Some(1),
                 editor_parent_id: None,
                 editor_name: Some("title_root".to_string()),
+                params: HashMap::new(),
             }],
             &registry,
         );

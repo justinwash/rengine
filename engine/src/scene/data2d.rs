@@ -138,6 +138,18 @@ impl SceneInstance2D {
             .filter(|value| !value.is_empty())
     }
 
+    /// Authored script params: every `param_<name>` property with the prefix
+    /// stripped. Empty when the node carries no params.
+    pub fn script_params(&self) -> HashMap<String, String> {
+        self.properties
+            .iter()
+            .filter_map(|(key, value)| {
+                key.strip_prefix("param_")
+                    .map(|name| (name.to_string(), value.clone()))
+            })
+            .collect()
+    }
+
     /// Compiled sprite layers for this instance.
     ///
     /// Exposed to sibling scene modules (such as the runtime [`SceneWorld2D`])
@@ -387,6 +399,31 @@ pub struct SceneScriptBinding2D {
     pub editor_node_id: Option<u64>,
     pub editor_parent_id: Option<u64>,
     pub editor_name: Option<String>,
+    /// Authored script parameters, collected from the node's `param_<name>`
+    /// properties (prefix stripped). Lets one registered script be configured
+    /// per-instance instead of needing a distinct `script_path` per behavior.
+    pub params: HashMap<String, String>,
+}
+
+impl SceneScriptBinding2D {
+    /// Raw string value of an authored `param_<name>`, if present.
+    pub fn param(&self, name: &str) -> Option<&str> {
+        self.params.get(name).map(String::as_str)
+    }
+
+    pub fn param_f32(&self, name: &str) -> Option<f32> {
+        self.param(name).and_then(|v| v.trim().parse::<f32>().ok())
+    }
+
+    pub fn param_bool(&self, name: &str) -> Option<bool> {
+        self.param(name).and_then(parse_bool_property)
+    }
+
+    /// Parse a `"r,g,b[,a]"` sRGB param into a [`Color`], or `default` if
+    /// absent/malformed.
+    pub fn param_color(&self, name: &str, default: Color) -> Color {
+        parse_srgb_color(self.param(name), default)
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -478,6 +515,7 @@ impl Scene2D {
                     editor_node_id: instance.editor_node_id(),
                     editor_parent_id: instance.editor_parent_id(),
                     editor_name: instance.editor_name().map(str::to_string),
+                    params: instance.script_params(),
                 })
             })
             .collect()
@@ -1090,6 +1128,10 @@ mod tests {
         with_script.insert("script_path".to_string(), "scripts/title.rs".to_string());
         with_script.insert("editor_node_id".to_string(), "1".to_string());
         with_script.insert("editor_name".to_string(), "title_root".to_string());
+        with_script.insert("param_command".to_string(), "PushPace".to_string());
+        with_script.insert("param_speed".to_string(), "120".to_string());
+        with_script.insert("param_loop".to_string(), "true".to_string());
+        with_script.insert("param_tint".to_string(), "200,40,40,255".to_string());
 
         let mut without_script = HashMap::new();
         without_script.insert("editor_node_id".to_string(), "2".to_string());
@@ -1120,6 +1162,19 @@ mod tests {
         assert_eq!(bindings[0].script_path, "scripts/title.rs");
         assert_eq!(bindings[0].editor_node_id, Some(1));
         assert_eq!(bindings[0].editor_name.as_deref(), Some("title_root"));
+
+        // `param_<name>` properties are collected (prefix stripped) and read
+        // back through the typed accessors; non-param props are excluded.
+        let binding = &bindings[0];
+        assert_eq!(binding.params.len(), 4);
+        assert!(!binding.params.contains_key("command_path"));
+        assert_eq!(binding.param("command"), Some("PushPace"));
+        assert_eq!(binding.param_f32("speed"), Some(120.0));
+        assert_eq!(binding.param_bool("loop"), Some(true));
+        assert_eq!(
+            binding.param_color("tint", Color::BLACK),
+            Color::from_srgb8(200, 40, 40, 255)
+        );
     }
 
     #[test]

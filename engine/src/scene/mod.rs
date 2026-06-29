@@ -2,6 +2,7 @@ mod data2d;
 mod globals;
 mod layer2d;
 mod script2d;
+mod script_manifest;
 mod validation;
 mod world2d;
 
@@ -16,6 +17,7 @@ pub use script2d::{
     SceneScript2D, SceneScriptContext2D, SceneScriptEvent2D, SceneScriptHost2D,
     SceneScriptInputEvent2D, SceneScriptRegistry2D,
 };
+pub use script_manifest::{ScriptDef, ScriptManifest, ScriptParamDef, ScriptParamKind};
 pub use validation::{
     validate_editor_scene, validate_scene_dir, validate_scene_file, SceneIssueSeverity,
     SceneValidationIssue, SceneValidationReport, CURRENT_EDITOR_SCENE_VERSION,
