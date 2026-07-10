@@ -16,6 +16,8 @@ pub(crate) struct ScriptParamEntry {
     pub(crate) label: String,
     pub(crate) kind: rengine::ScriptParamKind,
     pub(crate) value: String,
+    /// Allowed values when `kind` is `Enum` (drives the cycle-selector).
+    pub(crate) options: Vec<String>,
 }
 
 #[derive(Default)]
@@ -693,6 +695,17 @@ impl RengineNativeEditor {
                             let checked = matches!(param.value.trim(), "true" | "1" | "yes");
                             ui.checkbox(INSPECTOR_SCRIPT_PARAM_CHECK_BASE_ID + index, "", checked);
                         }
+                        rengine::ScriptParamKind::Enum => {
+                            // A cycle-selector: the button shows the current value and
+                            // advances to the next declared option on click, so only
+                            // valid enum values can ever be authored.
+                            let display = if param.value.trim().is_empty() {
+                                "<none>"
+                            } else {
+                                param.value.as_str()
+                            };
+                            ui.button(INSPECTOR_SCRIPT_PARAM_ENUM_BASE_ID + index, display);
+                        }
                         _ => {
                             ui.text_input(
                                 INSPECTOR_SCRIPT_PARAM_TEXT_BASE_ID + index,
@@ -977,6 +990,22 @@ impl RengineNativeEditor {
                             state.script_params[index].value = value.to_string();
                             node.properties.insert(key, value.to_string());
                             changed = true;
+                        } else if response
+                            .was_activated(INSPECTOR_SCRIPT_PARAM_ENUM_BASE_ID + index)
+                        {
+                            let param = &state.script_params[index];
+                            let options = &param.options;
+                            if !options.is_empty() {
+                                let next_idx = options
+                                    .iter()
+                                    .position(|opt| opt == &param.value)
+                                    .map(|i| (i + 1) % options.len())
+                                    .unwrap_or(0);
+                                let value = options[next_idx].clone();
+                                state.script_params[index].value = value.clone();
+                                node.properties.insert(key, value);
+                                changed = true;
+                            }
                         }
                     }
 
@@ -1497,6 +1526,7 @@ fn build_script_params(
                 label: p.display_label().to_string(),
                 kind: p.kind,
                 value,
+                options: p.options.clone(),
             }
         })
         .collect()

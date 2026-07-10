@@ -27,6 +27,10 @@ pub enum ScriptParamKind {
     Number,
     Bool,
     Color,
+    /// A fixed choice from `ScriptParamDef::options`. The editor renders a
+    /// selector so authors can only pick a declared value, and `is_valid_value`
+    /// rejects anything off the list.
+    Enum,
 }
 
 /// One typed parameter a script accepts.
@@ -42,6 +46,9 @@ pub struct ScriptParamDef {
     /// Default value seeded when the script is first attached.
     #[serde(default)]
     pub default: String,
+    /// Allowed values when `kind` is `Enum`; ignored for other kinds.
+    #[serde(default)]
+    pub options: Vec<String>,
 }
 
 impl ScriptParamDef {
@@ -52,6 +59,34 @@ impl ScriptParamDef {
         } else {
             &self.label
         }
+    }
+
+    /// Whether `value` is acceptable for this param. Only `Enum` constrains the
+    /// value (it must be one of `options`, unless no options are declared);
+    /// every other kind accepts any string.
+    pub fn is_valid_value(&self, value: &str) -> bool {
+        match self.kind {
+            ScriptParamKind::Enum => {
+                self.options.is_empty() || self.options.iter().any(|opt| opt == value)
+            }
+            _ => true,
+        }
+    }
+
+    /// The next option after `current` (wrapping), or the first option when
+    /// `current` isn't in the list. `None` if no options are declared. Drives the
+    /// editor's cycle-selector for `Enum` params.
+    pub fn next_option(&self, current: &str) -> Option<&str> {
+        if self.options.is_empty() {
+            return None;
+        }
+        let next_idx = self
+            .options
+            .iter()
+            .position(|opt| opt == current)
+            .map(|i| (i + 1) % self.options.len())
+            .unwrap_or(0);
+        Some(self.options[next_idx].as_str())
     }
 }
 
@@ -150,5 +185,57 @@ mod tests {
         let menu = manifest.script("scripts/menu_action.rs").unwrap();
         assert_eq!(menu.display_name(), "scripts/menu_action.rs");
         assert!(menu.params.is_empty());
+    }
+
+    #[test]
+    fn parses_enum_param_with_options() {
+        let json = r#"{
+            "scripts": [
+                {
+                    "path": "scripts/menu_action.rs",
+                    "params": [
+                        {
+                            "name": "action",
+                            "kind": "enum",
+                            "default": "NewGame",
+                            "options": ["NewGame", "Continue", "Settings", "Quit"]
+                        }
+                    ]
+                }
+            ]
+        }"#;
+        let manifest: ScriptManifest = serde_json::from_str(json).unwrap();
+        let param = &manifest.script("scripts/menu_action.rs").unwrap().params[0];
+        assert_eq!(param.kind, ScriptParamKind::Enum);
+        assert_eq!(param.options, ["NewGame", "Continue", "Settings", "Quit"]);
+    }
+
+    #[test]
+    fn enum_validates_and_cycles_only_declared_options() {
+        let param = ScriptParamDef {
+            name: "action".into(),
+            label: String::new(),
+            kind: ScriptParamKind::Enum,
+            default: "NewGame".into(),
+            options: vec!["NewGame".into(), "Continue".into(), "Quit".into()],
+        };
+        assert!(param.is_valid_value("Continue"));
+        assert!(!param.is_valid_value("Garbage"));
+
+        // Cycles in order and wraps; an unknown current value resets to the first.
+        assert_eq!(param.next_option("NewGame"), Some("Continue"));
+        assert_eq!(param.next_option("Quit"), Some("NewGame"));
+        assert_eq!(param.next_option("Garbage"), Some("NewGame"));
+
+        // A non-enum param accepts anything and never cycles.
+        let free = ScriptParamDef {
+            name: "label".into(),
+            label: String::new(),
+            kind: ScriptParamKind::String,
+            default: String::new(),
+            options: vec![],
+        };
+        assert!(free.is_valid_value("anything"));
+        assert_eq!(free.next_option("anything"), None);
     }
 }
