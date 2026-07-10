@@ -7,8 +7,9 @@
         {
           "name": "action",
           "label": "Action",
-          "kind": "string",
-          "default": "spawn"
+          "kind": "enum",
+          "default": "spawn",
+          "options": ["spawn", "clear"]
         }
       ]
     }
