@@ -817,6 +817,7 @@ fn required_vertex_buffer_capacity(current_capacity: usize, required_vertices: u
         .unwrap_or(required_vertices)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn render_pass<'a, F>(
     device: &wgpu::Device,
     encoder: &mut wgpu::CommandEncoder,
@@ -827,6 +828,10 @@ pub(crate) fn render_pass<'a, F>(
     queue: &wgpu::Queue,
     canvases: &mut [Canvas],
     fonts: &[FontAtlas],
+    // When a fixed canvas is letterboxed inside a larger window, this is the
+    // on-screen rect (physical px) the canvas draws into, so crisp UI text lines
+    // up with the scaled sprite layer. `None` fills the whole `view`.
+    viewport: Option<(f32, f32, f32, f32)>,
     texture_bind_group: F,
 ) where
     F: Fn(usize) -> Option<&'a wgpu::BindGroup>,
@@ -880,6 +885,11 @@ pub(crate) fn render_pass<'a, F>(
         multiview_mask: None,
     });
     pass.set_pipeline(pipeline);
+    if let Some((vx, vy, vw, vh)) = viewport {
+        if vw > 0.0 && vh > 0.0 {
+            pass.set_viewport(vx, vy, vw, vh, 0.0, 1.0);
+        }
+    }
     pass.set_bind_group(0, &fonts[0].bind_group, &[]);
     pass.set_vertex_buffer(0, vertex_buffer.slice(..));
 

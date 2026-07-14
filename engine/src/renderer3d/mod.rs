@@ -815,6 +815,7 @@ impl Renderer3D {
             queue,
             &mut frame.canvases,
             fonts,
+            None,
             |texture_id| textures.get(texture_id).map(|texture| &texture.bind_group),
         );
 

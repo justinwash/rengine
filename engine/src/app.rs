@@ -1306,7 +1306,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
             while engine.time.consume_fixed_step() {
                 game.fixed_update(&engine);
             }
-            headless_frame.begin(engine.window_size(), engine.font_atlas());
+            headless_frame.begin(engine.game_size(), engine.font_atlas());
             game.update(&engine, &mut headless_frame);
             game.render(&engine, &mut headless_frame);
             if game.should_exit() {
@@ -1410,7 +1410,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
                     while engine.time.consume_fixed_step() {
                         game.fixed_update(&engine);
                     }
-                    frame.begin(engine.window_size(), engine.font_atlas());
+                    frame.begin(engine.game_size(), engine.font_atlas());
                     game.update(&engine, &mut frame);
 
                     if game.should_exit() {
@@ -1523,7 +1523,7 @@ where
                 }
             }
 
-            frame.begin(engine.window_size(), engine.font_atlas());
+            frame.begin(engine.game_size(), engine.font_atlas());
             let op = if let Some(scene) = stack.last_mut() {
                 scene.update(&engine, &mut globals, &mut frame)
             } else {
@@ -1621,7 +1621,7 @@ where
                         }
                     }
 
-                    frame.begin(engine.window_size(), engine.font_atlas());
+                    frame.begin(engine.game_size(), engine.font_atlas());
 
                     if transition.is_none() {
                         let op = if let Some(scene) = stack.last_mut() {

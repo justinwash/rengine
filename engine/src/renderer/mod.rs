@@ -771,6 +771,7 @@ impl Renderer {
             queue,
             &mut frame.canvases,
             fonts,
+            None,
             |texture_id| textures.get(texture_id).map(|texture| &texture.bind_group),
         );
 
@@ -930,6 +931,17 @@ impl Renderer {
             pass.draw(0..3, 0..1);
         }
 
+        // Letterbox the canvas/text into the same rect the offscreen sprite layer
+        // blits to, so crisp UI text lines up with the scaled pixel canvas.
+        let canvas_viewport = self.offscreen.as_ref().map(|ofs| {
+            blit_viewport(
+                ofs.scale_mode.get(),
+                ofs.width,
+                ofs.height,
+                final_size.0,
+                final_size.1,
+            )
+        });
         let device = &self.device;
         let canvas_pipeline = &self.canvas_pipeline;
         let canvas_vb = &mut self.canvas_vb;
@@ -947,6 +959,7 @@ impl Renderer {
             queue,
             &mut frame.canvases,
             fonts,
+            canvas_viewport,
             |texture_id| textures.get(texture_id).map(|texture| &texture.bind_group),
         );
     }
