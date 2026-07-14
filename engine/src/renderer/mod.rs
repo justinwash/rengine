@@ -1275,15 +1275,18 @@ pub(crate) fn blit_viewport(
     }
 }
 
-/// Map a window-space point (surface pixels) back into fixed-canvas pixels,
-/// inverting [`blit_viewport`]. The canvas uses a top-left origin, matching the
-/// sprite and canvas coordinate spaces, so this is what UI hit-testing needs
-/// once the canvas is letterboxed or scaled inside a larger window.
+/// Map a point from window space into fixed-canvas space, inverting the scale
+/// [`blit_viewport`] applies. Both spaces use the engine's UI convention —
+/// center origin, y-up — so `point` is what [`crate::input::InputState`] already
+/// reports (and what `Engine::mouse_screen_pos` returns), and the result is in
+/// the same space as sprite/canvas draw coordinates and `Rect`.
 ///
-/// The mapping is a plain linear inverse: a point inside the letterbox bars
-/// maps to canvas coords outside `[0, game_w] × [0, game_h]` (negative or
-/// over-range), which naturally misses every on-canvas widget. Callers that
-/// care can range-check the result.
+/// `blit_viewport` always centers the canvas in the window, so in center-origin
+/// space the inverse is a pure per-axis scale with no translation: a window
+/// point at the center maps to the canvas center regardless of letterboxing.
+/// A point out in the letterbox bars scales past `±game/2`, so it lands outside
+/// the canvas and misses every on-canvas widget; callers that care can
+/// range-check against [`Rect`].
 pub(crate) fn window_to_canvas(
     scale_mode: ScaleMode,
     game_w: u32,
@@ -1292,14 +1295,11 @@ pub(crate) fn window_to_canvas(
     win_h: u32,
     point: glam::Vec2,
 ) -> glam::Vec2 {
-    let (vx, vy, vw, vh) = blit_viewport(scale_mode, game_w, game_h, win_w, win_h);
+    let (_vx, _vy, vw, vh) = blit_viewport(scale_mode, game_w, game_h, win_w, win_h);
     if vw <= 0.0 || vh <= 0.0 {
         return point;
     }
-    glam::Vec2::new(
-        (point.x - vx) / vw * game_w as f32,
-        (point.y - vy) / vh * game_h as f32,
-    )
+    glam::Vec2::new(point.x * game_w as f32 / vw, point.y * game_h as f32 / vh)
 }
 
 #[cfg(test)]
@@ -1365,49 +1365,50 @@ mod tests {
     #[test]
     fn window_to_canvas_inverts_pixel_perfect_letterbox() {
         // 640x360 canvas in a 1400x720 window: PixelPerfect picks 2x (1280x720)
-        // centered, leaving 60px bars left and right, none top/bottom.
+        // centered, leaving 60px bars left and right. Coordinates are the
+        // engine's center-origin, y-up convention (window center == origin).
         let (m, gw, gh, ww, wh) = (ScaleMode::PixelPerfect, 640, 360, 1400, 720);
         let (vx, vy, vw, vh) = blit_viewport(m, gw, gh, ww, wh);
         assert_eq!((vx, vy, vw, vh), (60.0, 0.0, 1280.0, 720.0));
 
-        // Top-left of the drawn area -> canvas origin.
+        // Window center -> canvas center.
         assert_vec_close(
-            window_to_canvas(m, gw, gh, ww, wh, glam::Vec2::new(60.0, 0.0)),
+            window_to_canvas(m, gw, gh, ww, wh, glam::Vec2::ZERO),
             glam::Vec2::ZERO,
         );
-        // Center of the window -> center of the canvas.
+        // Top-left corner of the drawn area (window center-origin (-640, +360))
+        // -> canvas top-left corner (-320, +180).
         assert_vec_close(
-            window_to_canvas(m, gw, gh, ww, wh, glam::Vec2::new(700.0, 360.0)),
-            glam::Vec2::new(320.0, 180.0),
+            window_to_canvas(m, gw, gh, ww, wh, glam::Vec2::new(-640.0, 360.0)),
+            glam::Vec2::new(-320.0, 180.0),
         );
-        // A click in the left letterbox bar maps to negative x (misses widgets).
-        assert!(window_to_canvas(m, gw, gh, ww, wh, glam::Vec2::new(10.0, 360.0)).x < 0.0);
+        // A point out in the left letterbox bar scales past -320 (misses widgets).
+        assert!(window_to_canvas(m, gw, gh, ww, wh, glam::Vec2::new(-690.0, 0.0)).x < -320.0);
     }
 
     #[test]
     fn window_to_canvas_roundtrips_arbitrary_letterbox() {
-        // Non-integer scale: 640x360 in 1920x1080 stays 3x, but check the
-        // fractional Letterbox path against a deliberately odd window.
+        // Deliberately odd, non-integer window to exercise the fractional
+        // Letterbox scale. Forward-map a canvas point into the window, invert it.
         let (m, gw, gh, ww, wh) = (ScaleMode::Letterbox, 640, 360, 1000, 900);
+        let (_vx, _vy, vw, vh) = blit_viewport(m, gw, gh, ww, wh);
         for p in [
             glam::Vec2::new(0.0, 0.0),
-            glam::Vec2::new(639.0, 359.0),
-            glam::Vec2::new(320.0, 180.0),
+            glam::Vec2::new(-320.0, 180.0),
+            glam::Vec2::new(300.0, -150.0),
         ] {
-            let (vx, vy, vw, vh) = blit_viewport(m, gw, gh, ww, wh);
-            // Forward-map the canvas point into the window, then invert it.
-            let win = glam::Vec2::new(vx + p.x / gw as f32 * vw, vy + p.y / gh as f32 * vh);
+            let win = glam::Vec2::new(p.x * vw / gw as f32, p.y * vh / gh as f32);
             assert_vec_close(window_to_canvas(m, gw, gh, ww, wh, win), p);
         }
     }
 
     #[test]
-    fn window_to_canvas_stretch_is_plain_ratio() {
+    fn window_to_canvas_stretch_is_per_axis_ratio() {
+        // Stretch fills the window, so each axis scales independently.
         let (m, gw, gh, ww, wh) = (ScaleMode::Stretch, 640, 360, 1280, 720);
-        // Stretch fills the window, so it is a straight axis-wise ratio.
         assert_vec_close(
-            window_to_canvas(m, gw, gh, ww, wh, glam::Vec2::new(640.0, 360.0)),
-            glam::Vec2::new(320.0, 180.0),
+            window_to_canvas(m, gw, gh, ww, wh, glam::Vec2::new(640.0, -360.0)),
+            glam::Vec2::new(320.0, -180.0),
         );
     }
 }

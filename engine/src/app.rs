@@ -575,18 +575,29 @@ impl Engine {
             .unwrap_or((self.window_width, self.window_height))
     }
 
+    /// The drawable canvas as a [`Rect`] in canvas space — center origin, y-up —
+    /// the anchor every screen's layout hangs off. Its size is the fixed render
+    /// resolution when one is configured, otherwise the window size, so a screen
+    /// laid out against `canvas_rect()` reflows automatically when a fixed canvas
+    /// is switched on. Matches `mouse_canvas_pos` for hit-testing.
+    pub fn canvas_rect(&self) -> crate::math::Rect {
+        let (w, h) = self.game_size();
+        crate::math::Rect::new(-(w as f32) / 2.0, -(h as f32) / 2.0, w as f32, h as f32)
+    }
+
     pub fn mouse_screen_pos(&self) -> glam::Vec2 {
         let (x, y) = self.input.mouse_position();
         glam::Vec2::new(x, y)
     }
 
-    /// Cursor position in fixed-canvas pixels (top-left origin).
+    /// Cursor position in fixed-canvas coordinates (center origin, y-up — the
+    /// same space as sprite/canvas draw positions, `Rect`, and node positions).
     ///
-    /// When a render resolution is configured, this inverts the letterbox /
-    /// scale so UI hit-testing lands in canvas space regardless of window size;
-    /// with no fixed canvas it returns the raw window position (window space is
-    /// canvas space). A cursor inside the letterbox bars maps outside the canvas
-    /// bounds, so it misses on-canvas widgets rather than snapping to an edge.
+    /// When a render resolution is configured, this undoes the letterbox / scale
+    /// so UI hit-testing lands in canvas space regardless of window size; with no
+    /// fixed canvas it returns the raw window position (window space is canvas
+    /// space). A cursor out in the letterbox bars maps outside `±canvas/2`, so it
+    /// misses on-canvas widgets rather than snapping to an edge.
     pub fn mouse_canvas_pos(&self) -> glam::Vec2 {
         self.window_to_canvas(self.mouse_screen_pos())
     }

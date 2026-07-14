@@ -5,6 +5,7 @@ pub mod input;
 
 pub mod canvas;
 pub mod debug;
+pub mod layout;
 pub mod particle;
 pub mod renderer;
 pub mod renderer3d;
@@ -27,6 +28,7 @@ pub use assets::Color;
 pub use debug::{DebugLogEntry, DebugLogLevel};
 pub use input::InputState;
 pub use input::{ActionMap, AxisMapping, Binding, GamepadAxis};
+pub use layout::{Anchor, Justify, Stack, Track};
 pub use math::Rect;
 pub use math::Rng;
 pub use math::TimeState;
