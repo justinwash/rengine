@@ -563,11 +563,13 @@ impl Engine {
         (self.window_width, self.window_height)
     }
 
+    /// Half the drawable canvas, in canvas units. With a fixed render resolution
+    /// this is `game_size / 2` (e.g. 320×180 for a 640×360 canvas), so UI laid
+    /// out from `half_size` stays in canvas space; without one it is the window
+    /// half, unchanged. Use [`Engine::window_size`] for actual window pixels.
     pub fn half_size(&self) -> (f32, f32) {
-        (
-            self.window_width as f32 / 2.0,
-            self.window_height as f32 / 2.0,
-        )
+        let (w, h) = self.game_size();
+        (w as f32 / 2.0, h as f32 / 2.0)
     }
 
     pub fn game_size(&self) -> (u32, u32) {
@@ -593,13 +595,12 @@ impl Engine {
     /// Cursor position in fixed-canvas coordinates (center origin, y-up — the
     /// same space as sprite/canvas draw positions, `Rect`, and node positions).
     ///
-    /// When a render resolution is configured, this undoes the letterbox / scale
-    /// so UI hit-testing lands in canvas space regardless of window size; with no
-    /// fixed canvas it returns the raw window position (window space is canvas
-    /// space). A cursor out in the letterbox bars maps outside `±canvas/2`, so it
+    /// The cursor is already mapped into canvas space when it's ingested (the
+    /// window→canvas transform runs in the event loop), so this is the stored
+    /// position. A cursor out in the letterbox bars is outside `±canvas/2`, so it
     /// misses on-canvas widgets rather than snapping to an edge.
     pub fn mouse_canvas_pos(&self) -> glam::Vec2 {
-        self.window_to_canvas(self.mouse_screen_pos())
+        self.mouse_screen_pos()
     }
 
     /// Map an arbitrary window-space point into fixed-canvas pixels. See
@@ -1362,7 +1363,10 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
                 WindowEvent::CursorMoved { position, .. } => {
                     let x = position.x as f32 - engine.window_width as f32 / 2.0;
                     let y = -(position.y as f32 - engine.window_height as f32 / 2.0);
-                    engine.input.handle_cursor_moved(x, y);
+                    // Map into canvas space so hit-testing matches canvas-positioned
+                    // UI (identity when no fixed render resolution is set).
+                    let c = engine.window_to_canvas(glam::Vec2::new(x, y));
+                    engine.input.handle_cursor_moved(c.x, c.y);
                 }
 
                 WindowEvent::MouseInput { button, state, .. } => {
@@ -1570,7 +1574,10 @@ where
                 WindowEvent::CursorMoved { position, .. } => {
                     let x = position.x as f32 - engine.window_width as f32 / 2.0;
                     let y = -(position.y as f32 - engine.window_height as f32 / 2.0);
-                    engine.input.handle_cursor_moved(x, y);
+                    // Map into canvas space so hit-testing matches canvas-positioned
+                    // UI (identity when no fixed render resolution is set).
+                    let c = engine.window_to_canvas(glam::Vec2::new(x, y));
+                    engine.input.handle_cursor_moved(c.x, c.y);
                 }
 
                 WindowEvent::MouseInput { button, state, .. } => {
