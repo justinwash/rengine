@@ -580,6 +580,33 @@ impl Engine {
         glam::Vec2::new(x, y)
     }
 
+    /// Cursor position in fixed-canvas pixels (top-left origin).
+    ///
+    /// When a render resolution is configured, this inverts the letterbox /
+    /// scale so UI hit-testing lands in canvas space regardless of window size;
+    /// with no fixed canvas it returns the raw window position (window space is
+    /// canvas space). A cursor inside the letterbox bars maps outside the canvas
+    /// bounds, so it misses on-canvas widgets rather than snapping to an edge.
+    pub fn mouse_canvas_pos(&self) -> glam::Vec2 {
+        self.window_to_canvas(self.mouse_screen_pos())
+    }
+
+    /// Map an arbitrary window-space point into fixed-canvas pixels. See
+    /// [`Engine::mouse_canvas_pos`].
+    pub fn window_to_canvas(&self, point: glam::Vec2) -> glam::Vec2 {
+        match self.renderer.offscreen_info() {
+            Some((gw, gh, mode)) => crate::renderer::window_to_canvas(
+                mode,
+                gw,
+                gh,
+                self.window_width,
+                self.window_height,
+                point,
+            ),
+            None => point,
+        }
+    }
+
     pub fn set_scale_mode(&self, mode: ScaleMode) {
         self.renderer.set_scale_mode(mode);
     }
