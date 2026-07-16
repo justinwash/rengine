@@ -1094,6 +1094,19 @@ impl Renderer {
         drop(mapped);
         readback_buffer.unmap();
 
+        // The capture texture inherits the surface format, which is commonly a
+        // BGRA order on Windows/DX12. The readback above copies raw bytes into an
+        // RGBA-labelled buffer, so swap R and B for BGRA surfaces — otherwise the
+        // saved PNG has red and blue channels flipped versus the real window.
+        if matches!(
+            self.surface_config.format,
+            wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb
+        ) {
+            for px in rgba8.chunks_exact_mut(BYTES_PER_PIXEL as usize) {
+                px.swap(0, 2);
+            }
+        }
+
         Ok(CapturedFrame {
             width,
             height,
