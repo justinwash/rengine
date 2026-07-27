@@ -92,6 +92,20 @@ impl InputState {
             .map(|(text, cursor)| (text.as_str(), *cursor))
     }
 
+    /// Inject a synthetic key press for this frame. Used by headless playtest
+    /// drivers to script input without a window.
+    /// ponytail: press-only; add a release variant when a driver needs held keys.
+    pub fn inject_key_press(&mut self, key: KeyCode) {
+        self.keys_down.insert(key);
+        self.keys_pressed.insert(key);
+    }
+
+    /// Inject committed text for this frame, as a real keyboard would deliver it
+    /// alongside the key event. Headless drivers need this to drive text fields.
+    pub fn inject_text(&mut self, text: &str) {
+        self.handle_committed_text(text);
+    }
+
     pub(crate) fn handle_key_event(&mut self, key: KeyCode, state: ElementState) {
         match state {
             ElementState::Pressed => {

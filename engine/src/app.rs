@@ -1225,6 +1225,164 @@ pub trait Game: 'static + Sized {
     }
 }
 
+/// One line of a headless playtest script.
+enum PlayStep {
+    /// Advance N frames with no input.
+    Wait(u32),
+    /// Inject a key press for one frame.
+    Key(winit::keyboard::KeyCode),
+    /// Screenshot this frame to the given path.
+    Shot(PathBuf),
+}
+
+/// Scripted keyboard input + screenshots for headless playtesting. Enabled by
+/// pointing `RENGINE_PLAY_SCRIPT` at a text file whose lines are `wait N`,
+/// `key <KeyCode>`, or `shot <path>`.
+struct PlayScript {
+    steps: std::vec::IntoIter<PlayStep>,
+    waiting: u32,
+    finished: bool,
+}
+
+impl PlayScript {
+    fn from_env() -> Option<Self> {
+        let path = std::env::var("RENGINE_PLAY_SCRIPT").ok()?;
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("failed to read play script {path}: {e}"));
+        let steps: Vec<PlayStep> = text
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .map(|line| {
+                let (verb, rest) = line.split_once(' ').unwrap_or((line, ""));
+                let rest = rest.trim();
+                match verb {
+                    "wait" => PlayStep::Wait(rest.parse().unwrap_or(1)),
+                    "shot" => PlayStep::Shot(PathBuf::from(rest)),
+                    "key" => PlayStep::Key(
+                        parse_key_code(rest)
+                            .unwrap_or_else(|| panic!("unknown key in play script: {rest}")),
+                    ),
+                    other => panic!("unknown play script verb: {other}"),
+                }
+            })
+            .collect();
+        Some(Self {
+            steps: steps.into_iter(),
+            waiting: 0,
+            finished: false,
+        })
+    }
+
+    fn finished(&self) -> bool {
+        self.finished
+    }
+
+    /// Run this frame's steps: consumes keys until a wait/shot boundary.
+    /// Returns a screenshot path when this frame should be captured.
+    fn step(&mut self, input: &mut InputState) -> Option<PathBuf> {
+        if self.waiting > 0 {
+            self.waiting -= 1;
+            return None;
+        }
+        loop {
+            match self.steps.next() {
+                Some(PlayStep::Key(key)) => {
+                    input.inject_key_press(key);
+                    // A real keyboard delivers a text event next to the key event, so
+                    // scripted input has to as well or text fields never see it.
+                    if let Some(ch) = key_code_text(key) {
+                        input.inject_text(ch);
+                    }
+                }
+                Some(PlayStep::Wait(frames)) => {
+                    self.waiting = frames.saturating_sub(1);
+                    return None;
+                }
+                Some(PlayStep::Shot(path)) => return Some(path),
+                None => {
+                    self.finished = true;
+                    return None;
+                }
+            }
+        }
+    }
+}
+
+/// The text a key would commit, for keys that produce a character.
+fn key_code_text(key: winit::keyboard::KeyCode) -> Option<&'static str> {
+    use winit::keyboard::KeyCode as K;
+    Some(match key {
+        K::Digit0 => "0",
+        K::Digit1 => "1",
+        K::Digit2 => "2",
+        K::Digit3 => "3",
+        K::Digit4 => "4",
+        K::Digit5 => "5",
+        K::Digit6 => "6",
+        K::Digit7 => "7",
+        K::Digit8 => "8",
+        K::Digit9 => "9",
+        K::Space => " ",
+        _ => return None,
+    })
+}
+
+/// Map a play-script key name onto a winit `KeyCode`.
+fn parse_key_code(name: &str) -> Option<winit::keyboard::KeyCode> {
+    use winit::keyboard::KeyCode as K;
+    Some(match name.to_ascii_lowercase().as_str() {
+        "space" => K::Space,
+        "enter" => K::Enter,
+        "escape" | "esc" => K::Escape,
+        "backspace" => K::Backspace,
+        "up" => K::ArrowUp,
+        "down" => K::ArrowDown,
+        "left" => K::ArrowLeft,
+        "right" => K::ArrowRight,
+        "f1" => K::F1,
+        "f2" => K::F2,
+        "f3" => K::F3,
+        "0" => K::Digit0,
+        "1" => K::Digit1,
+        "2" => K::Digit2,
+        "3" => K::Digit3,
+        "4" => K::Digit4,
+        "5" => K::Digit5,
+        "6" => K::Digit6,
+        "7" => K::Digit7,
+        "8" => K::Digit8,
+        "9" => K::Digit9,
+        "a" => K::KeyA,
+        "b" => K::KeyB,
+        "c" => K::KeyC,
+        "d" => K::KeyD,
+        "e" => K::KeyE,
+        "f" => K::KeyF,
+        "g" => K::KeyG,
+        "h" => K::KeyH,
+        "i" => K::KeyI,
+        "j" => K::KeyJ,
+        "k" => K::KeyK,
+        "l" => K::KeyL,
+        "m" => K::KeyM,
+        "n" => K::KeyN,
+        "o" => K::KeyO,
+        "p" => K::KeyP,
+        "q" => K::KeyQ,
+        "r" => K::KeyR,
+        "s" => K::KeyS,
+        "t" => K::KeyT,
+        "u" => K::KeyU,
+        "v" => K::KeyV,
+        "w" => K::KeyW,
+        "x" => K::KeyX,
+        "y" => K::KeyY,
+        "z" => K::KeyZ,
+        _ => return None,
+    })
+}
+
 pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Error>> {
     debug::init_logging();
     debug::set_log_capacity(config.debug_log_capacity);
@@ -1298,6 +1456,8 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
 
     if headless {
         let mut headless_frame = Frame::new();
+        // ponytail: playtest driver — scripted keys + screenshots, headless only.
+        let mut play_script = PlayScript::from_env();
         loop {
             engine.time.tick();
             engine.gamepads.update();
@@ -1307,9 +1467,33 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
             while engine.time.consume_fixed_step() {
                 game.fixed_update(&engine);
             }
+            let shot = play_script
+                .as_mut()
+                .and_then(|script| script.step(&mut engine.input));
             headless_frame.begin(engine.game_size(), engine.font_atlas());
             game.update(&engine, &mut headless_frame);
             game.render(&engine, &mut headless_frame);
+            if let Some(shot_path) = shot {
+                let captured = engine
+                    .renderer
+                    .capture_frame_rgba(&mut headless_frame, &engine.postfx_chain)
+                    .map_err(|error| format!("failed to capture playtest frame: {error}"))?;
+                if let Some(parent) = shot_path.parent() {
+                    if !parent.as_os_str().is_empty() {
+                        std::fs::create_dir_all(parent)?;
+                    }
+                }
+                image::save_buffer(
+                    &shot_path,
+                    &captured.rgba8,
+                    captured.width,
+                    captured.height,
+                    image::ColorType::Rgba8,
+                )?;
+            }
+            if play_script.as_ref().is_some_and(PlayScript::finished) {
+                return Ok(());
+            }
             if game.should_exit() {
                 if let Some(path) = &headless_capture_path {
                     let captured = engine
