@@ -305,9 +305,43 @@ impl Canvas {
         self.verts.extend_from_slice(&[va, vc, vd, va, vb, vc]);
     }
 
+    /// A connected run of line segments. Each segment is a quad, so on its own a
+    /// bend would leave a wedge-shaped gap on the outside of the turn; a bevel
+    /// join (one triangle spanning the two segments' outer corners) fills it.
+    /// Straight-ish runs are unaffected — the gap only opens as the turn tightens.
     pub fn polyline(&mut self, points: &[(f32, f32)], thickness: f32, color: Color) {
         for pair in points.windows(2) {
             self.line(pair[0].0, pair[0].1, pair[1].0, pair[1].1, thickness, color);
+        }
+        let half = thickness * 0.5;
+        let c = color.to_array();
+        let uv = WHITE_UV;
+        for w in points.windows(3) {
+            let (p, q, r) = (w[0], w[1], w[2]);
+            let d0 = (q.0 - p.0, q.1 - p.1);
+            let d1 = (r.0 - q.0, r.1 - q.1);
+            let l0 = (d0.0 * d0.0 + d0.1 * d0.1).sqrt();
+            let l1 = (d1.0 * d1.0 + d1.1 * d1.1).sqrt();
+            if l0 < 0.0001 || l1 < 0.0001 {
+                continue;
+            }
+            // Turn direction decides which side the gap is on: the outside of the
+            // bend. Cross product sign gives it.
+            let cross = d0.0 * d1.1 - d0.1 * d1.0;
+            if cross.abs() < 1e-6 {
+                continue; // collinear: nothing to fill
+            }
+            let s = if cross > 0.0 { -1.0 } else { 1.0 };
+            let n0 = (-d0.1 / l0 * half * s, d0.0 / l0 * half * s);
+            let n1 = (-d1.1 / l1 * half * s, d1.0 / l1 * half * s);
+            let center = screen_to_ndc(q.0, q.1, self.screen_size);
+            let e0 = screen_to_ndc(q.0 + n0.0, q.1 + n0.1, self.screen_size);
+            let e1 = screen_to_ndc(q.0 + n1.0, q.1 + n1.1, self.screen_size);
+            self.verts.extend_from_slice(&[
+                CanvasVertex { position: center, color: c, uv },
+                CanvasVertex { position: e0, color: c, uv },
+                CanvasVertex { position: e1, color: c, uv },
+            ]);
         }
     }
 
