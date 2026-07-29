@@ -15,6 +15,7 @@
 //! handle across frames and mutate the node it refers to without re-parsing
 //! string property maps every tick.
 
+use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 
 use crate::canvas::Canvas;
@@ -132,6 +133,12 @@ pub struct SceneNode2D {
     sprites: Vec<PrefabSprite2D>,
     parent: Option<NodeHandle2D>,
     children: Vec<NodeHandle2D>,
+    /// The `ui_*`-resolved rect from the most recent draw, if this node has a
+    /// `ui` property. Populated by `draw_node`/`draw_node_on_canvas` so
+    /// `node_bounds`/`resolved_rect` can return the same rect the node was
+    /// drawn at instead of recomputing layout with different math. `Cell`
+    /// because draw takes `&self` — this is a cache, not observable state.
+    ui_rect: Cell<Option<Rect>>,
 }
 
 impl SceneNode2D {
@@ -150,6 +157,7 @@ impl SceneNode2D {
             sprites: Vec::new(),
             parent: None,
             children: Vec::new(),
+            ui_rect: Cell::new(None),
         }
     }
 
@@ -716,13 +724,21 @@ impl SceneWorld2D {
 
     /// Axis-aligned world-space bounds used for pointer hit-testing.
     ///
-    /// Prefers an explicit interactive size from the node's `w`/`h` properties
-    /// (how editor-authored UI/markers carry their box), falling back to the
-    /// union of the node's sprite layers. Returns `None` for nodes with no
-    /// pickable area. Rotation is not yet folded into the hit rect — the bounds
-    /// are the node's axis-aligned extent at its composed world position/scale.
+    /// A node with a `ui` property returns the rect it was last drawn at (see
+    /// [`resolved_rect`](Self::resolved_rect)) — authored UI is then clickable
+    /// exactly where it is drawn, using the same anchor/stretch/fraction math
+    /// as rendering instead of a second hand-computed hitbox. Otherwise prefers
+    /// an explicit interactive size from the node's `w`/`h` properties (how
+    /// editor-authored markers carry their box), falling back to the union of
+    /// the node's sprite layers. Returns `None` for nodes with no pickable area
+    /// and no cached ui rect (e.g. a `ui` node before its first draw).
+    /// Rotation is not yet folded into the non-ui hit rect — those bounds are
+    /// the node's axis-aligned extent at its composed world position/scale.
     pub fn node_bounds(&self, handle: NodeHandle2D) -> Option<Rect> {
         let node = self.get(handle)?;
+        if node.property("ui").is_some() {
+            return node.ui_rect.get();
+        }
         let world = self.world_transform(handle)?;
 
         // An authored size (explicit `w`/`h` or the editor's size) is the
@@ -744,6 +760,15 @@ impl SceneWorld2D {
             max = max.max(a).max(b);
         }
         Some(Rect::from_pos_size(world.position + min, max - min))
+    }
+
+    /// The `ui_*`-resolved rect a `ui` node was drawn at on the most recent
+    /// `draw_at`/`draw_to_canvas` pass, in canvas coordinates. `None` before
+    /// the first draw or for a node with no `ui` property. This is the escape
+    /// hatch a half-migrated screen paints legacy content inside — and what
+    /// the `ui: "custom"` carve-out runs on.
+    pub fn resolved_rect(&self, handle: NodeHandle2D) -> Option<Rect> {
+        self.get(handle)?.ui_rect.get()
     }
 
     /// Visible nodes in draw order (parents before children, siblings in order),
@@ -849,6 +874,11 @@ impl SceneWorld2D {
             time,
             |n| node.property(n),
         );
+        if node.property("ui").is_some() {
+            let (x, y, w, h) = ui_rect;
+            node.ui_rect
+                .set(Some(Rect::from_pos_size(Vec2::new(x, y), Vec2::new(w, h))));
+        }
 
         let children = node.children.clone();
         for child in children {
@@ -892,6 +922,11 @@ impl SceneWorld2D {
             time,
             |n| node.property(n),
         );
+        if node.property("ui").is_some() {
+            let (x, y, w, h) = ui_rect;
+            node.ui_rect
+                .set(Some(Rect::from_pos_size(Vec2::new(x, y), Vec2::new(w, h))));
+        }
         let children = node.children.clone();
         for child in children {
             self.draw_node_on_canvas(child, ui_rect, time, canvas);
@@ -1107,6 +1142,46 @@ mod tests {
         assert_eq!(world.get(b).unwrap().size(), Some(Vec2::new(80.0, 50.0)));
         let bounds_b = world.node_bounds(b).unwrap();
         assert_eq!((bounds_b.width, bounds_b.height), (80.0, 50.0));
+    }
+
+    #[test]
+    fn node_bounds_of_a_ui_node_matches_where_it_was_drawn() {
+        // A `ui` node laid out with anchor/stretch (not raw w/h) used to be
+        // undetectable to node_bounds/hit_test at all — the ui_* layout math in
+        // draw_ui_node and the w/h-based math in node_bounds were two different
+        // rects. E1 makes node_bounds return the same rect the node drew at.
+        let mut world = SceneWorld2D::new();
+        let panel = world.spawn(SceneNode2D::new("panel"));
+        {
+            let node = world.get_mut(panel).unwrap();
+            node.set_property("ui", "rect");
+            node.set_property("ui_anchor", "bottom");
+            node.set_property("ui_stretch_x", "true");
+            node.set_property("ui_margin_left", "10");
+            node.set_property("ui_margin_right", "10");
+            node.set_property("ui_h", "50");
+        }
+
+        // Before any draw, there is nothing to hit yet.
+        assert_eq!(world.node_bounds(panel), None);
+        assert_eq!(world.resolved_rect(panel), None);
+
+        let mut canvas = Canvas::new((200, 100), std::ptr::null());
+        world.draw_to_canvas(&mut canvas, 0.0);
+
+        // Viewport is 200x100 centered at origin: (-100,-50) to (100,50).
+        // Stretch-x with 10px margins each side -> x=-90, w=180. Anchor bottom,
+        // ui_h=50 -> y=-50, h=50.
+        let drawn = world.resolved_rect(panel).expect("drawn ui rect");
+        assert!((drawn.x + 90.0).abs() < 1e-3);
+        assert!((drawn.y + 50.0).abs() < 1e-3);
+        assert!((drawn.width - 180.0).abs() < 1e-3);
+        assert!((drawn.height - 50.0).abs() < 1e-3);
+
+        // node_bounds agrees exactly with resolved_rect, and hit_test uses it.
+        assert_eq!(world.node_bounds(panel), Some(drawn));
+        assert_eq!(world.hit_test(Vec2::new(0.0, -30.0)), Some(panel));
+        assert_eq!(world.hit_test(Vec2::new(0.0, 30.0)), None);
     }
 
     #[test]
