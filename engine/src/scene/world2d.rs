@@ -22,7 +22,7 @@ use crate::canvas::Canvas;
 use crate::renderer::{DrawParams, Frame};
 use crate::{Rect, Vec2};
 
-use super::data2d::{parse_bool_property, PrefabSprite2D, Scene2D};
+use super::data2d::{parse_bool_property, Bindings, PrefabSprite2D, Scene2D};
 
 /// The node property that names a nested scene to expand from a [`SceneLibrary`].
 pub const NESTED_SCENE_PROPERTY: &str = "nested_scene";
@@ -824,11 +824,19 @@ impl SceneWorld2D {
     /// Draw with an animation clock so `ui_bob_*` / `ui_sway_*` node animations
     /// advance; pass `engine.time().total_time()`.
     pub fn draw_at(&self, frame: &mut Frame, time: f32) {
+        self.draw_at_with_bindings(frame, time, &Bindings::new());
+    }
+
+    /// Like [`draw_at`](Self::draw_at), but every `ui_*` property may contain
+    /// `{key}` placeholders resolved against `bindings` before it's parsed
+    /// (E2 data binding) — e.g. `ui_text: "P{pos}  {name}"`. Empty bindings
+    /// behave exactly like `draw_at`.
+    pub fn draw_at_with_bindings(&self, frame: &mut Frame, time: f32, bindings: &Bindings) {
         let (sw, sh) = frame.canvas(0).screen_size();
         let screen = (-(sw as f32) / 2.0, -(sh as f32) / 2.0, sw as f32, sh as f32);
         let roots = self.roots.clone();
         for root in roots {
-            self.draw_node(root, &Transform2D::default(), screen, time, frame);
+            self.draw_node(root, &Transform2D::default(), screen, time, frame, bindings);
         }
     }
 
@@ -839,6 +847,7 @@ impl SceneWorld2D {
         parent_ui_rect: (f32, f32, f32, f32),
         time: f32,
         frame: &mut Frame,
+        bindings: &Bindings,
     ) {
         let Some(node) = self.get(handle) else {
             return;
@@ -866,23 +875,28 @@ impl SceneWorld2D {
 
         // UI primitive (if any) laid out relative to the parent's rect; the
         // resolved rect becomes the reference frame for this node's children.
-        let ui_rect = crate::scene::data2d::draw_ui_node(
+        let (ui_rect, ui_visible) = crate::scene::data2d::draw_ui_node_with_bindings(
             frame,
             parent_ui_rect,
             node.transform.position,
             node.transform.scale,
             time,
-            |n| node.property(n),
+            |n| node.property(n).map(str::to_owned),
+            bindings,
         );
-        if node.property("ui").is_some() {
+        // A hidden ui node (ui_visible: false) drew nothing, so it shouldn't
+        // be hit-testable at a rect that has no on-screen primitive behind it.
+        if ui_visible && node.property("ui").is_some() {
             let (x, y, w, h) = ui_rect;
             node.ui_rect
                 .set(Some(Rect::from_pos_size(Vec2::new(x, y), Vec2::new(w, h))));
+        } else {
+            node.ui_rect.set(None);
         }
 
         let children = node.children.clone();
         for child in children {
-            self.draw_node(child, &world, ui_rect, time, frame);
+            self.draw_node(child, &world, ui_rect, time, frame, bindings);
         }
     }
 
@@ -893,11 +907,23 @@ impl SceneWorld2D {
     /// (they need the frame's sprite batch); use [`draw_at`](Self::draw_at) for
     /// sprite scenes. `time` drives `ui_bob_*` / `ui_sway_*` animations.
     pub fn draw_to_canvas(&self, canvas: &mut Canvas, time: f32) {
+        self.draw_to_canvas_with_bindings(canvas, time, &Bindings::new());
+    }
+
+    /// Like [`draw_to_canvas`](Self::draw_to_canvas), but every `ui_*`
+    /// property may contain `{key}` placeholders resolved against `bindings`
+    /// (E2). Empty bindings behave exactly like `draw_to_canvas`.
+    pub fn draw_to_canvas_with_bindings(
+        &self,
+        canvas: &mut Canvas,
+        time: f32,
+        bindings: &Bindings,
+    ) {
         let (sw, sh) = canvas.screen_size();
         let screen = (-(sw as f32) / 2.0, -(sh as f32) / 2.0, sw as f32, sh as f32);
         let roots = self.roots.clone();
         for root in roots {
-            self.draw_node_on_canvas(root, screen, time, canvas);
+            self.draw_node_on_canvas(root, screen, time, canvas, bindings);
         }
     }
 
@@ -907,6 +933,7 @@ impl SceneWorld2D {
         parent_ui_rect: (f32, f32, f32, f32),
         time: f32,
         canvas: &mut Canvas,
+        bindings: &Bindings,
     ) {
         let Some(node) = self.get(handle) else {
             return;
@@ -914,22 +941,25 @@ impl SceneWorld2D {
         if !node.visible {
             return;
         }
-        let ui_rect = crate::scene::data2d::draw_ui_node_on(
+        let (ui_rect, ui_visible) = crate::scene::data2d::draw_ui_node_on_with_bindings(
             canvas,
             parent_ui_rect,
             node.transform.position,
             node.transform.scale,
             time,
-            |n| node.property(n),
+            |n| node.property(n).map(str::to_owned),
+            bindings,
         );
-        if node.property("ui").is_some() {
+        if ui_visible && node.property("ui").is_some() {
             let (x, y, w, h) = ui_rect;
             node.ui_rect
                 .set(Some(Rect::from_pos_size(Vec2::new(x, y), Vec2::new(w, h))));
+        } else {
+            node.ui_rect.set(None);
         }
         let children = node.children.clone();
         for child in children {
-            self.draw_node_on_canvas(child, ui_rect, time, canvas);
+            self.draw_node_on_canvas(child, ui_rect, time, canvas, bindings);
         }
     }
 
@@ -1182,6 +1212,78 @@ mod tests {
         assert_eq!(world.node_bounds(panel), Some(drawn));
         assert_eq!(world.hit_test(Vec2::new(0.0, -30.0)), Some(panel));
         assert_eq!(world.hit_test(Vec2::new(0.0, 30.0)), None);
+    }
+
+    #[test]
+    fn ui_w_frac_reads_a_live_binding_not_just_a_literal() {
+        // E2: any ui_* value may contain a {key} placeholder substituted from
+        // a Bindings scope before it's parsed — this is what lets a progress
+        // bar's width track live data (`ui_w_frac: "{fuel}"`) instead of a
+        // fixed number baked into the scene file.
+        let mut world = SceneWorld2D::new();
+        let bar = world.spawn(SceneNode2D::new("bar"));
+        world
+            .get_mut(bar)
+            .unwrap()
+            .set_property("ui_w_frac", "{fuel}");
+        world.get_mut(bar).unwrap().set_property("ui", "rect");
+        world.get_mut(bar).unwrap().set_property("ui_h", "10");
+
+        let mut canvas = Canvas::new((200, 100), std::ptr::null());
+        let mut bindings = Bindings::new();
+        bindings.insert("fuel".to_string(), "0.25".to_string());
+        world.draw_to_canvas_with_bindings(&mut canvas, 0.0, &bindings);
+        let quarter = world.resolved_rect(bar).expect("drawn at 0.25 fuel").width;
+        assert!((quarter - 50.0).abs() < 1e-3, "200 * 0.25 = 50: {quarter}");
+
+        // Same node, same scene data, different binding — proves the value is
+        // read live each draw rather than cached from the first substitution.
+        bindings.insert("fuel".to_string(), "1.0".to_string());
+        world.draw_to_canvas_with_bindings(&mut canvas, 0.0, &bindings);
+        let full = world.resolved_rect(bar).expect("drawn at 1.0 fuel").width;
+        assert!((full - 200.0).abs() < 1e-3, "200 * 1.0 = 200: {full}");
+
+        // An empty scope leaves the unresolved placeholder in place, which
+        // fails to parse as a float and falls back to 0 rather than panicking
+        // or silently reusing a stale value.
+        world.draw_to_canvas(&mut canvas, 0.0);
+        let no_binding = world.resolved_rect(bar).expect("still drawn, w=0").width;
+        assert_eq!(no_binding, 0.0);
+    }
+
+    #[test]
+    fn ui_visible_binding_hides_the_node_and_clears_its_hit_bounds() {
+        // E2's new prop: ui_visible, honoured in both draw (skips painting)
+        // and bounds (E1's cache is cleared, so a hidden node stops being
+        // hit-testable at a rect nothing was drawn behind).
+        let mut world = SceneWorld2D::new();
+        let toast = world.spawn(SceneNode2D::new("toast"));
+        {
+            let node = world.get_mut(toast).unwrap();
+            node.set_property("ui", "rect");
+            node.set_property("ui_visible", "{is_dnf}");
+            node.set_property("ui_w", "40");
+            node.set_property("ui_h", "40");
+        }
+
+        let mut canvas = Canvas::new((200, 100), std::ptr::null());
+        let mut bindings = Bindings::new();
+        bindings.insert("is_dnf".to_string(), "false".to_string());
+        world.draw_to_canvas_with_bindings(&mut canvas, 0.0, &bindings);
+        assert_eq!(
+            world.resolved_rect(toast),
+            None,
+            "ui_visible: false hides it"
+        );
+        assert_eq!(world.node_bounds(toast), None);
+
+        bindings.insert("is_dnf".to_string(), "true".to_string());
+        world.draw_to_canvas_with_bindings(&mut canvas, 0.0, &bindings);
+        assert!(
+            world.resolved_rect(toast).is_some(),
+            "ui_visible: true shows it"
+        );
+        assert!(world.node_bounds(toast).is_some());
     }
 
     #[test]

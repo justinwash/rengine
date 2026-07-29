@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -219,15 +220,16 @@ impl SceneInstance2D {
 /// children. `reference` is `(x, y, w, h)` with `(x, y)` the bottom-left corner
 /// in canvas coords (centred, y-up); anchors/fractions/stretch/animation are all
 /// relative to it, so nesting and screen-edge layout share one model.
-fn resolve_ui_rect<'a>(
+fn resolve_ui_rect(
     reference: (f32, f32, f32, f32),
     position: Vec2,
     scale: Vec2,
     time: f32,
-    get: impl Fn(&str) -> Option<&'a str>,
+    get: impl Fn(&str) -> Option<String>,
 ) -> (f32, f32, f32, f32) {
     let prop_f32 = |n: &str| get(n).and_then(|v| v.trim().parse::<f32>().ok());
-    let prop_bool = |n: &str| matches!(get(n).map(str::trim), Some("true" | "1" | "yes"));
+    let prop_bool =
+        |n: &str| matches!(get(n).as_deref().map(str::trim), Some("true" | "1" | "yes"));
 
     let (rx, ry, rw, rh) = reference;
     let w_fixed = match prop_f32("ui_w_frac") {
@@ -239,7 +241,7 @@ fn resolve_ui_rect<'a>(
         None => prop_f32("ui_h").unwrap_or(0.0) * scale.y,
     };
     // Named anchor (shorthand) or exact `ui_anchor_frac_x`/`_y` (0..1, Godot-style).
-    let (mut ax, mut ay) = match get("ui_anchor").unwrap_or("center") {
+    let (mut ax, mut ay) = match get("ui_anchor").as_deref().unwrap_or("center") {
         "left" => (rx, ry + rh * 0.5),
         "right" => (rx + rw, ry + rh * 0.5),
         "top" => (rx + rw * 0.5, ry + rh),
@@ -282,11 +284,11 @@ fn resolve_ui_rect<'a>(
 }
 
 /// Draw the `ui` primitive named by a node's props into the resolved `rect`.
-fn draw_ui_kind<'a>(
+fn draw_ui_kind(
     canvas: &mut Canvas,
     rect: (f32, f32, f32, f32),
     scale: Vec2,
-    get: impl Fn(&str) -> Option<&'a str>,
+    get: impl Fn(&str) -> Option<String>,
 ) {
     let Some(kind) = get("ui") else {
         return;
@@ -294,9 +296,9 @@ fn draw_ui_kind<'a>(
     let (x, y, w, h) = rect;
     let prop_f32 = |n: &str| get(n).and_then(|v| v.trim().parse::<f32>().ok());
     let prop_i64 = |n: &str| get(n).and_then(|v| v.trim().parse::<i64>().ok());
-    match kind {
+    match kind.as_str() {
         "rect" => {
-            let color = parse_srgb_color(get("ui_color"), Color::WHITE);
+            let color = parse_srgb_color(get("ui_color").as_deref(), Color::WHITE);
             let radius = prop_f32("ui_radius").unwrap_or(0.0);
             if radius > 0.5 {
                 canvas.rounded_rect(x, y, w, h, radius, color);
@@ -305,39 +307,83 @@ fn draw_ui_kind<'a>(
             }
         }
         "gradient" => {
-            let bottom = parse_srgb_color(get("ui_color_bottom"), Color::BLACK);
-            let top = parse_srgb_color(get("ui_color_top"), Color::WHITE);
+            let bottom = parse_srgb_color(get("ui_color_bottom").as_deref(), Color::BLACK);
+            let top = parse_srgb_color(get("ui_color_top").as_deref(), Color::WHITE);
             canvas.rect_gradient(x, y, w, h, bottom, top);
         }
         "bevel" => {
-            let highlight = parse_srgb_color(get("ui_color_top"), Color::WHITE);
-            let shadow = parse_srgb_color(get("ui_color_bottom"), Color::BLACK);
+            let highlight = parse_srgb_color(get("ui_color_top").as_deref(), Color::WHITE);
+            let shadow = parse_srgb_color(get("ui_color_bottom").as_deref(), Color::BLACK);
             let line_w = prop_f32("ui_line_w").unwrap_or(1.5);
             canvas.bevel_rect(x, y, w, h, highlight, shadow, line_w);
         }
         "circle" => {
-            let color = parse_srgb_color(get("ui_color"), Color::WHITE);
+            let color = parse_srgb_color(get("ui_color").as_deref(), Color::WHITE);
             let radius = prop_f32("ui_radius").unwrap_or(4.0) * scale.x;
             let segments = prop_i64("ui_segments").unwrap_or(20).clamp(3, 96) as u32;
             canvas.circle_filled(x, y, radius, segments, color);
         }
         "line" => {
-            let color = parse_srgb_color(get("ui_color"), Color::WHITE);
+            let color = parse_srgb_color(get("ui_color").as_deref(), Color::WHITE);
             let line_w = prop_f32("ui_line_w").unwrap_or(1.0);
             canvas.line(x, y, x + w, y + h, line_w, color);
         }
         "text" => {
-            let color = parse_srgb_color(get("ui_color"), Color::WHITE);
+            let color = parse_srgb_color(get("ui_color").as_deref(), Color::WHITE);
             let size = prop_f32("ui_text_size").unwrap_or(12.0);
-            let text = get("ui_text").unwrap_or("");
-            canvas.text(x, y, text, size, color);
+            let text = get("ui_text").unwrap_or_default();
+            canvas.text(x, y, &text, size, color);
         }
         _ => {}
     }
 }
 
+/// A named scope of values a `ui_*` property template can reference via
+/// `{key}` placeholders (E2 data binding). Just a string map — repeaters
+/// (E3) will push per-item fields onto a scope before drawing each instance.
+pub type Bindings = HashMap<String, String>;
+
+/// Substitute every `{key}` in `template` with `bindings[key]`, leaving
+/// unknown placeholders untouched (so a scope missing one field doesn't wreck
+/// the whole string) and returning the input unchanged (no allocation) when
+/// there is nothing to substitute — the common case for the vast majority of
+/// `ui_*` properties, which are plain literals.
+fn substitute_bindings<'a>(template: &'a str, bindings: &Bindings) -> Cow<'a, str> {
+    if !template.as_bytes().contains(&b'{') {
+        return Cow::Borrowed(template);
+    }
+    let mut out = String::with_capacity(template.len());
+    let mut rest = template;
+    while let Some(open) = rest.find('{') {
+        out.push_str(&rest[..open]);
+        let after_open = &rest[open + 1..];
+        match after_open.find('}') {
+            Some(close) => {
+                let key = &after_open[..close];
+                match bindings.get(key) {
+                    Some(value) => out.push_str(value),
+                    None => {
+                        out.push('{');
+                        out.push_str(key);
+                        out.push('}');
+                    }
+                }
+                rest = &after_open[close + 1..];
+            }
+            None => {
+                // Unterminated `{` — keep it literal rather than dropping the
+                // rest of the string.
+                out.push('{');
+                rest = after_open;
+            }
+        }
+    }
+    out.push_str(rest);
+    Cow::Owned(out)
+}
+
 /// Resolve + draw a UI node onto its `ui_layer` canvas in `frame`; returns the
-/// resolved rect for child layout.
+/// resolved rect for child layout and whether `ui_visible` allowed it to draw.
 pub(crate) fn draw_ui_node<'a>(
     frame: &mut Frame,
     reference: (f32, f32, f32, f32),
@@ -345,32 +391,75 @@ pub(crate) fn draw_ui_node<'a>(
     scale: Vec2,
     time: f32,
     get: impl Fn(&str) -> Option<&'a str>,
-) -> (f32, f32, f32, f32) {
+) -> ((f32, f32, f32, f32), bool) {
+    draw_ui_node_with_bindings(
+        frame,
+        reference,
+        position,
+        scale,
+        time,
+        |n| get(n).map(str::to_owned),
+        &Bindings::new(),
+    )
+}
+
+/// Like [`draw_ui_node`] but every `ui_*` value is substituted through
+/// `bindings` first (E2), so `ui_text: "P{pos}"` reads live data instead of a
+/// literal string. Returns the resolved rect (still needed as the reference
+/// frame for children even when this node's own primitive is hidden) and
+/// whether `ui_visible` allowed it to draw — the caller uses that to decide
+/// whether the node should be hit-testable (E1's "clickable where drawn"
+/// contract shouldn't apply to a node that drew nothing).
+pub(crate) fn draw_ui_node_with_bindings(
+    frame: &mut Frame,
+    reference: (f32, f32, f32, f32),
+    position: Vec2,
+    scale: Vec2,
+    time: f32,
+    get: impl Fn(&str) -> Option<String>,
+    bindings: &Bindings,
+) -> ((f32, f32, f32, f32), bool) {
+    let get = |n: &str| get(n).map(|v| substitute_bindings(&v, bindings).into_owned());
     let rect = resolve_ui_rect(reference, position, scale, time, &get);
-    if get("ui").is_some() {
+    let visible = !matches!(
+        get("ui_visible").as_deref().map(str::trim),
+        Some("false" | "0" | "no")
+    );
+    if visible && get("ui").is_some() {
         let layer = get("ui_layer")
             .and_then(|v| v.trim().parse::<i64>().ok())
             .unwrap_or(0)
             .max(0) as usize;
         draw_ui_kind(frame.canvas(layer), rect, scale, &get);
     }
-    rect
+    (rect, visible)
 }
 
 /// Resolve + draw a UI node directly onto a caller-owned `canvas` (ignoring
 /// `ui_layer`), so a whole scene can be drawn into an existing canvas at a
-/// chosen z-position. Returns the resolved rect for child layout.
-pub(crate) fn draw_ui_node_on<'a>(
+/// chosen z-position. Returns the resolved rect for child layout and whether
+/// `ui_visible` allowed it to draw. Every `ui_*` value may contain `{key}`
+/// placeholders substituted through `bindings` first (E2); pass an empty
+/// [`Bindings`] for a scope-free draw.
+pub(crate) fn draw_ui_node_on_with_bindings(
     canvas: &mut Canvas,
     reference: (f32, f32, f32, f32),
     position: Vec2,
     scale: Vec2,
     time: f32,
-    get: impl Fn(&str) -> Option<&'a str>,
-) -> (f32, f32, f32, f32) {
+    get: impl Fn(&str) -> Option<String>,
+    bindings: &Bindings,
+) -> ((f32, f32, f32, f32), bool) {
+    let get = |n: &str| get(n).map(|v| substitute_bindings(&v, bindings).into_owned());
     let rect = resolve_ui_rect(reference, position, scale, time, &get);
-    draw_ui_kind(canvas, rect, scale, &get);
-    rect
+    let visible = !matches!(
+        get("ui_visible").as_deref().map(str::trim),
+        Some("false" | "0" | "no")
+    );
+    if visible {
+        draw_ui_kind(canvas, rect, scale, &get);
+    }
+    (rect, visible)
 }
 
 /// Parse a `"r,g,b[,a]"` sRGB triplet/quad (0–255 per channel) into a [`Color`],
@@ -1087,6 +1176,29 @@ fn default_editor_visible() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn substitute_bindings_replaces_known_keys_and_leaves_the_rest() {
+        let mut bindings = Bindings::new();
+        bindings.insert("pos".to_string(), "3".to_string());
+        bindings.insert("name".to_string(), "Reyes".to_string());
+
+        assert_eq!(
+            substitute_bindings("P{pos}  {name}", &bindings),
+            "P3  Reyes"
+        );
+        // Unknown key: left as a literal placeholder rather than dropped —
+        // silently vanishing text is worse than an obviously-wrong string.
+        assert_eq!(substitute_bindings("{missing}", &bindings), "{missing}");
+        // No `{` at all: returned unchanged with no allocation (Cow::Borrowed).
+        assert!(matches!(
+            substitute_bindings("plain text", &bindings),
+            Cow::Borrowed("plain text")
+        ));
+        // Unterminated `{`: kept literal instead of eating the rest of the
+        // string looking for a `}` that never comes.
+        assert_eq!(substitute_bindings("a{b", &bindings), "a{b");
+    }
 
     #[test]
     fn scene_instance_typed_property_helpers_parse_metadata() {
