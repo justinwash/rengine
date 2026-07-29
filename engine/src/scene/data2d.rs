@@ -6,7 +6,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::assets::{AssetError, AssetPack, Color};
-use crate::canvas::Canvas;
+use crate::canvas::{Canvas, TextAlign};
 use crate::renderer::{DrawParams, Frame};
 use crate::{TextureId, Vec2};
 
@@ -332,9 +332,99 @@ fn draw_ui_kind(
             let color = parse_srgb_color(get("ui_color").as_deref(), Color::WHITE);
             let size = prop_f32("ui_text_size").unwrap_or(12.0);
             let text = get("ui_text").unwrap_or_default();
-            canvas.text(x, y, &text, size, color);
+            let align = parse_text_align(get("ui_text_align").as_deref());
+            let anchor_x = match align {
+                TextAlign::Left => x,
+                TextAlign::Center => x + w * 0.5,
+                TextAlign::Right => x + w,
+            };
+            // canvas.text's y is the glyph baseline near the rect's bottom
+            // edge; centre the line within the rect's height instead of
+            // leaving every author to hand-nudge y by half a line height.
+            let line_h = canvas.line_height(size);
+            let centered_y = y + (h - line_h) * 0.5;
+            canvas.text_aligned(anchor_x, centered_y, &text, size, color, align);
+        }
+        "text_block" => {
+            let color = parse_srgb_color(get("ui_color").as_deref(), Color::WHITE);
+            let size = prop_f32("ui_text_size").unwrap_or(12.0);
+            let text = get("ui_text").unwrap_or_default();
+            let align = parse_text_align(get("ui_text_align").as_deref());
+            let wrap_w = prop_f32("ui_wrap_w").unwrap_or(w);
+            let anchor_x = match align {
+                TextAlign::Left => x,
+                TextAlign::Center => x + w * 0.5,
+                TextAlign::Right => x + w,
+            };
+            canvas.text_block(
+                anchor_x,
+                y + h - canvas.line_height(size),
+                &text,
+                size,
+                color,
+                wrap_w,
+                align,
+            );
+        }
+        "text_spans" => {
+            // Numbered rows (ui_span_0_text/ui_span_0_color, ui_span_1_...)
+            // rather than one delimited string — each span's text is often
+            // itself free-form ("+2.3s pace"), so a delimiter would just be
+            // one more thing an authored value could collide with.
+            let size = prop_f32("ui_text_size").unwrap_or(12.0);
+            let align = parse_text_align(get("ui_text_align").as_deref());
+            let mut span_texts = Vec::new();
+            let mut span_colors = Vec::new();
+            for i in 0.. {
+                let Some(text) = get(&format!("ui_span_{i}_text")) else {
+                    break;
+                };
+                let color =
+                    parse_srgb_color(get(&format!("ui_span_{i}_color")).as_deref(), Color::WHITE);
+                span_texts.push(text);
+                span_colors.push(color);
+            }
+            let spans: Vec<(&str, Color)> = span_texts
+                .iter()
+                .map(String::as_str)
+                .zip(span_colors.iter().copied())
+                .collect();
+            let line_h = canvas.line_height(size);
+            let centered_y = y + (h - line_h) * 0.5;
+            canvas.text_spans_aligned(x, centered_y, &spans, size, align);
+        }
+        "polyline" => {
+            // "x0,y0;x1,y1;..." offsets from the rect's origin — the same
+            // convention every other kind uses for its own geometry.
+            let color = parse_srgb_color(get("ui_color").as_deref(), Color::WHITE);
+            let line_w = prop_f32("ui_line_w").unwrap_or(1.0);
+            let Some(raw) = get("ui_points") else {
+                return;
+            };
+            let points: Vec<(f32, f32)> = raw
+                .split(';')
+                .filter_map(|pair| {
+                    let (px, py) = pair.split_once(',')?;
+                    Some((
+                        x + px.trim().parse::<f32>().ok()?,
+                        y + py.trim().parse::<f32>().ok()?,
+                    ))
+                })
+                .collect();
+            if points.len() >= 2 {
+                canvas.polyline(&points, line_w, color);
+            }
         }
         _ => {}
+    }
+}
+
+/// Parse `ui_text_align`: `left` (default) | `center` | `right`.
+fn parse_text_align(value: Option<&str>) -> TextAlign {
+    match value.map(str::trim) {
+        Some("center") => TextAlign::Center,
+        Some("right") => TextAlign::Right,
+        _ => TextAlign::Left,
     }
 }
 
@@ -1198,6 +1288,42 @@ mod tests {
         // Unterminated `{`: kept literal instead of eating the rest of the
         // string looking for a `}` that never comes.
         assert_eq!(substitute_bindings("a{b", &bindings), "a{b");
+    }
+
+    #[test]
+    fn ui_polyline_draws_a_segment_per_point_pair() {
+        // E5: ui: "polyline" reads "x0,y0;x1,y1;..." offsets from the rect's
+        // origin — no font needed, so this can run against a null-atlas
+        // Canvas like the E1 tests do.
+        let mut canvas = Canvas::new((200, 100), std::ptr::null());
+        let mut props = HashMap::new();
+        props.insert("ui".to_string(), "polyline".to_string());
+        props.insert("ui_points".to_string(), "0,0;10,0;10,10".to_string());
+        props.insert("ui_color".to_string(), "255,0,0".to_string());
+
+        assert_eq!(canvas.verts.len(), 0);
+        draw_ui_kind(&mut canvas, (0.0, 0.0, 50.0, 50.0), Vec2::ONE, |n| {
+            props.get(n).cloned()
+        });
+        // Two segments (3 points), 6 verts per segment quad at minimum.
+        assert!(
+            canvas.verts.len() >= 12,
+            "expected at least 2 line segments worth of geometry, got {} verts",
+            canvas.verts.len()
+        );
+    }
+
+    #[test]
+    fn ui_polyline_with_fewer_than_two_points_draws_nothing() {
+        let mut canvas = Canvas::new((200, 100), std::ptr::null());
+        let mut props = HashMap::new();
+        props.insert("ui".to_string(), "polyline".to_string());
+        props.insert("ui_points".to_string(), "5,5".to_string());
+
+        draw_ui_kind(&mut canvas, (0.0, 0.0, 50.0, 50.0), Vec2::ONE, |n| {
+            props.get(n).cloned()
+        });
+        assert_eq!(canvas.verts.len(), 0);
     }
 
     #[test]
