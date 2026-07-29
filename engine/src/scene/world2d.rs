@@ -883,6 +883,7 @@ impl SceneWorld2D {
             time,
             |n| node.property(n).map(str::to_owned),
             bindings,
+            node.sprites.first(),
         );
         // A hidden ui node (ui_visible: false) drew nothing, so it shouldn't
         // be hit-testable at a rect that has no on-screen primitive behind it.
@@ -949,6 +950,7 @@ impl SceneWorld2D {
             time,
             |n| node.property(n).map(str::to_owned),
             bindings,
+            node.sprites.first(),
         );
         if ui_visible && node.property("ui").is_some() {
             let (x, y, w, h) = ui_rect;
@@ -957,9 +959,25 @@ impl SceneWorld2D {
         } else {
             node.ui_rect.set(None);
         }
+
+        // ui_clip: true (E5) confines this node's children to its resolved
+        // rect — a scrolling standings/log region can overflow its panel
+        // without painting over whatever sits below it. Substituted through
+        // bindings first, same as every other ui_* value.
+        let clip = node
+            .property("ui_clip")
+            .map(|v| crate::scene::data2d::substitute_bindings(v, bindings));
+        let clipped = matches!(clip.as_deref(), Some("true" | "1" | "yes"));
+        if clipped {
+            let (x, y, w, h) = ui_rect;
+            canvas.push_clip(x, y, w, h);
+        }
         let children = node.children.clone();
         for child in children {
             self.draw_node_on_canvas(child, ui_rect, time, canvas, bindings);
+        }
+        if clipped {
+            canvas.pop_clip();
         }
     }
 
@@ -1172,6 +1190,53 @@ mod tests {
         assert_eq!(world.get(b).unwrap().size(), Some(Vec2::new(80.0, 50.0)));
         let bounds_b = world.node_bounds(b).unwrap();
         assert_eq!((bounds_b.width, bounds_b.height), (80.0, 50.0));
+    }
+
+    #[test]
+    fn ui_clip_confines_a_childs_scissor_to_the_parent_rect() {
+        // E5: ui_clip: true wraps push_clip/pop_clip around the child
+        // recursion — a scrolling standings panel can overflow its own
+        // bounds without painting over whatever sits below it. Clipping is a
+        // GPU scissor recorded per draw segment (Canvas::segments), not
+        // vertex culling, so the way to observe it is the segment's scissor
+        // field, not the vertex count.
+        let mut world = SceneWorld2D::new();
+        let panel = world.spawn(SceneNode2D::new("panel"));
+        {
+            let node = world.get_mut(panel).unwrap();
+            node.set_property("ui", "rect");
+            node.set_property("ui_w", "40");
+            node.set_property("ui_h", "40");
+            node.set_property("ui_clip", "true");
+        }
+        let child = world.spawn_child(panel, SceneNode2D::new("child"));
+        {
+            let node = world.get_mut(child).unwrap();
+            node.set_property("ui", "rect");
+            node.set_property("ui_w", "10");
+            node.set_property("ui_h", "10");
+        }
+        // A sibling root with no clipping ancestor draws with no scissor.
+        let unclipped = world.spawn(SceneNode2D::new("unclipped"));
+        {
+            let node = world.get_mut(unclipped).unwrap();
+            node.set_property("ui", "rect");
+            node.set_property("ui_w", "10");
+            node.set_property("ui_h", "10");
+        }
+
+        let mut canvas = Canvas::new((200, 100), std::ptr::null());
+        world.draw_to_canvas(&mut canvas, 0.0);
+        canvas.finalize();
+
+        assert!(
+            canvas.segments.iter().any(|s| s.scissor.is_some()),
+            "the clipped child's segment should carry a scissor rect"
+        );
+        assert!(
+            canvas.segments.iter().any(|s| s.scissor.is_none()),
+            "the unrelated root's segment should draw unclipped"
+        );
     }
 
     #[test]

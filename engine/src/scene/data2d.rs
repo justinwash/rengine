@@ -209,9 +209,15 @@ impl SceneInstance2D {
         }
         let (sw, sh) = frame.canvas(0).screen_size();
         let screen = (-(sw as f32) / 2.0, -(sh as f32) / 2.0, sw as f32, sh as f32);
-        draw_ui_node(frame, screen, self.position, self.scale, time, |n| {
-            self.property(n)
-        });
+        draw_ui_node(
+            frame,
+            screen,
+            self.position,
+            self.scale,
+            time,
+            |n| self.property(n),
+            self.sprites.first(),
+        );
     }
 }
 
@@ -284,11 +290,13 @@ fn resolve_ui_rect(
 }
 
 /// Draw the `ui` primitive named by a node's props into the resolved `rect`.
+/// `sprite` is the node's own first sprite layer, used only by `"image"`.
 fn draw_ui_kind(
     canvas: &mut Canvas,
     rect: (f32, f32, f32, f32),
     scale: Vec2,
     get: impl Fn(&str) -> Option<String>,
+    sprite: Option<&PrefabSprite2D>,
 ) {
     let Some(kind) = get("ui") else {
         return;
@@ -327,6 +335,15 @@ fn draw_ui_kind(
             let color = parse_srgb_color(get("ui_color").as_deref(), Color::WHITE);
             let line_w = prop_f32("ui_line_w").unwrap_or(1.0);
             canvas.line(x, y, x + w, y + h, line_w, color);
+        }
+        "image" => {
+            // The node's own sprites[0] — already a resolved TextureId, so an
+            // authored image needs no new asset plumbing (unlike every other
+            // kind, which paints with no texture at all).
+            if let Some(sprite) = sprite {
+                let color = parse_srgb_color(get("ui_color").as_deref(), sprite.color);
+                canvas.image_region(sprite.texture, x, y, w, h, sprite.uv_rect, color);
+            }
         }
         "text" => {
             let color = parse_srgb_color(get("ui_color").as_deref(), Color::WHITE);
@@ -438,7 +455,7 @@ pub type Bindings = HashMap<String, String>;
 /// the whole string) and returning the input unchanged (no allocation) when
 /// there is nothing to substitute — the common case for the vast majority of
 /// `ui_*` properties, which are plain literals.
-fn substitute_bindings<'a>(template: &'a str, bindings: &Bindings) -> Cow<'a, str> {
+pub(crate) fn substitute_bindings<'a>(template: &'a str, bindings: &Bindings) -> Cow<'a, str> {
     if !template.as_bytes().contains(&b'{') {
         return Cow::Borrowed(template);
     }
@@ -481,6 +498,7 @@ pub(crate) fn draw_ui_node<'a>(
     scale: Vec2,
     time: f32,
     get: impl Fn(&str) -> Option<&'a str>,
+    sprite: Option<&PrefabSprite2D>,
 ) -> ((f32, f32, f32, f32), bool) {
     draw_ui_node_with_bindings(
         frame,
@@ -490,6 +508,7 @@ pub(crate) fn draw_ui_node<'a>(
         time,
         |n| get(n).map(str::to_owned),
         &Bindings::new(),
+        sprite,
     )
 }
 
@@ -499,7 +518,9 @@ pub(crate) fn draw_ui_node<'a>(
 /// frame for children even when this node's own primitive is hidden) and
 /// whether `ui_visible` allowed it to draw — the caller uses that to decide
 /// whether the node should be hit-testable (E1's "clickable where drawn"
-/// contract shouldn't apply to a node that drew nothing).
+/// contract shouldn't apply to a node that drew nothing). `sprite` backs
+/// `ui: "image"` (E5) — the node's own first sprite layer, already a resolved
+/// `TextureId`, so an authored image needs no new asset plumbing.
 pub(crate) fn draw_ui_node_with_bindings(
     frame: &mut Frame,
     reference: (f32, f32, f32, f32),
@@ -508,6 +529,7 @@ pub(crate) fn draw_ui_node_with_bindings(
     time: f32,
     get: impl Fn(&str) -> Option<String>,
     bindings: &Bindings,
+    sprite: Option<&PrefabSprite2D>,
 ) -> ((f32, f32, f32, f32), bool) {
     let get = |n: &str| get(n).map(|v| substitute_bindings(&v, bindings).into_owned());
     let rect = resolve_ui_rect(reference, position, scale, time, &get);
@@ -520,7 +542,7 @@ pub(crate) fn draw_ui_node_with_bindings(
             .and_then(|v| v.trim().parse::<i64>().ok())
             .unwrap_or(0)
             .max(0) as usize;
-        draw_ui_kind(frame.canvas(layer), rect, scale, &get);
+        draw_ui_kind(frame.canvas(layer), rect, scale, &get, sprite);
     }
     (rect, visible)
 }
@@ -530,7 +552,7 @@ pub(crate) fn draw_ui_node_with_bindings(
 /// chosen z-position. Returns the resolved rect for child layout and whether
 /// `ui_visible` allowed it to draw. Every `ui_*` value may contain `{key}`
 /// placeholders substituted through `bindings` first (E2); pass an empty
-/// [`Bindings`] for a scope-free draw.
+/// [`Bindings`] for a scope-free draw. `sprite` backs `ui: "image"` (E5).
 pub(crate) fn draw_ui_node_on_with_bindings(
     canvas: &mut Canvas,
     reference: (f32, f32, f32, f32),
@@ -539,6 +561,7 @@ pub(crate) fn draw_ui_node_on_with_bindings(
     time: f32,
     get: impl Fn(&str) -> Option<String>,
     bindings: &Bindings,
+    sprite: Option<&PrefabSprite2D>,
 ) -> ((f32, f32, f32, f32), bool) {
     let get = |n: &str| get(n).map(|v| substitute_bindings(&v, bindings).into_owned());
     let rect = resolve_ui_rect(reference, position, scale, time, &get);
@@ -547,7 +570,7 @@ pub(crate) fn draw_ui_node_on_with_bindings(
         Some("false" | "0" | "no")
     );
     if visible {
-        draw_ui_kind(canvas, rect, scale, &get);
+        draw_ui_kind(canvas, rect, scale, &get, sprite);
     }
     (rect, visible)
 }
@@ -1302,9 +1325,13 @@ mod tests {
         props.insert("ui_color".to_string(), "255,0,0".to_string());
 
         assert_eq!(canvas.verts.len(), 0);
-        draw_ui_kind(&mut canvas, (0.0, 0.0, 50.0, 50.0), Vec2::ONE, |n| {
-            props.get(n).cloned()
-        });
+        draw_ui_kind(
+            &mut canvas,
+            (0.0, 0.0, 50.0, 50.0),
+            Vec2::ONE,
+            |n| props.get(n).cloned(),
+            None,
+        );
         // Two segments (3 points), 6 verts per segment quad at minimum.
         assert!(
             canvas.verts.len() >= 12,
@@ -1320,10 +1347,53 @@ mod tests {
         props.insert("ui".to_string(), "polyline".to_string());
         props.insert("ui_points".to_string(), "5,5".to_string());
 
-        draw_ui_kind(&mut canvas, (0.0, 0.0, 50.0, 50.0), Vec2::ONE, |n| {
-            props.get(n).cloned()
-        });
+        draw_ui_kind(
+            &mut canvas,
+            (0.0, 0.0, 50.0, 50.0),
+            Vec2::ONE,
+            |n| props.get(n).cloned(),
+            None,
+        );
         assert_eq!(canvas.verts.len(), 0);
+    }
+
+    #[test]
+    fn ui_image_draws_only_when_a_sprite_is_present() {
+        // E5: ui: "image" paints the node's own sprites[0] — already a
+        // resolved TextureId — into the resolved rect. No font needed
+        // (image_region doesn't touch text), so a null-atlas Canvas works.
+        let mut canvas = Canvas::new((200, 100), std::ptr::null());
+        let mut props = HashMap::new();
+        props.insert("ui".to_string(), "image".to_string());
+
+        // No sprite: nothing to draw, no panic.
+        draw_ui_kind(
+            &mut canvas,
+            (0.0, 0.0, 50.0, 50.0),
+            Vec2::ONE,
+            |n| props.get(n).cloned(),
+            None,
+        );
+        assert_eq!(canvas.verts.len(), 0);
+
+        let sprite = PrefabSprite2D {
+            texture: TextureId(0),
+            offset: Vec2::ZERO,
+            size: Vec2::ONE,
+            color: Color::WHITE,
+            uv_rect: [0.0, 0.0, 1.0, 1.0],
+            flip_x: false,
+            flip_y: false,
+        };
+        draw_ui_kind(
+            &mut canvas,
+            (0.0, 0.0, 50.0, 50.0),
+            Vec2::ONE,
+            |n| props.get(n).cloned(),
+            Some(&sprite),
+        );
+        // image_region emits one quad (6 verts).
+        assert_eq!(canvas.verts.len(), 6);
     }
 
     #[test]
