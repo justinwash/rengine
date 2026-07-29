@@ -1313,8 +1313,10 @@ impl RengineNativeEditor {
         labels.push("Refresh");
         labels.push("Quit");
 
-        let preferred_widths: Vec<f32> =
-            labels.iter().map(|label| button_preferred_width(label)).collect();
+        let preferred_widths: Vec<f32> = labels
+            .iter()
+            .map(|label| button_preferred_width(label))
+            .collect();
         let total_gap = BUTTON_GAP * (labels.len().saturating_sub(1)) as f32;
         let total_width = preferred_widths.iter().sum::<f32>() + total_gap;
         let mut x = top_bar.right() - PANEL_PADDING - total_width;

@@ -979,8 +979,7 @@ impl RengineNativeEditor {
                                 node.properties.insert(key, text.to_string());
                                 changed = true;
                             }
-                        } else if response
-                            .was_toggled(INSPECTOR_SCRIPT_PARAM_CHECK_BASE_ID + index)
+                        } else if response.was_toggled(INSPECTOR_SCRIPT_PARAM_CHECK_BASE_ID + index)
                         {
                             let now = !matches!(
                                 state.script_params[index].value.trim(),
@@ -1600,8 +1599,7 @@ pub(crate) fn is_inspector_text_input(id: usize) -> bool {
             | INSPECTOR_CAMERA_VIEW_WIDTH_ID
             | INSPECTOR_CAMERA_VIEW_HEIGHT_ID
     ) || (INSPECTOR_JSON_TEXT_INPUT_BASE_ID..INSPECTOR_JSON_SLIDER_BASE_ID).contains(&id)
-        || (INSPECTOR_SCRIPT_PARAM_TEXT_BASE_ID..INSPECTOR_SCRIPT_PARAM_CHECK_BASE_ID)
-            .contains(&id)
+        || (INSPECTOR_SCRIPT_PARAM_TEXT_BASE_ID..INSPECTOR_SCRIPT_PARAM_CHECK_BASE_ID).contains(&id)
 }
 
 pub(crate) fn make_inspector_ui() -> Ui {

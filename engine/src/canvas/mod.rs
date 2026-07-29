@@ -338,9 +338,21 @@ impl Canvas {
             let e0 = screen_to_ndc(q.0 + n0.0, q.1 + n0.1, self.screen_size);
             let e1 = screen_to_ndc(q.0 + n1.0, q.1 + n1.1, self.screen_size);
             self.verts.extend_from_slice(&[
-                CanvasVertex { position: center, color: c, uv },
-                CanvasVertex { position: e0, color: c, uv },
-                CanvasVertex { position: e1, color: c, uv },
+                CanvasVertex {
+                    position: center,
+                    color: c,
+                    uv,
+                },
+                CanvasVertex {
+                    position: e0,
+                    color: c,
+                    uv,
+                },
+                CanvasVertex {
+                    position: e1,
+                    color: c,
+                    uv,
+                },
             ]);
         }
     }
