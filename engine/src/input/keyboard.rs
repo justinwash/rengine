@@ -106,6 +106,24 @@ impl InputState {
         self.handle_committed_text(text);
     }
 
+    /// Move the synthetic cursor for this frame. Used by headless playtest
+    /// drivers to position the pointer before a click, in the same engine
+    /// coordinate space as [`InputState::mouse_position`].
+    pub fn inject_mouse_move(&mut self, x: f32, y: f32) {
+        self.handle_cursor_moved(x, y);
+    }
+
+    /// Inject a synthetic press-and-release of a mouse button for this frame.
+    /// Immediate-mode UI (`Ui::sync_at_with`) reads press/release within the
+    /// same frame, so headless drivers don't need to hold the button across
+    /// two frames the way a real click-and-release would.
+    /// ponytail: press-then-release only; add a hold variant if a driver
+    /// needs drag gestures.
+    pub fn inject_mouse_click(&mut self, button: usize) {
+        self.handle_mouse_button(button, ElementState::Pressed);
+        self.handle_mouse_button(button, ElementState::Released);
+    }
+
     pub(crate) fn handle_key_event(&mut self, key: KeyCode, state: ElementState) {
         match state {
             ElementState::Pressed => {

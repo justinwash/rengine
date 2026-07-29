@@ -90,6 +90,12 @@ const INSPECTOR_SCRIPT_PARAM_CHECK_BASE_ID: usize = 42_000;
 const INSPECTOR_SCRIPT_PARAM_ENUM_BASE_ID: usize = 44_000;
 const INSPECTOR_SCRIPT_CLEAR_ID: usize = 43_000;
 const INSPECTOR_SCRIPT_OPEN_ID: usize = 43_001;
+// Ed1: free-form custom-property rows (key input, value input, delete button
+// per row, indexed) plus one "Add Property" button.
+const INSPECTOR_CUSTOM_PROP_KEY_BASE_ID: usize = 50_000;
+const INSPECTOR_CUSTOM_PROP_VALUE_BASE_ID: usize = 51_000;
+const INSPECTOR_CUSTOM_PROP_DELETE_BASE_ID: usize = 52_000;
+const INSPECTOR_CUSTOM_PROP_ADD_ID: usize = 53_000;
 
 const NODE_KIND_OPTIONS: [SceneNodeKind; 6] = [
     SceneNodeKind::Group,

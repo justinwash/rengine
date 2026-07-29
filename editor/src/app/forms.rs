@@ -20,6 +20,18 @@ pub(crate) struct ScriptParamEntry {
     pub(crate) options: Vec<String>,
 }
 
+/// One row of the free-form custom-property editor (Ed1): an arbitrary
+/// `key: value` pair on the node's `properties` map, e.g. `ui_color`,
+/// `ui_anchor`, `ui_stretch_x` — properties with no dedicated inspector
+/// widget of their own. Excludes `param_<name>` (shown under Script
+/// Parameters instead). Edited by row index, not by key, so renaming a key
+/// mid-edit doesn't lose the row's identity.
+#[derive(Clone, Default)]
+pub(crate) struct CustomPropertyEntry {
+    pub(crate) key: String,
+    pub(crate) value: String,
+}
+
 #[derive(Default)]
 pub(crate) struct InspectorFormState {
     pub(crate) context_tab: usize,
@@ -40,6 +52,10 @@ pub(crate) struct InspectorFormState {
     /// Typed parameters for the currently attached script (from the manifest),
     /// pre-filled with the node's authored `param_<name>` values or defaults.
     pub(crate) script_params: Vec<ScriptParamEntry>,
+    /// Free-form `key: value` rows on the node's `properties` map, minus
+    /// `param_<name>` (shown separately above). This is Ed1: the only way to
+    /// author `ui_*` and any other property with no dedicated widget.
+    pub(crate) custom_properties: Vec<CustomPropertyEntry>,
     pub(crate) runtime_prefab: String,
     pub(crate) asset_alias: String,
     pub(crate) sprite_texture_path: String,
@@ -85,6 +101,7 @@ impl InspectorFormState {
                     &node.script_path,
                     &node.properties,
                 );
+                self.custom_properties = build_custom_properties(&node.properties);
                 self.runtime_prefab = node.runtime_prefab.clone();
                 self.asset_alias = node.asset_alias.clone();
                 self.sprite_texture_path = node.sprite.texture_path.clone();
@@ -100,6 +117,7 @@ impl InspectorFormState {
         self.selected_node_kind = None;
         self.node_name.clear();
         self.script_params.clear();
+        self.custom_properties.clear();
         self.node_visible = true;
         self.node_position_x.clear();
         self.node_position_y.clear();
@@ -717,6 +735,28 @@ impl RengineNativeEditor {
                 }
             }
 
+            // Ed1: arbitrary key/value rows on the node's properties map — the
+            // only way to author ui_* and anything else with no dedicated
+            // widget above. Edited by row index so a mid-rename key doesn't
+            // lose its row.
+            ui.separator(8.0);
+            ui.label(
+                "Custom Properties",
+                11.0,
+                Color::from_rgba8(148, 162, 180, 255),
+            );
+            for (index, prop) in state.custom_properties.iter().enumerate() {
+                ui.row(3);
+                ui.text_input(INSPECTOR_CUSTOM_PROP_KEY_BASE_ID + index, &prop.key, "key");
+                ui.text_input(
+                    INSPECTOR_CUSTOM_PROP_VALUE_BASE_ID + index,
+                    &prop.value,
+                    "value",
+                );
+                ui.button(INSPECTOR_CUSTOM_PROP_DELETE_BASE_ID + index, "Delete");
+            }
+            ui.button(INSPECTOR_CUSTOM_PROP_ADD_ID, "Add Property");
+
             ui.label(
                 "Runtime Prefab",
                 11.0,
@@ -1006,6 +1046,59 @@ impl RengineNativeEditor {
                                 changed = true;
                             }
                         }
+                    }
+
+                    // Ed1: free-form property rows. A row's identity is its
+                    // index in `state.custom_properties`, not its key, so
+                    // renaming a key mid-edit is a remove-old/insert-new on
+                    // `node.properties` rather than losing the row.
+                    let mut deleted_row = None;
+                    for index in 0..state.custom_properties.len() {
+                        if response.was_activated(INSPECTOR_CUSTOM_PROP_DELETE_BASE_ID + index) {
+                            deleted_row = Some(index);
+                            continue;
+                        }
+
+                        let old_key = state.custom_properties[index].key.clone();
+                        if let Some(text) =
+                            response.text_for(INSPECTOR_CUSTOM_PROP_KEY_BASE_ID + index)
+                        {
+                            let new_key = text.to_string();
+                            if new_key != old_key {
+                                if !old_key.is_empty() {
+                                    node.properties.remove(&old_key);
+                                }
+                                if !new_key.is_empty() {
+                                    let value = state.custom_properties[index].value.clone();
+                                    node.properties.insert(new_key.clone(), value);
+                                }
+                                changed = true;
+                            }
+                            state.custom_properties[index].key = new_key;
+                        }
+
+                        if let Some(text) =
+                            response.text_for(INSPECTOR_CUSTOM_PROP_VALUE_BASE_ID + index)
+                        {
+                            state.custom_properties[index].value = text.to_string();
+                            let key = &state.custom_properties[index].key;
+                            if !key.is_empty()
+                                && node.properties.get(key).map(String::as_str) != Some(text)
+                            {
+                                node.properties.insert(key.clone(), text.to_string());
+                                changed = true;
+                            }
+                        }
+                    }
+                    if let Some(index) = deleted_row {
+                        let removed = state.custom_properties.remove(index);
+                        if !removed.key.is_empty() && node.properties.remove(&removed.key).is_some()
+                        {
+                            changed = true;
+                        }
+                    }
+                    if response.was_activated(INSPECTOR_CUSTOM_PROP_ADD_ID) {
+                        state.custom_properties.push(CustomPropertyEntry::default());
                     }
 
                     if let Some(text) = response.text_for(INSPECTOR_NODE_PREFAB_ID) {
@@ -1531,6 +1624,22 @@ fn build_script_params(
         .collect()
 }
 
+/// Every property on the node except `param_<name>` (shown under Script
+/// Parameters), sorted by key so row order is stable across syncs instead of
+/// following `HashMap` iteration order.
+fn build_custom_properties(properties: &HashMap<String, String>) -> Vec<CustomPropertyEntry> {
+    let mut rows: Vec<CustomPropertyEntry> = properties
+        .iter()
+        .filter(|(key, _)| !key.starts_with("param_"))
+        .map(|(key, value)| CustomPropertyEntry {
+            key: key.clone(),
+            value: value.clone(),
+        })
+        .collect();
+    rows.sort_by(|a, b| a.key.cmp(&b.key));
+    rows
+}
+
 fn inspector_form_widget_count(
     state: &InspectorFormState,
     selected_sprite_label: Option<&str>,
@@ -1551,6 +1660,10 @@ fn inspector_form_widget_count(
         if !state.script_params.is_empty() {
             count += 1 + state.script_params.len() * 2;
         }
+
+        // Custom-property section: separator + label + one "Add" button,
+        // plus 3 widgets (key, value, delete) per row.
+        count += 2 + 1 + state.custom_properties.len() * 3;
 
         if kind == SceneNodeKind::Sprite {
             count += 6;
@@ -1600,6 +1713,7 @@ pub(crate) fn is_inspector_text_input(id: usize) -> bool {
             | INSPECTOR_CAMERA_VIEW_HEIGHT_ID
     ) || (INSPECTOR_JSON_TEXT_INPUT_BASE_ID..INSPECTOR_JSON_SLIDER_BASE_ID).contains(&id)
         || (INSPECTOR_SCRIPT_PARAM_TEXT_BASE_ID..INSPECTOR_SCRIPT_PARAM_CHECK_BASE_ID).contains(&id)
+        || (INSPECTOR_CUSTOM_PROP_KEY_BASE_ID..INSPECTOR_CUSTOM_PROP_DELETE_BASE_ID).contains(&id)
 }
 
 pub(crate) fn make_inspector_ui() -> Ui {
@@ -1640,4 +1754,36 @@ fn parse_editor_number(text: &str, min: f32, max: f32) -> Option<f32> {
     }
 
     text.parse::<f32>().ok().map(|value| value.clamp(min, max))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_custom_properties_excludes_params_and_sorts_by_key() {
+        let mut properties = HashMap::new();
+        properties.insert("ui_color".to_string(), "255,200,0".to_string());
+        properties.insert("ui_anchor".to_string(), "bottom".to_string());
+        // Script params have their own dedicated editor and must not double up
+        // as free-form rows.
+        properties.insert("param_speed".to_string(), "5".to_string());
+
+        let rows = build_custom_properties(&properties);
+
+        assert_eq!(
+            rows.iter().map(|r| r.key.as_str()).collect::<Vec<_>>(),
+            vec!["ui_anchor", "ui_color"]
+        );
+        assert_eq!(rows[0].value, "bottom");
+        assert_eq!(rows[1].value, "255,200,0");
+    }
+
+    #[test]
+    fn build_custom_properties_is_empty_when_only_params_present() {
+        let mut properties = HashMap::new();
+        properties.insert("param_kind".to_string(), "Rare".to_string());
+
+        assert!(build_custom_properties(&properties).is_empty());
+    }
 }

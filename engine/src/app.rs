@@ -1231,13 +1231,25 @@ enum PlayStep {
     Wait(u32),
     /// Inject a key press for one frame.
     Key(winit::keyboard::KeyCode),
+    /// Move the synthetic cursor to this engine-space position.
+    Move(f32, f32),
+    /// Press-and-release a mouse button (0=left, 1=right, 2=middle) at the
+    /// cursor's current position.
+    Click(usize),
+    /// Inject literal text, e.g. into a focused text field — for characters
+    /// `key` has no mapping for (letters, punctuation).
+    Text(String),
     /// Screenshot this frame to the given path.
     Shot(PathBuf),
 }
 
-/// Scripted keyboard input + screenshots for headless playtesting. Enabled by
-/// pointing `RENGINE_PLAY_SCRIPT` at a text file whose lines are `wait N`,
-/// `key <KeyCode>`, or `shot <path>`.
+/// Scripted keyboard/mouse input + screenshots for headless playtesting.
+/// Enabled by pointing `RENGINE_PLAY_SCRIPT` at a text file whose lines are
+/// `wait N`, `key <KeyCode>`, `move <x> <y>`, `click [button]`,
+/// `text <literal>`, or `shot <path>`. Coordinates are engine space (origin
+/// at window centre, +y up — see [`InputState::mouse_position`]), so a click
+/// target for a UI panel is whatever `resolved_rect`/layout math the game
+/// itself would compute for that element.
 struct PlayScript {
     steps: std::vec::IntoIter<PlayStep>,
     waiting: u32,
@@ -1263,6 +1275,29 @@ impl PlayScript {
                         parse_key_code(rest)
                             .unwrap_or_else(|| panic!("unknown key in play script: {rest}")),
                     ),
+                    "move" => {
+                        let mut parts = rest.split_whitespace();
+                        let x: f32 = parts
+                            .next()
+                            .and_then(|v| v.parse().ok())
+                            .unwrap_or_else(|| panic!("bad move x in play script: {rest}"));
+                        let y: f32 = parts
+                            .next()
+                            .and_then(|v| v.parse().ok())
+                            .unwrap_or_else(|| panic!("bad move y in play script: {rest}"));
+                        PlayStep::Move(x, y)
+                    }
+                    "click" => {
+                        let button = if rest.is_empty() {
+                            0
+                        } else {
+                            rest.parse().unwrap_or_else(|_| {
+                                panic!("bad click button in play script: {rest}")
+                            })
+                        };
+                        PlayStep::Click(button)
+                    }
+                    "text" => PlayStep::Text(rest.to_string()),
                     other => panic!("unknown play script verb: {other}"),
                 }
             })
@@ -1295,6 +1330,9 @@ impl PlayScript {
                         input.inject_text(ch);
                     }
                 }
+                Some(PlayStep::Move(x, y)) => input.inject_mouse_move(x, y),
+                Some(PlayStep::Click(button)) => input.inject_mouse_click(button),
+                Some(PlayStep::Text(text)) => input.inject_text(&text),
                 Some(PlayStep::Wait(frames)) => {
                     self.waiting = frames.saturating_sub(1);
                     return None;

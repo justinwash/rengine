@@ -669,6 +669,47 @@ mod tests {
         );
     }
 
+    #[test]
+    fn arbitrary_ui_properties_survive_a_save_reload_round_trip() {
+        // Ed1's whole point: a node.properties entry with no dedicated widget
+        // (ui_color, ui_anchor, ...) is not special-cased anywhere in the
+        // document model — it's an ordinary HashMap<String,String> entry, so
+        // it must serialize/deserialize like any other authored value with no
+        // editor-side logic to keep in sync.
+        let mut doc = SceneDocument::new("ui_roundtrip");
+        let node_id = doc.add_node(SceneNodeKind::UiRoot, None);
+        {
+            let node = doc.node_mut(node_id).unwrap();
+            node.properties.insert("ui".to_string(), "rect".to_string());
+            node.properties
+                .insert("ui_color".to_string(), "228,44,32,255".to_string());
+            node.properties
+                .insert("ui_anchor".to_string(), "bottom".to_string());
+            // A script param living alongside the free-form properties must
+            // not be disturbed by anything Ed1 does to the rest of the map.
+            node.properties
+                .insert("param_speed".to_string(), "5".to_string());
+        }
+
+        let json = serde_json::to_string_pretty(&doc).expect("serialize scene document");
+        let reloaded: SceneDocument = serde_json::from_str(&json).expect("reload scene document");
+
+        let node = reloaded.node(node_id).expect("node survives reload");
+        assert_eq!(node.properties.get("ui").map(String::as_str), Some("rect"));
+        assert_eq!(
+            node.properties.get("ui_color").map(String::as_str),
+            Some("228,44,32,255")
+        );
+        assert_eq!(
+            node.properties.get("ui_anchor").map(String::as_str),
+            Some("bottom")
+        );
+        assert_eq!(
+            node.properties.get("param_speed").map(String::as_str),
+            Some("5")
+        );
+    }
+
     fn test_node_with_parent(id: u64, parent: Option<u64>) -> SceneNode {
         let mut node = SceneNode::new(id, SceneNodeKind::Empty, parent, 0);
         node.name = format!("Node {id}");
