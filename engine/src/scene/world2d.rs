@@ -19,6 +19,7 @@ use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 
 use crate::canvas::Canvas;
+use crate::layout::Stack;
 use crate::renderer::{DrawParams, Frame};
 use crate::{Rect, Vec2};
 
@@ -840,6 +841,86 @@ impl SceneWorld2D {
         }
     }
 
+    /// One reference rect per child of `parent`, honouring `ui_layout` (E4)
+    /// when set on `parent`: `"column"`/`"row"` flows the children in order
+    /// via [`Stack`], each taking `ui_gap` from `parent`'s properties and its
+    /// own `ui_h`/`ui_w` (column/row respectively) as its main-axis extent.
+    /// The returned rect spans the full cross-axis, but a child still resolves
+    /// its own rect against it exactly like any other reference — an
+    /// `ui_stretch_x`/`ui_stretch_y` child fills the slot, one with no
+    /// stretch anchors within it as usual. Absent `ui_layout` returns
+    /// `parent_rect` unchanged for every child — today's behaviour, zero cost.
+    ///
+    /// Deliberately a single peek-one/place-one pass, not a two-pass
+    /// measure-then-place: `Stack::next` only needs one child's size at a
+    /// time, so there's no need to resolve every sibling before placing the
+    /// first. `Rect::distribute_v/h` (`Track::Even`/`Weight`) and `Justify::*`
+    /// both need the *sum* of every sibling's size before placing item 0 —
+    /// out of scope until something actually needs proportional/justified
+    /// distribution instead of packed-from-the-start flow.
+    ///
+    /// Main-axis size is read directly here (not via `resolve_ui_rect`, which
+    /// also resolves *position* — not wanted yet) — a child on the main axis
+    /// only reads plain `ui_w`/`ui_h`; `ui_w_frac`/`ui_stretch_x` on the main
+    /// axis are not supported in a flow container for this first pass.
+    fn resolve_child_references(
+        &self,
+        parent: &SceneNode2D,
+        parent_rect: (f32, f32, f32, f32),
+        children: &[NodeHandle2D],
+        bindings: &Bindings,
+    ) -> Vec<(f32, f32, f32, f32)> {
+        let get = |node: &SceneNode2D, name: &str| {
+            node.property(name)
+                .map(|v| super::data2d::substitute_bindings(v, bindings).into_owned())
+        };
+        let Some(layout) = get(parent, "ui_layout") else {
+            return vec![parent_rect; children.len()];
+        };
+        let vertical = match layout.as_str() {
+            "column" => true,
+            "row" => false,
+            _ => return vec![parent_rect; children.len()],
+        };
+        let prop_f32 = |name: &str| get(parent, name).and_then(|v| v.trim().parse::<f32>().ok());
+        let pad_left = prop_f32("ui_pad_left").unwrap_or(0.0);
+        let pad_right = prop_f32("ui_pad_right").unwrap_or(0.0);
+        let pad_top = prop_f32("ui_pad_top").unwrap_or(0.0);
+        let pad_bottom = prop_f32("ui_pad_bottom").unwrap_or(0.0);
+        let gap = prop_f32("ui_gap").unwrap_or(0.0);
+
+        let (px, py, pw, ph) = parent_rect;
+        let padded = Rect::new(
+            px + pad_left,
+            py + pad_bottom,
+            (pw - pad_left - pad_right).max(0.0),
+            (ph - pad_top - pad_bottom).max(0.0),
+        );
+        let mut stack = if vertical {
+            Stack::vertical(padded, gap)
+        } else {
+            Stack::horizontal(padded, gap)
+        };
+
+        children
+            .iter()
+            .map(|&child| {
+                let Some(child_node) = self.get(child) else {
+                    return parent_rect;
+                };
+                let main_axis_prop = if vertical { "ui_h" } else { "ui_w" };
+                let scale = if vertical {
+                    child_node.transform.scale.y
+                } else {
+                    child_node.transform.scale.x
+                };
+                let extent = child_node.property_f32(main_axis_prop).unwrap_or(0.0) * scale;
+                let slot = stack.next(extent);
+                (slot.x, slot.y, slot.width, slot.height)
+            })
+            .collect()
+    }
+
     fn draw_node(
         &self,
         handle: NodeHandle2D,
@@ -896,8 +977,9 @@ impl SceneWorld2D {
         }
 
         let children = node.children.clone();
-        for child in children {
-            self.draw_node(child, &world, ui_rect, time, frame, bindings);
+        let child_refs = self.resolve_child_references(node, ui_rect, &children, bindings);
+        for (child, child_ref) in children.into_iter().zip(child_refs) {
+            self.draw_node(child, &world, child_ref, time, frame, bindings);
         }
     }
 
@@ -973,8 +1055,9 @@ impl SceneWorld2D {
             canvas.push_clip(x, y, w, h);
         }
         let children = node.children.clone();
-        for child in children {
-            self.draw_node_on_canvas(child, ui_rect, time, canvas, bindings);
+        let child_refs = self.resolve_child_references(node, ui_rect, &children, bindings);
+        for (child, child_ref) in children.into_iter().zip(child_refs) {
+            self.draw_node_on_canvas(child, child_ref, time, canvas, bindings);
         }
         if clipped {
             canvas.pop_clip();
@@ -1190,6 +1273,117 @@ mod tests {
         assert_eq!(world.get(b).unwrap().size(), Some(Vec2::new(80.0, 50.0)));
         let bounds_b = world.node_bounds(b).unwrap();
         assert_eq!((bounds_b.width, bounds_b.height), (80.0, 50.0));
+    }
+
+    #[test]
+    fn ui_layout_column_stacks_children_top_to_bottom_with_gap() {
+        // E4: ui_layout: "column" on a container flows its children in order
+        // via Stack, each taking its own ui_h as the main-axis extent and
+        // auto-filling the cross-axis (width) — this is what turns "N
+        // hand-placed rows" into "author one row, repeat it" (E3's dependency).
+        let mut world = SceneWorld2D::new();
+        let container = world.spawn(SceneNode2D::new("list"));
+        {
+            let node = world.get_mut(container).unwrap();
+            node.set_property("ui", "rect");
+            node.set_property("ui_w", "100");
+            node.set_property("ui_h", "100");
+            node.set_property("ui_layout", "column");
+            node.set_property("ui_gap", "5");
+            node.set_property("ui_pad_top", "10");
+        }
+        // ui_stretch_x/_y fill the slot Stack hands a child — that slot is
+        // only a reference rect, same as any other child's; nothing about
+        // being inside a flow container makes a node auto-fill without the
+        // same opt-in every other stretch fill already needs. ui_h here
+        // drives Stack's main-axis extent (via resolve_child_references'
+        // peek), and ui_stretch_y then fills that exact slot height — a
+        // child that wants to be *smaller* than its slot would skip
+        // ui_stretch_y and use its own ui_h to size within it instead.
+        let row_a = world.spawn_child(container, SceneNode2D::new("row_a"));
+        world.get_mut(row_a).unwrap().set_property("ui", "rect");
+        world.get_mut(row_a).unwrap().set_property("ui_h", "20");
+        world
+            .get_mut(row_a)
+            .unwrap()
+            .set_property("ui_stretch_x", "true");
+        world
+            .get_mut(row_a)
+            .unwrap()
+            .set_property("ui_stretch_y", "true");
+        let row_b = world.spawn_child(container, SceneNode2D::new("row_b"));
+        world.get_mut(row_b).unwrap().set_property("ui", "rect");
+        world.get_mut(row_b).unwrap().set_property("ui_h", "30");
+        world
+            .get_mut(row_b)
+            .unwrap()
+            .set_property("ui_stretch_x", "true");
+        world
+            .get_mut(row_b)
+            .unwrap()
+            .set_property("ui_stretch_y", "true");
+
+        let mut canvas = Canvas::new((200, 200), std::ptr::null());
+        world.draw_to_canvas(&mut canvas, 0.0);
+
+        // Default anchor "center" against a 200x200 viewport (rx=-100,
+        // rw=200 -> anchor point 0) places the container's bottom-left
+        // (not its center) at that anchor point: rect (0, 0, 100, 100).
+        // Padded top 10 -> content area (0, 0, 100, 90), top at 90.
+        // row_a (h=20) takes the first slot: top=90, y = 90-20 = 70.
+        let a = world.resolved_rect(row_a).expect("row_a drawn");
+        assert!(
+            (a.x - 0.0).abs() < 1e-3,
+            "ui_stretch_x fills the slot: x={}",
+            a.x
+        );
+        assert!(
+            (a.width - 100.0).abs() < 1e-3,
+            "ui_stretch_x fills the slot: w"
+        );
+        assert!((a.y - 70.0).abs() < 1e-3, "row_a y: {}", a.y);
+        assert!((a.height - 20.0).abs() < 1e-3, "row_a h");
+
+        // row_b (h=30) starts after row_a + 5px gap: top = 70 - 5 = 65, y = 65-30 = 35.
+        let b = world.resolved_rect(row_b).expect("row_b drawn");
+        assert!(
+            (b.y - 35.0).abs() < 1e-3,
+            "row_b y accounts for gap: {}",
+            b.y
+        );
+        assert!((b.height - 30.0).abs() < 1e-3, "row_b h");
+
+        // No overlap: row_b's top sits exactly gap px below row_a's bottom.
+        assert!((a.y - (b.y + b.height) - 5.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn ui_layout_absent_leaves_every_child_with_the_parents_full_rect() {
+        // No ui_layout: the pre-E4 behaviour (every child gets the same
+        // reference and resolves its own anchor/position independently)
+        // must be unchanged — this is the zero-cost-when-absent guarantee.
+        let mut world = SceneWorld2D::new();
+        let container = world.spawn(SceneNode2D::new("panel"));
+        world.get_mut(container).unwrap().set_property("ui", "rect");
+        world.get_mut(container).unwrap().set_property("ui_w", "80");
+        world.get_mut(container).unwrap().set_property("ui_h", "60");
+        let child = world.spawn_child(container, SceneNode2D::new("child"));
+        world.get_mut(child).unwrap().set_property("ui", "rect");
+        world
+            .get_mut(child)
+            .unwrap()
+            .set_property("ui_stretch_x", "true");
+        world.get_mut(child).unwrap().set_property("ui_h", "10");
+
+        let mut canvas = Canvas::new((200, 200), std::ptr::null());
+        world.draw_to_canvas(&mut canvas, 0.0);
+
+        let container_rect = world.resolved_rect(container).unwrap();
+        let child_rect = world.resolved_rect(child).unwrap();
+        // Stretch-x against the container's own rect still works exactly as
+        // it did before E4 — the container's reference wasn't touched.
+        assert!((child_rect.x - container_rect.x).abs() < 1e-3);
+        assert!((child_rect.width - container_rect.width).abs() < 1e-3);
     }
 
     #[test]
