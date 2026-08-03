@@ -232,6 +232,7 @@ fn resolve_ui_rect(
     scale: Vec2,
     time: f32,
     get: impl Fn(&str) -> Option<String>,
+    pixel_grid: f32,
 ) -> (f32, f32, f32, f32) {
     let prop_f32 = |n: &str| get(n).and_then(|v| v.trim().parse::<f32>().ok());
     let prop_bool =
@@ -286,7 +287,18 @@ fn resolve_ui_rect(
     let sway = prop_f32("ui_sway_amp").map_or(0.0, |amp| {
         (time * prop_f32("ui_sway_speed").unwrap_or(1.0) + phase).cos() * amp
     });
-    (x + sway, y + bob, w, h)
+    let (x, y, w, h) = (x + sway, y + bob, w, h);
+    // E9: quantise to the host's pixel grid so fractional/stretch layout never
+    // drifts a node off the art's one-pixel-size rule. Opt out per node with
+    // `ui_snap: false` (e.g. a smoothly animated/bobbing element); the host
+    // opts the whole scene in via `SceneWorld2D::set_pixel_grid`.
+    if pixel_grid > 0.0 && !matches!(get("ui_snap").as_deref(), Some("false" | "0" | "no")) {
+        let snap = |v: f32| (v / pixel_grid).round() * pixel_grid;
+        let snap_size = |v: f32| ((v / pixel_grid).round() * pixel_grid).max(pixel_grid);
+        (snap(x), snap(y), snap_size(w), snap_size(h))
+    } else {
+        (x, y, w, h)
+    }
 }
 
 /// Draw the `ui` primitive named by a node's props into the resolved `rect`.
@@ -516,6 +528,7 @@ pub(crate) fn draw_ui_node<'a>(
         |n| get(n).map(str::to_owned),
         &Bindings::new(),
         sprite,
+        0.0,
     )
 }
 
@@ -537,9 +550,10 @@ pub(crate) fn draw_ui_node_with_bindings(
     get: impl Fn(&str) -> Option<String>,
     bindings: &Bindings,
     sprite: Option<&PrefabSprite2D>,
+    pixel_grid: f32,
 ) -> ((f32, f32, f32, f32), bool) {
     let get = |n: &str| get(n).map(|v| substitute_bindings(&v, bindings).into_owned());
-    let rect = resolve_ui_rect(reference, position, scale, time, &get);
+    let rect = resolve_ui_rect(reference, position, scale, time, &get, pixel_grid);
     let visible = !matches!(
         get("ui_visible").as_deref().map(str::trim),
         Some("false" | "0" | "no")
@@ -569,9 +583,10 @@ pub(crate) fn draw_ui_node_on_with_bindings(
     get: impl Fn(&str) -> Option<String>,
     bindings: &Bindings,
     sprite: Option<&PrefabSprite2D>,
+    pixel_grid: f32,
 ) -> ((f32, f32, f32, f32), bool) {
     let get = |n: &str| get(n).map(|v| substitute_bindings(&v, bindings).into_owned());
-    let rect = resolve_ui_rect(reference, position, scale, time, &get);
+    let rect = resolve_ui_rect(reference, position, scale, time, &get, pixel_grid);
     let visible = !matches!(
         get("ui_visible").as_deref().map(str::trim),
         Some("false" | "0" | "no")
