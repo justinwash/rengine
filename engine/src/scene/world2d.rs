@@ -379,28 +379,11 @@ pub struct SceneWorld2D {
     /// after (the template itself never changes once a screen is authored;
     /// only the instance count/scopes do).
     repeat_templates: HashMap<NodeHandle2D, NodeTemplate>,
-    /// Grid cell size (canvas units) that resolved `ui_*` rects snap to (E9),
-    /// or `0.0` for no snapping (the default). Fractional/stretch layout
-    /// produces fractional rects by construction; a host with a fixed-pixel-
-    /// size art style (see `SceneWorld2D::set_pixel_grid`) needs those
-    /// quantised or a repeater dividing rows into a panel will silently drift
-    /// off the art's pixel grid. Off by default so existing screens/tests are
-    /// unaffected until a host opts in.
-    pixel_grid: Cell<f32>,
 }
 
 impl SceneWorld2D {
     pub fn new() -> Self {
         Self::default()
-    }
-
-    /// Set the grid cell size (canvas units) every resolved `ui_*` rect snaps
-    /// to (E9) — pass the host's own pixel-art unit (e.g. `sprites::pixel()`
-    /// in Formula R). `0.0` disables snapping (the default). Applies to every
-    /// node from the next draw onward unless a node opts out with
-    /// `ui_snap: false`.
-    pub fn set_pixel_grid(&mut self, cell: f32) {
-        self.pixel_grid.set(cell.max(0.0));
     }
 
     /// Build a live world from a loaded [`Scene2D`].
@@ -1162,7 +1145,6 @@ impl SceneWorld2D {
             |n| node.property(n).map(str::to_owned),
             effective_bindings,
             node.sprites.first(),
-            self.pixel_grid.get(),
         );
         // A hidden ui node (ui_visible: false) drew nothing, so it shouldn't
         // be hit-testable at a rect that has no on-screen primitive behind it.
@@ -1244,7 +1226,6 @@ impl SceneWorld2D {
             |n| node.property(n).map(str::to_owned),
             effective_bindings,
             node.sprites.first(),
-            self.pixel_grid.get(),
         );
         if ui_visible && node.property("ui").is_some() {
             let (x, y, w, h) = ui_rect;
@@ -1734,87 +1715,6 @@ mod tests {
         // stacked top-to-bottom, no overlap.
         assert!(a.y > b.y, "first instance sits above the second");
         assert!((a.y - b.height - b.y).abs() < 1e-3, "packed with no gap");
-    }
-
-    #[test]
-    fn pixel_grid_snaps_a_repeater_dividing_rows_into_a_panel() {
-        // E9: the exact scenario the plan flags as the reason this exists —
-        // a repeater dividing an odd panel height into N rows produces
-        // fractional row heights by construction (217 / 22 is not an
-        // integer), which must not survive onto a fixed-pixel-art host.
-        let mut world = SceneWorld2D::new();
-        world.set_pixel_grid(2.0);
-        let list = world.spawn(SceneNode2D::new("list"));
-        {
-            let node = world.get_mut(list).unwrap();
-            node.set_property("ui", "repeat");
-            node.set_property("ui_repeat_source", "standings");
-            node.set_property("ui_w", "100");
-            node.set_property("ui_h", "217");
-            node.set_property("ui_layout", "column");
-        }
-        let template = world.spawn_child(list, SceneNode2D::new("row"));
-        {
-            let node = world.get_mut(template).unwrap();
-            node.set_property("ui", "rect");
-            node.set_property("ui_stretch_x", "true");
-            node.set_property("ui_stretch_y", "true");
-        }
-        let rows: Vec<(&str, &str)> = (0..22).map(|_| ("id", "x")).collect();
-        let mut sources = RepeaterSources::new();
-        sources.insert("standings".to_string(), repeat_source(&rows));
-        world.sync_repeaters(&sources);
-
-        let mut canvas = Canvas::new((200, 300), std::ptr::null());
-        world.draw_to_canvas(&mut canvas, 0.0);
-
-        for instance in world.get(list).unwrap().children().to_vec() {
-            let r = world.resolved_rect(instance).unwrap();
-            for v in [r.x, r.y, r.width, r.height] {
-                let cells = v / 2.0;
-                assert!(
-                    (cells - cells.round()).abs() < 1e-4,
-                    "{v} is not a multiple of the 2.0 pixel grid"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn pixel_grid_is_off_by_default_and_opt_out_per_node_works() {
-        let mut world = SceneWorld2D::new();
-        let unsnapped = world.spawn(SceneNode2D::new("a"));
-        {
-            let node = world.get_mut(unsnapped).unwrap();
-            node.set_property("ui", "rect");
-            node.set_property("ui_w_frac", "1.0");
-            node.set_property("ui_h_frac", "1.0");
-        }
-        let mut canvas = Canvas::new((201, 101), std::ptr::null());
-        world.draw_to_canvas(&mut canvas, 0.0);
-        // No grid set: an odd viewport dimension passes through unsnapped.
-        let r = world.resolved_rect(unsnapped).unwrap();
-        assert!((r.width - 201.0).abs() < 1e-3);
-        assert!((r.height - 101.0).abs() < 1e-3);
-
-        world.set_pixel_grid(4.0);
-        let opted_out = world.spawn(SceneNode2D::new("b"));
-        {
-            let node = world.get_mut(opted_out).unwrap();
-            node.set_property("ui", "rect");
-            node.set_property("ui_w_frac", "1.0");
-            node.set_property("ui_h_frac", "1.0");
-            node.set_property("ui_snap", "false");
-        }
-        world.draw_to_canvas(&mut canvas, 0.0);
-        // Grid on, but this node opted out: still unsnapped.
-        let r = world.resolved_rect(opted_out).unwrap();
-        assert!((r.width - 201.0).abs() < 1e-3);
-        assert!((r.height - 101.0).abs() < 1e-3);
-        // The first node has no ui_snap property, so the grid now applies to
-        // it too — snapping is on by default once the host sets a grid.
-        let r = world.resolved_rect(unsnapped).unwrap();
-        assert!((r.width / 4.0 - (r.width / 4.0).round()).abs() < 1e-4);
     }
 
     #[test]
