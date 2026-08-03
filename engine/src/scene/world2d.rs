@@ -23,7 +23,7 @@ use crate::layout::Stack;
 use crate::renderer::{DrawParams, Frame};
 use crate::{Rect, Vec2};
 
-use super::data2d::{parse_bool_property, Bindings, PrefabSprite2D, Scene2D};
+use super::data2d::{parse_bool_property, Bindings, PrefabSprite2D, RepeaterSources, Scene2D};
 
 /// The node property that names a nested scene to expand from a [`SceneLibrary`].
 pub const NESTED_SCENE_PROPERTY: &str = "nested_scene";
@@ -140,6 +140,12 @@ pub struct SceneNode2D {
     /// drawn at instead of recomputing layout with different math. `Cell`
     /// because draw takes `&self` — this is a cache, not observable state.
     ui_rect: Cell<Option<Rect>>,
+    /// Per-instance binding overlay (E3 repeaters): set by
+    /// `SceneWorld2D::sync_repeaters` on each cloned instance root, merged
+    /// over the ambient `Bindings` when drawing that instance, so
+    /// `ui_text: "P{pos}"` resolves against *this* item. `None` for every
+    /// ordinary, non-repeated node.
+    instance_bindings: Option<Bindings>,
 }
 
 impl SceneNode2D {
@@ -159,6 +165,7 @@ impl SceneNode2D {
             parent: None,
             children: Vec::new(),
             ui_rect: Cell::new(None),
+            instance_bindings: None,
         }
     }
 
@@ -299,6 +306,12 @@ impl SceneNode2D {
         &self.children
     }
 
+    /// This instance's per-item binding overlay, if `sync_repeaters` (E3) set
+    /// one — `None` for every node that isn't a repeater instance.
+    pub fn instance_bindings(&self) -> Option<&Bindings> {
+        self.instance_bindings.as_ref()
+    }
+
     pub fn property(&self, name: &str) -> Option<&str> {
         self.properties.get(name).map(String::as_str)
     }
@@ -337,6 +350,16 @@ struct Slot {
     node: Option<SceneNode2D>,
 }
 
+/// A detached copy of a live subtree (E3 repeaters): a repeat node's
+/// original authored child, captured once so it survives being despawned
+/// from the live graph after the first sync. `materialize_template` clones
+/// it back into new live nodes, once per repeated item.
+#[derive(Clone)]
+struct NodeTemplate {
+    node: SceneNode2D,
+    children: Vec<NodeTemplate>,
+}
+
 /// A mutable, hierarchical runtime scene graph addressed by [`NodeHandle2D`].
 ///
 /// Build one from a loaded scene with [`SceneWorld2D::from_scene`], then look
@@ -351,6 +374,11 @@ pub struct SceneWorld2D {
     roots: Vec<NodeHandle2D>,
     by_name: HashMap<String, NodeHandle2D>,
     by_editor_id: HashMap<u64, NodeHandle2D>,
+    /// One captured template per `ui: "repeat"` node (E3), keyed by that
+    /// node's handle — set on first `sync_repeaters` call, reused every sync
+    /// after (the template itself never changes once a screen is authored;
+    /// only the instance count/scopes do).
+    repeat_templates: HashMap<NodeHandle2D, NodeTemplate>,
 }
 
 impl SceneWorld2D {
@@ -562,6 +590,145 @@ impl SceneWorld2D {
         let handle = self.spawn(node);
         self.reparent(handle, Some(parent));
         handle
+    }
+
+    /// Reconcile every live `ui: "repeat"` node's instance children against
+    /// `repeaters` (E3): a repeat node's original authored child (captured
+    /// once, on its first sync) is the *template*; after syncing, the node's
+    /// live `children()` are `repeaters[ui_repeat_source].len()` clones of
+    /// that template, each carrying its own [`Bindings`] scope
+    /// (`SceneNode2D::instance_bindings`) from `repeaters[source][i]`.
+    ///
+    /// Call once per frame, before `draw_at`/`draw_to_canvas` — an explicit
+    /// step rather than something draw itself does, so `draw_at`/
+    /// `draw_to_canvas` can stay `&self` (spawning/despawning instance nodes
+    /// needs `&mut self`, and threading that through the whole draw
+    /// recursion would force every caller — including scenes with zero
+    /// repeaters — onto a `&mut self` draw path).
+    ///
+    /// A repeat node with no matching entry in `repeaters` (unknown source
+    /// name, or none supplied) is left with zero instances — nothing to
+    /// repeat, not an error.
+    pub fn sync_repeaters(&mut self, repeaters: &RepeaterSources) {
+        let repeat_nodes: Vec<NodeHandle2D> = self
+            .all_handles()
+            .into_iter()
+            .filter(|&handle| self.get(handle).and_then(|n| n.property("ui")) == Some("repeat"))
+            .collect();
+
+        for handle in repeat_nodes {
+            self.sync_one_repeater(handle, repeaters);
+        }
+    }
+
+    fn sync_one_repeater(&mut self, handle: NodeHandle2D, repeaters: &RepeaterSources) {
+        let Some(node) = self.get(handle) else {
+            return;
+        };
+        let Some(source_name) = node.property("ui_repeat_source").map(str::to_string) else {
+            return;
+        };
+        let item_count = repeaters.get(&source_name).map_or(0, Vec::len);
+
+        // First sync: the node's one authored child is the template — capture
+        // it as data, then clear the live children so what remains under this
+        // node is purely instances (flow layout in `resolve_child_references`
+        // lays out whatever `children()` currently is, and a leftover
+        // never-despawned template node would just be an extra untemplated row).
+        if self.repeat_templates.get(&handle).is_none() {
+            let Some(template_child) = self.get(handle).and_then(|n| n.children.first().copied())
+            else {
+                return; // nothing authored under this repeat node yet
+            };
+            let template = self.capture_template(template_child);
+            self.despawn(template_child);
+            self.repeat_templates.insert(handle, template);
+        }
+
+        let current: Vec<NodeHandle2D> =
+            self.get(handle).map_or(Vec::new(), |n| n.children.clone());
+        match current.len().cmp(&item_count) {
+            std::cmp::Ordering::Greater => {
+                for extra in &current[item_count..] {
+                    self.despawn(*extra);
+                }
+            }
+            std::cmp::Ordering::Less => {
+                let Some(template) = self.repeat_templates.get(&handle).cloned() else {
+                    return;
+                };
+                for _ in current.len()..item_count {
+                    self.materialize_template(&template, handle);
+                }
+            }
+            std::cmp::Ordering::Equal => {}
+        }
+
+        // Refresh every instance's scope every sync (not just newly-spawned
+        // ones) — the same index can represent a different item across
+        // frames as the source collection changes, e.g. a sorted standings
+        // list re-ranking lap to lap.
+        let instances: Vec<NodeHandle2D> =
+            self.get(handle).map_or(Vec::new(), |n| n.children.clone());
+        if let Some(items) = repeaters.get(&source_name) {
+            for (instance, scope) in instances.iter().zip(items.iter()) {
+                if let Some(node) = self.get_mut(*instance) {
+                    node.instance_bindings = Some(scope.clone());
+                }
+            }
+        }
+    }
+
+    /// Deep-copy a live subtree into a detached [`NodeTemplate`] — the node's
+    /// own fields (via `SceneNode2D`'s `Clone`) plus each child captured the
+    /// same way, recursively. Hierarchy links (`parent`/`children` handles)
+    /// on the captured `SceneNode2D` are meaningless once detached from the
+    /// live graph; `materialize_template` rebuilds them via `spawn_child`.
+    fn capture_template(&self, handle: NodeHandle2D) -> NodeTemplate {
+        let node = self
+            .get(handle)
+            .cloned()
+            .expect("capture_template called with a live handle");
+        let children = node
+            .children
+            .iter()
+            .map(|&child| self.capture_template(child))
+            .collect();
+        NodeTemplate { node, children }
+    }
+
+    /// Spawn one live clone of `template` as a new child of `parent` (and its
+    /// children as clones under that, recursively). Returns the new
+    /// instance's root handle.
+    fn materialize_template(
+        &mut self,
+        template: &NodeTemplate,
+        parent: NodeHandle2D,
+    ) -> NodeHandle2D {
+        let handle = self.spawn_child(parent, template.node.clone());
+        for child_template in &template.children {
+            self.materialize_template(child_template, handle);
+        }
+        handle
+    }
+
+    /// Every live node handle, roots and descendants, in no particular order.
+    fn all_handles(&self) -> Vec<NodeHandle2D> {
+        let mut out = Vec::new();
+        for root in self.roots.clone() {
+            self.collect_all(root, &mut out);
+        }
+        out
+    }
+
+    fn collect_all(&self, handle: NodeHandle2D, out: &mut Vec<NodeHandle2D>) {
+        let Some(node) = self.get(handle) else {
+            return;
+        };
+        out.push(handle);
+        for child in node.children.clone() {
+            self.collect_all(child, out);
+        }
     }
 
     /// Remove a node and its entire subtree. All handles into the removed
@@ -954,6 +1121,19 @@ impl SceneWorld2D {
             );
         }
 
+        // A repeater instance's own scope (E3) overlays the ambient bindings
+        // for this node and everything under it, so ui_text: "P{pos}" resolves
+        // against *this* item without every descendant needing to know it's
+        // inside a repeat.
+        let merged_bindings;
+        let effective_bindings = match &node.instance_bindings {
+            Some(scope) => {
+                merged_bindings = merge_bindings(bindings, scope);
+                &merged_bindings
+            }
+            None => bindings,
+        };
+
         // UI primitive (if any) laid out relative to the parent's rect; the
         // resolved rect becomes the reference frame for this node's children.
         let (ui_rect, ui_visible) = crate::scene::data2d::draw_ui_node_with_bindings(
@@ -963,7 +1143,7 @@ impl SceneWorld2D {
             node.transform.scale,
             time,
             |n| node.property(n).map(str::to_owned),
-            bindings,
+            effective_bindings,
             node.sprites.first(),
         );
         // A hidden ui node (ui_visible: false) drew nothing, so it shouldn't
@@ -977,9 +1157,10 @@ impl SceneWorld2D {
         }
 
         let children = node.children.clone();
-        let child_refs = self.resolve_child_references(node, ui_rect, &children, bindings);
+        let child_refs =
+            self.resolve_child_references(node, ui_rect, &children, effective_bindings);
         for (child, child_ref) in children.into_iter().zip(child_refs) {
-            self.draw_node(child, &world, child_ref, time, frame, bindings);
+            self.draw_node(child, &world, child_ref, time, frame, effective_bindings);
         }
     }
 
@@ -1024,6 +1205,18 @@ impl SceneWorld2D {
         if !node.visible {
             return;
         }
+
+        // A repeater instance's own scope (E3) overlays the ambient bindings
+        // — see the identical comment in `draw_node`.
+        let merged_bindings;
+        let effective_bindings = match &node.instance_bindings {
+            Some(scope) => {
+                merged_bindings = merge_bindings(bindings, scope);
+                &merged_bindings
+            }
+            None => bindings,
+        };
+
         let (ui_rect, ui_visible) = crate::scene::data2d::draw_ui_node_on_with_bindings(
             canvas,
             parent_ui_rect,
@@ -1031,7 +1224,7 @@ impl SceneWorld2D {
             node.transform.scale,
             time,
             |n| node.property(n).map(str::to_owned),
-            bindings,
+            effective_bindings,
             node.sprites.first(),
         );
         if ui_visible && node.property("ui").is_some() {
@@ -1048,16 +1241,17 @@ impl SceneWorld2D {
         // bindings first, same as every other ui_* value.
         let clip = node
             .property("ui_clip")
-            .map(|v| crate::scene::data2d::substitute_bindings(v, bindings));
+            .map(|v| crate::scene::data2d::substitute_bindings(v, effective_bindings));
         let clipped = matches!(clip.as_deref(), Some("true" | "1" | "yes"));
         if clipped {
             let (x, y, w, h) = ui_rect;
             canvas.push_clip(x, y, w, h);
         }
         let children = node.children.clone();
-        let child_refs = self.resolve_child_references(node, ui_rect, &children, bindings);
+        let child_refs =
+            self.resolve_child_references(node, ui_rect, &children, effective_bindings);
         for (child, child_ref) in children.into_iter().zip(child_refs) {
-            self.draw_node_on_canvas(child, child_ref, time, canvas, bindings);
+            self.draw_node_on_canvas(child, child_ref, time, canvas, effective_bindings);
         }
         if clipped {
             canvas.pop_clip();
@@ -1124,6 +1318,16 @@ impl SceneWorld2D {
         }
         false
     }
+}
+
+/// Overlay a repeater instance's own scope onto the ambient bindings — the
+/// item's own fields win on key collision, so `ui_text: "{name}"` inside a
+/// repeated row resolves to that row's name even if an outer scope happens
+/// to define the same key for something else.
+fn merge_bindings(ambient: &Bindings, item: &Bindings) -> Bindings {
+    let mut merged = ambient.clone();
+    merged.extend(item.iter().map(|(k, v)| (k.clone(), v.clone())));
+    merged
 }
 
 fn rotate_vec(v: Vec2, radians: f32) -> Vec2 {
@@ -1355,6 +1559,162 @@ mod tests {
 
         // No overlap: row_b's top sits exactly gap px below row_a's bottom.
         assert!((a.y - (b.y + b.height) - 5.0).abs() < 1e-3);
+    }
+
+    fn repeat_source(rows: &[(&str, &str)]) -> Vec<Bindings> {
+        rows.iter()
+            .map(|&(pos, name)| {
+                let mut scope = Bindings::new();
+                scope.insert("pos".to_string(), pos.to_string());
+                scope.insert("name".to_string(), name.to_string());
+                scope
+            })
+            .collect()
+    }
+
+    #[test]
+    fn sync_repeaters_materializes_one_instance_per_item() {
+        // E3: ui: "repeat" + ui_repeat_source turns the node's one authored
+        // template child into N live clones, one per item in the named
+        // RepeaterSources collection — "author one row" becomes real,
+        // independently hit-testable nodes, not N redraws of the same handle.
+        let mut world = SceneWorld2D::new();
+        let list = world.spawn(SceneNode2D::new("list"));
+        world.get_mut(list).unwrap().set_property("ui", "repeat");
+        world
+            .get_mut(list)
+            .unwrap()
+            .set_property("ui_repeat_source", "standings");
+        let template = world.spawn_child(list, SceneNode2D::new("row"));
+        world.get_mut(template).unwrap().set_property("ui", "text");
+        world
+            .get_mut(template)
+            .unwrap()
+            .set_property("ui_text", "P{pos} {name}");
+
+        let mut sources = RepeaterSources::new();
+        sources.insert(
+            "standings".to_string(),
+            repeat_source(&[("1", "Reyes"), ("2", "Voss"), ("3", "Amaro")]),
+        );
+        world.sync_repeaters(&sources);
+
+        let instances = world.get(list).unwrap().children().to_vec();
+        assert_eq!(instances.len(), 3, "one instance per source item");
+        // Each instance is a real, distinct handle — not the template reused.
+        assert!(!instances.contains(&template));
+        for pair in instances.windows(2) {
+            assert_ne!(pair[0], pair[1]);
+        }
+
+        // Growing the source spawns more instances; shrinking despawns the
+        // extras — reconciliation, not a fixed count baked in at first sync.
+        sources.insert("standings".to_string(), repeat_source(&[("1", "Reyes")]));
+        world.sync_repeaters(&sources);
+        assert_eq!(world.get(list).unwrap().children().len(), 1);
+
+        sources.insert(
+            "standings".to_string(),
+            repeat_source(&[("1", "Reyes"), ("2", "Voss"), ("3", "Amaro"), ("4", "Cole")]),
+        );
+        world.sync_repeaters(&sources);
+        assert_eq!(world.get(list).unwrap().children().len(), 4);
+    }
+
+    #[test]
+    fn each_repeater_instance_draws_its_own_item_scope() {
+        // The whole point: instance 0 and instance 1 are clones of the same
+        // template but resolve ui_text differently because sync_repeaters
+        // gave each its own Bindings scope.
+        let mut world = SceneWorld2D::new();
+        let list = world.spawn(SceneNode2D::new("list"));
+        world.get_mut(list).unwrap().set_property("ui", "repeat");
+        world
+            .get_mut(list)
+            .unwrap()
+            .set_property("ui_repeat_source", "standings");
+        // The repeat node's own rect is the reference every instance's
+        // ui_w_frac resolves against — same as any other container.
+        world
+            .get_mut(list)
+            .unwrap()
+            .set_property("ui_stretch_x", "true");
+        world
+            .get_mut(list)
+            .unwrap()
+            .set_property("ui_stretch_y", "true");
+        let template = world.spawn_child(list, SceneNode2D::new("row"));
+        world.get_mut(template).unwrap().set_property("ui", "rect");
+        // ui_w_frac bound to a per-item field: each row's bar width tracks
+        // that row's own value, not a shared literal.
+        world
+            .get_mut(template)
+            .unwrap()
+            .set_property("ui_w_frac", "{share}");
+        world.get_mut(template).unwrap().set_property("ui_h", "10");
+
+        let mut sources = RepeaterSources::new();
+        let mut row0 = Bindings::new();
+        row0.insert("share".to_string(), "0.25".to_string());
+        let mut row1 = Bindings::new();
+        row1.insert("share".to_string(), "0.75".to_string());
+        sources.insert("standings".to_string(), vec![row0, row1]);
+        world.sync_repeaters(&sources);
+
+        let mut canvas = Canvas::new((200, 100), std::ptr::null());
+        world.draw_to_canvas(&mut canvas, 0.0);
+
+        let instances = world.get(list).unwrap().children().to_vec();
+        let widths: Vec<f32> = instances
+            .iter()
+            .map(|&h| world.resolved_rect(h).unwrap().width)
+            .collect();
+        // Viewport width 200 -> 0.25 => 50, 0.75 => 150.
+        assert!(widths.contains(&50.0), "widths: {:?}", widths);
+        assert!(widths.contains(&150.0), "widths: {:?}", widths);
+    }
+
+    #[test]
+    fn repeater_instances_flow_with_ui_layout_like_ordinary_children() {
+        // E3 composes with E4 for free: resolve_child_references already
+        // lays out whatever `children()` currently is, and sync_repeaters'
+        // only job is to make that be N instances instead of the template.
+        let mut world = SceneWorld2D::new();
+        let list = world.spawn(SceneNode2D::new("list"));
+        {
+            let node = world.get_mut(list).unwrap();
+            node.set_property("ui", "repeat");
+            node.set_property("ui_repeat_source", "standings");
+            node.set_property("ui_w", "100");
+            node.set_property("ui_h", "100");
+            node.set_property("ui_layout", "column");
+        }
+        let template = world.spawn_child(list, SceneNode2D::new("row"));
+        {
+            let node = world.get_mut(template).unwrap();
+            node.set_property("ui", "rect");
+            node.set_property("ui_h", "20");
+            node.set_property("ui_stretch_x", "true");
+            node.set_property("ui_stretch_y", "true");
+        }
+
+        let mut sources = RepeaterSources::new();
+        sources.insert(
+            "standings".to_string(),
+            repeat_source(&[("1", "Reyes"), ("2", "Voss")]),
+        );
+        world.sync_repeaters(&sources);
+
+        let mut canvas = Canvas::new((200, 200), std::ptr::null());
+        world.draw_to_canvas(&mut canvas, 0.0);
+
+        let instances = world.get(list).unwrap().children().to_vec();
+        let a = world.resolved_rect(instances[0]).unwrap();
+        let b = world.resolved_rect(instances[1]).unwrap();
+        // Same shape as ui_layout_column_stacks_children_top_to_bottom_with_gap:
+        // stacked top-to-bottom, no overlap.
+        assert!(a.y > b.y, "first instance sits above the second");
+        assert!((a.y - b.height - b.y).abs() < 1e-3, "packed with no gap");
     }
 
     #[test]

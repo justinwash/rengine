@@ -447,8 +447,15 @@ fn parse_text_align(value: Option<&str>) -> TextAlign {
 
 /// A named scope of values a `ui_*` property template can reference via
 /// `{key}` placeholders (E2 data binding). Just a string map — repeaters
-/// (E3) will push per-item fields onto a scope before drawing each instance.
+/// (E3) push per-item fields onto a scope before drawing each instance.
 pub type Bindings = HashMap<String, String>;
+
+/// Named collections a `ui: "repeat"` node's `ui_repeat_source` can reference
+/// (E3): one [`Bindings`] scope per item. `SceneWorld2D::sync_repeaters`
+/// reconciles a repeat node's instance children to the named collection's
+/// length and stores each instance's scope, so `ui_text: "P{pos}  {name}"`
+/// resolves against whichever item that instance represents.
+pub type RepeaterSources = HashMap<String, Vec<Bindings>>;
 
 /// Substitute every `{key}` in `template` with `bindings[key]`, leaving
 /// unknown placeholders untouched (so a scope missing one field doesn't wreck

@@ -457,6 +457,14 @@ impl SceneScriptHost2D {
     /// script (payload `target` = the node's script path, matching
     /// [`SceneScriptHost2D::emit_activate_script_path`]). Returns the activated
     /// node handle, if any.
+    ///
+    /// If the hit node is a repeater instance (E3 — its
+    /// `SceneNode2D::instance_bindings` is set), that item's whole binding
+    /// scope is merged into the payload too: every clone of a repeated row's
+    /// template shares one `editor_node_id` (dispatch below matches on that
+    /// alone), so without this a script could tell "some row fired" but not
+    /// *which* — the item scope (e.g. `{driver_id: "14"}`) is what lets
+    /// `on_event`'s payload identify the specific instance clicked.
     pub fn route_pointer_click(
         &mut self,
         world: &mut SceneWorld2D,
@@ -473,8 +481,13 @@ impl SceneScriptHost2D {
         match (pressed_node, hit) {
             (Some(down), Some(up)) if down == up => {
                 let mut payload = HashMap::new();
-                if let Some(target) = world.get(up).and_then(|node| node.script_path()) {
-                    payload.insert("target".to_string(), target.to_string());
+                if let Some(node) = world.get(up) {
+                    if let Some(target) = node.script_path() {
+                        payload.insert("target".to_string(), target.to_string());
+                    }
+                    if let Some(scope) = node.instance_bindings() {
+                        payload.extend(scope.iter().map(|(k, v)| (k.clone(), v.clone())));
+                    }
                 }
                 let event = SceneScriptEvent2D::Custom {
                     topic: "activate".to_string(),
@@ -872,5 +885,131 @@ mod tests {
 
         let log = log.lock().unwrap();
         assert_eq!(*log, vec!["start_btn".to_string(), "quit_btn".to_string()]);
+    }
+
+    #[test]
+    fn pointer_click_on_a_repeater_instance_identifies_which_one_via_payload() {
+        // E3: every clone of a repeated row's template shares one
+        // editor_node_id (dispatch matches on that alone), so without
+        // merging instance_bindings into the activate payload a script could
+        // tell "a row fired" but not which — this proves the payload carries
+        // the clicked instance's own item scope (e.g. driver_id) through.
+        use crate::scene::{
+            Bindings, Prefab2DDef, RepeaterSources, Scene2DDef, SceneInstance2DDef,
+        };
+        use std::sync::Mutex;
+
+        struct RowScript {
+            log: Arc<Mutex<Vec<String>>>,
+        }
+        impl SceneScript2D for RowScript {
+            fn on_event_world(
+                &mut self,
+                _ctx: &mut SceneScriptContext2D,
+                event: &SceneScriptEvent2D,
+            ) {
+                let SceneScriptEvent2D::Custom { topic, payload } = event;
+                if topic == "activate" {
+                    if let Some(driver_id) = payload.get("driver_id") {
+                        self.log.lock().unwrap().push(driver_id.clone());
+                    }
+                }
+            }
+        }
+
+        // A repeat container (no editor identity of its own) whose one
+        // authored child is the row template — real editor_node_id/
+        // script_path, exactly as an authored scene would produce, so
+        // sync_repeaters' clones inherit both via SceneNode2D::Clone.
+        let definition = Scene2DDef {
+            prefabs: vec![
+                Prefab2DDef {
+                    name: "list".to_string(),
+                    sprites: vec![],
+                },
+                Prefab2DDef {
+                    name: "row".to_string(),
+                    sprites: vec![],
+                },
+            ],
+            instances: vec![
+                SceneInstance2DDef {
+                    prefab: "list".to_string(),
+                    position: [0.0, 0.0],
+                    scale: [1.0, 1.0],
+                    properties: [
+                        ("ui", "repeat"),
+                        ("ui_repeat_source", "drivers"),
+                        ("editor_node_id", "1"),
+                    ]
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect(),
+                },
+                SceneInstance2DDef {
+                    prefab: "row".to_string(),
+                    position: [0.0, 0.0],
+                    scale: [1.0, 1.0],
+                    properties: [
+                        ("ui", "rect"),
+                        ("ui_w", "100"),
+                        ("ui_h", "50"),
+                        ("editor_node_id", "2"),
+                        ("editor_parent_id", "1"),
+                        ("script_path", "scripts/driver_row.rs"),
+                    ]
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect(),
+                },
+            ],
+        };
+        let scene = Scene2D::from_definition(
+            std::path::Path::new("t.scene.json"),
+            definition,
+            &crate::assets::AssetPack::default(),
+        )
+        .unwrap();
+        let mut world = SceneWorld2D::from_scene(&scene);
+        let list = world.find_by_editor_id(1).expect("list node");
+
+        let mut sources = RepeaterSources::new();
+        let mut row0 = Bindings::new();
+        row0.insert("driver_id".to_string(), "14".to_string());
+        let mut row1 = Bindings::new();
+        row1.insert("driver_id".to_string(), "22".to_string());
+        sources.insert("drivers".to_string(), vec![row0, row1]);
+        world.sync_repeaters(&sources);
+        assert_eq!(world.get(list).unwrap().children().len(), 2);
+
+        // Rows have no ui_layout, so both instances share the same on-screen
+        // box — fine here, since the test only needs one clickable point;
+        // it's whichever instance is topmost (last-drawn/last-spawned) that
+        // hit_test picks, and its own payload should be the one that wins.
+        let mut canvas = crate::canvas::Canvas::new((200, 200), std::ptr::null());
+        world.draw_to_canvas(&mut canvas, 0.0);
+
+        let log = Arc::new(Mutex::new(Vec::<String>::new()));
+        let factory_log = log.clone();
+        let mut registry = SceneScriptRegistry2D::new();
+        registry.register("scripts/driver_row.rs", move || {
+            Box::new(RowScript {
+                log: factory_log.clone(),
+            })
+        });
+        let mut host = SceneScriptHost2D::new();
+        host.attach_scene(&scene, &registry);
+
+        host.route_pointer_click(&mut world, [0.0, 0.0], true);
+        let activated = host.route_pointer_click(&mut world, [0.0, 0.0], false);
+        assert!(activated.is_some());
+
+        let log = log.lock().unwrap();
+        assert_eq!(log.len(), 1, "log: {:?}", log);
+        assert!(
+            log[0] == "14" || log[0] == "22",
+            "payload should carry whichever instance's own driver_id was hit: {:?}",
+            log
+        );
     }
 }
