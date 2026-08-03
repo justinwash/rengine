@@ -508,6 +508,17 @@ pub(crate) fn substitute_bindings<'a>(template: &'a str, bindings: &Bindings) ->
     Cow::Owned(out)
 }
 
+/// A node's live interaction state for the frame being drawn (E6). Drives
+/// `ui_color_hover`/`ui_color_press`/`ui_color_focus` overrides — the host
+/// (`SceneLayer2D`) tracks which node is hovered/pressed/focused and passes
+/// the right state in per node at draw time.
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub struct UiInteractionState {
+    pub hovered: bool,
+    pub pressed: bool,
+    pub focused: bool,
+}
+
 /// Resolve + draw a UI node onto its `ui_layer` canvas in `frame`; returns the
 /// resolved rect for child layout and whether `ui_visible` allowed it to draw.
 pub(crate) fn draw_ui_node<'a>(
@@ -529,6 +540,7 @@ pub(crate) fn draw_ui_node<'a>(
         &Bindings::new(),
         sprite,
         0.0,
+        UiInteractionState::default(),
     )
 }
 
@@ -551,8 +563,10 @@ pub(crate) fn draw_ui_node_with_bindings(
     bindings: &Bindings,
     sprite: Option<&PrefabSprite2D>,
     pixel_grid: f32,
+    state: UiInteractionState,
 ) -> ((f32, f32, f32, f32), bool) {
     let get = |n: &str| get(n).map(|v| substitute_bindings(&v, bindings).into_owned());
+    let get = |n: &str| resolve_interaction_property(&get, n, state);
     let rect = resolve_ui_rect(reference, position, scale, time, &get, pixel_grid);
     let visible = !matches!(
         get("ui_visible").as_deref().map(str::trim),
@@ -584,8 +598,10 @@ pub(crate) fn draw_ui_node_on_with_bindings(
     bindings: &Bindings,
     sprite: Option<&PrefabSprite2D>,
     pixel_grid: f32,
+    state: UiInteractionState,
 ) -> ((f32, f32, f32, f32), bool) {
     let get = |n: &str| get(n).map(|v| substitute_bindings(&v, bindings).into_owned());
+    let get = |n: &str| resolve_interaction_property(&get, n, state);
     let rect = resolve_ui_rect(reference, position, scale, time, &get, pixel_grid);
     let visible = !matches!(
         get("ui_visible").as_deref().map(str::trim),
@@ -595,6 +611,38 @@ pub(crate) fn draw_ui_node_on_with_bindings(
         draw_ui_kind(canvas, rect, scale, &get, sprite);
     }
     (rect, visible)
+}
+
+/// E6 per-state property overrides: `ui_color_press` wins while `pressed`,
+/// else `ui_color_hover` while `hovered`, else `ui_color_focus` while
+/// `focused`, else the base `ui_color`. Pressed beats hovered beats focused
+/// so a click mid-hover reads as "pressed," not a blend of both. Only
+/// `ui_color` is state-aware today — the plan names exactly this property;
+/// extend the `overridable` list below if a future kind needs its own.
+fn resolve_interaction_property(
+    get: &impl Fn(&str) -> Option<String>,
+    name: &str,
+    state: UiInteractionState,
+) -> Option<String> {
+    const OVERRIDABLE: &[&str] = &["ui_color"];
+    if OVERRIDABLE.contains(&name) {
+        if state.pressed {
+            if let Some(v) = get(&format!("{name}_press")) {
+                return Some(v);
+            }
+        }
+        if state.hovered {
+            if let Some(v) = get(&format!("{name}_hover")) {
+                return Some(v);
+            }
+        }
+        if state.focused {
+            if let Some(v) = get(&format!("{name}_focus")) {
+                return Some(v);
+            }
+        }
+    }
+    get(name)
 }
 
 /// Parse a `"r,g,b[,a]"` sRGB triplet/quad (0–255 per channel) into a [`Color`],

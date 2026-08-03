@@ -1,5 +1,5 @@
 use crate::app::Engine;
-use crate::Vec2;
+use crate::{KeyCode, Vec2};
 
 use super::{
     NodeHandle2D, Scene2D, SceneScriptHost2D, SceneScriptInputEvent2D, SceneScriptRegistry2D,
@@ -65,6 +65,17 @@ impl SceneLayer2D {
 
         // Update hover state.
         self.hovered = self.world.hit_test(Vec2::new(mx, my));
+        self.world.set_hovered(self.hovered);
+        // Moving the mouse over a focusable node hands keyboard focus to it
+        // too (E6) — the two input modes should never disagree about which
+        // node is "active." A hover over a non-focusable node (or nothing)
+        // leaves keyboard focus alone, so tabbing to a button and then
+        // mousing over a decorative panel doesn't lose your place.
+        if let Some(hit) = self.hovered {
+            if self.world.focusable_order().contains(&hit) {
+                self.world.set_focus(Some(hit));
+            }
+        }
 
         // Route pointer move to the topmost hit node.
         self.host.route_input_world(
@@ -75,10 +86,29 @@ impl SceneLayer2D {
         // Left button: route through the click tracker so scripts receive
         // "activate" on a matched press+release over the same node.
         if input.is_mouse_pressed(0) {
+            self.world.set_pressed(self.hovered);
             self.host.route_pointer_click(&mut self.world, pos, true);
         }
         if input.is_mouse_released(0) {
+            self.world.set_pressed(None);
             self.host.route_pointer_click(&mut self.world, pos, false);
+        }
+
+        // Arrow keys move focus among ui_focusable nodes (E6); INPUT_SCHEME's
+        // "arrows highlight" rule — Up/Left step back, Down/Right step
+        // forward, so a screen can wire either axis (or both, for a 2D grid
+        // like the dev tree) without the engine caring which the author
+        // chose. Enter activates whatever is focused, mirroring a click.
+        if input.is_key_pressed(KeyCode::ArrowUp) || input.is_key_pressed(KeyCode::ArrowLeft) {
+            self.world.focus_move(-1);
+        }
+        if input.is_key_pressed(KeyCode::ArrowDown) || input.is_key_pressed(KeyCode::ArrowRight) {
+            self.world.focus_move(1);
+        }
+        if input.is_key_pressed(KeyCode::Enter) || input.is_key_pressed(KeyCode::NumpadEnter) {
+            if let Some(focused) = self.world.focused() {
+                self.host.activate_node(&mut self.world, focused);
+            }
         }
 
         // Right and middle buttons: route as raw PointerButton events.

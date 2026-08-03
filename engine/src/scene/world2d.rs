@@ -387,6 +387,18 @@ pub struct SceneWorld2D {
     /// off the art's pixel grid. Off by default so existing screens/tests are
     /// unaffected until a host opts in.
     pixel_grid: Cell<f32>,
+    /// Node currently under the pointer (E6), or `None`. Drives
+    /// `ui_color_hover` at draw and the mouse-focus handoff in
+    /// `focus_move`/`set_focus_to_hovered`.
+    hovered: Cell<Option<NodeHandle2D>>,
+    /// Node currently pointer-down on (E6), or `None`. Drives
+    /// `ui_color_press`.
+    pressed: Cell<Option<NodeHandle2D>>,
+    /// Node currently keyboard/gamepad-focused (E6), or `None`. Drives
+    /// `ui_color_focus` and is what `Enter`/activate-the-focused-node acts
+    /// on. `None` by default — a screen with no `ui_focusable` nodes never
+    /// pays for this.
+    focused: Cell<Option<NodeHandle2D>>,
 }
 
 impl SceneWorld2D {
@@ -401,6 +413,95 @@ impl SceneWorld2D {
     /// `ui_snap: false`.
     pub fn set_pixel_grid(&mut self, cell: f32) {
         self.pixel_grid.set(cell.max(0.0));
+    }
+
+    /// Every `ui_focusable: true` node, in `ui_focus_order` order (ties break
+    /// on `visible_draw_order`, i.e. document order — stable and needs no new
+    /// bookkeeping). This is the list `focus_move`/keyboard traversal steps
+    /// through and the source of truth for "what can be Tabbed/arrowed to."
+    /// Invisible nodes (a hidden overlay's buttons) are excluded, same as
+    /// `visible_draw_order`.
+    pub fn focusable_order(&self) -> Vec<NodeHandle2D> {
+        let mut order: Vec<(i64, usize, NodeHandle2D)> = self
+            .visible_draw_order()
+            .into_iter()
+            .enumerate()
+            .filter_map(|(doc_index, handle)| {
+                let node = self.get(handle)?;
+                matches!(node.property("ui_focusable"), Some("true" | "1" | "yes")).then(|| {
+                    (
+                        node.property_i64("ui_focus_order").unwrap_or(0),
+                        doc_index,
+                        handle,
+                    )
+                })
+            })
+            .collect();
+        order.sort_by_key(|&(order, doc_index, _)| (order, doc_index));
+        order.into_iter().map(|(_, _, handle)| handle).collect()
+    }
+
+    /// The currently keyboard/gamepad-focused node (E6), if any.
+    pub fn focused(&self) -> Option<NodeHandle2D> {
+        self.focused.get()
+    }
+
+    /// Set focus directly to `handle` (or clear it with `None`) — e.g. mouse
+    /// hover taking over focus, or a screen focusing its first field on
+    /// enter. Does not check `ui_focusable`; callers that want the
+    /// arrow-key-traversal contract should go through `focus_move` instead.
+    pub fn set_focus(&self, handle: Option<NodeHandle2D>) {
+        self.focused.set(handle);
+    }
+
+    /// Move focus by `delta` through [`focusable_order`] (`+1` next, `-1`
+    /// previous), wrapping at both ends. No-op if nothing is focusable. If
+    /// nothing is currently focused, `delta > 0` lands on the first
+    /// focusable node and `delta < 0` on the last — either way "one step
+    /// from off the list" rather than requiring a caller to seed focus
+    /// first. Returns the newly focused handle.
+    pub fn focus_move(&self, delta: i32) -> Option<NodeHandle2D> {
+        let order = self.focusable_order();
+        if order.is_empty() {
+            self.focused.set(None);
+            return None;
+        }
+        let len = order.len() as i32;
+        let current = self
+            .focused
+            .get()
+            .and_then(|h| order.iter().position(|&o| o == h));
+        let next_index = match current {
+            Some(i) => ((i as i32 + delta).rem_euclid(len)) as usize,
+            None if delta >= 0 => 0,
+            None => (len - 1) as usize,
+        };
+        let next = order[next_index];
+        self.focused.set(Some(next));
+        Some(next)
+    }
+
+    /// Node currently under the pointer (E6), or `None`. Set by the host each
+    /// frame from `hit_test`; read back by `draw` to resolve
+    /// `ui_color_hover`.
+    pub fn hovered(&self) -> Option<NodeHandle2D> {
+        self.hovered.get()
+    }
+
+    /// See [`hovered`](Self::hovered).
+    pub fn set_hovered(&self, handle: Option<NodeHandle2D>) {
+        self.hovered.set(handle);
+    }
+
+    /// Node currently pointer-down on (E6), or `None`. Drives
+    /// `ui_color_press`.
+    pub fn pressed(&self) -> Option<NodeHandle2D> {
+        self.pressed.get()
+    }
+
+    /// See [`pressed`](Self::pressed).
+    pub fn set_pressed(&self, handle: Option<NodeHandle2D>) {
+        self.pressed.set(handle);
     }
 
     /// Build a live world from a loaded [`Scene2D`].
@@ -1153,6 +1254,11 @@ impl SceneWorld2D {
 
         // UI primitive (if any) laid out relative to the parent's rect; the
         // resolved rect becomes the reference frame for this node's children.
+        let state = crate::scene::data2d::UiInteractionState {
+            hovered: self.hovered.get() == Some(handle),
+            pressed: self.pressed.get() == Some(handle),
+            focused: self.focused.get() == Some(handle),
+        };
         let (ui_rect, ui_visible) = crate::scene::data2d::draw_ui_node_with_bindings(
             frame,
             parent_ui_rect,
@@ -1163,6 +1269,7 @@ impl SceneWorld2D {
             effective_bindings,
             node.sprites.first(),
             self.pixel_grid.get(),
+            state,
         );
         // A hidden ui node (ui_visible: false) drew nothing, so it shouldn't
         // be hit-testable at a rect that has no on-screen primitive behind it.
@@ -1235,6 +1342,11 @@ impl SceneWorld2D {
             None => bindings,
         };
 
+        let state = crate::scene::data2d::UiInteractionState {
+            hovered: self.hovered.get() == Some(handle),
+            pressed: self.pressed.get() == Some(handle),
+            focused: self.focused.get() == Some(handle),
+        };
         let (ui_rect, ui_visible) = crate::scene::data2d::draw_ui_node_on_with_bindings(
             canvas,
             parent_ui_rect,
@@ -1245,6 +1357,7 @@ impl SceneWorld2D {
             effective_bindings,
             node.sprites.first(),
             self.pixel_grid.get(),
+            state,
         );
         if ui_visible && node.property("ui").is_some() {
             let (x, y, w, h) = ui_rect;
@@ -1734,6 +1847,136 @@ mod tests {
         // stacked top-to-bottom, no overlap.
         assert!(a.y > b.y, "first instance sits above the second");
         assert!((a.y - b.height - b.y).abs() < 1e-3, "packed with no gap");
+    }
+
+    #[test]
+    fn focusable_order_sorts_by_ui_focus_order_then_document_order() {
+        let mut world = SceneWorld2D::new();
+        let a = world.spawn(SceneNode2D::new("a"));
+        let b = world.spawn(SceneNode2D::new("b"));
+        let c = world.spawn(SceneNode2D::new("c"));
+        for h in [a, b, c] {
+            world
+                .get_mut(h)
+                .unwrap()
+                .set_property("ui_focusable", "true");
+        }
+        // Explicit order overrides spawn order; b (order 0) comes before a
+        // (order 1); c has no explicit order (defaults to 0) so ties with b
+        // and falls back to document order — b was spawned first.
+        world
+            .get_mut(a)
+            .unwrap()
+            .set_property("ui_focus_order", "1");
+        world
+            .get_mut(b)
+            .unwrap()
+            .set_property("ui_focus_order", "0");
+
+        assert_eq!(world.focusable_order(), vec![b, c, a]);
+    }
+
+    #[test]
+    fn focusable_order_excludes_non_focusable_and_invisible_nodes() {
+        let mut world = SceneWorld2D::new();
+        let visible = world.spawn(SceneNode2D::new("visible"));
+        world
+            .get_mut(visible)
+            .unwrap()
+            .set_property("ui_focusable", "true");
+        let not_focusable = world.spawn(SceneNode2D::new("not_focusable"));
+        let _ = not_focusable;
+        let hidden = world.spawn(SceneNode2D::new("hidden"));
+        world
+            .get_mut(hidden)
+            .unwrap()
+            .set_property("ui_focusable", "true");
+        world.get_mut(hidden).unwrap().visible = false;
+
+        assert_eq!(world.focusable_order(), vec![visible]);
+    }
+
+    #[test]
+    fn focus_move_wraps_and_seeds_from_unset() {
+        let mut world = SceneWorld2D::new();
+        let a = world.spawn(SceneNode2D::new("a"));
+        let b = world.spawn(SceneNode2D::new("b"));
+        for h in [a, b] {
+            world
+                .get_mut(h)
+                .unwrap()
+                .set_property("ui_focusable", "true");
+        }
+        assert_eq!(world.focused(), None);
+
+        // Nothing focused yet: stepping forward lands on the first item.
+        assert_eq!(world.focus_move(1), Some(a));
+        assert_eq!(world.focused(), Some(a));
+        assert_eq!(world.focus_move(1), Some(b));
+        // Wraps forward past the end.
+        assert_eq!(world.focus_move(1), Some(a));
+        // Wraps backward past the start.
+        assert_eq!(world.focus_move(-1), Some(b));
+    }
+
+    #[test]
+    fn focus_move_is_a_noop_with_nothing_focusable() {
+        let mut world = SceneWorld2D::new();
+        world.spawn(SceneNode2D::new("decorative"));
+        assert_eq!(world.focus_move(1), None);
+        assert_eq!(world.focused(), None);
+    }
+
+    #[test]
+    fn ui_color_hover_press_focus_override_the_base_color_at_draw() {
+        // E6: pressed beats hovered beats focused beats the base ui_color —
+        // a click mid-hover should read as "pressed," not a blend.
+        let mut world = SceneWorld2D::new();
+        let node = world.spawn(SceneNode2D::new("button"));
+        {
+            let n = world.get_mut(node).unwrap();
+            n.set_property("ui", "rect");
+            n.set_property("ui_w", "10");
+            n.set_property("ui_h", "10");
+            n.set_property("ui_color", "10,10,10,255");
+            n.set_property("ui_color_hover", "20,20,20,255");
+            n.set_property("ui_color_press", "30,30,30,255");
+            n.set_property("ui_color_focus", "40,40,40,255");
+        }
+
+        // Colors are stored linear internally (sRGB decoded on parse), so
+        // compare draws against each other rather than hand-computing the
+        // linear value of each authored sRGB triplet.
+        let draw = |world: &SceneWorld2D| -> [f32; 4] {
+            let mut canvas = Canvas::new((200, 200), std::ptr::null());
+            world.draw_to_canvas(&mut canvas, 0.0);
+            canvas.verts.last().unwrap().color
+        };
+
+        let base = draw(&world);
+
+        world.set_focus(Some(node));
+        let focused = draw(&world);
+        assert_ne!(
+            base, focused,
+            "ui_color_focus should override the base color"
+        );
+
+        world.set_hovered(Some(node));
+        let hovered = draw(&world);
+        assert_ne!(
+            focused, hovered,
+            "ui_color_hover should beat ui_color_focus"
+        );
+
+        world.set_pressed(Some(node));
+        let pressed = draw(&world);
+        assert_ne!(
+            hovered, pressed,
+            "ui_color_press should beat ui_color_hover"
+        );
+        assert_ne!(base, pressed);
+        assert_ne!(focused, pressed);
     }
 
     #[test]

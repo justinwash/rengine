@@ -480,24 +480,32 @@ impl SceneScriptHost2D {
         let pressed_node = self.pressed_node.take();
         match (pressed_node, hit) {
             (Some(down), Some(up)) if down == up => {
-                let mut payload = HashMap::new();
-                if let Some(node) = world.get(up) {
-                    if let Some(target) = node.script_path() {
-                        payload.insert("target".to_string(), target.to_string());
-                    }
-                    if let Some(scope) = node.instance_bindings() {
-                        payload.extend(scope.iter().map(|(k, v)| (k.clone(), v.clone())));
-                    }
-                }
-                let event = SceneScriptEvent2D::Custom {
-                    topic: "activate".to_string(),
-                    payload,
-                };
-                self.dispatch_event_to_node(world, up, &event);
+                self.activate_node(world, up);
                 Some(up)
             }
             _ => None,
         }
+    }
+
+    /// Emit an `activate` event directly to `handle`, the same event
+    /// `route_pointer_click` fires on a matched press+release — used by
+    /// keyboard/gamepad activation (E6's `Enter` on the focused node) where
+    /// there is no pointer position to hit-test.
+    pub fn activate_node(&mut self, world: &mut SceneWorld2D, handle: NodeHandle2D) {
+        let mut payload = HashMap::new();
+        if let Some(node) = world.get(handle) {
+            if let Some(target) = node.script_path() {
+                payload.insert("target".to_string(), target.to_string());
+            }
+            if let Some(scope) = node.instance_bindings() {
+                payload.extend(scope.iter().map(|(k, v)| (k.clone(), v.clone())));
+            }
+        }
+        let event = SceneScriptEvent2D::Custom {
+            topic: "activate".to_string(),
+            payload,
+        };
+        self.dispatch_event_to_node(world, handle, &event);
     }
 
     fn dispatch_input_to_node(
@@ -885,6 +893,82 @@ mod tests {
 
         let log = log.lock().unwrap();
         assert_eq!(*log, vec!["start_btn".to_string(), "quit_btn".to_string()]);
+    }
+
+    #[test]
+    fn activate_node_fires_the_same_event_a_click_would() {
+        // E6: keyboard/gamepad activation (Enter on the focused node) must be
+        // indistinguishable to a script from a mouse click — same topic, same
+        // payload shape — so no script needs a second code path for input
+        // method. Reuses the exact scene/script shape as
+        // pointer_click_routes_activate_to_clicked_node_only, just triggered
+        // via activate_node instead of a hit-tested click.
+        use crate::scene::{Prefab2DDef, Scene2DDef, SceneInstance2DDef};
+        use std::sync::Mutex;
+
+        struct ClickScript {
+            log: Arc<Mutex<Vec<String>>>,
+        }
+        impl SceneScript2D for ClickScript {
+            fn on_event_world(
+                &mut self,
+                ctx: &mut SceneScriptContext2D,
+                event: &SceneScriptEvent2D,
+            ) {
+                let SceneScriptEvent2D::Custom { topic, .. } = event;
+                if topic == "activate" {
+                    if let Some(name) = ctx.binding().editor_name.clone() {
+                        self.log.lock().unwrap().push(name);
+                    }
+                }
+            }
+        }
+
+        let definition = Scene2DDef {
+            prefabs: vec![Prefab2DDef {
+                name: "btn".to_string(),
+                sprites: vec![],
+            }],
+            instances: vec![SceneInstance2DDef {
+                prefab: "btn".to_string(),
+                position: [0.0, 0.0],
+                scale: [1.0, 1.0],
+                properties: [
+                    ("editor_node_id", "1".to_string()),
+                    ("editor_name", "start_btn".to_string()),
+                    ("script_path", "scripts/btn.rs".to_string()),
+                    ("ui_focusable", "true".to_string()),
+                ]
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.clone()))
+                .collect(),
+            }],
+        };
+        let scene = Scene2D::from_definition(
+            std::path::Path::new("t.scene.json"),
+            definition,
+            &crate::assets::AssetPack::default(),
+        )
+        .unwrap();
+        let mut world = SceneWorld2D::from_scene(&scene);
+
+        let log = Arc::new(Mutex::new(Vec::<String>::new()));
+        let factory_log = log.clone();
+        let mut registry = SceneScriptRegistry2D::new();
+        registry.register("scripts/btn.rs", move || {
+            Box::new(ClickScript {
+                log: factory_log.clone(),
+            })
+        });
+        let mut host = SceneScriptHost2D::new();
+        host.attach_scene(&scene, &registry);
+
+        let handle = world.focusable_order()[0];
+        world.set_focus(Some(handle));
+        let focused = world.focused().unwrap();
+        host.activate_node(&mut world, focused);
+
+        assert_eq!(*log.lock().unwrap(), vec!["start_btn".to_string()]);
     }
 
     #[test]
