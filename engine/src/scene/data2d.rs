@@ -195,6 +195,9 @@ impl SceneInstance2D {
     /// - `ui_anchor`: `center` (default) | `top`/`bottom`/`left`/`right` |
     ///   `top-left`/`top-right`/`bottom-left`/`bottom-right` — position is then an
     ///   offset from that screen anchor, so HUD nodes survive window resizes
+    /// - `ui_origin_x`, `ui_origin_y`: which point of the node lands on the
+    ///   anchor — `0` (default) its left/bottom edge, `0.5` its centre, `1` its
+    ///   right/top edge. Needed to centre a node whose size is data-bound.
     /// - `ui_w`, `ui_h`: size, multiplied by the instance scale
     /// - `ui_w_frac`, `ui_h_frac`: size as a fraction of the viewport (overrides
     ///   `ui_w`/`ui_h`), e.g. `ui_w_frac: 1.0` spans the full width
@@ -265,19 +268,27 @@ fn resolve_ui_rect(
     if let Some(fy) = prop_f32("ui_anchor_frac_y") {
         ay = ry + fy * rh;
     }
+    // Which point of the node lands on the anchor: 0 = its left/bottom edge
+    // (the default, and what every existing scene assumes), 0.5 = its centre,
+    // 1 = its right/top edge. Without this, centring a fixed-size box means
+    // hand-offsetting `position` by half its size — which is impossible the
+    // moment the size is data-bound, and is the single most-hit authoring
+    // trap otherwise.
+    let origin_x = prop_f32("ui_origin_x").unwrap_or(0.0);
+    let origin_y = prop_f32("ui_origin_y").unwrap_or(0.0);
     let (x, w) = if prop_bool("ui_stretch_x") {
         let ml = prop_f32("ui_margin_left").unwrap_or(0.0);
         let mr = prop_f32("ui_margin_right").unwrap_or(0.0);
         (rx + ml, (rw - ml - mr).max(0.0))
     } else {
-        (ax + position.x, w_fixed)
+        (ax + position.x - origin_x * w_fixed, w_fixed)
     };
     let (y, h) = if prop_bool("ui_stretch_y") {
         let mb = prop_f32("ui_margin_bottom").unwrap_or(0.0);
         let mt = prop_f32("ui_margin_top").unwrap_or(0.0);
         (ry + mb, (rh - mb - mt).max(0.0))
     } else {
-        (ay + position.y, h_fixed)
+        (ay + position.y - origin_y * h_fixed, h_fixed)
     };
     // Optional idle animation: sinusoidal bob (y) / sway (x) with a per-node phase.
     let phase = prop_f32("ui_phase").unwrap_or(0.0);
@@ -1381,6 +1392,63 @@ mod tests {
         // Unterminated `{`: kept literal instead of eating the rest of the
         // string looking for a `}` that never comes.
         assert_eq!(substitute_bindings("a{b", &bindings), "a{b");
+    }
+
+    #[test]
+    fn ui_origin_centres_a_node_on_its_anchor() {
+        // `ui_anchor` puts a node's bottom-left corner on the anchor point, so
+        // centring a fixed-size box otherwise means hand-offsetting `position`
+        // by half its size — which cannot be done at all once the size is
+        // data-bound (a selection bar sized to its label, say).
+        let viewport = (-320.0, -240.0, 640.0, 480.0);
+        let resolve = |props: &[(&str, &str)]| {
+            let map: std::collections::HashMap<String, String> = props
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect();
+            resolve_ui_rect(
+                viewport,
+                Vec2::ZERO,
+                Vec2::ONE,
+                0.0,
+                |n| map.get(n).cloned(),
+                0.0,
+            )
+        };
+
+        // Default (origin 0): bottom-left corner lands on the centre anchor.
+        let corner = resolve(&[("ui_anchor", "center"), ("ui_w", "200"), ("ui_h", "40")]);
+        assert_eq!((corner.0, corner.1), (0.0, 0.0));
+
+        // origin 0.5 on both axes: the node's own centre lands there instead.
+        let centred = resolve(&[
+            ("ui_anchor", "center"),
+            ("ui_w", "200"),
+            ("ui_h", "40"),
+            ("ui_origin_x", "0.5"),
+            ("ui_origin_y", "0.5"),
+        ]);
+        assert_eq!((centred.0, centred.1), (-100.0, -20.0));
+        assert_eq!((centred.2, centred.3), (200.0, 40.0), "size is unchanged");
+
+        // origin 1: the far edge lands on the anchor.
+        let far = resolve(&[
+            ("ui_anchor", "center"),
+            ("ui_w", "200"),
+            ("ui_h", "40"),
+            ("ui_origin_x", "1"),
+            ("ui_origin_y", "1"),
+        ]);
+        assert_eq!((far.0, far.1), (-200.0, -40.0));
+
+        // Stretch owns the axis outright, so an origin on that axis is inert
+        // rather than shifting a node that has no fixed size to offset by.
+        let stretched = resolve(&[
+            ("ui_stretch_x", "true"),
+            ("ui_origin_x", "0.5"),
+            ("ui_h", "40"),
+        ]);
+        assert_eq!((stretched.0, stretched.2), (-320.0, 640.0));
     }
 
     #[test]
