@@ -102,6 +102,28 @@ impl Color {
         }
     }
 
+    /// The inverse of [`from_srgb8`](Self::from_srgb8): 8-bit sRGB channels
+    /// back out of a linear colour. Round-trips exactly for any value that came
+    /// from `from_srgb8`. Needed anywhere a colour has to be written back as
+    /// display-space text or bytes — a scene file's `ui_color`, a captured
+    /// frame, a debug readout.
+    pub fn to_srgb8(self) -> (u8, u8, u8, u8) {
+        fn to_srgb(linear: f32) -> u8 {
+            let s = if linear <= 0.003_130_8 {
+                linear * 12.92
+            } else {
+                1.055 * linear.max(0.0).powf(1.0 / 2.4) - 0.055
+            };
+            (s * 255.0).round().clamp(0.0, 255.0) as u8
+        }
+        (
+            to_srgb(self.r),
+            to_srgb(self.g),
+            to_srgb(self.b),
+            (self.a * 255.0).round().clamp(0.0, 255.0) as u8,
+        )
+    }
+
     pub fn to_array(self) -> [f32; 4] {
         [self.r, self.g, self.b, self.a]
     }
@@ -129,5 +151,21 @@ impl Color {
 impl Default for Color {
     fn default() -> Self {
         Self::WHITE
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Color;
+
+    #[test]
+    fn to_srgb8_round_trips_from_srgb8() {
+        // Every byte, including the linear-segment values below 0.04045 where
+        // the transfer curve changes shape — those are the darks `from_srgb8`
+        // exists to get right, so they are exactly the ones worth pinning.
+        for v in 0..=255u8 {
+            let (r, g, b, a) = Color::from_srgb8(v, v, v, v).to_srgb8();
+            assert_eq!((r, g, b, a), (v, v, v, v), "channel value {v}");
+        }
     }
 }
