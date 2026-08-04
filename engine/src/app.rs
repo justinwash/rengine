@@ -1529,10 +1529,11 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
                     image::ColorType::Rgba8,
                 )?;
             }
-            if play_script.as_ref().is_some_and(PlayScript::finished) {
-                return Ok(());
-            }
-            if game.should_exit() {
+            // A finished play script ends the run, but must still honour
+            // `--capture` — otherwise a script that is shorter than the frame
+            // limit exits 0 having written nothing, and the caller only finds
+            // out when it goes looking for a file that isn't there.
+            if game.should_exit() || play_script.as_ref().is_some_and(PlayScript::finished) {
                 if let Some(path) = &headless_capture_path {
                     let captured = engine
                         .renderer

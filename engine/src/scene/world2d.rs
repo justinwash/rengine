@@ -1122,7 +1122,15 @@ impl SceneWorld2D {
         let screen = (-(sw as f32) / 2.0, -(sh as f32) / 2.0, sw as f32, sh as f32);
         let roots = self.roots.clone();
         for root in roots {
-            self.draw_node(root, &Transform2D::default(), screen, time, frame, bindings);
+            self.draw_node(
+                root,
+                &Transform2D::default(),
+                screen,
+                time,
+                frame,
+                bindings,
+                Default::default(),
+            );
         }
     }
 
@@ -1214,6 +1222,7 @@ impl SceneWorld2D {
         time: f32,
         frame: &mut Frame,
         bindings: &Bindings,
+        inherited: crate::scene::data2d::UiInteractionState,
     ) {
         let Some(node) = self.get(handle) else {
             return;
@@ -1254,11 +1263,7 @@ impl SceneWorld2D {
 
         // UI primitive (if any) laid out relative to the parent's rect; the
         // resolved rect becomes the reference frame for this node's children.
-        let state = crate::scene::data2d::UiInteractionState {
-            hovered: self.hovered.get() == Some(handle),
-            pressed: self.pressed.get() == Some(handle),
-            focused: self.focused.get() == Some(handle),
-        };
+        let state = self.interaction_state(handle, inherited);
         let (ui_rect, ui_visible) = crate::scene::data2d::draw_ui_node_with_bindings(
             frame,
             parent_ui_rect,
@@ -1285,7 +1290,29 @@ impl SceneWorld2D {
         let child_refs =
             self.resolve_child_references(node, ui_rect, &children, effective_bindings);
         for (child, child_ref) in children.into_iter().zip(child_refs) {
-            self.draw_node(child, &world, child_ref, time, frame, effective_bindings);
+            self.draw_node(child, &world, child_ref, time, frame, effective_bindings, state);
+        }
+    }
+
+    /// A node's live interaction state (E6), which is its own state *or* any
+    /// state inherited from an ancestor.
+    ///
+    /// Inheritance is what makes E6 usable on a real widget. Only one node can
+    /// be `hovered`, but the smallest useful button is two nodes — a background
+    /// rect and a label — and hovering it has to light up both. Without this,
+    /// every composite widget has to push its own per-state colours from host
+    /// code each frame, which is the hand-maintained duplication `ui_color_hover`
+    /// exists to delete. Matches how every UI toolkit scopes hover: the state
+    /// belongs to the widget, not to the one painted box under the cursor.
+    fn interaction_state(
+        &self,
+        handle: NodeHandle2D,
+        inherited: crate::scene::data2d::UiInteractionState,
+    ) -> crate::scene::data2d::UiInteractionState {
+        crate::scene::data2d::UiInteractionState {
+            hovered: inherited.hovered || self.hovered.get() == Some(handle),
+            pressed: inherited.pressed || self.pressed.get() == Some(handle),
+            focused: inherited.focused || self.focused.get() == Some(handle),
         }
     }
 
@@ -1312,7 +1339,7 @@ impl SceneWorld2D {
         let screen = (-(sw as f32) / 2.0, -(sh as f32) / 2.0, sw as f32, sh as f32);
         let roots = self.roots.clone();
         for root in roots {
-            self.draw_node_on_canvas(root, screen, time, canvas, bindings);
+            self.draw_node_on_canvas(root, screen, time, canvas, bindings, Default::default());
         }
     }
 
@@ -1323,6 +1350,7 @@ impl SceneWorld2D {
         time: f32,
         canvas: &mut Canvas,
         bindings: &Bindings,
+        inherited: crate::scene::data2d::UiInteractionState,
     ) {
         let Some(node) = self.get(handle) else {
             return;
@@ -1342,11 +1370,7 @@ impl SceneWorld2D {
             None => bindings,
         };
 
-        let state = crate::scene::data2d::UiInteractionState {
-            hovered: self.hovered.get() == Some(handle),
-            pressed: self.pressed.get() == Some(handle),
-            focused: self.focused.get() == Some(handle),
-        };
+        let state = self.interaction_state(handle, inherited);
         let (ui_rect, ui_visible) = crate::scene::data2d::draw_ui_node_on_with_bindings(
             canvas,
             parent_ui_rect,
@@ -1383,7 +1407,7 @@ impl SceneWorld2D {
         let child_refs =
             self.resolve_child_references(node, ui_rect, &children, effective_bindings);
         for (child, child_ref) in children.into_iter().zip(child_refs) {
-            self.draw_node_on_canvas(child, child_ref, time, canvas, effective_bindings);
+            self.draw_node_on_canvas(child, child_ref, time, canvas, effective_bindings, state);
         }
         if clipped {
             canvas.pop_clip();
@@ -1977,6 +2001,54 @@ mod tests {
         );
         assert_ne!(base, pressed);
         assert_ne!(focused, pressed);
+    }
+
+    #[test]
+    fn interaction_state_is_inherited_by_descendants() {
+        // E6: hovering a widget lights up the whole widget. Only one node can
+        // be `hovered`, but the smallest useful button is a background rect
+        // with a label node inside it — if the state stopped at the one node
+        // under the cursor, `ui_color_hover` would be unusable on anything
+        // real and every host would go back to pushing colours by hand.
+        let mut world = SceneWorld2D::new();
+        let row = world.spawn(SceneNode2D::new("row"));
+        {
+            let n = world.get_mut(row).unwrap();
+            n.set_property("ui", "rect");
+            n.set_property("ui_w", "100");
+            n.set_property("ui_h", "20");
+            n.set_property("ui_color", "10,10,10,255");
+            n.set_property("ui_color_hover", "20,20,20,255");
+        }
+        let label = world.spawn_child(row, SceneNode2D::new("label"));
+        {
+            let n = world.get_mut(label).unwrap();
+            n.set_property("ui", "rect");
+            n.set_property("ui_w", "40");
+            n.set_property("ui_h", "10");
+            n.set_property("ui_color", "50,50,50,255");
+            n.set_property("ui_color_hover", "60,60,60,255");
+        }
+
+        // The label draws last, so the final vert carries its colour.
+        let label_color = |world: &SceneWorld2D| -> [f32; 4] {
+            let mut canvas = Canvas::new((200, 200), std::ptr::null());
+            world.draw_to_canvas(&mut canvas, 0.0);
+            canvas.verts.last().unwrap().color
+        };
+
+        let base = label_color(&world);
+        world.set_hovered(Some(row));
+        let inherited = label_color(&world);
+        assert_ne!(
+            base, inherited,
+            "hovering the row should apply the label's own ui_color_hover too"
+        );
+
+        // Hovering the label directly must reach the same colour — a widget
+        // has one hover appearance however the state got there.
+        world.set_hovered(Some(label));
+        assert_eq!(label_color(&world), inherited);
     }
 
     #[test]
