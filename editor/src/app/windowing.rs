@@ -1425,18 +1425,7 @@ impl RengineNativeEditor {
             .nodes
             .iter()
             .filter(|node| node.visible)
-            .map(|node| {
-                let center = scene_to_screen(node.position, viewport, pan);
-                (
-                    node.id,
-                    PanelRect::new(
-                        center.x - node.size[0] * 0.5,
-                        center.y - node.size[1] * 0.5,
-                        node.size[0],
-                        node.size[1],
-                    ),
-                )
-            })
+            .map(|node| (node.id, self.node_viewport_rect(node, viewport, pan)))
             .collect()
     }
 

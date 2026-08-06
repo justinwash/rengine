@@ -1,0 +1,265 @@
+{
+  "name": "ui_preview_check",
+  "version": 1,
+  "view": {
+    "window_size": [
+      960.0,
+      720.0
+    ]
+  },
+  "nodes": [
+    {
+      "id": 1,
+      "parent": null,
+      "name": "Panel",
+      "kind": "UiRoot",
+      "position": [
+        0.0,
+        0.0
+      ],
+      "size": [
+        160.0,
+        96.0
+      ],
+      "visible": true,
+      "script_path": "",
+      "properties": {
+        "ui": "rect",
+        "ui_anchor": "center",
+        "ui_origin_x": "0.5",
+        "ui_origin_y": "0.5",
+        "ui_w": "520",
+        "ui_h": "320",
+        "ui_color": "27,36,48,255"
+      }
+    },
+    {
+      "id": 2,
+      "parent": 1,
+      "name": "Title",
+      "kind": "UiRoot",
+      "position": [
+        0.0,
+        -30.0
+      ],
+      "size": [
+        160.0,
+        40.0
+      ],
+      "visible": true,
+      "script_path": "",
+      "properties": {
+        "ui": "text",
+        "ui_anchor": "top",
+        "ui_origin_x": "0.5",
+        "ui_origin_y": "1",
+        "ui_w": "520",
+        "ui_h": "36",
+        "ui_text": "PIT WALL",
+        "ui_text_size": "28",
+        "ui_text_align": "center",
+        "ui_color": "232,238,246,255"
+      }
+    },
+    {
+      "id": 3,
+      "parent": 1,
+      "name": "Divider",
+      "kind": "UiRoot",
+      "position": [
+        0.0,
+        -76.0
+      ],
+      "size": [
+        160.0,
+        8.0
+      ],
+      "visible": true,
+      "script_path": "",
+      "properties": {
+        "ui": "rect",
+        "ui_anchor": "top",
+        "ui_origin_x": "0.5",
+        "ui_origin_y": "1",
+        "ui_w": "460",
+        "ui_h": "2",
+        "ui_color": "63,85,112,255"
+      }
+    },
+    {
+      "id": 4,
+      "parent": 1,
+      "name": "Rows",
+      "kind": "UiRoot",
+      "position": [
+        0.0,
+        -88.0
+      ],
+      "size": [
+        160.0,
+        96.0
+      ],
+      "visible": true,
+      "script_path": "",
+      "properties": {
+        "ui": "rect",
+        "ui_anchor": "top",
+        "ui_origin_x": "0.5",
+        "ui_origin_y": "1",
+        "ui_w": "460",
+        "ui_h": "196",
+        "ui_color": "19,26,35,255",
+        "ui_layout": "column",
+        "ui_gap": "8",
+        "ui_pad_left": "8",
+        "ui_pad_right": "8",
+        "ui_pad_top": "8"
+      }
+    },
+    {
+      "id": 5,
+      "parent": 4,
+      "name": "Row A",
+      "kind": "UiRoot",
+      "position": [
+        0.0,
+        0.0
+      ],
+      "size": [
+        160.0,
+        48.0
+      ],
+      "visible": true,
+      "script_path": "",
+      "properties": {
+        "ui": "rect",
+        "ui_stretch_x": "true",
+        "ui_h": "56",
+        "ui_color": "36,49,63,255"
+      }
+    },
+    {
+      "id": 6,
+      "parent": 5,
+      "name": "Row A Label",
+      "kind": "UiRoot",
+      "position": [
+        0.0,
+        0.0
+      ],
+      "size": [
+        160.0,
+        24.0
+      ],
+      "visible": true,
+      "script_path": "",
+      "properties": {
+        "ui": "text",
+        "ui_stretch_x": "true",
+        "ui_stretch_y": "true",
+        "ui_margin_left": "16",
+        "ui_text": "STRATEGIST",
+        "ui_text_size": "20",
+        "ui_text_align": "left",
+        "ui_color": "219,230,242,255"
+      }
+    },
+    {
+      "id": 7,
+      "parent": 4,
+      "name": "Row B",
+      "kind": "UiRoot",
+      "position": [
+        0.0,
+        0.0
+      ],
+      "size": [
+        160.0,
+        48.0
+      ],
+      "visible": true,
+      "script_path": "",
+      "properties": {
+        "ui": "rect",
+        "ui_stretch_x": "true",
+        "ui_h": "56",
+        "ui_color": "44,59,76,255"
+      }
+    },
+    {
+      "id": 8,
+      "parent": 7,
+      "name": "Row B Label",
+      "kind": "UiRoot",
+      "position": [
+        0.0,
+        0.0
+      ],
+      "size": [
+        160.0,
+        24.0
+      ],
+      "visible": true,
+      "script_path": "",
+      "properties": {
+        "ui": "text",
+        "ui_stretch_x": "true",
+        "ui_stretch_y": "true",
+        "ui_margin_left": "16",
+        "ui_text": "RACE ENGINEER",
+        "ui_text_size": "20",
+        "ui_text_align": "left",
+        "ui_color": "219,230,242,255"
+      }
+    },
+    {
+      "id": 9,
+      "parent": 4,
+      "name": "Row C",
+      "kind": "UiRoot",
+      "position": [
+        0.0,
+        0.0
+      ],
+      "size": [
+        160.0,
+        48.0
+      ],
+      "visible": true,
+      "script_path": "",
+      "properties": {
+        "ui": "rect",
+        "ui_stretch_x": "true",
+        "ui_h": "56",
+        "ui_color": "36,49,63,255"
+      }
+    },
+    {
+      "id": 10,
+      "parent": 9,
+      "name": "Row C Label",
+      "kind": "UiRoot",
+      "position": [
+        0.0,
+        0.0
+      ],
+      "size": [
+        160.0,
+        24.0
+      ],
+      "visible": true,
+      "script_path": "",
+      "properties": {
+        "ui": "text",
+        "ui_stretch_x": "true",
+        "ui_stretch_y": "true",
+        "ui_margin_left": "16",
+        "ui_text": "TYRE TECHNICIAN",
+        "ui_text_size": "20",
+        "ui_text_align": "left",
+        "ui_color": "219,230,242,255"
+      }
+    }
+  ],
+  "next_id": 11
+}

@@ -41,6 +41,11 @@ impl RengineNativeEditor {
         let colors = editor_theme_colors(self.editor_theme);
         frame.clear_color = colors.window_bg;
 
+        // Must happen before `frame.canvas(0)` borrows the frame: this needs
+        // `&mut self`, and `draw_viewport` below only gets `&self` once the
+        // canvas borrow is live.
+        self.rebuild_ui_preview_if_needed();
+
         let canvas = frame.canvas(0);
 
         draw_panel(canvas, layout.top_bar, colors.top_bar_bg);
@@ -94,6 +99,33 @@ impl RengineNativeEditor {
         );
         self.draw_viewport(engine, canvas, layout.viewport);
         self.canvas_tooltip_targets = tooltip_targets;
+    }
+
+    /// Rebuild `self.ui_preview` from the active tab's authored JSON, but
+    /// only when the tab or its content actually changed since the last
+    /// build. `edit_revision` is bumped by every `mark_dirty`, so
+    /// `(active_scene_tab, edit_revision)` is a cheap staleness check —
+    /// running the document through the real scene pipeline every frame
+    /// would be wasted work for a viewport that isn't being edited.
+    fn rebuild_ui_preview_if_needed(&mut self) {
+        let key = (self.active_scene_tab, self.active_scene_tab().edit_revision);
+        if self.ui_preview_key == Some(key) {
+            return;
+        }
+        let path = self
+            .active_scene_tab()
+            .scene_path
+            .clone()
+            .unwrap_or_else(|| PathBuf::from("<untitled>"));
+        let json = self.active_scene_tab_mut().cached_scene_json().to_string();
+        self.ui_preview = build_ui_preview_world(&path, &json);
+        self.ui_preview_key = Some(key);
+        if self.ui_preview.is_none() {
+            self.push_log(format!(
+                "UI preview: could not build a preview for {} (falling back to node boxes)",
+                self.display_path(&path)
+            ));
+        }
     }
 
     fn draw_top_bar(
@@ -682,6 +714,37 @@ impl RengineNativeEditor {
         canvas.push_clip(viewport.x, viewport.y, viewport.w, viewport.h);
         draw_grid(canvas, viewport, pan);
 
+        // Ed3: run the authored `ui_*` tree through the engine's own
+        // resolve/draw pipeline so the viewport shows what the game actually
+        // renders, under the node boxes/gizmos/guides drawn below. The root
+        // reference rect is the scene's design resolution centred on the
+        // scene origin — the same point `viewport_node_rect` anchors node
+        // boxes to, via `scene_to_screen`.
+        if let Some(world) = &self.ui_preview {
+            let size = self.active_scene_tab().scene.view.window_size;
+            let center = scene_to_screen([0.0, 0.0], viewport, pan);
+            let root = (
+                center.x - size[0] * 0.5,
+                center.y - size[1] * 0.5,
+                size[0],
+                size[1],
+            );
+            // ponytail: time = 0.0 — a live clock would make ui_bob_*/
+            // ui_sway_* authored nodes judder while just sitting in the
+            // editor. A play/pause preview clock is separate work.
+            // No bindings/repeater sync either (Ed4): a `ui: "repeat"` node
+            // previews as its authored template child, and `{key}`
+            // placeholders stay literal — both degrade safely rather than
+            // erroring (see resolve_ui_rect's unwrap_or(0.0) and the
+            // ui_visible literal check in data2d.rs).
+            world.draw_to_canvas_in(canvas, root, 0.0);
+            draw_outline(
+                canvas,
+                PanelRect::new(root.0, root.1, root.2, root.3),
+                Color::from_rgba8(90, 118, 138, 160),
+            );
+        }
+
         if let Some(bounds) = selection_bounds {
             let selection_rect = scene_bounds_rect(bounds, viewport, pan);
             let selection_center = selection_rect.center();
@@ -766,24 +829,31 @@ impl RengineNativeEditor {
             .iter()
             .filter(|node| node.visible)
         {
-            let rect = viewport_node_rect(viewport, node.position, node.size, pan);
+            let rect = self.node_viewport_rect(node, viewport, pan);
             let sprite_texture = if node.kind == SceneNodeKind::Sprite {
                 self.sprite_preview_texture(engine, node)
             } else {
                 None
             };
+            // A ui_* node is already drawn by the real preview above; painting
+            // its opaque box/labels on top would just hide it again. Skip
+            // fill and labels for it, but keep the selection outline — that's
+            // the one thing the preview draw can't show.
+            let ui_authored = self.ui_preview.is_some() && node.properties.contains_key("ui");
 
-            if let Some(texture) = sprite_texture {
-                canvas.rect(
-                    rect.x,
-                    rect.y,
-                    rect.w,
-                    rect.h,
-                    Color::from_rgba8(20, 26, 32, 255),
-                );
-                canvas.image(texture, rect.x, rect.y, rect.w, rect.h);
-            } else {
-                canvas.rect(rect.x, rect.y, rect.w, rect.h, node_fill_color(node.kind));
+            if !ui_authored {
+                if let Some(texture) = sprite_texture {
+                    canvas.rect(
+                        rect.x,
+                        rect.y,
+                        rect.w,
+                        rect.h,
+                        Color::from_rgba8(20, 26, 32, 255),
+                    );
+                    canvas.image(texture, rect.x, rect.y, rect.w, rect.h);
+                } else {
+                    canvas.rect(rect.x, rect.y, rect.w, rect.h, node_fill_color(node.kind));
+                }
             }
 
             draw_outline(
@@ -798,7 +868,9 @@ impl RengineNativeEditor {
                 },
             );
 
-            if sprite_texture.is_none() {
+            if ui_authored {
+                // Preview already drew this node; nothing more to paint.
+            } else if sprite_texture.is_none() {
                 canvas.text_aligned(
                     rect.x + rect.w * 0.5,
                     text_baseline_in_rect(
@@ -1161,6 +1233,39 @@ impl RengineNativeEditor {
             );
             line_y -= line_height;
         }
+    }
+
+    /// The on-screen box for `node`: the real resolved `ui_*` rect from the
+    /// current `ui_preview` world when there is one, else the authored
+    /// `position`/`size` box. Single source for both drawing (selection
+    /// outlines) and hit-testing (click-to-select, box-select) so they never
+    /// disagree.
+    ///
+    /// `resolved_rect` is only populated by a draw, and `ui_preview` is
+    /// rebuilt/drawn once per frame in `draw_viewport` — a caller in
+    /// `update` (hit-testing) therefore reads the *previous* frame's rects,
+    /// and the very first frame after a scene loads has none at all, so the
+    /// fallback runs. That one-frame lag matches the runtime's own
+    /// hit-testing and is not a bug to chase here.
+    //
+    // ponytail: the translate gizmo and "frame selection" (scene_nodes_bounds
+    // / scene_bounds_center / selection_translate_gizmo /
+    // frame_active_scene_view) still read authored position/size directly,
+    // not this method — defensible, since the gizmo sits at the authored
+    // position, which is the thing you actually drag, but it means the
+    // gizmo can appear offset from a stretched/anchored ui node's outline.
+    // Upgrade path: derive selection bounds from the same resolved rects.
+    pub(crate) fn node_viewport_rect(
+        &self,
+        node: &SceneNode,
+        viewport: PanelRect,
+        pan: Vec2,
+    ) -> PanelRect {
+        let resolved = self.ui_preview.as_ref().and_then(|world| {
+            let handle = world.find_by_editor_id(node.id)?;
+            world.resolved_rect(handle)
+        });
+        node_viewport_rect_from(resolved, node, viewport, pan)
     }
 }
 
@@ -1543,6 +1648,29 @@ fn viewport_node_rect(
     )
 }
 
+/// Testable seam for [`RengineNativeEditor::node_viewport_rect`]: which rect
+/// wins, given whatever the preview world resolved for this node.
+/// `resolved_rect` and `PanelRect` are both `{x, y, w/width, h/height}` with
+/// `y` the bottom edge, y-up, and both already in editor canvas coordinates
+/// (see `draw_viewport`'s `root`) — so the conversion is field-for-field,
+/// no offset or flip.
+///
+/// Takes the already-looked-up `Option<Rect>` rather than the world itself so
+/// both branches are reachable from a unit test: populating a real
+/// `resolved_rect` needs a draw, and `Canvas::new` is `pub(crate)` to the
+/// engine crate.
+fn node_viewport_rect_from(
+    resolved: Option<Rect>,
+    node: &SceneNode,
+    viewport: PanelRect,
+    pan: Vec2,
+) -> PanelRect {
+    match resolved {
+        Some(rect) => PanelRect::new(rect.x, rect.y, rect.width, rect.height),
+        None => viewport_node_rect(viewport, node.position, node.size, pan),
+    }
+}
+
 pub(crate) fn scene_to_screen(position: [f32; 2], viewport: PanelRect, pan: Vec2) -> Vec2 {
     Vec2::new(
         viewport.x + viewport.w * 0.5 + pan.x + position[0],
@@ -1555,6 +1683,25 @@ pub(crate) fn screen_to_scene(position: Vec2, viewport: PanelRect, pan: Vec2) ->
         position.x - (viewport.x + viewport.w * 0.5 + pan.x),
         position.y - (viewport.y + viewport.h * 0.5 + pan.y),
     ]
+}
+
+/// Build the Ed3 `ui_*` preview world for a scene document's authored JSON,
+/// running it through the exact same pipeline the game uses at runtime
+/// (`Scene2D::from_json_str` -> `SceneWorld2D::from_scene`) instead of
+/// reimplementing layout in the editor. `None` on any parse/compile error —
+/// the caller falls back to the flat node boxes rather than an empty
+/// viewport. `path` only labels errors; it need not exist on disk.
+//
+// ponytail: AssetPack::default() — the preview has no textures, so a scene
+// whose prefabs reference a texture alias fails to compile (compile_prefabs,
+// data2d.rs:822) and this returns None. No game scene currently references
+// one. Upgrade path: feed in the editor's already-loaded textures
+// (engine.loaded_texture / engine.request_texture, filesystem.rs:489)
+// instead of a default pack.
+fn build_ui_preview_world(path: &Path, json: &str) -> Option<SceneWorld2D> {
+    let assets = AssetPack::default();
+    let scene = Scene2D::from_json_str(path, json, &assets).ok()?;
+    Some(SceneWorld2D::from_scene(&scene))
 }
 
 fn node_fill_color(kind: SceneNodeKind) -> Color {
@@ -1589,6 +1736,129 @@ mod tests {
             camera2d: Camera2dNodeSettings::default(),
             properties: std::collections::HashMap::new(),
         }
+    }
+
+    #[test]
+    fn build_ui_preview_world_reconstructs_parent_child_from_editor_ids() {
+        // Ed3: hand-written editor-document JSON (a parent `ui` node and a
+        // child), matching the `EditorSceneNodeDef` schema in
+        // engine/src/scene/data2d.rs. If the editor->Scene2D->SceneWorld2D
+        // conversion breaks, either the build fails or the hierarchy/
+        // properties below stop matching.
+        let json = r#"{
+            "nodes": [
+                {
+                    "id": 1,
+                    "parent": null,
+                    "name": "panel",
+                    "kind": "UiRoot",
+                    "position": [0.0, 0.0],
+                    "size": [100.0, 100.0],
+                    "visible": true,
+                    "script_path": "",
+                    "runtime_prefab": "",
+                    "asset_alias": "",
+                    "properties": {
+                        "ui": "rect",
+                        "ui_stretch_x": "true",
+                        "ui_stretch_y": "true"
+                    }
+                },
+                {
+                    "id": 2,
+                    "parent": 1,
+                    "name": "label",
+                    "kind": "Empty",
+                    "position": [0.0, 0.0],
+                    "size": [10.0, 10.0],
+                    "visible": true,
+                    "script_path": "",
+                    "runtime_prefab": "",
+                    "asset_alias": "",
+                    "properties": {
+                        "ui": "text",
+                        "ui_text": "hi"
+                    }
+                }
+            ]
+        }"#;
+
+        let world = build_ui_preview_world(Path::new("<test>"), json)
+            .expect("hand-written editor document should build a preview world");
+        assert_eq!(world.len(), 2);
+
+        let root = world.find_by_editor_id(1).expect("root node present");
+        let child = world.find_by_editor_id(2).expect("child node present");
+        assert_eq!(world.children(root), vec![child]);
+        assert_eq!(world.get(child).unwrap().property("ui_text"), Some("hi"));
+    }
+
+    #[test]
+    fn build_ui_preview_world_returns_none_for_invalid_json() {
+        assert!(build_ui_preview_world(Path::new("<test>"), "not json").is_none());
+    }
+
+    #[test]
+    fn node_viewport_rect_from_falls_back_to_authored_size_without_a_resolved_rect() {
+        // The bug this fixes: a ui_* node's box on screen is whatever
+        // resolve_ui_rect computed from ui_w/ui_h, not the editor's
+        // position/size fields (those are vestigial for a ui_* node) --
+        // node_viewport_rect_from should prefer `resolved_rect` over `size`
+        // whenever one is available.
+        //
+        // `resolved_rect` is only populated by a draw pass (see
+        // node_viewport_rect's doc comment), and `Canvas::new` is
+        // `pub(crate)` to the engine crate -- unreachable from here, unlike
+        // engine-internal tests such as data2d.rs's ui_polyline test. So
+        // this asserts the other half of that contract instead: with a real
+        // preview world that has *not* been drawn yet (the exact one-frame
+        // state `viewport_node_rects` sees after a scene loads), there is no
+        // resolved rect for the node and node_viewport_rect_from falls back
+        // to the authored `size` box untouched.
+        let json = r#"{
+            "nodes": [
+                {
+                    "id": 1,
+                    "parent": null,
+                    "name": "panel",
+                    "kind": "UiRoot",
+                    "position": [0.0, 0.0],
+                    "size": [999.0, 999.0],
+                    "visible": true,
+                    "script_path": "",
+                    "runtime_prefab": "",
+                    "asset_alias": "",
+                    "properties": {
+                        "ui": "rect",
+                        "ui_w": "40",
+                        "ui_h": "20"
+                    }
+                }
+            ]
+        }"#;
+        let world = build_ui_preview_world(Path::new("<test>"), json)
+            .expect("hand-written editor document should build a preview world");
+        let handle = world.find_by_editor_id(1).expect("node present");
+        assert!(
+            world.resolved_rect(handle).is_none(),
+            "no draw has happened yet"
+        );
+
+        let viewport = PanelRect::new(0.0, 0.0, 200.0, 200.0);
+        let node = test_node(1, [0.0, 0.0], [999.0, 999.0]);
+
+        // Resolved rect present: it wins outright, field for field, and the
+        // authored 999x999 `size` box is ignored. This is the branch the fix
+        // exists for — an outline or click target on the `size` box lands
+        // nowhere near where the preview drew the node.
+        let resolved = Rect::new(12.0, -34.0, 40.0, 20.0);
+        let rect = node_viewport_rect_from(Some(resolved), &node, viewport, Vec2::ZERO);
+        assert_eq!((rect.x, rect.y, rect.w, rect.h), (12.0, -34.0, 40.0, 20.0));
+
+        // Nothing resolved (first frame after a load, or the scene failed to
+        // compile): fall back to the authored box rather than a zero rect.
+        let fallback = node_viewport_rect_from(None, &node, viewport, Vec2::ZERO);
+        assert_eq!((fallback.w, fallback.h), (999.0, 999.0));
     }
 
     #[test]

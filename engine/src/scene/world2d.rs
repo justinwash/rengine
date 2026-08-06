@@ -1290,7 +1290,15 @@ impl SceneWorld2D {
         let child_refs =
             self.resolve_child_references(node, ui_rect, &children, effective_bindings);
         for (child, child_ref) in children.into_iter().zip(child_refs) {
-            self.draw_node(child, &world, child_ref, time, frame, effective_bindings, state);
+            self.draw_node(
+                child,
+                &world,
+                child_ref,
+                time,
+                frame,
+                effective_bindings,
+                state,
+            );
         }
     }
 
@@ -1337,9 +1345,32 @@ impl SceneWorld2D {
     ) {
         let (sw, sh) = canvas.screen_size();
         let screen = (-(sw as f32) / 2.0, -(sh as f32) / 2.0, sw as f32, sh as f32);
+        self.draw_to_canvas_in_with_bindings(canvas, screen, time, bindings);
+    }
+
+    /// Like [`draw_to_canvas`](Self::draw_to_canvas), but the root reference
+    /// rect (what `ui_stretch_*` / percentage sizes resolve against for the
+    /// scene's root nodes) is supplied by the caller instead of being derived
+    /// from the whole canvas. Lets a host draw the graph into a sub-rect of a
+    /// larger surface — e.g. the rengine editor's viewport panel, which is
+    /// smaller than the window it lives in — while keeping every `ui_*`
+    /// resolution rule identical to runtime.
+    pub fn draw_to_canvas_in(&self, canvas: &mut Canvas, root: (f32, f32, f32, f32), time: f32) {
+        self.draw_to_canvas_in_with_bindings(canvas, root, time, &Bindings::new());
+    }
+
+    /// [`draw_to_canvas_in`](Self::draw_to_canvas_in) with `{key}` placeholder
+    /// bindings (E2), matching [`draw_to_canvas_with_bindings`](Self::draw_to_canvas_with_bindings).
+    pub fn draw_to_canvas_in_with_bindings(
+        &self,
+        canvas: &mut Canvas,
+        root: (f32, f32, f32, f32),
+        time: f32,
+        bindings: &Bindings,
+    ) {
         let roots = self.roots.clone();
-        for root in roots {
-            self.draw_node_on_canvas(root, screen, time, canvas, bindings, Default::default());
+        for r in roots {
+            self.draw_node_on_canvas(r, root, time, canvas, bindings, Default::default());
         }
     }
 
@@ -2558,5 +2589,33 @@ mod tests {
 
         assert_eq!(roots.len(), 1);
         assert_eq!(world.len(), 1, "unknown alias leaves the host node alone");
+    }
+
+    #[test]
+    fn draw_to_canvas_in_resolves_against_the_caller_supplied_root() {
+        // Ed3: the editor viewport is a sub-rect of the window, not the whole
+        // canvas, so the root reference rect for stretch/anchor resolution
+        // has to be a caller-supplied argument rather than always derived
+        // from `canvas.screen_size()`. Draw into a root well away from the
+        // screen's own (0,0)-centred rect and confirm the node resolved
+        // against that rect, not the screen.
+        let mut world = SceneWorld2D::new();
+        let node = world.spawn(SceneNode2D::new("panel"));
+        {
+            let n = world.get_mut(node).unwrap();
+            n.set_property("ui", "rect");
+            n.set_property("ui_stretch_x", "true");
+            n.set_property("ui_stretch_y", "true");
+        }
+
+        let mut canvas = Canvas::new((800, 600), std::ptr::null());
+        let root = (120.0, 40.0, 300.0, 150.0);
+        world.draw_to_canvas_in(&mut canvas, root, 0.0);
+
+        let r = world.resolved_rect(node).unwrap();
+        assert!((r.x - root.0).abs() < 1e-3);
+        assert!((r.y - root.1).abs() < 1e-3);
+        assert!((r.width - root.2).abs() < 1e-3);
+        assert!((r.height - root.3).abs() < 1e-3);
     }
 }

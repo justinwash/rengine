@@ -159,6 +159,12 @@ pub struct RengineNativeEditor {
     popup_menu: Option<PopupMenuState>,
     game_process: Option<Child>,
     quit_requested: bool,
+    /// `ui_*` scene preview, run through the engine's own resolve/draw
+    /// pipeline (Ed3) so the viewport shows what the game actually renders
+    /// instead of a flat grid of node boxes. Rebuilt only when
+    /// `ui_preview_key` goes stale — see `rebuild_ui_preview_if_needed`.
+    ui_preview: Option<SceneWorld2D>,
+    ui_preview_key: Option<(usize, u64)>,
 }
 
 impl Game for RengineNativeEditor {
@@ -211,6 +217,8 @@ impl Game for RengineNativeEditor {
             popup_menu: None,
             game_process: None,
             quit_requested: false,
+            ui_preview: None,
+            ui_preview_key: None,
         };
 
         editor.refresh_inspector_form();
@@ -232,7 +240,16 @@ impl Game for RengineNativeEditor {
         for line in startup_logs {
             editor.push_log(line);
         }
-        editor.push_log("Started new empty scene");
+        // Opening a scene otherwise goes through a native file dialog, which a
+        // `RENGINE_PLAY_SCRIPT` run cannot drive — so a headless capture could
+        // never show anything but an empty scene. Same role as `--headless`:
+        // the editor's own screens stay scriptable.
+        match std::env::var("RENGINE_EDITOR_SCENE") {
+            Ok(path) if !path.trim().is_empty() => {
+                editor.open_scene_path(PathBuf::from(path.trim()))
+            }
+            _ => editor.push_log("Started new empty scene"),
+        }
         editor
     }
 

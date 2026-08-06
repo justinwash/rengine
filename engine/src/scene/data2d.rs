@@ -720,8 +720,17 @@ impl Scene2D {
             path: path.to_path_buf(),
             source,
         })?;
+        Self::from_json_str(path, &text, assets)
+    }
+
+    /// Parse and compile a scene from an in-memory JSON string rather than a
+    /// file on disk. `path` is used only to label errors (`AssetError::Json`
+    /// etc.) — it need not exist. Lets a caller (e.g. the editor's live
+    /// preview) run a document through the exact same pipeline as
+    /// [`load_from_path`](Self::load_from_path) without a round-trip to disk.
+    pub fn from_json_str(path: &Path, text: &str, assets: &AssetPack) -> Result<Self, AssetError> {
         let json_value: serde_json::Value =
-            serde_json::from_str(&text).map_err(|source| AssetError::Json {
+            serde_json::from_str(text).map_err(|source| AssetError::Json {
                 path: path.to_path_buf(),
                 source,
             })?;
@@ -1320,7 +1329,7 @@ fn editor_instance_properties(node: &EditorSceneNodeDef) -> HashMap<String, Stri
     let mut properties = node.properties.clone();
 
     properties
-        .entry("editor_id".to_string())
+        .entry("editor_node_id".to_string())
         .or_insert_with(|| node.id.to_string());
     properties
         .entry("editor_name".to_string())
