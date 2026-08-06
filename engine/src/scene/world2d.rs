@@ -1207,7 +1207,26 @@ impl SceneWorld2D {
                 } else {
                     child_node.transform.scale.x
                 };
-                let extent = child_node.property_f32(main_axis_prop).unwrap_or(0.0) * scale;
+                // Substituted, not raw: the parent's own layout properties go
+                // through `get` above, and a child's size has to as well or
+                // `ui_h: "{row_h}"` silently measures as zero and every slot
+                // collapses. A repeater instance's own scope (E3) overlays the
+                // ambient one here exactly as it does when the child draws —
+                // per-item sizing is the point of a repeater.
+                let merged;
+                let child_bindings = match &child_node.instance_bindings {
+                    Some(scope) => {
+                        merged = merge_bindings(bindings, scope);
+                        &merged
+                    }
+                    None => bindings,
+                };
+                let extent = child_node
+                    .property(main_axis_prop)
+                    .map(|v| super::data2d::substitute_bindings(v, child_bindings).into_owned())
+                    .and_then(|v| v.trim().parse::<f32>().ok())
+                    .unwrap_or(0.0)
+                    * scale;
                 let slot = stack.next(extent);
                 (slot.x, slot.y, slot.width, slot.height)
             })
@@ -2589,6 +2608,51 @@ mod tests {
 
         assert_eq!(roots.len(), 1);
         assert_eq!(world.len(), 1, "unknown alias leaves the host node alone");
+    }
+
+    #[test]
+    fn flow_slot_sizes_read_bindings_including_a_repeat_instances_own_scope() {
+        // A child's main-axis size goes through binding substitution the same
+        // way the parent's `ui_gap`/`ui_layout` do. Before this, `ui_h:
+        // "{row_h}"` measured as zero and every row in a column stacked on top
+        // of the one before it.
+        let mut world = SceneWorld2D::new();
+        let list = world.spawn(SceneNode2D::new("list"));
+        {
+            let n = world.get_mut(list).unwrap();
+            n.set_property("ui", "rect");
+            n.set_property("ui_layout", "column");
+            n.set_property("ui_gap", "0");
+            n.set_property("ui_stretch_x", "true");
+            n.set_property("ui_stretch_y", "true");
+        }
+        for _ in 0..2 {
+            let row = world.spawn_child(list, SceneNode2D::new("row"));
+            let n = world.get_mut(row).unwrap();
+            n.set_property("ui", "rect");
+            n.set_property("ui_h", "{row_h}");
+            n.set_property("ui_stretch_x", "true");
+            n.set_property("ui_stretch_y", "true");
+        }
+
+        let mut canvas = Canvas::new((400, 400), std::ptr::null());
+        let bindings = Bindings::from([("row_h".to_string(), "20".to_string())]);
+        world.draw_to_canvas_in_with_bindings(
+            &mut canvas,
+            (0.0, 0.0, 100.0, 100.0),
+            0.0,
+            &bindings,
+        );
+
+        let rows: Vec<Rect> = world
+            .children(list)
+            .into_iter()
+            .filter_map(|h| world.resolved_rect(h))
+            .collect();
+        assert_eq!(rows.len(), 2);
+        assert!((rows[0].height - 20.0).abs() < 1e-3, "got {:?}", rows[0]);
+        // Second row sits exactly one slot below the first, not on top of it.
+        assert!((rows[0].y - rows[1].y - 20.0).abs() < 1e-3, "{:?}", rows);
     }
 
     #[test]
