@@ -839,7 +839,7 @@ impl RengineNativeEditor {
             // its opaque box/labels on top would just hide it again. Skip
             // fill and labels for it, but keep the selection outline — that's
             // the one thing the preview draw can't show.
-            let ui_authored = self.ui_preview.is_some() && node.properties.contains_key("ui");
+            let ui_authored = self.ui_preview.is_some() && is_ui_authored_node(node);
 
             if !ui_authored {
                 if let Some(texture) = sprite_texture {
@@ -1704,6 +1704,20 @@ fn build_ui_preview_world(path: &Path, json: &str) -> Option<SceneWorld2D> {
     Some(SceneWorld2D::from_scene(&scene))
 }
 
+/// Whether the `ui_preview` draw already painted this node, so the viewport
+/// must not paint its opaque placeholder box on top.
+///
+/// Any `ui_*` key counts, not just a bare `ui`. A layout container carries
+/// only `ui_stretch_x`/`ui_w`/`ui_anchor` and paints nothing of its own, but
+/// it still resolves a rect in the preview — and its placeholder box would
+/// cover every child the preview drew inside it. Checking for a bare `ui`
+/// alone hid whole authored screens behind a grid of boxes.
+fn is_ui_authored_node(node: &SceneNode) -> bool {
+    node.properties
+        .keys()
+        .any(|key| key == "ui" || key.starts_with("ui_"))
+}
+
 fn node_fill_color(kind: SceneNodeKind) -> Color {
     match kind {
         SceneNodeKind::Group => Color::from_rgba8(67, 79, 89, 255),
@@ -1733,6 +1747,39 @@ mod tests {
             asset_alias: String::new(),
             properties: std::collections::HashMap::new(),
         }
+    }
+
+    #[test]
+    fn layout_only_nodes_count_as_preview_drawn() {
+        // The bug: `contains_key("ui")` treated a layout container as
+        // *not* preview-drawn, so its opaque placeholder box painted over
+        // every child the preview had already drawn inside it — a whole
+        // authored screen showed up as a grid of boxes.
+        let mut layout_container = test_node(1, [0.0, 0.0], [88.0, 56.0]);
+        layout_container
+            .properties
+            .insert("ui_stretch_x".to_string(), "true".to_string());
+        layout_container
+            .properties
+            .insert("ui_w".to_string(), "600.0".to_string());
+        assert!(
+            is_ui_authored_node(&layout_container),
+            "a ui_*-only layout container is drawn by the preview"
+        );
+
+        let mut painter = test_node(2, [0.0, 0.0], [88.0, 56.0]);
+        painter
+            .properties
+            .insert("ui".to_string(), "rect".to_string());
+        assert!(is_ui_authored_node(&painter));
+
+        // A node with no ui_* authoring at all still gets its placeholder
+        // box — that's the only way it's visible in the viewport.
+        let mut plain = test_node(3, [0.0, 0.0], [88.0, 56.0]);
+        plain
+            .properties
+            .insert("clear_r".to_string(), "14".to_string());
+        assert!(!is_ui_authored_node(&plain));
     }
 
     #[test]
