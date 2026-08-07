@@ -64,6 +64,38 @@ pub(crate) enum TextInputOwner {
     Inspector,
 }
 
+/// Which authored interaction state the viewport previews on the selected
+/// node (E6's `ui_color_hover` / `ui_color_focus`).
+///
+/// Without this those colours are invisible while authoring: a selection bar
+/// is routinely authored as a transparent base plus an opaque hover, so the
+/// viewport shows nothing at all and the only way to check it is to run the
+/// game.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PreviewInteraction {
+    Hover,
+    Focus,
+}
+
+impl PreviewInteraction {
+    /// Cycle None -> Hover -> Focus -> None, for a single toggle button.
+    pub(crate) fn next(current: Option<Self>) -> Option<Self> {
+        match current {
+            None => Some(Self::Hover),
+            Some(Self::Hover) => Some(Self::Focus),
+            Some(Self::Focus) => None,
+        }
+    }
+
+    pub(crate) fn label(current: Option<Self>) -> &'static str {
+        match current {
+            None => "State: Base",
+            Some(Self::Hover) => "State: Hover",
+            Some(Self::Focus) => "State: Focus",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum EditorTheme {
     Slate,

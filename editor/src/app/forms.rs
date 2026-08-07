@@ -58,6 +58,10 @@ pub(crate) struct InspectorFormState {
     pub(crate) custom_properties: Vec<CustomPropertyEntry>,
     pub(crate) runtime_prefab: String,
     pub(crate) sprite_texture_path: String,
+    /// What this node's `ui_repeat_items` parsed to, for `ui: "repeat"` nodes.
+    /// `None` when the node isn't a repeater.
+    pub(crate) repeat_items_status: Option<String>,
+    pub(crate) repeat_items_status_color: Color,
     pub(crate) camera_zoom: f32,
     pub(crate) camera_show_bounds: bool,
     pub(crate) camera_use_scene_view_size: bool,
@@ -109,6 +113,9 @@ impl InspectorFormState {
                 let camera_view_size = node.camera_view_size();
                 self.camera_view_width = format!("{:.0}", camera_view_size[0]);
                 self.camera_view_height = format!("{:.0}", camera_view_size[1]);
+                let (status, status_color) = repeat_items_status(&node.properties);
+                self.repeat_items_status = status;
+                self.repeat_items_status_color = status_color;
                 return;
             }
         }
@@ -130,7 +137,63 @@ impl InspectorFormState {
         self.camera_use_scene_view_size = true;
         self.camera_view_width = "960".to_string();
         self.camera_view_height = "720".to_string();
+        self.repeat_items_status = None;
     }
+}
+
+/// One line describing how this node's `ui_repeat_items` parsed, for the
+/// inspector. `None` for a node that isn't a `ui: "repeat"` node at all.
+///
+/// Returned as text rather than enforced, because an unparseable value is
+/// legitimate mid-typing and a scene may also author a `{binding}` here.
+pub(crate) fn repeat_items_status(
+    properties: &std::collections::HashMap<String, String>,
+) -> (Option<String>, Color) {
+    let dim = Color::from_rgba8(148, 162, 180, 255);
+    if properties.get("ui").map(String::as_str) != Some("repeat") {
+        return (None, dim);
+    }
+
+    let source = properties.get("ui_repeat_source").map(String::as_str);
+    let Some(raw) = properties.get("ui_repeat_items") else {
+        return match source {
+            Some(name) => (
+                Some(format!("Repeat: rows supplied at runtime from \"{name}\"")),
+                dim,
+            ),
+            None => (
+                Some(
+                    "Repeat: no ui_repeat_items and no ui_repeat_source — this draws nothing"
+                        .to_string(),
+                ),
+                Color::from_rgba8(200, 148, 80, 255),
+            ),
+        };
+    };
+
+    match parse_repeat_items_count(raw) {
+        Some(count) => {
+            let mut line = format!("Repeat: {count} authored row(s)");
+            if let Some(name) = source {
+                // Precedence is worth stating outright: at runtime the live
+                // source wins, so these rows are what the editor previews and
+                // what ships only if nothing supplies that name.
+                line.push_str(&format!(" — overridden at runtime by \"{name}\""));
+            }
+            (Some(line), Color::from_rgba8(116, 196, 142, 255))
+        }
+        None => (
+            Some("Repeat: ui_repeat_items is not a JSON array — no rows".to_string()),
+            Color::from_rgba8(214, 108, 92, 255),
+        ),
+    }
+}
+
+/// How many rows `raw` parses to, mirroring the engine's own accepted shape
+/// (a JSON array of objects). `None` when it isn't a JSON array at all.
+fn parse_repeat_items_count(raw: &str) -> Option<usize> {
+    let value: serde_json::Value = serde_json::from_str(raw.trim()).ok()?;
+    value.as_array().map(Vec::len)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -754,6 +817,15 @@ impl RengineNativeEditor {
                 ui.button(INSPECTOR_CUSTOM_PROP_DELETE_BASE_ID + index, "Delete");
             }
             ui.button(INSPECTOR_CUSTOM_PROP_ADD_ID, "Add Property");
+
+            // A `ui: "repeat"` node's rows are authored as JSON in
+            // `ui_repeat_items` (an ordinary property, edited above). That
+            // parses to nothing on a typo and a repeater with no rows draws
+            // nothing at all, which is indistinguishable from "the template
+            // is wrong" — so say what the value actually parsed to.
+            if let Some(status) = state.repeat_items_status.as_deref() {
+                ui.label(status, 10.0, state.repeat_items_status_color);
+            }
 
             ui.label(
                 "Runtime Prefab",
@@ -1747,6 +1819,60 @@ fn parse_editor_number(text: &str, min: f32, max: f32) -> Option<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn repeat_items_status_reports_rows_precedence_and_bad_json() {
+        let props = |pairs: &[(&str, &str)]| {
+            pairs
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect::<HashMap<String, String>>()
+        };
+
+        // Not a repeater: nothing to say.
+        assert!(repeat_items_status(&props(&[("ui", "rect")])).0.is_none());
+
+        // Authored rows are counted.
+        let (status, _) = repeat_items_status(&props(&[
+            ("ui", "repeat"),
+            ("ui_repeat_items", r#"[{"a":"1"},{"a":"2"}]"#),
+        ]));
+        assert!(
+            status.as_deref().is_some_and(|s| s.contains("2 authored")),
+            "got {status:?}"
+        );
+
+        // With a source too, the status must say the runtime overrides them —
+        // otherwise the authored rows read as what ships.
+        let (status, _) = repeat_items_status(&props(&[
+            ("ui", "repeat"),
+            ("ui_repeat_items", r#"[{"a":"1"}]"#),
+            ("ui_repeat_source", "standings"),
+        ]));
+        assert!(
+            status
+                .as_deref()
+                .is_some_and(|s| s.contains("overridden") && s.contains("standings")),
+            "got {status:?}"
+        );
+
+        // Bad JSON is called out rather than silently drawing nothing.
+        let (status, _) = repeat_items_status(&props(&[
+            ("ui", "repeat"),
+            ("ui_repeat_items", "not json"),
+        ]));
+        assert!(
+            status.as_deref().is_some_and(|s| s.contains("not a JSON array")),
+            "got {status:?}"
+        );
+
+        // Neither items nor source: the node draws nothing, say so.
+        let (status, _) = repeat_items_status(&props(&[("ui", "repeat")]));
+        assert!(
+            status.as_deref().is_some_and(|s| s.contains("draws nothing")),
+            "got {status:?}"
+        );
+    }
 
     #[test]
     fn build_custom_properties_excludes_params_and_sorts_by_key() {

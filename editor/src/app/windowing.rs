@@ -1042,10 +1042,26 @@ impl RengineNativeEditor {
 
         let toolbar_rect = viewport_toolbar_rect(layout.viewport);
         if toolbar_rect.contains(mouse) {
-            for (label, rect) in viewport_toolbar_buttons(layout.viewport) {
+            // By index, not by label: the interaction-state button's label
+            // changes as it cycles, so matching on text would silently stop
+            // working the moment it isn't showing "State: Base".
+            for (index, (_, rect)) in
+                viewport_toolbar_buttons(layout.viewport, self.preview_interaction_state)
+                    .into_iter()
+                    .enumerate()
+            {
                 if rect.contains(mouse) {
-                    match label {
-                        "Frame (F)" => self.frame_active_scene_view(),
+                    match index {
+                        0 => self.frame_active_scene_view(),
+                        1 => {
+                            self.preview_interaction_state =
+                                PreviewInteraction::next(self.preview_interaction_state);
+                            self.push_log(format!(
+                                "Viewport preview {}",
+                                PreviewInteraction::label(self.preview_interaction_state)
+                                    .to_ascii_lowercase()
+                            ));
+                        }
                         _ => {}
                     }
                 }
@@ -1829,12 +1845,15 @@ pub(crate) fn viewport_toolbar_rect(viewport: PanelRect) -> PanelRect {
     PanelRect::new(viewport.x, viewport.top() - 34.0, viewport.w, 34.0)
 }
 
-pub(crate) fn viewport_toolbar_buttons(viewport: PanelRect) -> Vec<(&'static str, PanelRect)> {
+pub(crate) fn viewport_toolbar_buttons(
+    viewport: PanelRect,
+    preview_interaction: Option<PreviewInteraction>,
+) -> Vec<(&'static str, PanelRect)> {
     let toolbar = viewport_toolbar_rect(viewport);
     let button_h = BUTTON_HEIGHT;
     let y = toolbar.y + (toolbar.h - button_h) * 0.5;
     let mut x = toolbar.x + PANEL_PADDING;
-    let labels: &[&str] = &["Frame (F)"];
+    let labels: &[&str] = &["Frame (F)", PreviewInteraction::label(preview_interaction)];
     labels
         .iter()
         .map(|label| {

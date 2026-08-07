@@ -286,6 +286,16 @@ impl AssetPack {
             .or_else(|| self.sprite_sheets.get(alias).map(|sheet| sheet.texture))
     }
 
+    /// Register an already-loaded texture under `alias`.
+    ///
+    /// For tools that compile a scene outside the normal asset-manifest flow
+    /// — the editor's viewport preview resolves each sprite node's
+    /// `asset_alias` against textures it loaded itself, so a scene with
+    /// sprites can preview instead of failing to compile.
+    pub fn add_texture(&mut self, alias: impl Into<String>, texture: TextureAsset) {
+        self.textures.insert(alias.into(), texture);
+    }
+
     pub(crate) fn insert_bytes(&mut self, alias: String, bytes: Arc<[u8]>) {
         self.bytes.insert(alias, bytes);
     }

@@ -44,7 +44,7 @@ impl RengineNativeEditor {
         // Must happen before `frame.canvas(0)` borrows the frame: this needs
         // `&mut self`, and `draw_viewport` below only gets `&self` once the
         // canvas borrow is live.
-        self.rebuild_ui_preview_if_needed();
+        self.rebuild_ui_preview_if_needed(engine);
 
         let canvas = frame.canvas(0);
 
@@ -113,7 +113,7 @@ impl RengineNativeEditor {
     /// scene and the loaded one sit at index 0 with edit_revision 0 — an
     /// index-keyed check saw no change and kept previewing the empty scene,
     /// so an opened scene rendered as nothing but node boxes.
-    fn rebuild_ui_preview_if_needed(&mut self) {
+    fn rebuild_ui_preview_if_needed(&mut self, engine: &Engine) {
         let key = (
             self.active_scene_tab().tab_id,
             self.active_scene_tab().edit_revision,
@@ -126,8 +126,9 @@ impl RengineNativeEditor {
             .scene_path
             .clone()
             .unwrap_or_else(|| PathBuf::from("<untitled>"));
+        let assets = self.preview_asset_pack(engine);
         let json = self.active_scene_tab_mut().cached_scene_json().to_string();
-        self.ui_preview = build_ui_preview_world(&path, &json);
+        self.ui_preview = build_ui_preview_world(&path, &json, &assets);
         self.ui_preview_key = Some(key);
         if self.ui_preview.is_none() {
             self.push_log(format!(
@@ -135,6 +136,34 @@ impl RengineNativeEditor {
                 self.display_path(&path)
             ));
         }
+    }
+
+    /// The textures the preview can resolve, keyed by the `asset_alias` each
+    /// sprite node authored.
+    ///
+    /// `compile_prefabs` treats an unresolvable alias as a hard error that
+    /// fails the whole scene, so before this the preview used an empty pack
+    /// and *any* sprite-bearing scene previewed as nothing but node boxes.
+    /// Requests anything not loaded yet, so the texture is there to preview
+    /// on a later frame (loading is async).
+    fn preview_asset_pack(&self, engine: &Engine) -> AssetPack {
+        let mut assets = AssetPack::default();
+        for node in &self.active_scene_tab().scene.nodes {
+            let alias = node.asset_alias.trim();
+            if alias.is_empty() {
+                continue;
+            }
+            let resolved = self.resolve_stored_path(alias);
+            match engine.loaded_texture(&resolved) {
+                Some(texture) => assets.add_texture(alias, texture),
+                None => {
+                    if resolved.is_file() && is_supported_sprite_path(&resolved) {
+                        engine.request_texture(&resolved);
+                    }
+                }
+            }
+        }
+        assets
     }
 
     fn draw_top_bar(
@@ -741,12 +770,35 @@ impl RengineNativeEditor {
             // ponytail: time = 0.0 — a live clock would make ui_bob_*/
             // ui_sway_* authored nodes judder while just sitting in the
             // editor. A play/pause preview clock is separate work.
-            // No bindings/repeater sync either (Ed4): a `ui: "repeat"` node
-            // previews as its authored template child, and `{key}`
-            // placeholders stay literal — both degrade safely rather than
-            // erroring (see resolve_ui_rect's unwrap_or(0.0) and the
-            // ui_visible literal check in data2d.rs).
+            // `{key}` placeholders still stay literal (no ambient bindings),
+            // which degrades safely — see resolve_ui_rect's unwrap_or(0.0)
+            // and the ui_visible literal check in data2d.rs.
+            //
+            // Interaction state: a node's hover/focus colours (ui_color_hover,
+            // ui_color_focus) are otherwise invisible while authoring, since
+            // the base colour is often deliberately transparent — a selection
+            // bar authored as alpha-0 base + amber hover looks like nothing at
+            // all in the viewport. Applying the toggle to the *selected* node
+            // makes those states inspectable without running the game.
+            let preview_state_handle = self
+                .preview_interaction_state
+                .and_then(|_| self.active_scene_tab().selected_node)
+                .and_then(|id| world.find_by_editor_id(id));
+            world.set_hovered(
+                preview_state_handle
+                    .filter(|_| self.preview_interaction_state == Some(PreviewInteraction::Hover)),
+            );
+            world.set_focus(
+                preview_state_handle
+                    .filter(|_| self.preview_interaction_state == Some(PreviewInteraction::Focus)),
+            );
+
             world.draw_to_canvas_in(canvas, root, 0.0);
+
+            // Leave no interaction state behind: hit-testing reads the same
+            // world, and a node stuck "hovered" would misreport next frame.
+            world.set_hovered(None);
+            world.set_focus(None);
             draw_outline(
                 canvas,
                 PanelRect::new(root.0, root.1, root.2, root.3),
@@ -1088,7 +1140,7 @@ impl RengineNativeEditor {
             Color::from_rgba8(48, 56, 70, 255),
         );
         let mut tooltip_targets_toolbar = Vec::new();
-        for (label, rect) in viewport_toolbar_buttons(viewport) {
+        for (label, rect) in viewport_toolbar_buttons(viewport, self.preview_interaction_state) {
             draw_button(
                 canvas,
                 rect,
@@ -1701,16 +1753,15 @@ pub(crate) fn screen_to_scene(position: Vec2, viewport: PanelRect, pan: Vec2) ->
 /// the caller falls back to the flat node boxes rather than an empty
 /// viewport. `path` only labels errors; it need not exist on disk.
 //
-// ponytail: AssetPack::default() — the preview has no textures, so a scene
-// whose prefabs reference a texture alias fails to compile (compile_prefabs,
-// data2d.rs:822) and this returns None. No game scene currently references
-// one. Upgrade path: feed in the editor's already-loaded textures
-// (engine.loaded_texture / engine.request_texture, filesystem.rs:489)
-// instead of a default pack.
-fn build_ui_preview_world(path: &Path, json: &str) -> Option<SceneWorld2D> {
-    let assets = AssetPack::default();
-    let scene = Scene2D::from_json_str(path, json, &assets).ok()?;
-    Some(SceneWorld2D::from_scene(&scene))
+fn build_ui_preview_world(path: &Path, json: &str, assets: &AssetPack) -> Option<SceneWorld2D> {
+    let scene = Scene2D::from_json_str(path, json, assets).ok()?;
+    let mut world = SceneWorld2D::from_scene(&scene);
+    // Materialize `ui: "repeat"` nodes from their authored `ui_repeat_items`.
+    // Passing no sources means every repeater falls back to its own authored
+    // rows — which is exactly what the editor should show, since the live
+    // collections a running game would supply don't exist here.
+    world.sync_repeaters(&RepeaterSources::new());
+    Some(world)
 }
 
 /// Whether the `ui_preview` draw already painted this node, so the viewport
@@ -1855,7 +1906,7 @@ mod tests {
             ]
         }"#;
 
-        let world = build_ui_preview_world(Path::new("<test>"), json)
+        let world = build_ui_preview_world(Path::new("<test>"), json, &AssetPack::default())
             .expect("hand-written editor document should build a preview world");
         assert_eq!(world.len(), 2);
 
@@ -1867,7 +1918,10 @@ mod tests {
 
     #[test]
     fn build_ui_preview_world_returns_none_for_invalid_json() {
-        assert!(build_ui_preview_world(Path::new("<test>"), "not json").is_none());
+        assert!(
+            build_ui_preview_world(Path::new("<test>"), "not json", &AssetPack::default())
+                .is_none()
+        );
     }
 
     #[test]
@@ -1908,7 +1962,7 @@ mod tests {
                 }
             ]
         }"#;
-        let world = build_ui_preview_world(Path::new("<test>"), json)
+        let world = build_ui_preview_world(Path::new("<test>"), json, &AssetPack::default())
             .expect("hand-written editor document should build a preview world");
         let handle = world.find_by_editor_id(1).expect("node present");
         assert!(

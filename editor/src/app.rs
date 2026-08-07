@@ -169,6 +169,8 @@ pub struct RengineNativeEditor {
     /// `(SceneTab::tab_id, edit_revision)` — see `rebuild_ui_preview_if_needed`
     /// for why this is the tab's id and not its index.
     ui_preview_key: Option<(u64, u64)>,
+    /// Which interaction state, if any, to preview on the selected node.
+    preview_interaction_state: Option<PreviewInteraction>,
 }
 
 impl Game for RengineNativeEditor {
@@ -223,6 +225,7 @@ impl Game for RengineNativeEditor {
             quit_requested: false,
             ui_preview: None,
             ui_preview_key: None,
+            preview_interaction_state: None,
         };
 
         editor.refresh_inspector_form();

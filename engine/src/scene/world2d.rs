@@ -743,10 +743,23 @@ impl SceneWorld2D {
         let Some(node) = self.get(handle) else {
             return;
         };
-        let Some(source_name) = node.property("ui_repeat_source").map(str::to_string) else {
-            return;
-        };
-        let item_count = repeaters.get(&source_name).map_or(0, Vec::len);
+        // `ui_repeat_source` is optional once a node authors its own items:
+        // a purely authored list (a fixed menu, a legend) needs no supplier.
+        let source_name = node.property("ui_repeat_source").map(str::to_string);
+        let authored = node
+            .property("ui_repeat_items")
+            .and_then(parse_repeat_items);
+
+        // A live source wins over authored items: the authored list is the
+        // fallback for "nobody supplied this", not a default to merge with.
+        // Note the supplier only has to *name* the source to take over — an
+        // empty Vec is a real answer ("no rows right now") and correctly
+        // yields zero instances rather than falling back to authored rows.
+        let supplied = source_name
+            .as_deref()
+            .and_then(|name| repeaters.get(name));
+        let items: Option<&Vec<Bindings>> = supplied.or(authored.as_ref());
+        let item_count = items.map_or(0, Vec::len);
 
         // First sync: the node's one authored child is the template — capture
         // it as data, then clear the live children so what remains under this
@@ -788,13 +801,25 @@ impl SceneWorld2D {
         // list re-ranking lap to lap.
         let instances: Vec<NodeHandle2D> =
             self.get(handle).map_or(Vec::new(), |n| n.children.clone());
-        if let Some(items) = repeaters.get(&source_name) {
-            for (instance, scope) in instances.iter().zip(items.iter()) {
+        if let Some(items) = items {
+            // Cloned up front: `items` borrows either `repeaters` or the
+            // node's own authored property, and the loop needs `&mut self`.
+            let scopes: Vec<Bindings> = items.clone();
+            for (instance, scope) in instances.iter().zip(scopes.into_iter()) {
                 if let Some(node) = self.get_mut(*instance) {
-                    node.instance_bindings = Some(scope.clone());
+                    node.instance_bindings = Some(scope);
                 }
             }
         }
+    }
+
+    /// Authored repeat rows, if this node has any that parse.
+    ///
+    /// See [`parse_repeat_items`] for the format.
+    pub fn authored_repeat_items(&self, handle: NodeHandle2D) -> Option<Vec<Bindings>> {
+        self.get(handle)?
+            .property("ui_repeat_items")
+            .and_then(parse_repeat_items)
     }
 
     /// Deep-copy a live subtree into a detached [`NodeTemplate`] — the node's
@@ -1526,6 +1551,48 @@ impl SceneWorld2D {
     }
 }
 
+/// Parse a `ui_repeat_items` property into one [`Bindings`] scope per row.
+///
+/// The property is a JSON array of flat objects, each object one repeated
+/// instance's bindings: `[{"pos":"1","name":"REYES"},{"pos":"2",...}]`.
+/// Values are coerced to strings (a JSON number or bool is accepted and
+/// stringified) because [`Bindings`] is `HashMap<String, String>` and
+/// authoring `"1"` vs `1` in the editor shouldn't be a silent failure.
+///
+/// Returns `None` for anything that isn't a JSON array — including an
+/// unresolved `{binding}` placeholder, which a scene may legitimately author
+/// here. `Some(vec![])` (an authored empty list) is distinct: it means zero
+/// rows, deliberately.
+fn parse_repeat_items(raw: &str) -> Option<Vec<Bindings>> {
+    let value: serde_json::Value = serde_json::from_str(raw.trim()).ok()?;
+    let rows = value.as_array()?;
+    Some(
+        rows.iter()
+            .map(|row| {
+                row.as_object()
+                    .map(|fields| {
+                        fields
+                            .iter()
+                            .filter_map(|(key, value)| {
+                                let text = match value {
+                                    serde_json::Value::String(s) => s.clone(),
+                                    serde_json::Value::Number(n) => n.to_string(),
+                                    serde_json::Value::Bool(b) => b.to_string(),
+                                    // null/array/object have no sensible
+                                    // single-string form; skip rather than
+                                    // inventing one.
+                                    _ => return None,
+                                };
+                                Some((key.clone(), text))
+                            })
+                            .collect::<Bindings>()
+                    })
+                    .unwrap_or_default()
+            })
+            .collect(),
+    )
+}
+
 /// Overlay a repeater instance's own scope onto the ambient bindings — the
 /// item's own fields win on key collision, so `ui_text: "{name}"` inside a
 /// repeated row resolves to that row's name even if an outer scope happens
@@ -1825,6 +1892,123 @@ mod tests {
         );
         world.sync_repeaters(&sources);
         assert_eq!(world.get(list).unwrap().children().len(), 4);
+    }
+
+    /// A repeat node whose rows are authored on the node itself.
+    fn authored_repeat_world(items: &str, source: Option<&str>) -> (SceneWorld2D, NodeHandle2D) {
+        let mut world = SceneWorld2D::new();
+        let list = world.spawn(SceneNode2D::new("list"));
+        world.get_mut(list).unwrap().set_property("ui", "repeat");
+        if let Some(source) = source {
+            world
+                .get_mut(list)
+                .unwrap()
+                .set_property("ui_repeat_source", source);
+        }
+        world
+            .get_mut(list)
+            .unwrap()
+            .set_property("ui_repeat_items", items);
+        let template = world.spawn_child(list, SceneNode2D::new("row"));
+        world.get_mut(template).unwrap().set_property("ui", "text");
+        world
+            .get_mut(template)
+            .unwrap()
+            .set_property("ui_text", "P{pos} {name}");
+        (world, list)
+    }
+
+    #[test]
+    fn authored_repeat_items_materialize_without_any_supplied_source() {
+        // Rows authored in the scene stand on their own: a fixed list needs
+        // no Rust supplier, and no ui_repeat_source at all.
+        let (mut world, list) = authored_repeat_world(
+            r#"[{"pos":"1","name":"REYES"},{"pos":"2","name":"VOSS"}]"#,
+            None,
+        );
+
+        world.sync_repeaters(&RepeaterSources::new());
+
+        let instances = world.get(list).unwrap().children().to_vec();
+        assert_eq!(instances.len(), 2, "one instance per authored row");
+        let scope = world.get(instances[0]).unwrap().instance_bindings.clone();
+        assert_eq!(
+            scope.unwrap().get("name").map(String::as_str),
+            Some("REYES"),
+            "each instance carries its authored row's scope"
+        );
+    }
+
+    #[test]
+    fn a_supplied_source_wins_over_authored_items() {
+        // Authored rows are the fallback for "nobody supplied this", not a
+        // default to merge with — otherwise a live standings list could show
+        // stale authored rows alongside real ones.
+        let (mut world, list) = authored_repeat_world(
+            r#"[{"pos":"1","name":"AUTHORED"},{"pos":"2","name":"AUTHORED"}]"#,
+            Some("standings"),
+        );
+
+        let mut sources = RepeaterSources::new();
+        sources.insert("standings".to_string(), repeat_source(&[("9", "LIVE")]));
+        world.sync_repeaters(&sources);
+
+        let instances = world.get(list).unwrap().children().to_vec();
+        assert_eq!(instances.len(), 1, "the live source decides the count");
+        let scope = world.get(instances[0]).unwrap().instance_bindings.clone();
+        assert_eq!(scope.unwrap().get("name").map(String::as_str), Some("LIVE"));
+    }
+
+    #[test]
+    fn a_supplied_empty_source_is_an_answer_not_a_fallback() {
+        // The risk the authored-fallback design carries: "the supplier said
+        // zero rows" must not read as "the supplier said nothing", or an
+        // empty live list would render stale authored rows.
+        let (mut world, list) = authored_repeat_world(
+            r#"[{"pos":"1","name":"AUTHORED"}]"#,
+            Some("standings"),
+        );
+
+        let mut sources = RepeaterSources::new();
+        sources.insert("standings".to_string(), Vec::new());
+        world.sync_repeaters(&sources);
+
+        assert_eq!(
+            world.get(list).unwrap().children().len(),
+            0,
+            "an empty supplied source yields no rows, not the authored ones"
+        );
+    }
+
+    #[test]
+    fn unparseable_repeat_items_are_ignored_rather_than_erroring() {
+        // A scene may author `{some_binding}` here, or simply have a typo.
+        // Either way the node degrades to "no authored rows" — consistent
+        // with how every other ui_* property handles an unresolved value.
+        for raw in [r#"{binding}"#, "not json", r#"{"not":"an array"}"#] {
+            let (mut world, list) = authored_repeat_world(raw, None);
+            world.sync_repeaters(&RepeaterSources::new());
+            assert_eq!(
+                world.get(list).unwrap().children().len(),
+                0,
+                "unparseable ui_repeat_items {raw:?} should yield no rows"
+            );
+        }
+    }
+
+    #[test]
+    fn repeat_items_coerce_numbers_and_bools_to_strings() {
+        // Bindings are HashMap<String,String>; authoring `1` instead of "1"
+        // in the editor's JSON shouldn't silently drop the field.
+        let (mut world, list) =
+            authored_repeat_world(r#"[{"pos":1,"lapped":true,"name":"REYES"}]"#, None);
+        world.sync_repeaters(&RepeaterSources::new());
+
+        let instances = world.get(list).unwrap().children().to_vec();
+        let scope = world.get(instances[0]).unwrap().instance_bindings.clone().unwrap();
+        assert_eq!(scope.get("pos").map(String::as_str), Some("1"));
+        assert_eq!(scope.get("lapped").map(String::as_str), Some("true"));
+        assert_eq!(scope.get("name").map(String::as_str), Some("REYES"));
     }
 
     #[test]
