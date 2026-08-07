@@ -166,9 +166,10 @@ pub struct RengineNativeEditor {
     /// instead of a flat grid of node boxes. Rebuilt only when
     /// `ui_preview_key` goes stale — see `rebuild_ui_preview_if_needed`.
     ui_preview: Option<SceneWorld2D>,
-    /// `(SceneTab::tab_id, edit_revision)` — see `rebuild_ui_preview_if_needed`
-    /// for why this is the tab's id and not its index.
-    ui_preview_key: Option<(u64, u64)>,
+    /// `(SceneTab::tab_id, edit_revision, resolved_texture_count)` — see
+    /// `rebuild_ui_preview_if_needed` for why it is the tab's id and not its
+    /// index, and why the texture count is part of it.
+    ui_preview_key: Option<(u64, u64, usize)>,
     /// Which interaction state, if any, to preview on the selected node.
     preview_interaction_state: Option<PreviewInteraction>,
 }

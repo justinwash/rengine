@@ -114,9 +114,15 @@ impl RengineNativeEditor {
     /// index-keyed check saw no change and kept previewing the empty scene,
     /// so an opened scene rendered as nothing but node boxes.
     fn rebuild_ui_preview_if_needed(&mut self, engine: &Engine) {
+        // Texture loading is async, so the pack is built first and its
+        // resolved-alias count joins the key: the first build after a scene
+        // opens usually resolves nothing, and without this the preview would
+        // stay stuck on that texture-less build even once the sprites land.
+        let assets = self.preview_asset_pack(engine);
         let key = (
             self.active_scene_tab().tab_id,
             self.active_scene_tab().edit_revision,
+            self.resolved_preview_texture_count(engine),
         );
         if self.ui_preview_key == Some(key) {
             return;
@@ -126,7 +132,6 @@ impl RengineNativeEditor {
             .scene_path
             .clone()
             .unwrap_or_else(|| PathBuf::from("<untitled>"));
-        let assets = self.preview_asset_pack(engine);
         let json = self.active_scene_tab_mut().cached_scene_json().to_string();
         self.ui_preview = build_ui_preview_world(&path, &json, &assets);
         self.ui_preview_key = Some(key);
@@ -153,17 +158,66 @@ impl RengineNativeEditor {
             if alias.is_empty() {
                 continue;
             }
-            let resolved = self.resolve_stored_path(alias);
-            match engine.loaded_texture(&resolved) {
-                Some(texture) => assets.add_texture(alias, texture),
-                None => {
+            for candidate in preview_texture_candidates(alias) {
+                for resolved in self.preview_texture_roots(&candidate) {
+                    if let Some(texture) = engine.loaded_texture(&resolved) {
+                        assets.add_texture(alias, texture);
+                        break;
+                    }
                     if resolved.is_file() && is_supported_sprite_path(&resolved) {
                         engine.request_texture(&resolved);
+                        break;
                     }
                 }
             }
         }
         assets
+    }
+
+    /// How many of this scene's sprite aliases currently resolve to a loaded
+    /// texture. Part of the preview cache key — it changes as async texture
+    /// loads land, which is what triggers the rebuild that shows them.
+    fn resolved_preview_texture_count(&self, engine: &Engine) -> usize {
+        self.active_scene_tab()
+            .scene
+            .nodes
+            .iter()
+            .filter(|node| {
+                let alias = node.asset_alias.trim();
+                !alias.is_empty()
+                    && preview_texture_candidates(alias).iter().any(|candidate| {
+                        self.preview_texture_roots(candidate)
+                            .iter()
+                            .any(|resolved| engine.loaded_texture(resolved).is_some())
+                    })
+            })
+            .count()
+    }
+
+    /// Where a scene's `candidate` asset path might live, in priority order.
+    ///
+    /// The scene's own project comes first: the editor's `workspace_root` is
+    /// whatever project is open, which is not necessarily the repo the scene
+    /// file belongs to (rengine's editor opening a scene from a game repo is
+    /// the normal case), and a scene's assets sit beside the scene.
+    fn preview_texture_roots(&self, candidate: &str) -> Vec<PathBuf> {
+        let mut roots = Vec::new();
+        if let Some(scene_dir) = self
+            .active_scene_tab()
+            .scene_path
+            .as_deref()
+            .and_then(Path::parent)
+        {
+            // `scenes/foo.scene.json` -> try the project root beside `scenes/`
+            // before the directory itself, since assets are conventionally a
+            // sibling of the scenes directory rather than inside it.
+            if let Some(project_root) = scene_dir.parent() {
+                roots.push(project_root.join(candidate));
+            }
+            roots.push(scene_dir.join(candidate));
+        }
+        roots.push(self.resolve_stored_path(candidate));
+        roots
     }
 
     fn draw_top_bar(
@@ -1754,7 +1808,14 @@ pub(crate) fn screen_to_scene(position: Vec2, viewport: PanelRect, pan: Vec2) ->
 /// viewport. `path` only labels errors; it need not exist on disk.
 //
 fn build_ui_preview_world(path: &Path, json: &str, assets: &AssetPack) -> Option<SceneWorld2D> {
-    let scene = Scene2D::from_json_str(path, json, assets).ok()?;
+    // An alias the editor can't resolve is a hard error in `compile_prefabs`,
+    // which would fail the *whole* scene — one unresolvable sprite would blank
+    // an otherwise fine screen. Retry without the sprite nodes so everything
+    // else still previews; those nodes fall back to their placeholder boxes.
+    let scene = match Scene2D::from_json_str(path, json, assets) {
+        Ok(scene) => scene,
+        Err(_) => Scene2D::from_json_str(path, &json_without_sprite_aliases(json), assets).ok()?,
+    };
     let mut world = SceneWorld2D::from_scene(&scene);
     // Materialize `ui: "repeat"` nodes from their authored `ui_repeat_items`.
     // Passing no sources means every repeater falls back to its own authored
@@ -1762,6 +1823,58 @@ fn build_ui_preview_world(path: &Path, json: &str, assets: &AssetPack) -> Option
     // collections a running game would supply don't exist here.
     world.sync_repeaters(&RepeaterSources::new());
     Some(world)
+}
+
+/// The same document with every sprite node demoted to `Empty` and its
+/// `asset_alias` cleared, so it compiles with no texture lookups at all.
+///
+/// The fallback for a scene naming an asset this editor can't find. Clearing
+/// the alias alone isn't enough: a `Sprite` node with an empty alias is its
+/// own compile error ("missing an asset alias"), so the kind has to go too.
+/// Those nodes then draw as ordinary placeholder boxes while the rest of the
+/// scene previews normally.
+fn json_without_sprite_aliases(json: &str) -> String {
+    let Ok(mut value) = serde_json::from_str::<serde_json::Value>(json) else {
+        return json.to_string();
+    };
+    if let Some(nodes) = value.get_mut("nodes").and_then(|v| v.as_array_mut()) {
+        for node in nodes {
+            let is_sprite = node.get("kind").and_then(|k| k.as_str()) == Some("Sprite");
+            if let Some(alias) = node.get_mut("asset_alias") {
+                *alias = serde_json::Value::String(String::new());
+            }
+            if is_sprite {
+                node["kind"] = serde_json::Value::String("Empty".to_string());
+            }
+        }
+    }
+    value.to_string()
+}
+
+/// Workspace-relative paths an `asset_alias` might name, most specific first.
+///
+/// An alias is either already a path (`assets/sprites/car.png`, what the
+/// sprite inspector writes) or a bare asset name (`car_side`, what a game
+/// loading through its own asset naming uses). The bare form is tried under
+/// the conventional sprite directories with each supported extension, so a
+/// scene authored either way previews.
+fn preview_texture_candidates(alias: &str) -> Vec<String> {
+    if Path::new(alias).extension().is_some() {
+        return vec![alias.to_string()];
+    }
+    const DIRS: [&str; 3] = ["assets/sprites", "assets", ""];
+    const EXTS: [&str; 4] = ["png", "jpg", "jpeg", "webp"];
+    let mut out = Vec::with_capacity(DIRS.len() * EXTS.len());
+    for dir in DIRS {
+        for ext in EXTS {
+            out.push(if dir.is_empty() {
+                format!("{alias}.{ext}")
+            } else {
+                format!("{dir}/{alias}.{ext}")
+            });
+        }
+    }
+    out
 }
 
 /// Whether the `ui_preview` draw already painted this node, so the viewport
