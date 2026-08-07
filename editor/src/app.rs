@@ -166,7 +166,9 @@ pub struct RengineNativeEditor {
     /// instead of a flat grid of node boxes. Rebuilt only when
     /// `ui_preview_key` goes stale — see `rebuild_ui_preview_if_needed`.
     ui_preview: Option<SceneWorld2D>,
-    ui_preview_key: Option<(usize, u64)>,
+    /// `(SceneTab::tab_id, edit_revision)` — see `rebuild_ui_preview_if_needed`
+    /// for why this is the tab's id and not its index.
+    ui_preview_key: Option<(u64, u64)>,
 }
 
 impl Game for RengineNativeEditor {

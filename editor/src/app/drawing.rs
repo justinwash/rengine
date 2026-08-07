@@ -104,11 +104,20 @@ impl RengineNativeEditor {
     /// Rebuild `self.ui_preview` from the active tab's authored JSON, but
     /// only when the tab or its content actually changed since the last
     /// build. `edit_revision` is bumped by every `mark_dirty`, so
-    /// `(active_scene_tab, edit_revision)` is a cheap staleness check —
-    /// running the document through the real scene pipeline every frame
-    /// would be wasted work for a viewport that isn't being edited.
+    /// `(tab_id, edit_revision)` is a cheap staleness check — running the
+    /// document through the real scene pipeline every frame would be wasted
+    /// work for a viewport that isn't being edited.
+    ///
+    /// Keyed on `tab_id` rather than the tab *index*: opening a scene over
+    /// the fresh untitled tab replaces slot 0 in place, and both the empty
+    /// scene and the loaded one sit at index 0 with edit_revision 0 — an
+    /// index-keyed check saw no change and kept previewing the empty scene,
+    /// so an opened scene rendered as nothing but node boxes.
     fn rebuild_ui_preview_if_needed(&mut self) {
-        let key = (self.active_scene_tab, self.active_scene_tab().edit_revision);
+        let key = (
+            self.active_scene_tab().tab_id,
+            self.active_scene_tab().edit_revision,
+        );
         if self.ui_preview_key == Some(key) {
             return;
         }
@@ -1747,6 +1756,25 @@ mod tests {
             asset_alias: String::new(),
             properties: std::collections::HashMap::new(),
         }
+    }
+
+    #[test]
+    fn replacing_a_tab_in_place_gives_the_preview_a_fresh_cache_key() {
+        // The bug: opening a scene over the fresh untitled tab replaces slot
+        // 0 in place, so both the empty scene and the loaded one were
+        // (index 0, edit_revision 0). The index-keyed staleness check saw no
+        // change, kept the empty scene's preview, and the opened scene drew
+        // as nothing but node boxes. tab_id has to distinguish them.
+        let untitled = crate::app::state::SceneTab::untitled();
+        let mut loaded_doc = SceneDocument::new("title");
+        loaded_doc.add_node(SceneNodeKind::UiRoot, None);
+        let loaded = crate::app::state::SceneTab::new(loaded_doc, None);
+
+        assert_eq!(untitled.edit_revision, loaded.edit_revision);
+        assert_ne!(
+            untitled.tab_id, loaded.tab_id,
+            "a replacement tab must not reuse the previous tab's cache key"
+        );
     }
 
     #[test]

@@ -2,6 +2,14 @@ use super::*;
 
 const MAX_SCENE_HISTORY_STEPS: usize = 128;
 
+/// Monotonic id for [`SceneTab::tab_id`]. Only ever compared for equality, so
+/// a plain counter is enough — no reuse, no wraparound in any real session.
+fn next_tab_id() -> u64 {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    NEXT.fetch_add(1, Ordering::Relaxed)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ViewportDragConstraint {
     Free,
@@ -146,6 +154,11 @@ pub(crate) struct SceneTab {
     pub(crate) edit_revision: u64,
     pub(crate) autosaved_revision: u64,
     pub(crate) autosave_elapsed: f32,
+    /// Identity that survives this tab being replaced in place. Caches keyed
+    /// on the tab *index* (the ui preview) can't tell "opened a scene into
+    /// slot 0" from "the untitled scene that was already in slot 0" — both
+    /// are index 0 at edit_revision 0 — and would serve a stale preview.
+    pub(crate) tab_id: u64,
 }
 
 impl SceneTab {
@@ -173,6 +186,7 @@ impl SceneTab {
             edit_revision: 0,
             autosaved_revision: 0,
             autosave_elapsed: 0.0,
+            tab_id: next_tab_id(),
         }
     }
 
