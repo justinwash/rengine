@@ -7,8 +7,9 @@ mod validation;
 mod world2d;
 
 pub use data2d::{
-    Bindings, Prefab2D, Prefab2DDef, PrefabSprite2D, PrefabSprite2DDef, RepeaterSources, Scene2D,
-    Scene2DDef, SceneInstance2D, SceneInstance2DDef, SceneScriptBinding2D,
+    Bindings, EditorSceneDocument, EditorSceneNode, EditorSceneNodeKind, Prefab2D, Prefab2DDef,
+    PrefabSprite2D, PrefabSprite2DDef, RepeaterSources, Scene2D, Scene2DDef, SceneInstance2D,
+    SceneInstance2DDef, SceneScriptBinding2D,
 };
 
 pub use globals::Globals;

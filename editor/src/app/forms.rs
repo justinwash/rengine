@@ -57,7 +57,6 @@ pub(crate) struct InspectorFormState {
     /// author `ui_*` and any other property with no dedicated widget.
     pub(crate) custom_properties: Vec<CustomPropertyEntry>,
     pub(crate) runtime_prefab: String,
-    pub(crate) asset_alias: String,
     pub(crate) sprite_texture_path: String,
     pub(crate) camera_zoom: f32,
     pub(crate) camera_show_bounds: bool,
@@ -103,13 +102,13 @@ impl InspectorFormState {
                 );
                 self.custom_properties = build_custom_properties(&node.properties);
                 self.runtime_prefab = node.runtime_prefab.clone();
-                self.asset_alias = node.asset_alias.clone();
-                self.sprite_texture_path = node.sprite.texture_path.clone();
-                self.camera_zoom = node.camera2d.zoom;
-                self.camera_show_bounds = node.camera2d.show_bounds;
-                self.camera_use_scene_view_size = node.camera2d.use_scene_view_size;
-                self.camera_view_width = format!("{:.0}", node.camera2d.view_size[0]);
-                self.camera_view_height = format!("{:.0}", node.camera2d.view_size[1]);
+                self.sprite_texture_path = node.asset_alias.clone();
+                self.camera_zoom = node.camera_zoom();
+                self.camera_show_bounds = node.camera_show_bounds();
+                self.camera_use_scene_view_size = node.camera_use_scene_view_size();
+                let camera_view_size = node.camera_view_size();
+                self.camera_view_width = format!("{:.0}", camera_view_size[0]);
+                self.camera_view_height = format!("{:.0}", camera_view_size[1]);
                 return;
             }
         }
@@ -125,7 +124,6 @@ impl InspectorFormState {
         self.node_size_height.clear();
         self.script_path.clear();
         self.runtime_prefab.clear();
-        self.asset_alias.clear();
         self.sprite_texture_path.clear();
         self.camera_zoom = 1.0;
         self.camera_show_bounds = true;
@@ -771,12 +769,6 @@ impl RengineNativeEditor {
             if kind == SceneNodeKind::Sprite {
                 ui.separator(8.0);
                 ui.label(
-                    "Sprite Asset Alias",
-                    11.0,
-                    Color::from_rgba8(148, 162, 180, 255),
-                );
-                ui.text_input(INSPECTOR_SPRITE_ALIAS_ID, &state.asset_alias, "player_idle");
-                ui.label(
                     "Sprite Texture Path",
                     11.0,
                     Color::from_rgba8(148, 162, 180, 255),
@@ -1110,18 +1102,10 @@ impl RengineNativeEditor {
                     }
 
                     if node.kind == SceneNodeKind::Sprite {
-                        if let Some(text) = response.text_for(INSPECTOR_SPRITE_ALIAS_ID) {
-                            state.asset_alias = text.to_string();
-                            if node.asset_alias != state.asset_alias {
-                                node.asset_alias = state.asset_alias.clone();
-                                changed = true;
-                            }
-                        }
-
                         if let Some(text) = response.text_for(INSPECTOR_SPRITE_TEXTURE_ID) {
                             state.sprite_texture_path = text.to_string();
-                            if node.sprite.texture_path != state.sprite_texture_path {
-                                node.sprite.texture_path = state.sprite_texture_path.clone();
+                            if node.asset_alias != state.sprite_texture_path {
+                                node.asset_alias = state.sprite_texture_path.clone();
                                 changed = true;
                                 if !state.sprite_texture_path.trim().is_empty() {
                                     manual_sprite_texture_for_node =
@@ -1139,7 +1123,7 @@ impl RengineNativeEditor {
                         }
 
                         if response.was_activated(INSPECTOR_SPRITE_CLEAR_TEXTURE_ID)
-                            && !node.sprite.texture_path.is_empty()
+                            && !node.asset_alias.is_empty()
                         {
                             clear_sprite_for_node = Some(node_id);
                         }
@@ -1149,26 +1133,27 @@ impl RengineNativeEditor {
                         if let Some(zoom) = response.value_for(INSPECTOR_CAMERA_ZOOM_ID) {
                             let zoom = zoom.max(0.1);
                             state.camera_zoom = zoom;
-                            if (node.camera2d.zoom - zoom).abs() > f32::EPSILON {
-                                node.camera2d.zoom = zoom;
+                            if (node.camera_zoom() - zoom).abs() > f32::EPSILON {
+                                node.set_camera_zoom(zoom);
                                 changed = true;
                             }
                         }
 
                         if response.was_toggled(INSPECTOR_CAMERA_SHOW_BOUNDS_ID) {
                             state.camera_show_bounds = !state.camera_show_bounds;
-                            if node.camera2d.show_bounds != state.camera_show_bounds {
-                                node.camera2d.show_bounds = state.camera_show_bounds;
+                            if node.camera_show_bounds() != state.camera_show_bounds {
+                                node.set_camera_show_bounds(state.camera_show_bounds);
                                 changed = true;
                             }
                         }
 
                         if response.was_toggled(INSPECTOR_CAMERA_USE_SCENE_SIZE_ID) {
                             state.camera_use_scene_view_size = !state.camera_use_scene_view_size;
-                            if node.camera2d.use_scene_view_size != state.camera_use_scene_view_size
+                            if node.camera_use_scene_view_size() != state.camera_use_scene_view_size
                             {
-                                node.camera2d.use_scene_view_size =
-                                    state.camera_use_scene_view_size;
+                                node.set_camera_use_scene_view_size(
+                                    state.camera_use_scene_view_size,
+                                );
                                 changed = true;
                             }
                         }
@@ -1178,8 +1163,10 @@ impl RengineNativeEditor {
                             if let Some(width) =
                                 parse_editor_number(&state.camera_view_width, 64.0, 4096.0)
                             {
-                                if (node.camera2d.view_size[0] - width).abs() > f32::EPSILON {
-                                    node.camera2d.view_size[0] = width;
+                                let mut view_size = node.camera_view_size();
+                                if (view_size[0] - width).abs() > f32::EPSILON {
+                                    view_size[0] = width;
+                                    node.set_camera_view_size(view_size);
                                     changed = true;
                                 }
                             }
@@ -1190,8 +1177,10 @@ impl RengineNativeEditor {
                             if let Some(height) =
                                 parse_editor_number(&state.camera_view_height, 64.0, 4096.0)
                             {
-                                if (node.camera2d.view_size[1] - height).abs() > f32::EPSILON {
-                                    node.camera2d.view_size[1] = height;
+                                let mut view_size = node.camera_view_size();
+                                if (view_size[1] - height).abs() > f32::EPSILON {
+                                    view_size[1] = height;
+                                    node.set_camera_view_size(view_size);
                                     changed = true;
                                 }
                             }
@@ -1707,7 +1696,6 @@ pub(crate) fn is_inspector_text_input(id: usize) -> bool {
             | INSPECTOR_NODE_POSITION_Y_ID
             | INSPECTOR_NODE_SIZE_WIDTH_ID
             | INSPECTOR_NODE_SIZE_HEIGHT_ID
-            | INSPECTOR_SPRITE_ALIAS_ID
             | INSPECTOR_SPRITE_TEXTURE_ID
             | INSPECTOR_CAMERA_VIEW_WIDTH_ID
             | INSPECTOR_CAMERA_VIEW_HEIGHT_ID

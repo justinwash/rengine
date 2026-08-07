@@ -788,13 +788,13 @@ impl RengineNativeEditor {
             .iter()
             .filter(|node| node.visible)
         {
-            if node.kind == SceneNodeKind::Camera2d && node.camera2d.show_bounds {
-                let preview_size = if node.camera2d.use_scene_view_size {
+            if node.kind == SceneNodeKind::Camera2d && node.camera_show_bounds() {
+                let preview_size = if node.camera_use_scene_view_size() {
                     self.active_scene_tab().scene.view.window_size
                 } else {
-                    node.camera2d.view_size
+                    node.camera_view_size()
                 };
-                let zoom = node.camera2d.zoom.max(0.1);
+                let zoom = node.camera_zoom().max(0.1);
                 let rect = viewport_node_rect(
                     viewport,
                     node.position,
@@ -1718,7 +1718,6 @@ fn node_fill_color(kind: SceneNodeKind) -> Color {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scene::{Camera2dNodeSettings, SpriteNodeSettings};
 
     fn test_node(id: u64, position: [f32; 2], size: [f32; 2]) -> SceneNode {
         SceneNode {
@@ -1732,8 +1731,6 @@ mod tests {
             script_path: String::new(),
             runtime_prefab: String::new(),
             asset_alias: String::new(),
-            sprite: SpriteNodeSettings::default(),
-            camera2d: Camera2dNodeSettings::default(),
             properties: std::collections::HashMap::new(),
         }
     }

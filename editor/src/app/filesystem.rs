@@ -376,8 +376,8 @@ impl RengineNativeEditor {
         };
 
         let mut changed = false;
-        if node.sprite.texture_path != stored_path {
-            node.sprite.texture_path = stored_path;
+        if node.asset_alias != stored_path {
+            node.asset_alias = stored_path;
             changed = true;
         }
 
@@ -438,11 +438,11 @@ impl RengineNativeEditor {
             return false;
         };
 
-        if node.sprite.texture_path.is_empty() {
+        if node.asset_alias.is_empty() {
             return false;
         }
 
-        node.sprite.texture_path.clear();
+        node.asset_alias.clear();
         tab.mark_dirty();
         tab.push_undo_entry(history_entry);
         true
@@ -471,7 +471,7 @@ impl RengineNativeEditor {
             .iter()
             .filter(|node| node.kind == SceneNodeKind::Sprite)
         {
-            let stored_path = node.sprite.texture_path.trim();
+            let stored_path = node.asset_alias.trim();
             if stored_path.is_empty() {
                 continue;
             }
@@ -491,7 +491,7 @@ impl RengineNativeEditor {
         engine: &Engine,
         node: &SceneNode,
     ) -> Option<TextureId> {
-        let stored_path = node.sprite.texture_path.trim();
+        let stored_path = node.asset_alias.trim();
         if stored_path.is_empty() {
             return None;
         }

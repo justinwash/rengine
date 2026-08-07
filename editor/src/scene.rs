@@ -2,6 +2,9 @@ use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
+pub use rengine::EditorSceneNodeKind as SceneNodeKind;
+pub use rengine::EditorSceneNode as SceneNode;
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SceneViewSettings {
     #[serde(default = "default_scene_window_size")]
@@ -16,47 +19,15 @@ impl Default for SceneViewSettings {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct SpriteNodeSettings {
-    #[serde(default)]
-    pub texture_path: String,
+pub trait SceneNodeKindExt {
+    fn label(self) -> &'static str;
+    fn short_label(self) -> &'static str;
+    fn default_size(self) -> [f32; 2];
+    fn default_name(self, id: u64) -> String;
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Camera2dNodeSettings {
-    #[serde(default = "default_camera_zoom")]
-    pub zoom: f32,
-    #[serde(default = "default_camera_show_bounds")]
-    pub show_bounds: bool,
-    #[serde(default = "default_camera_use_scene_view_size")]
-    pub use_scene_view_size: bool,
-    #[serde(default = "default_scene_window_size")]
-    pub view_size: [f32; 2],
-}
-
-impl Default for Camera2dNodeSettings {
-    fn default() -> Self {
-        Self {
-            zoom: default_camera_zoom(),
-            show_bounds: default_camera_show_bounds(),
-            use_scene_view_size: default_camera_use_scene_view_size(),
-            view_size: default_scene_window_size(),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum SceneNodeKind {
-    Group,
-    Empty,
-    Camera2d,
-    Sprite,
-    Trigger,
-    UiRoot,
-}
-
-impl SceneNodeKind {
-    pub fn label(self) -> &'static str {
+impl SceneNodeKindExt for SceneNodeKind {
+    fn label(self) -> &'static str {
         match self {
             Self::Group => "Group",
             Self::Empty => "Empty",
@@ -67,7 +38,7 @@ impl SceneNodeKind {
         }
     }
 
-    pub fn short_label(self) -> &'static str {
+    fn short_label(self) -> &'static str {
         match self {
             Self::Group => "GRP",
             Self::Empty => "EMP",
@@ -78,7 +49,7 @@ impl SceneNodeKind {
         }
     }
 
-    pub fn default_size(self) -> [f32; 2] {
+    fn default_size(self) -> [f32; 2] {
         match self {
             Self::Group => [120.0, 72.0],
             Self::Empty => [88.0, 56.0],
@@ -89,7 +60,7 @@ impl SceneNodeKind {
         }
     }
 
-    pub fn default_name(self, id: u64) -> String {
+    fn default_name(self, id: u64) -> String {
         format!("{} {}", self.label(), id)
     }
 }
@@ -100,52 +71,26 @@ pub enum SceneNodeReorderDirection {
     Down,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct SceneNode {
-    pub id: u64,
-    pub parent: Option<u64>,
-    pub name: String,
-    pub kind: SceneNodeKind,
-    pub position: [f32; 2],
-    pub size: [f32; 2],
-    pub visible: bool,
-    pub script_path: String,
-    #[serde(default)]
-    pub runtime_prefab: String,
-    #[serde(default)]
-    pub asset_alias: String,
-    #[serde(default)]
-    pub sprite: SpriteNodeSettings,
-    #[serde(default)]
-    pub camera2d: Camera2dNodeSettings,
-    #[serde(default)]
-    pub properties: HashMap<String, String>,
-}
+fn new_scene_node(id: u64, kind: SceneNodeKind, parent: Option<u64>, sibling_index: usize) -> SceneNode {
+    let offset = sibling_index as f32 * 28.0;
+    let position = if parent.is_some() {
+        [56.0 + offset, 48.0 + offset]
+    } else {
+        [-72.0 + offset, -48.0 + offset]
+    };
 
-impl SceneNode {
-    fn new(id: u64, kind: SceneNodeKind, parent: Option<u64>, sibling_index: usize) -> Self {
-        let offset = sibling_index as f32 * 28.0;
-        let position = if parent.is_some() {
-            [56.0 + offset, 48.0 + offset]
-        } else {
-            [-72.0 + offset, -48.0 + offset]
-        };
-
-        Self {
-            id,
-            parent,
-            name: kind.default_name(id),
-            kind,
-            position,
-            size: kind.default_size(),
-            visible: true,
-            script_path: String::new(),
-            runtime_prefab: String::new(),
-            asset_alias: String::new(),
-            sprite: SpriteNodeSettings::default(),
-            camera2d: Camera2dNodeSettings::default(),
-            properties: HashMap::new(),
-        }
+    SceneNode {
+        id,
+        parent,
+        name: kind.default_name(id),
+        kind,
+        position,
+        size: kind.default_size(),
+        visible: true,
+        script_path: String::new(),
+        runtime_prefab: String::new(),
+        asset_alias: String::new(),
+        properties: HashMap::new(),
     }
 }
 
@@ -185,7 +130,7 @@ impl SceneDocument {
             .count();
         let id = self.alloc_unique_id();
         self.nodes
-            .push(SceneNode::new(id, kind, parent, sibling_index));
+            .push(new_scene_node(id, kind, parent, sibling_index));
         id
     }
 
@@ -627,12 +572,99 @@ fn default_camera_use_scene_view_size() -> bool {
     true
 }
 
+pub trait SceneNodeCameraExt {
+    fn camera_zoom(&self) -> f32;
+    fn set_camera_zoom(&mut self, value: f32);
+    fn camera_show_bounds(&self) -> bool;
+    fn set_camera_show_bounds(&mut self, value: bool);
+    fn camera_use_scene_view_size(&self) -> bool;
+    fn set_camera_use_scene_view_size(&mut self, value: bool);
+    fn camera_view_size(&self) -> [f32; 2];
+    fn set_camera_view_size(&mut self, value: [f32; 2]);
+}
+
+impl SceneNodeCameraExt for SceneNode {
+    fn camera_zoom(&self) -> f32 {
+        self.properties
+            .get("camera_zoom")
+            .and_then(|value| value.parse().ok())
+            .unwrap_or_else(default_camera_zoom)
+    }
+
+    fn set_camera_zoom(&mut self, value: f32) {
+        self.properties
+            .insert("camera_zoom".to_string(), value.to_string());
+    }
+
+    fn camera_show_bounds(&self) -> bool {
+        self.properties
+            .get("camera_show_bounds")
+            .map(|value| matches!(value.trim(), "true" | "1" | "yes"))
+            .unwrap_or_else(default_camera_show_bounds)
+    }
+
+    fn set_camera_show_bounds(&mut self, value: bool) {
+        self.properties
+            .insert("camera_show_bounds".to_string(), value.to_string());
+    }
+
+    fn camera_use_scene_view_size(&self) -> bool {
+        self.properties
+            .get("camera_use_scene_view_size")
+            .map(|value| matches!(value.trim(), "true" | "1" | "yes"))
+            .unwrap_or_else(default_camera_use_scene_view_size)
+    }
+
+    fn set_camera_use_scene_view_size(&mut self, value: bool) {
+        self.properties.insert(
+            "camera_use_scene_view_size".to_string(),
+            value.to_string(),
+        );
+    }
+
+    fn camera_view_size(&self) -> [f32; 2] {
+        let default = default_scene_window_size();
+        let w = self
+            .properties
+            .get("camera_view_w")
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(default[0]);
+        let h = self
+            .properties
+            .get("camera_view_h")
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(default[1]);
+        [w, h]
+    }
+
+    fn set_camera_view_size(&mut self, value: [f32; 2]) {
+        self.properties
+            .insert("camera_view_w".to_string(), value[0].to_string());
+        self.properties
+            .insert("camera_view_h".to_string(), value[1].to_string());
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn test_node(id: u64) -> SceneNode {
-        SceneNode::new(id, SceneNodeKind::Empty, None, 0)
+        new_scene_node(id, SceneNodeKind::Empty, None, 0)
+    }
+
+    #[test]
+    fn a_real_pre_unification_scene_file_still_opens() {
+        // scratch/scene-prototype.scene.json predates this change and still
+        // has the old per-node `sprite`/`camera2d` JSON objects. Unknown
+        // fields must be ignored (not rejected) so existing authored files
+        // keep opening.
+        let json = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("scratch/scene-prototype.scene.json"),
+        )
+        .expect("read sample scene file");
+        let doc: SceneDocument = serde_json::from_str(&json).expect("parse sample scene file");
+        assert!(!doc.nodes.is_empty());
     }
 
     #[test]
@@ -711,7 +743,7 @@ mod tests {
     }
 
     fn test_node_with_parent(id: u64, parent: Option<u64>) -> SceneNode {
-        let mut node = SceneNode::new(id, SceneNodeKind::Empty, parent, 0);
+        let mut node = new_scene_node(id, SceneNodeKind::Empty, parent, 0);
         node.name = format!("Node {id}");
         node.position = [id as f32 * 10.0, id as f32 * 20.0];
         node

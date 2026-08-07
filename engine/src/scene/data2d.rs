@@ -892,38 +892,38 @@ pub(crate) fn parse_bool_property(value: &str) -> Option<bool> {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
-struct EditorSceneDocumentDef {
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EditorSceneDocument {
     #[serde(default)]
-    nodes: Vec<EditorSceneNodeDef>,
+    pub nodes: Vec<EditorSceneNode>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-struct EditorSceneNodeDef {
-    id: u64,
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EditorSceneNode {
+    pub id: u64,
     #[serde(default)]
-    parent: Option<u64>,
+    pub parent: Option<u64>,
     #[serde(default)]
-    name: String,
-    kind: EditorSceneNodeKind,
+    pub name: String,
+    pub kind: EditorSceneNodeKind,
     #[serde(default)]
-    position: [f32; 2],
+    pub position: [f32; 2],
     #[serde(default = "default_editor_size")]
-    size: [f32; 2],
+    pub size: [f32; 2],
     #[serde(default = "default_editor_visible")]
-    visible: bool,
+    pub visible: bool,
     #[serde(default)]
-    script_path: String,
+    pub script_path: String,
     #[serde(default)]
-    runtime_prefab: String,
+    pub runtime_prefab: String,
     #[serde(default)]
-    asset_alias: String,
+    pub asset_alias: String,
     #[serde(default)]
-    properties: HashMap<String, String>,
+    pub properties: HashMap<String, String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-enum EditorSceneNodeKind {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EditorSceneNodeKind {
     Group,
     Empty,
     Camera2d,
@@ -950,7 +950,7 @@ fn scene_definition_from_json(
     json_value: serde_json::Value,
 ) -> Result<Scene2DDef, AssetError> {
     if json_value.get("nodes").is_some() {
-        let document: EditorSceneDocumentDef =
+        let document: EditorSceneDocument =
             serde_json::from_value(json_value).map_err(|source| AssetError::Json {
                 path: path.to_path_buf(),
                 source,
@@ -966,7 +966,7 @@ fn scene_definition_from_json(
 
 fn scene_definition_from_editor_document(
     path: &Path,
-    document: EditorSceneDocumentDef,
+    document: EditorSceneDocument,
 ) -> Result<Scene2DDef, AssetError> {
     let node_indices = build_editor_node_indices(path, &document.nodes)?;
     validate_editor_node_parents(path, &document.nodes, &node_indices)?;
@@ -1019,7 +1019,7 @@ fn scene_definition_from_editor_document(
 
 fn build_editor_node_indices(
     path: &Path,
-    nodes: &[EditorSceneNodeDef],
+    nodes: &[EditorSceneNode],
 ) -> Result<HashMap<u64, usize>, AssetError> {
     let mut indices = HashMap::with_capacity(nodes.len());
     for (index, node) in nodes.iter().enumerate() {
@@ -1038,7 +1038,7 @@ fn build_editor_node_indices(
 
 fn validate_editor_node_parents(
     path: &Path,
-    nodes: &[EditorSceneNodeDef],
+    nodes: &[EditorSceneNode],
     node_indices: &HashMap<u64, usize>,
 ) -> Result<(), AssetError> {
     for node in nodes {
@@ -1089,7 +1089,7 @@ fn validate_editor_node_parents(
     Ok(())
 }
 
-fn build_editor_child_ids(nodes: &[EditorSceneNodeDef]) -> HashMap<u64, Vec<u64>> {
+fn build_editor_child_ids(nodes: &[EditorSceneNode]) -> HashMap<u64, Vec<u64>> {
     let mut child_ids = HashMap::new();
     for node in nodes {
         if let Some(parent) = node.parent {
@@ -1103,8 +1103,8 @@ fn build_editor_child_ids(nodes: &[EditorSceneNodeDef]) -> HashMap<u64, Vec<u64>
 }
 
 fn should_emit_editor_instance(
-    node: &EditorSceneNodeDef,
-    nodes: &[EditorSceneNodeDef],
+    node: &EditorSceneNode,
+    nodes: &[EditorSceneNode],
     node_indices: &HashMap<u64, usize>,
 ) -> bool {
     match node.kind {
@@ -1118,7 +1118,7 @@ fn should_emit_editor_instance(
 
 fn nearest_group_ancestor(
     mut node_id: Option<u64>,
-    nodes: &[EditorSceneNodeDef],
+    nodes: &[EditorSceneNode],
     node_indices: &HashMap<u64, usize>,
 ) -> Option<u64> {
     while let Some(parent_id) = node_id {
@@ -1137,7 +1137,7 @@ fn nearest_group_ancestor(
 
 fn editor_runtime_prefab_name(
     path: &Path,
-    node: &EditorSceneNodeDef,
+    node: &EditorSceneNode,
 ) -> Result<String, AssetError> {
     let prefab_name = if node.runtime_prefab.trim().is_empty() {
         node.name.trim()
@@ -1160,9 +1160,9 @@ fn editor_runtime_prefab_name(
 
 fn prefab_from_editor_node(
     path: &Path,
-    node: &EditorSceneNodeDef,
+    node: &EditorSceneNode,
     prefab_name: &str,
-    nodes: &[EditorSceneNodeDef],
+    nodes: &[EditorSceneNode],
     node_indices: &HashMap<u64, usize>,
     child_ids: &HashMap<u64, Vec<u64>>,
 ) -> Result<Prefab2DDef, AssetError> {
@@ -1190,8 +1190,8 @@ fn prefab_from_editor_node(
 
 fn group_prefab_sprites(
     path: &Path,
-    root: &EditorSceneNodeDef,
-    nodes: &[EditorSceneNodeDef],
+    root: &EditorSceneNode,
+    nodes: &[EditorSceneNode],
     node_indices: &HashMap<u64, usize>,
     child_ids: &HashMap<u64, Vec<u64>>,
 ) -> Result<Vec<PrefabSprite2DDef>, AssetError> {
@@ -1245,9 +1245,9 @@ fn compare_optional_f32_arrays<const N: usize>(
 
 fn collect_group_prefab_sprites(
     path: &Path,
-    root: &EditorSceneNodeDef,
+    root: &EditorSceneNode,
     parent_id: u64,
-    nodes: &[EditorSceneNodeDef],
+    nodes: &[EditorSceneNode],
     node_indices: &HashMap<u64, usize>,
     child_ids: &HashMap<u64, Vec<u64>>,
     sprites: &mut Vec<PrefabSprite2DDef>,
@@ -1287,7 +1287,7 @@ fn collect_group_prefab_sprites(
 
 fn prefab_sprite_from_editor_node(
     path: &Path,
-    node: &EditorSceneNodeDef,
+    node: &EditorSceneNode,
     root_position: [f32; 2],
 ) -> Result<PrefabSprite2DDef, AssetError> {
     let asset_alias = node.asset_alias.trim();
@@ -1325,7 +1325,7 @@ fn prefab_sprite_from_editor_node(
     })
 }
 
-fn editor_instance_properties(node: &EditorSceneNodeDef) -> HashMap<String, String> {
+fn editor_instance_properties(node: &EditorSceneNode) -> HashMap<String, String> {
     let mut properties = node.properties.clone();
 
     properties
@@ -1688,9 +1688,9 @@ mod tests {
         let mut spawn_properties = HashMap::new();
         spawn_properties.insert("team".to_string(), "player".to_string());
 
-        let document = EditorSceneDocumentDef {
+        let document = EditorSceneDocument {
             nodes: vec![
-                EditorSceneNodeDef {
+                EditorSceneNode {
                     id: 1,
                     parent: None,
                     name: "player_spawn".to_string(),
@@ -1703,7 +1703,7 @@ mod tests {
                     asset_alias: String::new(),
                     properties: spawn_properties,
                 },
-                EditorSceneNodeDef {
+                EditorSceneNode {
                     id: 2,
                     parent: None,
                     name: "tree_cluster".to_string(),
@@ -1716,7 +1716,7 @@ mod tests {
                     asset_alias: String::new(),
                     properties: HashMap::new(),
                 },
-                EditorSceneNodeDef {
+                EditorSceneNode {
                     id: 3,
                     parent: Some(2),
                     name: "tree".to_string(),
@@ -1729,7 +1729,7 @@ mod tests {
                     asset_alias: "tree".to_string(),
                     properties: HashMap::new(),
                 },
-                EditorSceneNodeDef {
+                EditorSceneNode {
                     id: 4,
                     parent: Some(2),
                     name: "tree_highlight".to_string(),
@@ -1791,9 +1791,9 @@ mod tests {
 
     #[test]
     fn rejects_conflicting_prefab_visuals_from_editor_scene_document() {
-        let document = EditorSceneDocumentDef {
+        let document = EditorSceneDocument {
             nodes: vec![
-                EditorSceneNodeDef {
+                EditorSceneNode {
                     id: 1,
                     parent: None,
                     name: "tree".to_string(),
@@ -1806,7 +1806,7 @@ mod tests {
                     asset_alias: String::new(),
                     properties: HashMap::new(),
                 },
-                EditorSceneNodeDef {
+                EditorSceneNode {
                     id: 2,
                     parent: Some(1),
                     name: "tree".to_string(),
@@ -1819,7 +1819,7 @@ mod tests {
                     asset_alias: "tree".to_string(),
                     properties: HashMap::new(),
                 },
-                EditorSceneNodeDef {
+                EditorSceneNode {
                     id: 3,
                     parent: None,
                     name: "tree".to_string(),
@@ -1832,7 +1832,7 @@ mod tests {
                     asset_alias: String::new(),
                     properties: HashMap::new(),
                 },
-                EditorSceneNodeDef {
+                EditorSceneNode {
                     id: 4,
                     parent: Some(3),
                     name: "tree_glow".to_string(),
@@ -1859,9 +1859,9 @@ mod tests {
 
     #[test]
     fn allows_equivalent_prefab_visuals_with_different_child_order() {
-        let document = EditorSceneDocumentDef {
+        let document = EditorSceneDocument {
             nodes: vec![
-                EditorSceneNodeDef {
+                EditorSceneNode {
                     id: 1,
                     parent: None,
                     name: "tree_cluster".to_string(),
@@ -1874,7 +1874,7 @@ mod tests {
                     asset_alias: String::new(),
                     properties: HashMap::new(),
                 },
-                EditorSceneNodeDef {
+                EditorSceneNode {
                     id: 2,
                     parent: Some(1),
                     name: "tree".to_string(),
@@ -1887,7 +1887,7 @@ mod tests {
                     asset_alias: "tree".to_string(),
                     properties: HashMap::new(),
                 },
-                EditorSceneNodeDef {
+                EditorSceneNode {
                     id: 3,
                     parent: Some(1),
                     name: "gem".to_string(),
@@ -1900,7 +1900,7 @@ mod tests {
                     asset_alias: "gem".to_string(),
                     properties: HashMap::new(),
                 },
-                EditorSceneNodeDef {
+                EditorSceneNode {
                     id: 4,
                     parent: None,
                     name: "tree_cluster".to_string(),
@@ -1913,7 +1913,7 @@ mod tests {
                     asset_alias: String::new(),
                     properties: HashMap::new(),
                 },
-                EditorSceneNodeDef {
+                EditorSceneNode {
                     id: 5,
                     parent: Some(4),
                     name: "gem".to_string(),
@@ -1926,7 +1926,7 @@ mod tests {
                     asset_alias: "gem".to_string(),
                     properties: HashMap::new(),
                 },
-                EditorSceneNodeDef {
+                EditorSceneNode {
                     id: 6,
                     parent: Some(4),
                     name: "tree".to_string(),
@@ -1956,9 +1956,9 @@ mod tests {
 
     #[test]
     fn rejects_duplicate_editor_node_ids() {
-        let document = EditorSceneDocumentDef {
+        let document = EditorSceneDocument {
             nodes: vec![
-                EditorSceneNodeDef {
+                EditorSceneNode {
                     id: 1,
                     parent: None,
                     name: "first".to_string(),
@@ -1971,7 +1971,7 @@ mod tests {
                     asset_alias: String::new(),
                     properties: HashMap::new(),
                 },
-                EditorSceneNodeDef {
+                EditorSceneNode {
                     id: 1,
                     parent: None,
                     name: "second".to_string(),
@@ -1998,8 +1998,8 @@ mod tests {
 
     #[test]
     fn rejects_dangling_editor_parent_ids() {
-        let document = EditorSceneDocumentDef {
-            nodes: vec![EditorSceneNodeDef {
+        let document = EditorSceneDocument {
+            nodes: vec![EditorSceneNode {
                 id: 1,
                 parent: Some(99),
                 name: "orphan".to_string(),
@@ -2025,8 +2025,8 @@ mod tests {
 
     #[test]
     fn rejects_self_parenting_editor_nodes() {
-        let document = EditorSceneDocumentDef {
-            nodes: vec![EditorSceneNodeDef {
+        let document = EditorSceneDocument {
+            nodes: vec![EditorSceneNode {
                 id: 1,
                 parent: Some(1),
                 name: "loop".to_string(),
@@ -2052,9 +2052,9 @@ mod tests {
 
     #[test]
     fn rejects_editor_parent_cycles() {
-        let document = EditorSceneDocumentDef {
+        let document = EditorSceneDocument {
             nodes: vec![
-                EditorSceneNodeDef {
+                EditorSceneNode {
                     id: 1,
                     parent: Some(2),
                     name: "first".to_string(),
@@ -2067,7 +2067,7 @@ mod tests {
                     asset_alias: String::new(),
                     properties: HashMap::new(),
                 },
-                EditorSceneNodeDef {
+                EditorSceneNode {
                     id: 2,
                     parent: Some(1),
                     name: "second".to_string(),
@@ -2094,9 +2094,9 @@ mod tests {
 
     #[test]
     fn collects_group_prefab_sprites_through_empty_descendants() {
-        let document = EditorSceneDocumentDef {
+        let document = EditorSceneDocument {
             nodes: vec![
-                EditorSceneNodeDef {
+                EditorSceneNode {
                     id: 1,
                     parent: None,
                     name: "crate_stack".to_string(),
@@ -2109,7 +2109,7 @@ mod tests {
                     asset_alias: String::new(),
                     properties: HashMap::new(),
                 },
-                EditorSceneNodeDef {
+                EditorSceneNode {
                     id: 2,
                     parent: Some(1),
                     name: "anchor".to_string(),
@@ -2122,7 +2122,7 @@ mod tests {
                     asset_alias: String::new(),
                     properties: HashMap::new(),
                 },
-                EditorSceneNodeDef {
+                EditorSceneNode {
                     id: 3,
                     parent: Some(2),
                     name: "crate".to_string(),
@@ -2155,9 +2155,9 @@ mod tests {
 
     #[test]
     fn nested_groups_export_as_separate_instances() {
-        let document = EditorSceneDocumentDef {
+        let document = EditorSceneDocument {
             nodes: vec![
-                EditorSceneNodeDef {
+                EditorSceneNode {
                     id: 1,
                     parent: None,
                     name: "wagon".to_string(),
@@ -2170,7 +2170,7 @@ mod tests {
                     asset_alias: String::new(),
                     properties: HashMap::new(),
                 },
-                EditorSceneNodeDef {
+                EditorSceneNode {
                     id: 2,
                     parent: Some(1),
                     name: "wagon_body".to_string(),
@@ -2183,7 +2183,7 @@ mod tests {
                     asset_alias: "tree".to_string(),
                     properties: HashMap::new(),
                 },
-                EditorSceneNodeDef {
+                EditorSceneNode {
                     id: 3,
                     parent: Some(1),
                     name: "wagon_lantern".to_string(),
@@ -2196,7 +2196,7 @@ mod tests {
                     asset_alias: String::new(),
                     properties: HashMap::new(),
                 },
-                EditorSceneNodeDef {
+                EditorSceneNode {
                     id: 4,
                     parent: Some(3),
                     name: "lantern_glow".to_string(),

@@ -1568,7 +1568,6 @@ pub(crate) fn button_preferred_width(label: &str) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scene::{Camera2dNodeSettings, SpriteNodeSettings};
 
     fn test_node(id: u64, position: [f32; 2], size: [f32; 2]) -> SceneNode {
         SceneNode {
@@ -1582,8 +1581,6 @@ mod tests {
             script_path: String::new(),
             runtime_prefab: String::new(),
             asset_alias: String::new(),
-            sprite: SpriteNodeSettings::default(),
-            camera2d: Camera2dNodeSettings::default(),
             properties: std::collections::HashMap::new(),
         }
     }

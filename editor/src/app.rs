@@ -1,4 +1,7 @@
-use crate::scene::{SceneDocument, SceneNode, SceneNodeKind, SceneNodeReorderDirection};
+use crate::scene::{
+    SceneDocument, SceneNode, SceneNodeCameraExt, SceneNodeKind, SceneNodeKindExt,
+    SceneNodeReorderDirection,
+};
 use rengine::*;
 use rfd::FileDialog;
 use std::{
@@ -65,7 +68,6 @@ const INSPECTOR_NODE_SIZE_WIDTH_ID: usize = 116;
 const INSPECTOR_NODE_SIZE_HEIGHT_ID: usize = 117;
 const INSPECTOR_NODE_KIND_BUTTON_ID: usize = 118;
 const INSPECTOR_CREATE_CHILD_BUTTON_ID: usize = 119;
-const INSPECTOR_SPRITE_ALIAS_ID: usize = 120;
 const INSPECTOR_SPRITE_TEXTURE_ID: usize = 121;
 const INSPECTOR_SPRITE_ASSIGN_SELECTED_ID: usize = 122;
 const INSPECTOR_SPRITE_CLEAR_TEXTURE_ID: usize = 123;
