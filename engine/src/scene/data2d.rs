@@ -236,19 +236,31 @@ fn resolve_ui_rect(
     time: f32,
     get: impl Fn(&str) -> Option<String>,
     pixel_grid: f32,
+    content_size: Option<(f32, f32)>,
 ) -> (f32, f32, f32, f32) {
     let prop_f32 = |n: &str| get(n).and_then(|v| v.trim().parse::<f32>().ok());
     let prop_bool =
         |n: &str| matches!(get(n).as_deref().map(str::trim), Some("true" | "1" | "yes"));
 
     let (rx, ry, rw, rh) = reference;
-    let w_fixed = match prop_f32("ui_w_frac") {
-        Some(f) => rw * f,
-        None => prop_f32("ui_w").unwrap_or(0.0) * scale.x,
+    // `ui_size: "content"` (measured bottom-up by
+    // `SceneWorld2D::measure_content_size` before this runs) overrides
+    // literal/bound `ui_w`/`ui_h` — a node can be *either* sized by its
+    // author or sized by its children, not both.
+    let sizes_to_content = get("ui_size").as_deref() == Some("content");
+    let w_fixed = match content_size.filter(|_| sizes_to_content) {
+        Some((w, _)) => w * scale.x,
+        None => match prop_f32("ui_w_frac") {
+            Some(f) => rw * f,
+            None => prop_f32("ui_w").unwrap_or(0.0) * scale.x,
+        },
     };
-    let h_fixed = match prop_f32("ui_h_frac") {
-        Some(f) => rh * f,
-        None => prop_f32("ui_h").unwrap_or(0.0) * scale.y,
+    let h_fixed = match content_size.filter(|_| sizes_to_content) {
+        Some((_, h)) => h * scale.y,
+        None => match prop_f32("ui_h_frac") {
+            Some(f) => rh * f,
+            None => prop_f32("ui_h").unwrap_or(0.0) * scale.y,
+        },
     };
     // Named anchor (shorthand) or exact `ui_anchor_frac_x`/`_y` (0..1, Godot-style).
     let (mut ax, mut ay) = match get("ui_anchor").as_deref().unwrap_or("center") {
@@ -620,6 +632,7 @@ pub(crate) fn draw_ui_node<'a>(
         sprite,
         0.0,
         UiInteractionState::default(),
+        None,
     )
 }
 
@@ -632,6 +645,7 @@ pub(crate) fn draw_ui_node<'a>(
 /// contract shouldn't apply to a node that drew nothing). `sprite` backs
 /// `ui: "image"` (E5) — the node's own first sprite layer, already a resolved
 /// `TextureId`, so an authored image needs no new asset plumbing.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_ui_node_with_bindings(
     frame: &mut Frame,
     reference: (f32, f32, f32, f32),
@@ -643,10 +657,19 @@ pub(crate) fn draw_ui_node_with_bindings(
     sprite: Option<&PrefabSprite2D>,
     pixel_grid: f32,
     state: UiInteractionState,
+    content_size: Option<(f32, f32)>,
 ) -> ((f32, f32, f32, f32), bool) {
     let get = |n: &str| get(n).map(|v| substitute_bindings(&v, bindings).into_owned());
     let get = |n: &str| resolve_interaction_property(&get, n, state);
-    let rect = resolve_ui_rect(reference, position, scale, time, &get, pixel_grid);
+    let rect = resolve_ui_rect(
+        reference,
+        position,
+        scale,
+        time,
+        &get,
+        pixel_grid,
+        content_size,
+    );
     let visible = !matches!(
         get("ui_visible").as_deref().map(str::trim),
         Some("false" | "0" | "no")
@@ -667,6 +690,7 @@ pub(crate) fn draw_ui_node_with_bindings(
 /// `ui_visible` allowed it to draw. Every `ui_*` value may contain `{key}`
 /// placeholders substituted through `bindings` first (E2); pass an empty
 /// [`Bindings`] for a scope-free draw. `sprite` backs `ui: "image"` (E5).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_ui_node_on_with_bindings(
     canvas: &mut Canvas,
     reference: (f32, f32, f32, f32),
@@ -678,10 +702,19 @@ pub(crate) fn draw_ui_node_on_with_bindings(
     sprite: Option<&PrefabSprite2D>,
     pixel_grid: f32,
     state: UiInteractionState,
+    content_size: Option<(f32, f32)>,
 ) -> ((f32, f32, f32, f32), bool) {
     let get = |n: &str| get(n).map(|v| substitute_bindings(&v, bindings).into_owned());
     let get = |n: &str| resolve_interaction_property(&get, n, state);
-    let rect = resolve_ui_rect(reference, position, scale, time, &get, pixel_grid);
+    let rect = resolve_ui_rect(
+        reference,
+        position,
+        scale,
+        time,
+        &get,
+        pixel_grid,
+        content_size,
+    );
     let visible = !matches!(
         get("ui_visible").as_deref().map(str::trim),
         Some("false" | "0" | "no")
@@ -1590,6 +1623,7 @@ mod tests {
                 0.0,
                 |n| map.get(n).cloned(),
                 0.0,
+                None,
             )
         };
 

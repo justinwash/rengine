@@ -140,6 +140,13 @@ pub struct SceneNode2D {
     /// drawn at instead of recomputing layout with different math. `Cell`
     /// because draw takes `&self` — this is a cache, not observable state.
     ui_rect: Cell<Option<Rect>>,
+    /// The `(w, h)` a `ui_size: "content"` node measured itself to fit its
+    /// children, from the measure pre-pass `SceneWorld2D::measure_content_size`
+    /// runs just before each draw. `None` for every node that sizes itself
+    /// from a literal/bound `ui_w`/`ui_h` instead (the vast majority — this
+    /// is opt-in). `Cell` for the same reason as `ui_rect`: a draw-time
+    /// cache, not observable state, so draw can stay `&self`.
+    content_size: Cell<Option<(f32, f32)>>,
     /// Per-instance binding overlay (E3 repeaters): set by
     /// `SceneWorld2D::sync_repeaters` on each cloned instance root, merged
     /// over the ambient `Bindings` when drawing that instance, so
@@ -165,6 +172,7 @@ impl SceneNode2D {
             parent: None,
             children: Vec::new(),
             ui_rect: Cell::new(None),
+            content_size: Cell::new(None),
             instance_bindings: None,
         }
     }
@@ -1168,6 +1176,11 @@ impl SceneWorld2D {
         let (sw, sh) = frame.canvas(0).screen_size();
         let screen = (-(sw as f32) / 2.0, -(sh as f32) / 2.0, sw as f32, sh as f32);
         let roots = self.roots.clone();
+        for &root in &roots {
+            if self.subtree_wants_content_size(root) {
+                self.measure_content_size(root, frame.canvas(0), bindings);
+            }
+        }
         for root in roots {
             self.draw_node(
                 root,
@@ -1341,6 +1354,7 @@ impl SceneWorld2D {
             node.sprites.first(),
             self.pixel_grid.get(),
             state,
+            node.content_size.get(),
         );
         // A hidden ui node (ui_visible: false) drew nothing, so it shouldn't
         // be hit-testable at a rect that has no on-screen primitive behind it.
@@ -1435,9 +1449,144 @@ impl SceneWorld2D {
         bindings: &Bindings,
     ) {
         let roots = self.roots.clone();
+        for &r in &roots {
+            if self.subtree_wants_content_size(r) {
+                self.measure_content_size(r, canvas, bindings);
+            }
+        }
         for r in roots {
             self.draw_node_on_canvas(r, root, time, canvas, bindings, Default::default());
         }
+    }
+
+    /// Post-order pass computing `ui_size: "content"` nodes' `(w, h)` from
+    /// their children, before the real top-down draw reads it. Draw resolves
+    /// a node's own rect before recursing into children (`draw_node`), so a
+    /// parent cannot know a child's size when it needs its own — this pass
+    /// runs the other direction first and caches the result on
+    /// `SceneNode2D::content_size` for `resolve_ui_rect` to read.
+    ///
+    /// Callers gate this behind `subtree_wants_content_size(root)` so a
+    /// scene with none of this authored — every existing scene today — pays
+    /// for one cheap check per root and never enters the recursion at all.
+    fn measure_content_size(&self, handle: NodeHandle2D, canvas: &Canvas, bindings: &Bindings) {
+        let Some(node) = self.get(handle) else {
+            return;
+        };
+
+        let effective_bindings = match &node.instance_bindings {
+            Some(scope) => merge_bindings(bindings, scope),
+            None => bindings.clone(),
+        };
+
+        for &child in &node.children {
+            self.measure_content_size(child, canvas, &effective_bindings);
+        }
+
+        if node.property("ui_size") != Some("content") {
+            return;
+        }
+
+        let get = |name: &str| {
+            node.property(name)
+                .map(|v| super::data2d::substitute_bindings(v, &effective_bindings).into_owned())
+        };
+        let prop_f32 = |name: &str| get(name).and_then(|v| v.trim().parse::<f32>().ok());
+
+        let layout = get("ui_layout");
+        let pad_left = prop_f32("ui_pad_left").unwrap_or(0.0);
+        let pad_right = prop_f32("ui_pad_right").unwrap_or(0.0);
+        let pad_top = prop_f32("ui_pad_top").unwrap_or(0.0);
+        let pad_bottom = prop_f32("ui_pad_bottom").unwrap_or(0.0);
+        let gap = prop_f32("ui_gap").unwrap_or(0.0);
+
+        // A child's extent for this measurement: its own `content_size` if
+        // *it* auto-sizes (set by the post-order recursion above, since
+        // children were measured before this node), else its own authored
+        // `ui_w`/`ui_h` (or measured text extent for a plain `ui: "text"`
+        // leaf with no explicit size) — a non-content-sizing child still
+        // has a real size, just not a computed one.
+        let child_size = |child: NodeHandle2D| -> (f32, f32) {
+            let Some(c) = self.get(child) else {
+                return (0.0, 0.0);
+            };
+            if let Some(measured) = c.content_size.get() {
+                return measured;
+            }
+            let child_bindings = match &c.instance_bindings {
+                Some(scope) => merge_bindings(&effective_bindings, scope),
+                None => effective_bindings.clone(),
+            };
+            node_own_extent(c, canvas, &child_bindings)
+        };
+
+        let (content_w, content_h) = match layout.as_deref() {
+            Some("row") => {
+                let n = node.children.len();
+                let sum_w: f32 = node.children.iter().map(|&c| child_size(c).0).sum();
+                let max_h: f32 = node
+                    .children
+                    .iter()
+                    .map(|&c| child_size(c).1)
+                    .fold(0.0, f32::max);
+                let gaps = if n > 1 { gap * (n as f32 - 1.0) } else { 0.0 };
+                (sum_w + gaps, max_h)
+            }
+            Some("column") => {
+                let n = node.children.len();
+                let sum_h: f32 = node.children.iter().map(|&c| child_size(c).1).sum();
+                let max_w: f32 = node
+                    .children
+                    .iter()
+                    .map(|&c| child_size(c).0)
+                    .fold(0.0, f32::max);
+                let gaps = if n > 1 { gap * (n as f32 - 1.0) } else { 0.0 };
+                (max_w, sum_h + gaps)
+            }
+            _ => {
+                // No ui_layout: children overlay (Button's implicit single
+                // Panel child, say) — bounding box, the max of each axis,
+                // starting from this node's own extent (a Panel with both a
+                // background image and children sizes to whichever is larger).
+                let own = node_own_extent(node, canvas, &effective_bindings);
+                let max_w: f32 = node
+                    .children
+                    .iter()
+                    .map(|&c| child_size(c).0)
+                    .fold(own.0, f32::max);
+                let max_h: f32 = node
+                    .children
+                    .iter()
+                    .map(|&c| child_size(c).1)
+                    .fold(own.1, f32::max);
+                (max_w, max_h)
+            }
+        };
+
+        node.content_size.set(Some((
+            content_w + pad_left + pad_right,
+            content_h + pad_top + pad_bottom,
+        )));
+    }
+
+    /// Whether `handle` or anything under it authors `ui_size: "content"`.
+    /// Called once per root per draw, before `measure_content_size`, so a
+    /// scene that never authors this — every existing scene today — skips
+    /// the measure pass and its recursion entirely rather than descending
+    /// through nodes that have nothing to compute. `.any` short-circuits on
+    /// the first match, so an early adopter near the top of a deep tree is
+    /// also cheap; a scene with none anywhere still visits every node once
+    /// to confirm that, same as the measure pass it's guarding would.
+    fn subtree_wants_content_size(&self, handle: NodeHandle2D) -> bool {
+        let Some(node) = self.get(handle) else {
+            return false;
+        };
+        if node.property("ui_size") == Some("content") {
+            return true;
+        }
+        node.children
+            .iter()
+            .any(|&c| self.subtree_wants_content_size(c))
     }
 
     fn draw_node_on_canvas(
@@ -1479,6 +1628,7 @@ impl SceneWorld2D {
             node.sprites.first(),
             self.pixel_grid.get(),
             state,
+            node.content_size.get(),
         );
         if ui_visible && node.property("ui").is_some() {
             let (x, y, w, h) = ui_rect;
@@ -1612,6 +1762,44 @@ fn parse_repeat_items(raw: &str) -> Option<Vec<Bindings>> {
                     .unwrap_or_default()
             })
             .collect(),
+    )
+}
+
+/// A node's own natural `(w, h)`, for the content-sizing measure pass
+/// (`SceneWorld2D::measure_content_size`): the size it would draw at from
+/// its own properties, ignoring any `ui_size: "content"` on itself (its
+/// caller reads `content_size` first and only falls back to this for a
+/// child that isn't itself auto-sizing). A `text`/`button` leaf with no
+/// explicit `ui_w`/`ui_h` measures its rendered extent; anything else with
+/// no size at all is `(0, 0)`, same as an unauthored `ui_w`/`ui_h` resolves
+/// to for actual drawing.
+fn node_own_extent(node: &SceneNode2D, canvas: &Canvas, bindings: &Bindings) -> (f32, f32) {
+    let get = |name: &str| {
+        node.property(name)
+            .map(|v| super::data2d::substitute_bindings(v, bindings).into_owned())
+    };
+    let prop_f32 = |name: &str| get(name).and_then(|v| v.trim().parse::<f32>().ok());
+
+    // A measured axis is the fallback only for whichever of w/h wasn't
+    // itself authored — a text node with an explicit ui_w but no ui_h still
+    // measures its own line height rather than losing it to a blanket
+    // "any literal present wins" check.
+    let measured = match node.property("ui") {
+        Some("text") | Some("button") => {
+            let text = get("ui_text").unwrap_or_default();
+            if text.is_empty() {
+                (0.0, 0.0)
+            } else {
+                let size = prop_f32("ui_text_size").unwrap_or(12.0);
+                canvas.measure_text(&text, size)
+            }
+        }
+        _ => (0.0, 0.0),
+    };
+
+    (
+        prop_f32("ui_w").unwrap_or(measured.0),
+        prop_f32("ui_h").unwrap_or(measured.1),
     )
 }
 
@@ -1865,6 +2053,68 @@ mod tests {
                 scope
             })
             .collect()
+    }
+
+    #[test]
+    fn content_sized_row_sums_its_childrens_widths() {
+        // The mechanism archetype_row_* needs: a container's own w/h comes
+        // from its children instead of an authored literal, so a marker
+        // sitting next to a variable-width label doesn't need its own
+        // hand-matched bound width — it just sits where the row's flow
+        // layout puts it, and the row is exactly as wide as its content.
+        let mut world = SceneWorld2D::new();
+        let row = world.spawn(SceneNode2D::new("row"));
+        {
+            let n = world.get_mut(row).unwrap();
+            n.set_property("ui", "rect");
+            n.set_property("ui_size", "content");
+            n.set_property("ui_layout", "row");
+            n.set_property("ui_gap", "5");
+        }
+        let marker = world.spawn_child(row, SceneNode2D::new("marker"));
+        {
+            let n = world.get_mut(marker).unwrap();
+            n.set_property("ui", "rect");
+            n.set_property("ui_w", "20");
+            n.set_property("ui_h", "10");
+        }
+        let label = world.spawn_child(row, SceneNode2D::new("label"));
+        {
+            let n = world.get_mut(label).unwrap();
+            n.set_property("ui", "rect");
+            n.set_property("ui_w", "80");
+            n.set_property("ui_h", "14");
+        }
+
+        let mut canvas = Canvas::new((200, 100), std::ptr::null());
+        world.draw_to_canvas(&mut canvas, 0.0);
+
+        let rect = world.resolved_rect(row).expect("row drew");
+        // 20 + 5 (gap) + 80 = 105 wide; tallest child (14) sets the height.
+        assert!((rect.width - 105.0).abs() < 1e-3, "got width {}", rect.width);
+        assert!((rect.height - 14.0).abs() < 1e-3, "got height {}", rect.height);
+    }
+
+    #[test]
+    fn a_scene_authoring_no_content_sizing_never_enters_the_measure_pass() {
+        // The zero-cost claim: subtree_wants_content_size gates the whole
+        // measure pre-pass, so an ordinary literal-sized scene — every
+        // existing scene today — skips it. Proven behaviourally: a plain
+        // node with no ui_size draws at its authored size, unaffected by
+        // the pre-pass existing at all.
+        let mut world = SceneWorld2D::new();
+        let plain = world.spawn(SceneNode2D::new("plain"));
+        {
+            let n = world.get_mut(plain).unwrap();
+            n.set_property("ui", "rect");
+            n.set_property("ui_w", "50");
+            n.set_property("ui_h", "30");
+        }
+        let mut canvas = Canvas::new((200, 100), std::ptr::null());
+        world.draw_to_canvas(&mut canvas, 0.0);
+        let rect = world.resolved_rect(plain).expect("drew");
+        assert_eq!(rect.width, 50.0);
+        assert_eq!(rect.height, 30.0);
     }
 
     #[test]
