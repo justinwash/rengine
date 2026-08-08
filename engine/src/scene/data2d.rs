@@ -368,6 +368,65 @@ fn draw_ui_kind(
                 canvas.image_region(sprite.texture, x, y, w, h, sprite.uv_rect, color);
             }
         }
+        "button" => {
+            // Unauthored bar/marker default to invisible, so a bare
+            // Button is just its label until those are given colours.
+            const TRANSPARENT: Color = Color::new(0.0, 0.0, 0.0, 0.0);
+            // One node draws what used to be three hand-wired siblings kept
+            // in sync by matching `ui_color_hover` values: a highlight bar,
+            // an optional leading marker, and the label. `get` has already
+            // applied the interaction state (see `resolve_ui_property`), so
+            // `ui_bar_color`/`ui_color`/`ui_marker_color` each pick up their
+            // own `_hover`/`_focus`/`_press` variant here.
+            let bar = parse_srgb_color(get("ui_bar_color").as_deref(), TRANSPARENT);
+            if bar.a > 0.0 {
+                let radius = prop_f32("ui_radius").unwrap_or(0.0);
+                if radius > 0.5 {
+                    canvas.rounded_rect(x, y, w, h, radius, bar);
+                } else {
+                    canvas.rect(x, y, w, h, bar);
+                }
+            }
+
+            let size = prop_f32("ui_text_size").unwrap_or(12.0);
+            // `line_height` needs the font atlas, so it is computed lazily —
+            // a button that draws only its bar must not touch text metrics.
+            let centered_y = |canvas: &Canvas| y + (h - canvas.line_height(size)) * 0.5;
+
+            let marker = get("ui_marker").unwrap_or_default();
+            if !marker.is_empty() {
+                let marker_color =
+                    parse_srgb_color(get("ui_marker_color").as_deref(), TRANSPARENT);
+                if marker_color.a > 0.0 {
+                    // Sits `ui_marker_inset` in from the button's leading
+                    // edge, so the marker tracks the bar rather than
+                    // needing its own hand-placed node.
+                    let inset = prop_f32("ui_marker_inset").unwrap_or(10.0);
+                    let baseline = centered_y(canvas);
+                    canvas.text_aligned(
+                        x + inset,
+                        baseline,
+                        &marker,
+                        size,
+                        marker_color,
+                        TextAlign::Left,
+                    );
+                }
+            }
+
+            let text = get("ui_text").unwrap_or_default();
+            if !text.is_empty() {
+                let color = parse_srgb_color(get("ui_color").as_deref(), Color::WHITE);
+                let align = parse_text_align(get("ui_text_align").as_deref());
+                let anchor_x = match align {
+                    TextAlign::Left => x,
+                    TextAlign::Center => x + w * 0.5,
+                    TextAlign::Right => x + w,
+                };
+                let baseline = centered_y(canvas);
+                canvas.text_aligned(anchor_x, baseline, &text, size, color, align);
+            }
+        }
         "text" => {
             let color = parse_srgb_color(get("ui_color").as_deref(), Color::WHITE);
             let size = prop_f32("ui_text_size").unwrap_or(12.0);
@@ -635,7 +694,10 @@ fn resolve_interaction_property(
     name: &str,
     state: UiInteractionState,
 ) -> Option<String> {
-    const OVERRIDABLE: &[&str] = &["ui_color"];
+    // A `button` node composes a bar, a marker and a label, and all three
+    // change with interaction state — that is what the hand-wired sibling
+    // nodes it replaces were each doing with their own `ui_color_hover`.
+    const OVERRIDABLE: &[&str] = &["ui_color", "ui_bar_color", "ui_marker_color"];
     if OVERRIDABLE.contains(&name) {
         if state.pressed {
             if let Some(v) = get(&format!("{name}_press")) {
@@ -1870,6 +1932,82 @@ mod tests {
         let prefab = def.prefabs.first().expect("one prefab");
         assert_eq!(prefab.sprites.len(), 1, "Image compiles a prefab sprite");
         assert_eq!(prefab.sprites[0].asset, "car_side");
+    }
+
+    #[test]
+    fn a_buttons_bar_paints_only_when_a_bar_colour_is_authored() {
+        // The composite's non-text half, which is what's new: the highlight
+        // bar a hand-wired sibling `ui: "rect"` node used to provide.
+        // (Text needs a real font atlas, which `Canvas::new(_, null)` has
+        // not got — same constraint the ui_image test notes.)
+        let draw = |pairs: &[(&str, &str)]| {
+            let props: HashMap<String, String> = pairs
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect();
+            let mut canvas = Canvas::new((200, 100), std::ptr::null());
+            draw_ui_kind(
+                &mut canvas,
+                (0.0, 0.0, 210.0, 38.0),
+                Vec2::ONE,
+                |n| props.get(n).cloned(),
+                None,
+            );
+            canvas.verts.len()
+        };
+
+        // A bar colour paints one quad.
+        assert_eq!(
+            draw(&[("ui", "button"), ("ui_bar_color", "230,178,60,34")]),
+            6
+        );
+        // No bar colour authored paints nothing — a bare Button is its label
+        // only, not an opaque black box.
+        assert_eq!(draw(&[("ui", "button")]), 0);
+        // An explicitly transparent bar is also nothing, which is how the
+        // idle state of a selection bar is authored.
+        assert_eq!(draw(&[("ui", "button"), ("ui_bar_color", "230,178,60,0")]), 0);
+    }
+
+    #[test]
+    fn a_buttons_bar_colour_follows_the_interaction_state() {
+        // The whole reason the four sibling nodes existed: each carried its
+        // own `ui_color_hover`. Now one node's bar/marker/label each resolve
+        // their own state variant.
+        let props: HashMap<String, String> = [
+            ("ui", "button"),
+            ("ui_bar_color", "230,178,60,0"),
+            ("ui_bar_color_hover", "230,178,60,34"),
+        ]
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+
+        let hovered = UiInteractionState {
+            hovered: true,
+            ..Default::default()
+        };
+        let resolved = resolve_interaction_property(
+            &|n: &str| props.get(n).cloned(),
+            "ui_bar_color",
+            hovered,
+        );
+        assert_eq!(resolved.as_deref(), Some("230,178,60,34"));
+
+        let idle = UiInteractionState::default();
+        let resolved =
+            resolve_interaction_property(&|n: &str| props.get(n).cloned(), "ui_bar_color", idle);
+        assert_eq!(resolved.as_deref(), Some("230,178,60,0"));
+    }
+
+    #[test]
+    fn a_button_node_derives_ui_so_it_is_hit_testable_by_its_own_name() {
+        // Formula R hit-tests a button through `resolved_rect`, which is only
+        // populated for nodes with a `ui` property. Button deriving its own
+        // `ui` is what lets the game click the node it authored rather than
+        // an inner bar node named by convention.
+        let props = compiled_properties(typed_node(1, EditorSceneNodeKind::Button, &[]));
+        assert_eq!(props.get("ui").map(String::as_str), Some("button"));
     }
 
     #[test]
