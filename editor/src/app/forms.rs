@@ -62,6 +62,10 @@ pub(crate) struct InspectorFormState {
     /// `None` when the node isn't a repeater.
     pub(crate) repeat_items_status: Option<String>,
     pub(crate) repeat_items_status_color: Color,
+    pub(crate) button_text: String,
+    pub(crate) button_marker: String,
+    pub(crate) button_bar_color: String,
+    pub(crate) button_bar_hover: String,
     pub(crate) camera_zoom: f32,
     pub(crate) camera_show_bounds: bool,
     pub(crate) camera_use_scene_view_size: bool,
@@ -116,6 +120,11 @@ impl InspectorFormState {
                 let (status, status_color) = repeat_items_status(&node.properties);
                 self.repeat_items_status = status;
                 self.repeat_items_status_color = status_color;
+                let prop = |key: &str| node.properties.get(key).cloned().unwrap_or_default();
+                self.button_text = prop("ui_text");
+                self.button_marker = prop("ui_marker");
+                self.button_bar_color = prop("ui_bar_color");
+                self.button_bar_hover = prop("ui_bar_color_hover");
                 return;
             }
         }
@@ -138,6 +147,10 @@ impl InspectorFormState {
         self.camera_view_width = "960".to_string();
         self.camera_view_height = "720".to_string();
         self.repeat_items_status = None;
+        self.button_text.clear();
+        self.button_marker.clear();
+        self.button_bar_color.clear();
+        self.button_bar_hover.clear();
     }
 }
 
@@ -838,10 +851,10 @@ impl RengineNativeEditor {
                 "runtime prefab id",
             );
 
-            if kind == SceneNodeKind::Sprite {
+            if kind.carries_sprite() {
                 ui.separator(8.0);
                 ui.label(
-                    "Sprite Texture Path",
+                    "Texture Path",
                     11.0,
                     Color::from_rgba8(148, 162, 180, 255),
                 );
@@ -865,6 +878,45 @@ impl RengineNativeEditor {
                     ui.button(INSPECTOR_SPRITE_CLEAR_TEXTURE_ID, "Use Placeholder");
                     ui.tooltip_with("Use Placeholder", TooltipOptions::new().with_delay(0.35));
                 }
+            }
+
+            if kind == SceneNodeKind::Button {
+                // The fields that used to be spread across four hand-wired
+                // sibling nodes, on the one node that is the button.
+                ui.separator(8.0);
+                ui.label("Button Text", 11.0, Color::from_rgba8(148, 162, 180, 255));
+                ui.text_input(INSPECTOR_BUTTON_TEXT_ID, &state.button_text, "NEW GAME");
+                ui.label(
+                    "Marker (leading glyph)",
+                    11.0,
+                    Color::from_rgba8(148, 162, 180, 255),
+                );
+                ui.text_input(INSPECTOR_BUTTON_MARKER_ID, &state.button_marker, ">");
+                ui.label(
+                    "Bar Colour (idle)",
+                    11.0,
+                    Color::from_rgba8(148, 162, 180, 255),
+                );
+                ui.text_input(
+                    INSPECTOR_BUTTON_BAR_COLOR_ID,
+                    &state.button_bar_color,
+                    "230,178,60,0",
+                );
+                ui.label(
+                    "Bar Colour (hover)",
+                    11.0,
+                    Color::from_rgba8(148, 162, 180, 255),
+                );
+                ui.text_input(
+                    INSPECTOR_BUTTON_BAR_HOVER_ID,
+                    &state.button_bar_hover,
+                    "230,178,60,34",
+                );
+                ui.label(
+                    "Tip: the State toggle above the viewport previews hover.",
+                    10.0,
+                    Color::from_rgba8(120, 186, 255, 255),
+                );
             }
 
             if kind == SceneNodeKind::Camera2d {
@@ -1198,6 +1250,46 @@ impl RengineNativeEditor {
                             && !node.asset_alias.is_empty()
                         {
                             clear_sprite_for_node = Some(node_id);
+                        }
+                    }
+
+                    if node.kind == SceneNodeKind::Button {
+                        // Each field is an ordinary property under the hood —
+                        // the typed widget just saves authors from
+                        // remembering the key. An emptied field removes the
+                        // property rather than storing "", so an unauthored
+                        // bar stays genuinely unauthored (and so invisible).
+                        for (id, key, current) in [
+                            (INSPECTOR_BUTTON_TEXT_ID, "ui_text", &mut state.button_text),
+                            (
+                                INSPECTOR_BUTTON_MARKER_ID,
+                                "ui_marker",
+                                &mut state.button_marker,
+                            ),
+                            (
+                                INSPECTOR_BUTTON_BAR_COLOR_ID,
+                                "ui_bar_color",
+                                &mut state.button_bar_color,
+                            ),
+                            (
+                                INSPECTOR_BUTTON_BAR_HOVER_ID,
+                                "ui_bar_color_hover",
+                                &mut state.button_bar_hover,
+                            ),
+                        ] {
+                            if let Some(text) = response.text_for(id) {
+                                *current = text.to_string();
+                                let trimmed = current.trim();
+                                let updated = if trimmed.is_empty() {
+                                    node.properties.remove(key).is_some()
+                                } else {
+                                    node.properties
+                                        .insert(key.to_string(), trimmed.to_string())
+                                        .as_deref()
+                                        != Some(trimmed)
+                                };
+                                changed |= updated;
+                            }
                         }
                     }
 
@@ -1726,7 +1818,7 @@ fn inspector_form_widget_count(
         // plus 3 widgets (key, value, delete) per row.
         count += 2 + 1 + state.custom_properties.len() * 3;
 
-        if kind == SceneNodeKind::Sprite {
+        if kind.carries_sprite() {
             count += 6;
             if selected_sprite_label.is_some() {
                 count += 2;
@@ -1769,6 +1861,10 @@ pub(crate) fn is_inspector_text_input(id: usize) -> bool {
             | INSPECTOR_NODE_SIZE_WIDTH_ID
             | INSPECTOR_NODE_SIZE_HEIGHT_ID
             | INSPECTOR_SPRITE_TEXTURE_ID
+            | INSPECTOR_BUTTON_TEXT_ID
+            | INSPECTOR_BUTTON_MARKER_ID
+            | INSPECTOR_BUTTON_BAR_COLOR_ID
+            | INSPECTOR_BUTTON_BAR_HOVER_ID
             | INSPECTOR_CAMERA_VIEW_WIDTH_ID
             | INSPECTOR_CAMERA_VIEW_HEIGHT_ID
     ) || (INSPECTOR_JSON_TEXT_INPUT_BASE_ID..INSPECTOR_JSON_SLIDER_BASE_ID).contains(&id)
