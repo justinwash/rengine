@@ -378,13 +378,22 @@ fn draw_ui_kind(
             // applied the interaction state (see `resolve_ui_property`), so
             // `ui_bar_color`/`ui_color`/`ui_marker_color` each pick up their
             // own `_hover`/`_focus`/`_press` variant here.
-            let bar = parse_srgb_color(get("ui_bar_color").as_deref(), TRANSPARENT);
-            if bar.a > 0.0 {
-                let radius = prop_f32("ui_radius").unwrap_or(0.0);
-                if radius > 0.5 {
-                    canvas.rounded_rect(x, y, w, h, radius, bar);
-                } else {
-                    canvas.rect(x, y, w, h, bar);
+            // Opt-in sprite background: an authored `asset_alias` (resolved
+            // to `sprite` by the compiler, same as `Image`) paints instead
+            // of the flat `ui_bar_color` fill, for a button that is a
+            // pixel-art panel rather than a plain rect.
+            if let Some(sprite) = sprite {
+                let tint = parse_srgb_color(get("ui_bar_color").as_deref(), sprite.color);
+                canvas.image_region(sprite.texture, x, y, w, h, sprite.uv_rect, tint);
+            } else {
+                let bar = parse_srgb_color(get("ui_bar_color").as_deref(), TRANSPARENT);
+                if bar.a > 0.0 {
+                    let radius = prop_f32("ui_radius").unwrap_or(0.0);
+                    if radius > 0.5 {
+                        canvas.rounded_rect(x, y, w, h, radius, bar);
+                    } else {
+                        canvas.rect(x, y, w, h, bar);
+                    }
                 }
             }
 
@@ -1065,7 +1074,14 @@ impl EditorSceneNodeKind {
 
     /// Whether this kind resolves `asset_alias` into a prefab sprite.
     pub fn carries_sprite(self) -> bool {
-        matches!(self, Self::Sprite | Self::Image)
+        matches!(self, Self::Sprite | Self::Image | Self::Button)
+    }
+
+    /// Whether an alias-less sprite is tolerated (compiles to no sprite,
+    /// drawing the kind's non-textured fallback) rather than a hard error.
+    /// `Sprite` alone stays strict — it has nothing to be without a texture.
+    fn tolerates_missing_alias(self) -> bool {
+        matches!(self, Self::Image | Self::Button)
     }
 }
 
@@ -1297,13 +1313,14 @@ fn prefab_from_editor_node(
         });
     }
 
-    // An `Image` with no alias yet is a node mid-authoring, not an error:
-    // failing here would abort the *whole* scene the moment someone adds one
-    // in the editor, before they pick a texture. It compiles to no sprite and
-    // draws nothing until one is set. `Sprite` stays strict — an alias-less
-    // pure sprite node has nothing else to be.
+    // A node whose sprite is optional (Image, Button) with no alias yet is
+    // mid-authoring, not an error: failing here would abort the *whole*
+    // scene the moment someone adds one in the editor, before they pick a
+    // texture. It compiles to no sprite and draws its non-textured fallback
+    // until one is set. `Sprite` stays strict — an alias-less pure sprite
+    // node has nothing else to be.
     if !node.kind.carries_sprite()
-        || (node.kind == EditorSceneNodeKind::Image && node.asset_alias.trim().is_empty())
+        || (node.kind.tolerates_missing_alias() && node.asset_alias.trim().is_empty())
     {
         return Ok(Prefab2DDef {
             name: prefab_name.to_string(),
@@ -1404,10 +1421,10 @@ fn collect_group_prefab_sprites(
             continue;
         }
 
-        // Same tolerance as the standalone case above: an alias-less `Image`
-        // contributes no sprite rather than failing the scene.
+        // Same tolerance as the standalone case above: an alias-less Image
+        // or Button contributes no sprite rather than failing the scene.
         let alias_pending =
-            child.kind == EditorSceneNodeKind::Image && child.asset_alias.trim().is_empty();
+            child.kind.tolerates_missing_alias() && child.asset_alias.trim().is_empty();
         if child.kind.carries_sprite() && child.visible && !alias_pending {
             sprites.push(prefab_sprite_from_editor_node(path, child, root.position)?);
         }
@@ -1999,6 +2016,55 @@ mod tests {
             resolve_interaction_property(&|n: &str| props.get(n).cloned(), "ui_bar_color", idle);
         assert_eq!(resolved.as_deref(), Some("230,178,60,0"));
     }
+
+    #[test]
+    fn a_button_with_a_sprite_paints_it_instead_of_the_flat_bar() {
+        // The opt-in: an authored asset_alias makes Button a textured panel
+        // rather than a flat-colour one, for a button that's pixel art.
+        let with_sprite = {
+            let mut canvas = Canvas::new((200, 100), std::ptr::null());
+            let mut props = HashMap::new();
+            props.insert("ui".to_string(), "button".to_string());
+            let sprite = PrefabSprite2D {
+                texture: TextureId(0),
+                offset: Vec2::ZERO,
+                size: Vec2::ONE,
+                color: Color::WHITE,
+                uv_rect: [0.0, 0.0, 1.0, 1.0],
+                flip_x: false,
+                flip_y: false,
+            };
+            draw_ui_kind(
+                &mut canvas,
+                (0.0, 0.0, 210.0, 38.0),
+                Vec2::ONE,
+                |n| props.get(n).cloned(),
+                Some(&sprite),
+            );
+            canvas.verts.len()
+        };
+        // image_region emits one quad, same as the plain "image" kind does.
+        assert_eq!(with_sprite, 6);
+    }
+
+    #[test]
+    fn button_kind_resolves_an_asset_alias_but_tolerates_its_absence() {
+        // The opt-in must not be a trap: a Button authored with no texture
+        // (the common case, a flat-colour bar) compiles fine — same
+        // tolerance as `Image`, extended to `Button`.
+        let props = compiled_properties(typed_node(1, EditorSceneNodeKind::Button, &[]));
+        assert_eq!(props.get("ui").map(String::as_str), Some("button"));
+
+        let mut node = typed_node(1, EditorSceneNodeKind::Button, &[]);
+        node.asset_alias = "menu_panel".to_string();
+        node.size = [210.0, 38.0];
+        let document = EditorSceneDocument { nodes: vec![node] };
+        let def = scene_definition_from_editor_document(Path::new("<test>"), document).unwrap();
+        let prefab = def.prefabs.first().expect("one prefab");
+        assert_eq!(prefab.sprites.len(), 1, "an authored alias compiles a sprite");
+        assert_eq!(prefab.sprites[0].asset, "menu_panel");
+    }
+
 
     #[test]
     fn a_button_node_derives_ui_so_it_is_hit_testable_by_its_own_name() {

@@ -976,6 +976,28 @@ impl SceneWorld2D {
         self.by_name.get(name).copied()
     }
 
+    /// Override a `Button` node's label past whatever was authored in the
+    /// editor. A button's text is a starting value, not a constant — a
+    /// "Continue" that reads "Pick Two Drivers" until a precondition is met,
+    /// or "Load Game" greyed out when there's no save, is game state driving
+    /// text on one authored node, not several mutually-exclusive label
+    /// siblings toggled by a `ui_visible` binding.
+    pub fn set_button_text(&mut self, handle: NodeHandle2D, text: impl Into<String>) {
+        if let Some(node) = self.get_mut(handle) {
+            node.set_property("ui_text", text.into());
+        }
+    }
+
+    /// Override a `Button` node's base label colour (its idle state; hover/
+    /// focus/press still resolve their own `ui_color_*` variant on top).
+    /// The disabled-button case: same node, same position, a duller colour
+    /// and no interaction, rather than a second label node shown in its place.
+    pub fn set_button_color(&mut self, handle: NodeHandle2D, color: impl Into<String>) {
+        if let Some(node) = self.get_mut(handle) {
+            node.set_property("ui_color", color.into());
+        }
+    }
+
     pub fn find_by_editor_id(&self, editor_node_id: u64) -> Option<NodeHandle2D> {
         self.by_editor_id.get(&editor_node_id).copied()
     }
@@ -1843,6 +1865,36 @@ mod tests {
                 scope
             })
             .collect()
+    }
+
+    #[test]
+    fn set_button_text_and_color_override_the_authored_values() {
+        // The design point: a button's authored text/colour are starting
+        // values, and game code overrides them by name rather than the
+        // scene needing several mutually-exclusive label nodes toggled by a
+        // `ui_visible` binding for each state.
+        let mut world = SceneWorld2D::new();
+        let handle = world.spawn(SceneNode2D::new("continue_button"));
+        world.get_mut(handle).unwrap().set_property("ui", "button");
+        world
+            .get_mut(handle)
+            .unwrap()
+            .set_property("ui_text", "CONTINUE");
+        world
+            .get_mut(handle)
+            .unwrap()
+            .set_property("ui_color", "215,220,235,255");
+
+        // `find_by_name` only indexes nodes instantiated from a scene
+        // document; a hand-spawned test node is looked up by its own handle
+        // instead — real game code reaches the button the same way `find_by_name`
+        // does after a scene loads.
+        world.set_button_text(handle, "PICK TWO DRIVERS");
+        world.set_button_color(handle, "120,128,140,255");
+
+        let node = world.get(handle).unwrap();
+        assert_eq!(node.property("ui_text"), Some("PICK TWO DRIVERS"));
+        assert_eq!(node.property("ui_color"), Some("120,128,140,255"));
     }
 
     #[test]
