@@ -984,22 +984,25 @@ impl SceneWorld2D {
         self.by_name.get(name).copied()
     }
 
-    /// Override a `Button` node's label past whatever was authored in the
-    /// editor. A button's text is a starting value, not a constant — a
-    /// "Continue" that reads "Pick Two Drivers" until a precondition is met,
-    /// or "Load Game" greyed out when there's no save, is game state driving
-    /// text on one authored node, not several mutually-exclusive label
-    /// siblings toggled by a `ui_visible` binding.
+    /// Override a `ui: "button"` or `ui: "text"` node's label past whatever
+    /// was authored in the editor — the Button's own built-in label for a
+    /// simple button, or a `Label` child's `ui_text` for a composite one.
+    /// A button's text is a starting value, not a constant — a "Continue"
+    /// that reads "Pick Two Drivers" until a precondition is met, or "Load
+    /// Game" greyed out when there's no save, is game state driving text on
+    /// one authored node, not several mutually-exclusive label siblings
+    /// toggled by a `ui_visible` binding.
     pub fn set_button_text(&mut self, handle: NodeHandle2D, text: impl Into<String>) {
         if let Some(node) = self.get_mut(handle) {
             node.set_property("ui_text", text.into());
         }
     }
 
-    /// Override a `Button` node's base label colour (its idle state; hover/
-    /// focus/press still resolve their own `ui_color_*` variant on top).
-    /// The disabled-button case: same node, same position, a duller colour
-    /// and no interaction, rather than a second label node shown in its place.
+    /// [`set_button_text`](Self::set_button_text)'s colour counterpart — the
+    /// idle-state `ui_color`; hover/focus/press still resolve their own
+    /// `ui_color_*` variant on top. The disabled-button case: same node,
+    /// same position, a duller colour and no interaction, rather than a
+    /// second label node shown in its place.
     pub fn set_button_color(&mut self, handle: NodeHandle2D, color: impl Into<String>) {
         if let Some(node) = self.get_mut(handle) {
             node.set_property("ui_color", color.into());
