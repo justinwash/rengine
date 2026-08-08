@@ -326,12 +326,14 @@ fn resolve_ui_rect(
 
 /// Draw the `ui` primitive named by a node's props into the resolved `rect`.
 /// `sprite` is the node's own first sprite layer, used only by `"image"`.
+/// `has_children` is used only by `"button"` (see its arm below).
 fn draw_ui_kind(
     canvas: &mut Canvas,
     rect: (f32, f32, f32, f32),
     scale: Vec2,
     get: impl Fn(&str) -> Option<String>,
     sprite: Option<&PrefabSprite2D>,
+    has_children: bool,
 ) {
     let Some(kind) = get("ui") else {
         return;
@@ -379,6 +381,15 @@ fn draw_ui_kind(
                 let color = parse_srgb_color(get("ui_color").as_deref(), sprite.color);
                 canvas.image_region(sprite.texture, x, y, w, h, sprite.uv_rect, color);
             }
+        }
+        "button" if has_children => {
+            // A Button with authored children (a Panel holding its own
+            // marker/label, say — see docs/SCENE_CONTAINER_AUTOSIZE.md)
+            // draws none of its own bar/marker/label: the children draw
+            // themselves in the normal top-down pass like any other node's
+            // children, and Button contributes only its hit rect and
+            // interaction state. Whether it has children, not a property, is
+            // the switch — nothing to author and forget to unset.
         }
         "button" => {
             // Unauthored bar/marker default to invisible, so a bare
@@ -633,6 +644,7 @@ pub(crate) fn draw_ui_node<'a>(
         0.0,
         UiInteractionState::default(),
         None,
+        false,
     )
 }
 
@@ -658,6 +670,7 @@ pub(crate) fn draw_ui_node_with_bindings(
     pixel_grid: f32,
     state: UiInteractionState,
     content_size: Option<(f32, f32)>,
+    has_children: bool,
 ) -> ((f32, f32, f32, f32), bool) {
     let get = |n: &str| get(n).map(|v| substitute_bindings(&v, bindings).into_owned());
     let get = |n: &str| resolve_interaction_property(&get, n, state);
@@ -679,7 +692,7 @@ pub(crate) fn draw_ui_node_with_bindings(
             .and_then(|v| v.trim().parse::<i64>().ok())
             .unwrap_or(0)
             .max(0) as usize;
-        draw_ui_kind(frame.canvas(layer), rect, scale, &get, sprite);
+        draw_ui_kind(frame.canvas(layer), rect, scale, &get, sprite, has_children);
     }
     (rect, visible)
 }
@@ -703,6 +716,7 @@ pub(crate) fn draw_ui_node_on_with_bindings(
     pixel_grid: f32,
     state: UiInteractionState,
     content_size: Option<(f32, f32)>,
+    has_children: bool,
 ) -> ((f32, f32, f32, f32), bool) {
     let get = |n: &str| get(n).map(|v| substitute_bindings(&v, bindings).into_owned());
     let get = |n: &str| resolve_interaction_property(&get, n, state);
@@ -720,7 +734,7 @@ pub(crate) fn draw_ui_node_on_with_bindings(
         Some("false" | "0" | "no")
     );
     if visible {
-        draw_ui_kind(canvas, rect, scale, &get, sprite);
+        draw_ui_kind(canvas, rect, scale, &get, sprite, has_children);
     }
     (rect, visible)
 }
@@ -1680,6 +1694,7 @@ mod tests {
             Vec2::ONE,
             |n| props.get(n).cloned(),
             None,
+            false,
         );
         // Two segments (3 points), 6 verts per segment quad at minimum.
         assert!(
@@ -1702,6 +1717,7 @@ mod tests {
             Vec2::ONE,
             |n| props.get(n).cloned(),
             None,
+            false,
         );
         assert_eq!(canvas.verts.len(), 0);
     }
@@ -1722,6 +1738,7 @@ mod tests {
             Vec2::ONE,
             |n| props.get(n).cloned(),
             None,
+            false,
         );
         assert_eq!(canvas.verts.len(), 0);
 
@@ -1740,6 +1757,7 @@ mod tests {
             Vec2::ONE,
             |n| props.get(n).cloned(),
             Some(&sprite),
+            false,
         );
         // image_region emits one quad (6 verts).
         assert_eq!(canvas.verts.len(), 6);
@@ -2003,6 +2021,7 @@ mod tests {
                 Vec2::ONE,
                 |n| props.get(n).cloned(),
                 None,
+                false,
             );
             canvas.verts.len()
         };
@@ -2074,6 +2093,7 @@ mod tests {
                 Vec2::ONE,
                 |n| props.get(n).cloned(),
                 Some(&sprite),
+                false,
             );
             canvas.verts.len()
         };

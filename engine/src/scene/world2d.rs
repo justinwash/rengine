@@ -1355,6 +1355,7 @@ impl SceneWorld2D {
             self.pixel_grid.get(),
             state,
             node.content_size.get(),
+            !node.children.is_empty(),
         );
         // A hidden ui node (ui_visible: false) drew nothing, so it shouldn't
         // be hit-testable at a rect that has no on-screen primitive behind it.
@@ -1629,6 +1630,7 @@ impl SceneWorld2D {
             self.pixel_grid.get(),
             state,
             node.content_size.get(),
+            !node.children.is_empty(),
         );
         if ui_visible && node.property("ui").is_some() {
             let (x, y, w, h) = ui_rect;
@@ -2053,6 +2055,57 @@ mod tests {
                 scope
             })
             .collect()
+    }
+
+    #[test]
+    fn a_button_with_children_draws_them_instead_of_its_own_bar() {
+        // The user's caveat: Button keeps its built-in bar/marker/label for
+        // the simple case (title's menu rows), but a Button with authored
+        // children — a Panel holding its own content — draws only the
+        // children, not both. Whether it has children is the switch.
+        let mut world = SceneWorld2D::new();
+        let button = world.spawn(SceneNode2D::new("row"));
+        {
+            let n = world.get_mut(button).unwrap();
+            n.set_property("ui", "button");
+            // If the built-in draw ran, this bar would paint a quad.
+            n.set_property("ui_bar_color", "230,178,60,200");
+        }
+        let child = world.spawn_child(button, SceneNode2D::new("bg"));
+        {
+            let n = world.get_mut(child).unwrap();
+            n.set_property("ui", "rect");
+            n.set_property("ui_color", "40,52,78,255");
+            n.set_property("ui_w", "40");
+            n.set_property("ui_h", "20");
+        }
+
+        let mut canvas = Canvas::new((200, 100), std::ptr::null());
+        world.draw_to_canvas(&mut canvas, 0.0);
+
+        // Exactly one quad: the child's rect. A second (from Button's own
+        // bar) would mean the built-in draw ran despite having a child.
+        assert_eq!(canvas.verts.len(), 6, "only the child should have drawn");
+
+        // The button still resolves a hit rect — it contributes interaction
+        // state and a rect, just not its own visuals, when it has children.
+        assert!(world.resolved_rect(button).is_some());
+    }
+
+    #[test]
+    fn a_childless_button_still_draws_its_own_built_in_bar() {
+        // The other half of the caveat: no children means the simple,
+        // built-in path (title_menu_row_* after collapse) is unchanged.
+        let mut world = SceneWorld2D::new();
+        let button = world.spawn(SceneNode2D::new("row"));
+        {
+            let n = world.get_mut(button).unwrap();
+            n.set_property("ui", "button");
+            n.set_property("ui_bar_color", "230,178,60,200");
+        }
+        let mut canvas = Canvas::new((200, 100), std::ptr::null());
+        world.draw_to_canvas(&mut canvas, 0.0);
+        assert_eq!(canvas.verts.len(), 6, "the built-in bar should have drawn");
     }
 
     #[test]
