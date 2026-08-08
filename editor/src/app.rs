@@ -99,13 +99,23 @@ const INSPECTOR_CUSTOM_PROP_VALUE_BASE_ID: usize = 51_000;
 const INSPECTOR_CUSTOM_PROP_DELETE_BASE_ID: usize = 52_000;
 const INSPECTOR_CUSTOM_PROP_ADD_ID: usize = 53_000;
 
-const NODE_KIND_OPTIONS: [SceneNodeKind; 6] = [
+/// Creatable node kinds, UI types first since those are what scenes are
+/// mostly made of. `UiRoot` is absent deliberately: it is the untyped
+/// legacy kind the typed ones replace, so existing documents still load it
+/// but nothing new should be authored as one. `Sprite` likewise gives way
+/// to `Image`.
+const NODE_KIND_OPTIONS: [SceneNodeKind; 11] = [
+    SceneNodeKind::Button,
+    SceneNodeKind::Label,
+    SceneNodeKind::Panel,
+    SceneNodeKind::Image,
+    SceneNodeKind::Layout,
+    SceneNodeKind::List,
+    SceneNodeKind::Shape,
+    SceneNodeKind::Action,
     SceneNodeKind::Group,
     SceneNodeKind::Empty,
     SceneNodeKind::Camera2d,
-    SceneNodeKind::Sprite,
-    SceneNodeKind::Trigger,
-    SceneNodeKind::UiRoot,
 ];
 
 mod drawing;

@@ -922,6 +922,14 @@ pub struct EditorSceneNode {
     pub properties: HashMap<String, String>,
 }
 
+/// What a scene node *is*, as authored.
+///
+/// The UI kinds below name a node's role directly, so `kind` is the single
+/// source of truth and the `ui` draw property is derived from it (see
+/// [`EditorSceneNodeKind::ui_kind`]). The older arrangement — every UI node
+/// authored as `UiRoot` with its real type hidden in a `ui` string — left
+/// `kind` carrying no information (567 of Formula R's 631 nodes were
+/// `UiRoot`) and made a sprite need *both* `Sprite` and `ui: "image"`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EditorSceneNodeKind {
     Group,
@@ -929,7 +937,30 @@ pub enum EditorSceneNodeKind {
     Camera2d,
     Sprite,
     Trigger,
+    /// Deprecated: a UI node whose real type lives in its `ui` property.
+    /// Kept so existing documents keep loading; the typed kinds below
+    /// replace it.
     UiRoot,
+
+    /// Non-interactive text.
+    Label,
+    /// A filled rect used as a surface.
+    Panel,
+    /// A textured node. Resolves `asset_alias` *and* draws it — one type
+    /// where `Sprite` + `ui: "image"` used to be needed together.
+    Image,
+    /// Interactive: text plus hover/focus colours plus an action.
+    Button,
+    /// Lays out children; draws nothing itself.
+    Layout,
+    /// Repeats its one authored child per item (`ui_repeat_*`).
+    List,
+    /// A non-rect primitive; which one is in `ui_shape`
+    /// (line/gradient/circle/bevel/polyline/text_block/text_spans).
+    Shape,
+    /// Invisible, carries `script_path` and `param_*` — an action with no
+    /// visual of its own.
+    Action,
 }
 
 impl EditorSceneNodeKind {
@@ -941,7 +972,38 @@ impl EditorSceneNodeKind {
             Self::Sprite => "Sprite",
             Self::Trigger => "Trigger",
             Self::UiRoot => "UI Root",
+            Self::Label => "Label",
+            Self::Panel => "Panel",
+            Self::Image => "Image",
+            Self::Button => "Button",
+            Self::Layout => "Layout",
+            Self::List => "List",
+            Self::Shape => "Shape",
+            Self::Action => "Action",
         }
+    }
+
+    /// The `ui` draw kind this node type implies, if any.
+    ///
+    /// `None` means "this kind doesn't draw itself" (a layout container, an
+    /// action, or a non-UI kind). `Shape` returns `None` too: which
+    /// primitive it is comes from its own `ui_shape` property, since one
+    /// `Shape` kind covers several draw primitives that differ only in
+    /// which canvas call they make.
+    pub fn ui_kind(self) -> Option<&'static str> {
+        match self {
+            Self::Label => Some("text"),
+            Self::Panel => Some("rect"),
+            Self::Image => Some("image"),
+            Self::Button => Some("button"),
+            Self::List => Some("repeat"),
+            _ => None,
+        }
+    }
+
+    /// Whether this kind resolves `asset_alias` into a prefab sprite.
+    pub fn carries_sprite(self) -> bool {
+        matches!(self, Self::Sprite | Self::Image)
     }
 }
 
@@ -1109,7 +1171,7 @@ fn should_emit_editor_instance(
 ) -> bool {
     match node.kind {
         EditorSceneNodeKind::Group => true,
-        EditorSceneNodeKind::Sprite => {
+        kind if kind.carries_sprite() => {
             nearest_group_ancestor(node.parent, nodes, node_indices).is_none()
         }
         _ => true,
@@ -1173,7 +1235,14 @@ fn prefab_from_editor_node(
         });
     }
 
-    if node.kind != EditorSceneNodeKind::Sprite {
+    // An `Image` with no alias yet is a node mid-authoring, not an error:
+    // failing here would abort the *whole* scene the moment someone adds one
+    // in the editor, before they pick a texture. It compiles to no sprite and
+    // draws nothing until one is set. `Sprite` stays strict — an alias-less
+    // pure sprite node has nothing else to be.
+    if !node.kind.carries_sprite()
+        || (node.kind == EditorSceneNodeKind::Image && node.asset_alias.trim().is_empty())
+    {
         return Ok(Prefab2DDef {
             name: prefab_name.to_string(),
             sprites: Vec::new(),
@@ -1273,7 +1342,11 @@ fn collect_group_prefab_sprites(
             continue;
         }
 
-        if child.kind == EditorSceneNodeKind::Sprite && child.visible {
+        // Same tolerance as the standalone case above: an alias-less `Image`
+        // contributes no sprite rather than failing the scene.
+        let alias_pending =
+            child.kind == EditorSceneNodeKind::Image && child.asset_alias.trim().is_empty();
+        if child.kind.carries_sprite() && child.visible && !alias_pending {
             sprites.push(prefab_sprite_from_editor_node(path, child, root.position)?);
         }
 
@@ -1327,6 +1400,22 @@ fn prefab_sprite_from_editor_node(
 
 fn editor_instance_properties(node: &EditorSceneNode) -> HashMap<String, String> {
     let mut properties = node.properties.clone();
+
+    // The typed kinds imply their own draw kind, so `ui` no longer has to be
+    // authored alongside `kind`. `or_insert_with` keeps an authored `ui`
+    // winning, which is what lets the legacy `UiRoot` + `ui: "..."` documents
+    // and the typed ones coexist while the corpus migrates.
+    if let Some(ui_kind) = node.kind.ui_kind() {
+        properties
+            .entry("ui".to_string())
+            .or_insert_with(|| ui_kind.to_string());
+    } else if node.kind == EditorSceneNodeKind::Shape {
+        // One `Shape` kind covers several primitives that differ only in
+        // which canvas call they make; `ui_shape` picks which.
+        if let Some(shape) = node.properties.get("ui_shape").cloned() {
+            properties.entry("ui".to_string()).or_insert(shape);
+        }
+    }
 
     properties
         .entry("editor_node_id".to_string())
@@ -1681,6 +1770,124 @@ mod tests {
             .map(|instance| instance.prefab.as_str())
             .collect();
         assert_eq!(hud_tags, vec!["hud"]);
+    }
+
+    /// A node of `kind` with `properties`, for the kind-derivation tests.
+    fn typed_node(id: u64, kind: EditorSceneNodeKind, pairs: &[(&str, &str)]) -> EditorSceneNode {
+        EditorSceneNode {
+            id,
+            parent: None,
+            name: format!("node{id}"),
+            kind,
+            position: [0.0, 0.0],
+            size: [10.0, 10.0],
+            visible: true,
+            script_path: String::new(),
+            runtime_prefab: String::new(),
+            asset_alias: String::new(),
+            properties: pairs
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+        }
+    }
+
+    fn compiled_properties(node: EditorSceneNode) -> HashMap<String, String> {
+        let document = EditorSceneDocument { nodes: vec![node] };
+        let def = scene_definition_from_editor_document(Path::new("<test>"), document).unwrap();
+        def.instances.into_iter().next().unwrap().properties
+    }
+
+    #[test]
+    fn typed_kinds_derive_their_own_ui_draw_kind() {
+        // The point of the typed kinds: `kind` alone says what a node is, so
+        // `ui` no longer has to be authored next to it.
+        for (kind, expected) in [
+            (EditorSceneNodeKind::Label, "text"),
+            (EditorSceneNodeKind::Panel, "rect"),
+            (EditorSceneNodeKind::Image, "image"),
+            (EditorSceneNodeKind::Button, "button"),
+            (EditorSceneNodeKind::List, "repeat"),
+        ] {
+            let props = compiled_properties(typed_node(1, kind, &[]));
+            assert_eq!(
+                props.get("ui").map(String::as_str),
+                Some(expected),
+                "{kind:?} should derive ui: {expected}"
+            );
+        }
+
+        // Kinds that draw nothing of their own derive no `ui` at all.
+        for kind in [
+            EditorSceneNodeKind::Layout,
+            EditorSceneNodeKind::Action,
+            EditorSceneNodeKind::Empty,
+        ] {
+            let props = compiled_properties(typed_node(1, kind, &[]));
+            assert!(props.get("ui").is_none(), "{kind:?} should derive no ui");
+        }
+
+        // Shape defers to ui_shape, since one kind covers several primitives.
+        let props = compiled_properties(typed_node(
+            1,
+            EditorSceneNodeKind::Shape,
+            &[("ui_shape", "circle")],
+        ));
+        assert_eq!(props.get("ui").map(String::as_str), Some("circle"));
+    }
+
+    #[test]
+    fn an_authored_ui_property_still_wins_over_the_derived_one() {
+        // What lets the legacy `UiRoot` + `ui: "..."` documents and the typed
+        // ones coexist while the corpus migrates: derivation only fills in.
+        let props = compiled_properties(typed_node(
+            1,
+            EditorSceneNodeKind::Label,
+            &[("ui", "text_block")],
+        ));
+        assert_eq!(props.get("ui").map(String::as_str), Some("text_block"));
+
+        // And a legacy UiRoot node derives nothing, so its authored ui stands.
+        let props = compiled_properties(typed_node(
+            1,
+            EditorSceneNodeKind::UiRoot,
+            &[("ui", "rect")],
+        ));
+        assert_eq!(props.get("ui").map(String::as_str), Some("rect"));
+    }
+
+    #[test]
+    fn image_resolves_an_asset_alias_the_way_sprite_does() {
+        // The doubling this removes: a textured node used to need *both*
+        // `kind: Sprite` (to resolve the alias into a prefab sprite) and
+        // `ui: "image"` (to draw it). `Image` does both.
+        let mut node = typed_node(1, EditorSceneNodeKind::Image, &[]);
+        node.asset_alias = "car_side".to_string();
+        node.size = [100.0, 34.0];
+
+        let document = EditorSceneDocument { nodes: vec![node] };
+        let def = scene_definition_from_editor_document(Path::new("<test>"), document).unwrap();
+        let prefab = def.prefabs.first().expect("one prefab");
+        assert_eq!(prefab.sprites.len(), 1, "Image compiles a prefab sprite");
+        assert_eq!(prefab.sprites[0].asset, "car_side");
+    }
+
+    #[test]
+    fn an_image_without_an_alias_yet_compiles_instead_of_failing_the_scene() {
+        // Adding an Image in the editor must not blank the screen until a
+        // texture is picked — compile_prefabs failing is scene-wide, so a
+        // half-authored node would take everything else down with it.
+        let props = compiled_properties(typed_node(1, EditorSceneNodeKind::Image, &[]));
+        assert_eq!(props.get("ui").map(String::as_str), Some("image"));
+
+        // A pure Sprite node stays strict: it has nothing else to be.
+        let document = EditorSceneDocument {
+            nodes: vec![typed_node(1, EditorSceneNodeKind::Sprite, &[])],
+        };
+        assert!(
+            scene_definition_from_editor_document(Path::new("<test>"), document).is_err(),
+            "an alias-less Sprite is still an error"
+        );
     }
 
     #[test]

@@ -35,6 +35,14 @@ impl SceneNodeKindExt for SceneNodeKind {
             Self::Sprite => "Sprite",
             Self::Trigger => "Trigger",
             Self::UiRoot => "UI Root",
+            Self::Label => "Label",
+            Self::Panel => "Panel",
+            Self::Image => "Image",
+            Self::Button => "Button",
+            Self::Layout => "Layout",
+            Self::List => "List",
+            Self::Shape => "Shape",
+            Self::Action => "Action",
         }
     }
 
@@ -46,6 +54,14 @@ impl SceneNodeKindExt for SceneNodeKind {
             Self::Sprite => "SPR",
             Self::Trigger => "TRG",
             Self::UiRoot => "UI",
+            Self::Label => "TXT",
+            Self::Panel => "PNL",
+            Self::Image => "IMG",
+            Self::Button => "BTN",
+            Self::Layout => "LYT",
+            Self::List => "LST",
+            Self::Shape => "SHP",
+            Self::Action => "ACT",
         }
     }
 
@@ -57,6 +73,14 @@ impl SceneNodeKindExt for SceneNodeKind {
             Self::Sprite => [112.0, 72.0],
             Self::Trigger => [148.0, 88.0],
             Self::UiRoot => [220.0, 136.0],
+            Self::Label => [160.0, 24.0],
+            Self::Panel => [220.0, 136.0],
+            Self::Image => [112.0, 72.0],
+            Self::Button => [210.0, 38.0],
+            Self::Layout => [220.0, 136.0],
+            Self::List => [220.0, 136.0],
+            Self::Shape => [120.0, 24.0],
+            Self::Action => [88.0, 56.0],
         }
     }
 

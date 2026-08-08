@@ -1896,9 +1896,18 @@ fn node_fill_color(kind: SceneNodeKind) -> Color {
         SceneNodeKind::Group => Color::from_rgba8(67, 79, 89, 255),
         SceneNodeKind::Empty => Color::from_rgba8(92, 103, 112, 255),
         SceneNodeKind::Camera2d => Color::from_rgba8(53, 125, 132, 255),
-        SceneNodeKind::Sprite => Color::from_rgba8(64, 114, 176, 255),
+        SceneNodeKind::Sprite | SceneNodeKind::Image => Color::from_rgba8(64, 114, 176, 255),
         SceneNodeKind::Trigger => Color::from_rgba8(176, 125, 58, 255),
         SceneNodeKind::UiRoot => Color::from_rgba8(70, 142, 104, 255),
+        // Interactive types read warm, structural ones cool, so the
+        // hierarchy's shape is legible at a glance.
+        SceneNodeKind::Button => Color::from_rgba8(150, 116, 62, 255),
+        SceneNodeKind::Action => Color::from_rgba8(132, 96, 108, 255),
+        SceneNodeKind::Label => Color::from_rgba8(88, 126, 118, 255),
+        SceneNodeKind::Panel => Color::from_rgba8(70, 96, 118, 255),
+        SceneNodeKind::Layout => Color::from_rgba8(74, 84, 96, 255),
+        SceneNodeKind::List => Color::from_rgba8(96, 92, 132, 255),
+        SceneNodeKind::Shape => Color::from_rgba8(84, 110, 96, 255),
     }
 }
 
