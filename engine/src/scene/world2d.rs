@@ -1745,6 +1745,26 @@ impl SceneWorld2D {
             node_own_extent(c, canvas, &child_bindings)
         };
 
+        // A child's own `ui_lead` is main-axis space the flow will insert
+        // before it, so a container measured without it comes out short by
+        // exactly the leads it holds — and then packs its children tighter
+        // than the flow places them, overlapping the ones that carry a lead.
+        let child_lead = |child: NodeHandle2D| -> f32 {
+            let Some(c) = self.get(child) else {
+                return 0.0;
+            };
+            let child_bindings = match &c.instance_bindings {
+                Some(scope) => merge_bindings(&effective_bindings, scope),
+                None => effective_bindings.clone(),
+            };
+            c.property("ui_lead")
+                .map(|v| super::data2d::substitute_bindings(v, &child_bindings).into_owned())
+                .and_then(|v| v.trim().parse::<f32>().ok())
+                .unwrap_or(0.0)
+                .max(0.0)
+        };
+        let leads: f32 = node.children.iter().map(|&c| child_lead(c)).sum();
+
         let (content_w, content_h) = match layout.as_deref() {
             Some("row") => {
                 let n = node.children.len();
@@ -1755,7 +1775,7 @@ impl SceneWorld2D {
                     .map(|&c| child_size(c).1)
                     .fold(0.0, f32::max);
                 let gaps = if n > 1 { gap * (n as f32 - 1.0) } else { 0.0 };
-                (sum_w + gaps, max_h)
+                (sum_w + gaps + leads, max_h)
             }
             Some("column") => {
                 let n = node.children.len();
@@ -1766,7 +1786,7 @@ impl SceneWorld2D {
                     .map(|&c| child_size(c).0)
                     .fold(0.0, f32::max);
                 let gaps = if n > 1 { gap * (n as f32 - 1.0) } else { 0.0 };
-                (max_w, sum_h + gaps)
+                (max_w, sum_h + gaps + leads)
             }
             _ => {
                 // No ui_layout: children overlay (Button's implicit single
@@ -3930,6 +3950,44 @@ mod tests {
             (r(2).right() - 200.0).abs() < 1e-3,
             "row still ends at the container edge: {}",
             r(2).right()
+        );
+    }
+
+    #[test]
+    fn a_content_sized_container_includes_its_childrens_leads() {
+        // Measuring without `ui_lead` makes the container short by exactly the
+        // leads it holds, and it then packs its children tighter than the flow
+        // places them — which shows up as the led child overlapping the one
+        // before it, not as a wrong size.
+        let mut world = SceneWorld2D::new();
+        let container = world.spawn(SceneNode2D::new("root"));
+        {
+            let n = world.get_mut(container).unwrap();
+            n.set_property("ui", "rect");
+            n.set_property("ui_layout", "column");
+            n.set_property("ui_size", "content");
+        }
+        for (name, props) in [
+            ("a", &[("ui_h", "40"), ("ui_w", "10")][..]),
+            (
+                "b",
+                &[("ui_h", "40"), ("ui_w", "10"), ("ui_lead", "25")][..],
+            ),
+        ] {
+            let h = world.spawn_child(container, SceneNode2D::new(name));
+            let n = world.get_mut(h).unwrap();
+            n.set_property("ui", "rect");
+            for &(k, v) in props {
+                n.set_property(k, v);
+            }
+        }
+        let mut canvas = Canvas::new((200, 200), std::ptr::null());
+        world.draw_to_canvas(&mut canvas, 0.0);
+        let r = world.resolved_rect(container).unwrap();
+        assert!(
+            (r.height - 105.0).abs() < 1e-3,
+            "40 + 25 lead + 40, not 80: {}",
+            r.height
         );
     }
 
