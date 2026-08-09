@@ -147,8 +147,8 @@ pub struct SceneNode2D {
     /// is opt-in). `Cell` for the same reason as `ui_rect`: a draw-time
     /// cache, not observable state, so draw can stay `&self`.
     content_size: Cell<Option<(f32, f32)>>,
-    /// Main-axis extent assigned to this node by its parent's flow layout when
-    /// it authored `ui_grow` (E-A) — the share of the leftover space it won.
+    /// Size assigned to this node by its parent's flow layout, per axis:
+    /// `(w, h)`, each `None` unless the flow decided it.
     ///
     /// Needed because a node resolves its own rect from the slot it is handed,
     /// and a slot is only a *reference*: without this, `ui_grow: "1"` would
@@ -157,9 +157,15 @@ pub struct SceneNode2D {
     /// `ui_grow` imply the fill is the whole point — needing to pair it with
     /// `ui_stretch_x` would be one more two-property gotcha to remember.
     ///
-    /// `(vertical, extent)`, so the draw knows which axis it applies to.
+    /// The same argument covers the *cross* axis under `ui_align` (E-B): a
+    /// non-stretch alignment sizes the slot to the child's own extent and
+    /// places it, so the child must take that slot rather than re-anchoring
+    /// inside it — otherwise `ui_align: center` needs a paired
+    /// `ui_origin_x: 0.5` on every child, which is exactly the two-property
+    /// gotcha this field exists to avoid.
+    ///
     /// `Cell` for the same reason as `content_size`: a draw-time cache.
-    grow_extent: Cell<Option<(bool, f32)>>,
+    flow_size: Cell<(Option<f32>, Option<f32>)>,
     /// Per-instance binding overlay (E3 repeaters): set by
     /// `SceneWorld2D::sync_repeaters` on each cloned instance root, merged
     /// over the ambient `Bindings` when drawing that instance, so
@@ -186,7 +192,7 @@ impl SceneNode2D {
             children: Vec::new(),
             ui_rect: Cell::new(None),
             content_size: Cell::new(None),
-            grow_extent: Cell::new(None),
+            flow_size: Cell::new((None, None)),
             instance_bindings: None,
         }
     }
@@ -1466,26 +1472,45 @@ impl SceneWorld2D {
             })
             .collect();
 
-        // A grown child is told the extent it won, so resolving its own rect
-        // fills the slot instead of collapsing to its (absent) ui_w/ui_h.
+        let aligned: Vec<Rect> = slots
+            .into_iter()
+            .zip(&cross)
+            .map(|(slot, &cross_extent)| apply_cross_align(slot, vertical, align, cross_extent))
+            .collect();
+
+        // Tell each child the size the flow decided for it, so resolving its
+        // own rect fills the slot instead of collapsing to its (absent)
+        // ui_w/ui_h or re-anchoring inside it. Per axis, and only where the
+        // flow actually decided: a fixed track leaves the main axis alone
+        // (the child's own ui_w/ui_h is the truth there) and the default
+        // `stretch` leaves the cross axis alone (the slot already spans it,
+        // and stretching into it is the child's own opt-in as before).
         // Cleared otherwise, so a node that stops growing — or moves out of a
-        // flow entirely — does not keep a stale extent from a previous frame.
-        for ((&child, track), slot) in children.iter().zip(&tracks).zip(&slots) {
+        // flow entirely — does not keep a stale size from a previous frame.
+        let cross_decided = align != CrossAlign::Stretch;
+        for ((&child, track), slot) in children.iter().zip(&tracks).zip(&aligned) {
             if let Some(child_node) = self.get(child) {
-                child_node.grow_extent.set(match track {
-                    Track::Fixed(_) => None,
-                    _ => Some((vertical, if vertical { slot.height } else { slot.width })),
+                let main = (!matches!(track, Track::Fixed(_))).then(|| {
+                    if vertical {
+                        slot.height
+                    } else {
+                        slot.width
+                    }
+                });
+                let cross = cross_decided
+                    .then(|| if vertical { slot.width } else { slot.height })
+                    .filter(|e| *e > 0.0);
+                child_node.flow_size.set(if vertical {
+                    (cross, main)
+                } else {
+                    (main, cross)
                 });
             }
         }
 
-        slots
+        aligned
             .into_iter()
-            .zip(cross)
-            .map(|(slot, cross_extent)| {
-                let slot = apply_cross_align(slot, vertical, align, cross_extent);
-                (slot.x, slot.y, slot.width, slot.height)
-            })
+            .map(|slot| (slot.x, slot.y, slot.width, slot.height))
             .collect()
     }
 
@@ -1551,7 +1576,7 @@ impl SceneWorld2D {
             self.pixel_grid.get(),
             state,
             node.content_size.get(),
-            node.grow_extent.get(),
+            node.flow_size.get(),
             !node.children.is_empty(),
         );
         // A hidden ui node (ui_visible: false) drew nothing, so it shouldn't
@@ -1827,7 +1852,7 @@ impl SceneWorld2D {
             self.pixel_grid.get(),
             state,
             node.content_size.get(),
-            node.grow_extent.get(),
+            node.flow_size.get(),
             !node.children.is_empty(),
         );
         if ui_visible && node.property("ui").is_some() {
@@ -3782,6 +3807,73 @@ mod tests {
             (e.y - -50.0).abs() < 1e-3,
             "end pins to the bottom: {}",
             e.y
+        );
+    }
+
+    #[test]
+    fn a_flow_decided_axis_places_the_child_without_a_paired_origin() {
+        // `ui_grow` and a non-stretch `ui_align` both hand the child a slot
+        // that IS the child: same size, already placed. So the child must
+        // take that slot outright. Before this it re-anchored inside it and
+        // put its left edge on the slot's centre, which authoring worked
+        // around with a paired `ui_origin_x: 0.5` on every such node — the
+        // two-property gotcha `flow_size` exists to prevent.
+        //
+        // Deliberately no `ui_stretch_*` on these children: stretch would
+        // mask the bug, which is why every earlier flow test missed it.
+        let mut world = SceneWorld2D::new();
+        let container = world.spawn(SceneNode2D::new("root"));
+        {
+            let n = world.get_mut(container).unwrap();
+            n.set_property("ui", "rect");
+            n.set_property("ui_layout", "column");
+            n.set_property("ui_align", "center");
+            n.set_property("ui_stretch_x", "true");
+            n.set_property("ui_stretch_y", "true");
+        }
+        let child = world.spawn_child(container, SceneNode2D::new("box"));
+        {
+            let n = world.get_mut(child).unwrap();
+            n.set_property("ui", "rect");
+            n.set_property("ui_w", "100");
+            n.set_property("ui_h", "40");
+        }
+        let mut canvas = Canvas::new((400, 200), std::ptr::null());
+        world.draw_to_canvas(&mut canvas, 0.0);
+        let r = world.resolved_rect(child).unwrap();
+        assert!((r.width - 100.0).abs() < 1e-3, "keeps its width");
+        assert!(
+            (r.x - -50.0).abs() < 1e-3,
+            "centred on the container, not hung off its centre: x={}",
+            r.x
+        );
+
+        // The default (`stretch`) must be untouched: it decides nothing, so a
+        // child with no stretch of its own keeps re-anchoring in the slot
+        // exactly as every scene authored before `ui_align` assumes.
+        let mut world = SceneWorld2D::new();
+        let container = world.spawn(SceneNode2D::new("root"));
+        {
+            let n = world.get_mut(container).unwrap();
+            n.set_property("ui", "rect");
+            n.set_property("ui_layout", "column");
+            n.set_property("ui_stretch_x", "true");
+            n.set_property("ui_stretch_y", "true");
+        }
+        let child = world.spawn_child(container, SceneNode2D::new("box"));
+        {
+            let n = world.get_mut(child).unwrap();
+            n.set_property("ui", "rect");
+            n.set_property("ui_w", "100");
+            n.set_property("ui_h", "40");
+        }
+        let mut canvas = Canvas::new((400, 200), std::ptr::null());
+        world.draw_to_canvas(&mut canvas, 0.0);
+        let r = world.resolved_rect(child).unwrap();
+        assert!(
+            (r.x - 0.0).abs() < 1e-3,
+            "unchanged under the default align: x={}",
+            r.x
         );
     }
 

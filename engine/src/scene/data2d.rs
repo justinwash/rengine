@@ -245,7 +245,7 @@ fn resolve_ui_rect(
     get: impl Fn(&str) -> Option<String>,
     pixel_grid: f32,
     content_size: Option<(f32, f32)>,
-    grow_extent: Option<(bool, f32)>,
+    flow_size: (Option<f32>, Option<f32>),
 ) -> (f32, f32, f32, f32) {
     let prop_f32 = |n: &str| get(n).and_then(|v| v.trim().parse::<f32>().ok());
     let prop_bool =
@@ -261,8 +261,7 @@ fn resolve_ui_rect(
     // this node's main-axis extent, and it is the whole meaning of the
     // property. `ui_size: "content"` still wins on the *other* axis, so a
     // growing row can size to its children vertically.
-    let grow_w = grow_extent.and_then(|(v, e)| (!v).then_some(e));
-    let grow_h = grow_extent.and_then(|(v, e)| v.then_some(e));
+    let (grow_w, grow_h) = flow_size;
     let w_fixed = match grow_w.or_else(|| {
         content_size
             .filter(|_| sizes_to_content)
@@ -309,8 +308,17 @@ fn resolve_ui_rect(
     // hand-offsetting `position` by half its size — which is impossible the
     // moment the size is data-bound, and is the single most-hit authoring
     // trap otherwise.
-    let origin_x = prop_f32("ui_origin_x").unwrap_or(0.0);
-    let origin_y = prop_f32("ui_origin_y").unwrap_or(0.0);
+    //
+    // On an axis the parent's flow decided (`ui_grow`, or a non-stretch
+    // `ui_align`), the slot *is* the node: same size, already placed. So the
+    // node's own centre is what belongs on the slot's centre, and the default
+    // origin is 0.5 there rather than 0. Without this a grown or aligned
+    // child puts its left edge on the slot's centre and draws half out of
+    // its own slot — and every such node would need a paired
+    // `ui_origin_x: 0.5` the author has to remember.
+    let default_origin = |flow_decided: bool| if flow_decided { 0.5 } else { 0.0 };
+    let origin_x = prop_f32("ui_origin_x").unwrap_or_else(|| default_origin(grow_w.is_some()));
+    let origin_y = prop_f32("ui_origin_y").unwrap_or_else(|| default_origin(grow_h.is_some()));
     let (x, w) = if prop_bool("ui_stretch_x") {
         let ml = prop_f32("ui_margin_left").unwrap_or(0.0);
         let mr = prop_f32("ui_margin_right").unwrap_or(0.0);
@@ -823,7 +831,7 @@ pub(crate) fn draw_ui_node<'a>(
         0.0,
         UiInteractionState::default(),
         None,
-        None,
+        (None, None),
         false,
     )
 }
@@ -850,7 +858,7 @@ pub(crate) fn draw_ui_node_with_bindings(
     pixel_grid: f32,
     state: UiInteractionState,
     content_size: Option<(f32, f32)>,
-    grow_extent: Option<(bool, f32)>,
+    flow_size: (Option<f32>, Option<f32>),
     has_children: bool,
 ) -> ((f32, f32, f32, f32), bool) {
     let get = |n: &str| get(n).map(|v| substitute_bindings(&v, bindings).into_owned());
@@ -863,7 +871,7 @@ pub(crate) fn draw_ui_node_with_bindings(
         &get,
         pixel_grid,
         content_size,
-        grow_extent,
+        flow_size,
     );
     let visible = !matches!(
         get("ui_visible").as_deref().map(str::trim),
@@ -898,7 +906,7 @@ pub(crate) fn draw_ui_node_on_with_bindings(
     pixel_grid: f32,
     state: UiInteractionState,
     content_size: Option<(f32, f32)>,
-    grow_extent: Option<(bool, f32)>,
+    flow_size: (Option<f32>, Option<f32>),
     has_children: bool,
 ) -> ((f32, f32, f32, f32), bool) {
     let get = |n: &str| get(n).map(|v| substitute_bindings(&v, bindings).into_owned());
@@ -911,7 +919,7 @@ pub(crate) fn draw_ui_node_on_with_bindings(
         &get,
         pixel_grid,
         content_size,
-        grow_extent,
+        flow_size,
     );
     let visible = !matches!(
         get("ui_visible").as_deref().map(str::trim),
@@ -1819,7 +1827,7 @@ mod tests {
                 |n| map.get(n).cloned(),
                 0.0,
                 None,
-                None,
+                (None, None),
             )
         };
 
