@@ -212,6 +212,8 @@ impl SceneInstance2D {
     /// - `ui_shadow_color`, `ui_shadow_x`, `ui_shadow_y`: a hard offset drop
     ///   shadow under **any** kind, `ui_shadow_y` positive = down (CSS sense)
     /// - `ui_text`, `ui_text_size`: text contents and size
+    /// - `ui_tracking`: extra pixels after each glyph (CSS `letter-spacing`),
+    ///   applied to drawing, measuring and alignment alike
     pub fn draw_ui_primitive(&self, frame: &mut Frame, time: f32) {
         if self.property("ui").is_none() {
             return;
@@ -261,14 +263,22 @@ fn resolve_ui_rect(
     // growing row can size to its children vertically.
     let grow_w = grow_extent.and_then(|(v, e)| (!v).then_some(e));
     let grow_h = grow_extent.and_then(|(v, e)| v.then_some(e));
-    let w_fixed = match grow_w.or_else(|| content_size.filter(|_| sizes_to_content).map(|(w, _)| w * scale.x)) {
+    let w_fixed = match grow_w.or_else(|| {
+        content_size
+            .filter(|_| sizes_to_content)
+            .map(|(w, _)| w * scale.x)
+    }) {
         Some(w) => w,
         None => match prop_f32("ui_w_frac") {
             Some(f) => rw * f,
             None => prop_f32("ui_w").unwrap_or(0.0) * scale.x,
         },
     };
-    let h_fixed = match grow_h.or_else(|| content_size.filter(|_| sizes_to_content).map(|(_, h)| h * scale.y)) {
+    let h_fixed = match grow_h.or_else(|| {
+        content_size
+            .filter(|_| sizes_to_content)
+            .map(|(_, h)| h * scale.y)
+    }) {
         Some(h) => h,
         None => match prop_f32("ui_h_frac") {
             Some(f) => rh * f,
@@ -496,6 +506,11 @@ fn draw_ui_kind_dyn(
             );
         }
     }
+    // `ui_tracking` is canvas state for the duration of this node's paint, so
+    // every text arm below — and the alignment each one measures with — picks
+    // it up without a per-arm branch. Restored after, since the canvas is
+    // shared with every other node in the frame.
+    let prev_tracking = canvas.set_tracking(prop_f32("ui_tracking").unwrap_or(0.0) * scale.x);
     let border = node_border(&get, scale);
     // Painted after the kind's own fill, below — a closure so the early-return
     // arms can't forget it.
@@ -590,8 +605,7 @@ fn draw_ui_kind_dyn(
 
             let marker = get("ui_marker").unwrap_or_default();
             if !marker.is_empty() {
-                let marker_color =
-                    parse_srgb_color(get("ui_marker_color").as_deref(), TRANSPARENT);
+                let marker_color = parse_srgb_color(get("ui_marker_color").as_deref(), TRANSPARENT);
                 if marker_color.a > 0.0 {
                     // Sits `ui_marker_inset` in from the button's leading
                     // edge, so the marker tracks the bar rather than
@@ -712,6 +726,7 @@ fn draw_ui_kind_dyn(
         _ => {}
     }
     draw(canvas);
+    canvas.set_tracking(prev_tracking);
 }
 
 /// Parse `ui_text_align`: `left` (default) | `center` | `right`.
@@ -1491,10 +1506,7 @@ fn nearest_group_ancestor(
     None
 }
 
-fn editor_runtime_prefab_name(
-    path: &Path,
-    node: &EditorSceneNode,
-) -> Result<String, AssetError> {
+fn editor_runtime_prefab_name(path: &Path, node: &EditorSceneNode) -> Result<String, AssetError> {
     let prefab_name = if node.runtime_prefab.trim().is_empty() {
         node.name.trim()
     } else {
@@ -2206,7 +2218,10 @@ mod tests {
         assert_eq!(draw(&[("ui", "button")]), 0);
         // An explicitly transparent bar is also nothing, which is how the
         // idle state of a selection bar is authored.
-        assert_eq!(draw(&[("ui", "button"), ("ui_bar_color", "230,178,60,0")]), 0);
+        assert_eq!(
+            draw(&[("ui", "button"), ("ui_bar_color", "230,178,60,0")]),
+            0
+        );
     }
 
     #[test]
@@ -2227,11 +2242,8 @@ mod tests {
             hovered: true,
             ..Default::default()
         };
-        let resolved = resolve_interaction_property(
-            &|n: &str| props.get(n).cloned(),
-            "ui_bar_color",
-            hovered,
-        );
+        let resolved =
+            resolve_interaction_property(&|n: &str| props.get(n).cloned(), "ui_bar_color", hovered);
         assert_eq!(resolved.as_deref(), Some("230,178,60,34"));
 
         let idle = UiInteractionState::default();
@@ -2285,10 +2297,13 @@ mod tests {
         let document = EditorSceneDocument { nodes: vec![node] };
         let def = scene_definition_from_editor_document(Path::new("<test>"), document).unwrap();
         let prefab = def.prefabs.first().expect("one prefab");
-        assert_eq!(prefab.sprites.len(), 1, "an authored alias compiles a sprite");
+        assert_eq!(
+            prefab.sprites.len(),
+            1,
+            "an authored alias compiles a sprite"
+        );
         assert_eq!(prefab.sprites[0].asset, "menu_panel");
     }
-
 
     #[test]
     fn a_button_node_derives_ui_so_it_is_hit_testable_by_its_own_name() {

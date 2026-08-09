@@ -73,6 +73,16 @@ pub struct Canvas {
     /// as its own pointer so the no-font-table case (a `Canvas` built for a
     /// test with a null table) still behaves exactly as before.
     fonts: *const [FontAtlas],
+    /// Extra pixels inserted after every glyph — CSS `letter-spacing`, which
+    /// the pixel-art UI leans on heavily (70 uses across the mockups) to open
+    /// up all-caps chrome.
+    ///
+    /// Canvas state rather than an argument on all nine text entry points:
+    /// drawing, measuring and alignment must agree on it or centred text
+    /// drifts by half the accumulated tracking, and threading one more `f32`
+    /// through every signature to guarantee that is a much larger diff than
+    /// setting it once around the call.
+    tracking: f32,
 }
 
 impl Canvas {
@@ -94,7 +104,56 @@ impl Canvas {
             current_texture: DrawTexture::Font(0),
             atlas,
             fonts,
+            tracking: 0.0,
         }
+    }
+
+    /// Set the extra spacing inserted after each glyph, in pixels at the
+    /// drawn size. Applies to every subsequent text draw *and* measurement on
+    /// this canvas until changed, so alignment and content sizing stay
+    /// consistent with what is painted. Returns the previous value, so a
+    /// caller can restore it without tracking that itself.
+    pub fn set_tracking(&mut self, tracking: f32) -> f32 {
+        std::mem::replace(&mut self.tracking, tracking)
+    }
+
+    /// The extra spacing currently applied after each glyph.
+    pub fn tracking(&self) -> f32 {
+        self.tracking
+    }
+
+    /// The width `tracking` adds to a run of `text`: one gap after every glyph
+    /// except the last, so a single glyph and an empty string are unaffected
+    /// and a trailing gap never pushes right-aligned text off its anchor.
+    ///
+    /// Counts the same glyphs the draw loop does — chars outside the atlas's
+    /// ASCII range are skipped there, so counting them here would measure
+    /// wider than it paints.
+    fn tracking_width(&self, text: &str) -> f32 {
+        Self::tracking_width_of(text, self.tracking)
+    }
+
+    fn tracking_width_of(text: &str, tracking: f32) -> f32 {
+        if tracking == 0.0 {
+            return 0.0;
+        }
+        let glyphs = text.chars().filter(|c| (*c as usize) < 128).count();
+        tracking * (glyphs.saturating_sub(1)) as f32
+    }
+
+    /// [`measure_text_in`](Self::measure_text_in) at an explicit tracking
+    /// rather than the canvas's current one, for the content-sizing pass —
+    /// it holds a `&Canvas` and must measure a node's authored `ui_tracking`
+    /// without mutating shared state mid-measure.
+    pub fn measure_text_tracked(
+        &self,
+        font: FontId,
+        text: &str,
+        size: f32,
+        tracking: f32,
+    ) -> (f32, f32) {
+        let (w, h) = self.font_atlas(font).measure_text(text, size);
+        (w + Self::tracking_width_of(text, tracking), h)
     }
 
     fn atlas(&self) -> &FontAtlas {
@@ -128,7 +187,8 @@ impl Canvas {
     /// and text centring must go through this, not the default-font version,
     /// or a node drawn in one face is measured in another.
     pub fn measure_text_in(&self, font: FontId, text: &str, size: f32) -> (f32, f32) {
-        self.font_atlas(font).measure_text(text, size)
+        let (w, h) = self.font_atlas(font).measure_text(text, size);
+        (w + self.tracking_width(text), h)
     }
 
     /// [`line_height`](Self::line_height) in a specific font.
@@ -522,7 +582,7 @@ impl Canvas {
                 self.verts.extend_from_slice(&[v0, v2, v1, v0, v3, v2]);
             }
 
-            cursor_x += entry.advance * scale;
+            cursor_x += entry.advance * scale + self.tracking;
         }
     }
 
@@ -551,11 +611,13 @@ impl Canvas {
         color: Color,
         align: TextAlign,
     ) {
-        let atlas = self.font_atlas(font);
         let offset = if align == TextAlign::Left {
             0.0
         } else {
-            let (w, _) = atlas.measure_text(text, size);
+            // Through `measure_text_in`, not the atlas directly: alignment has
+            // to account for `tracking` or a centred run drifts left by half
+            // the spacing it actually draws with.
+            let (w, _) = self.measure_text_in(font, text, size);
             match align {
                 TextAlign::Center => -w / 2.0,
                 TextAlign::Right => -w,
@@ -585,6 +647,7 @@ impl Canvas {
     ) {
         self.set_font(atlas.id().0);
         let scale = size / FONT_SIZE;
+        let tracking = self.tracking;
         let mut cursor_x = x;
 
         for &(span_text, span_color) in spans {
@@ -631,7 +694,7 @@ impl Canvas {
                     self.verts.extend_from_slice(&[v0, v2, v1, v0, v3, v2]);
                 }
 
-                cursor_x += entry.advance * scale;
+                cursor_x += entry.advance * scale + tracking;
             }
         }
     }
@@ -768,6 +831,10 @@ impl Canvas {
         max_width: f32,
         align: TextAlign,
     ) {
+        // ponytail: wraps on untracked widths, so a tracked block can overrun
+        // `max_width` by its accumulated spacing. Tracking is for all-caps
+        // chrome and wrapping is for prose; nothing authored is both. Give
+        // `wrap_text` the tracking if that ever stops being true.
         let lines = wrap_text(text, size, max_width, self.font_atlas(font));
         self.text_block_lines_in(font, x, y, &lines, size, color, align);
     }
@@ -803,7 +870,8 @@ impl Canvas {
     }
 
     pub fn measure_text(&self, text: &str, size: f32) -> (f32, f32) {
-        self.atlas().measure_text(text, size)
+        let (w, h) = self.atlas().measure_text(text, size);
+        (w + self.tracking_width(text), h)
     }
 
     pub fn line_height(&self, size: f32) -> f32 {
@@ -1079,5 +1147,30 @@ pub(crate) fn render_pass<'a, F>(
         }
     } else {
         pass.draw(0..verts.len() as u32, 0..1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tracking_widens_a_run_by_one_gap_per_glyph_gap() {
+        // The arithmetic every text path shares: drawing advances the cursor
+        // by `tracking` per glyph, so measuring and alignment must add
+        // exactly one gap *between* glyphs — a trailing gap would push
+        // right-aligned text off its anchor and centred text half a gap left.
+        let w = |text: &str, tracking: f32| Canvas::tracking_width_of(text, tracking);
+
+        // No tracking authored: every existing scene measures as before.
+        assert_eq!(w("FORMULA R", 0.0), 0.0);
+        // Nine glyphs, eight gaps.
+        assert_eq!(w("FORMULA R", 6.0), 48.0);
+        // A single glyph and an empty run have no gaps at all.
+        assert_eq!(w("X", 6.0), 0.0);
+        assert_eq!(w("", 6.0), 0.0);
+        // Non-ASCII is skipped by the draw loop, so it must not be counted
+        // here either — otherwise the measure is wider than the paint.
+        assert_eq!(w("A\u{2022}B", 4.0), w("AB", 4.0));
     }
 }

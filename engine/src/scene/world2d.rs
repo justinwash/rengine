@@ -777,9 +777,7 @@ impl SceneWorld2D {
         // Note the supplier only has to *name* the source to take over — an
         // empty Vec is a real answer ("no rows right now") and correctly
         // yields zero instances rather than falling back to authored rows.
-        let supplied = source_name
-            .as_deref()
-            .and_then(|name| repeaters.get(name));
+        let supplied = source_name.as_deref().and_then(|name| repeaters.get(name));
         let items: Option<&Vec<Bindings>> = supplied.or(authored.as_ref());
         let item_count = items.map_or(0, Vec::len);
 
@@ -1930,7 +1928,14 @@ fn node_own_extent(node: &SceneNode2D, canvas: &Canvas, bindings: &Bindings) -> 
                 // content-sized Silkscreen label measured with the default
                 // face's metrics would size every screen slightly wrong, and
                 // the error would only show as drift, never as a failure.
-                canvas.measure_text_in(super::data2d::node_font(&get), &text, size)
+                // Tracking widens the run, so a content-sized label that
+                // ignored it would size to less than it paints.
+                canvas.measure_text_tracked(
+                    super::data2d::node_font(&get),
+                    &text,
+                    size,
+                    prop_f32("ui_tracking").unwrap_or(0.0),
+                )
             }
         }
         _ => (0.0, 0.0),
@@ -2351,8 +2356,16 @@ mod tests {
 
         let rect = world.resolved_rect(row).expect("row drew");
         // 20 + 5 (gap) + 80 = 105 wide; tallest child (14) sets the height.
-        assert!((rect.width - 105.0).abs() < 1e-3, "got width {}", rect.width);
-        assert!((rect.height - 14.0).abs() < 1e-3, "got height {}", rect.height);
+        assert!(
+            (rect.width - 105.0).abs() < 1e-3,
+            "got width {}",
+            rect.width
+        );
+        assert!(
+            (rect.height - 14.0).abs() < 1e-3,
+            "got height {}",
+            rect.height
+        );
     }
 
     #[test]
@@ -2526,10 +2539,8 @@ mod tests {
         // The risk the authored-fallback design carries: "the supplier said
         // zero rows" must not read as "the supplier said nothing", or an
         // empty live list would render stale authored rows.
-        let (mut world, list) = authored_repeat_world(
-            r#"[{"pos":"1","name":"AUTHORED"}]"#,
-            Some("standings"),
-        );
+        let (mut world, list) =
+            authored_repeat_world(r#"[{"pos":"1","name":"AUTHORED"}]"#, Some("standings"));
 
         let mut sources = RepeaterSources::new();
         sources.insert("standings".to_string(), Vec::new());
@@ -2567,7 +2578,12 @@ mod tests {
         world.sync_repeaters(&RepeaterSources::new());
 
         let instances = world.get(list).unwrap().children().to_vec();
-        let scope = world.get(instances[0]).unwrap().instance_bindings.clone().unwrap();
+        let scope = world
+            .get(instances[0])
+            .unwrap()
+            .instance_bindings
+            .clone()
+            .unwrap();
         assert_eq!(scope.get("pos").map(String::as_str), Some("1"));
         assert_eq!(scope.get("lapped").map(String::as_str), Some("true"));
         assert_eq!(scope.get("name").map(String::as_str), Some("REYES"));
@@ -3513,8 +3529,16 @@ mod tests {
             &[("a", &[("ui_grow", "2")]), ("b", &[("ui_grow", "1")])],
         );
         let r = |i: usize| world.resolved_rect(h[i]).expect("child drawn");
-        assert!((r(0).width - 600.0).abs() < 1e-3, "weight 2: {}", r(0).width);
-        assert!((r(1).width - 300.0).abs() < 1e-3, "weight 1: {}", r(1).width);
+        assert!(
+            (r(0).width - 600.0).abs() < 1e-3,
+            "weight 2: {}",
+            r(0).width
+        );
+        assert!(
+            (r(1).width - 300.0).abs() < 1e-3,
+            "weight 1: {}",
+            r(1).width
+        );
     }
 
     #[test]
@@ -3628,7 +3652,11 @@ mod tests {
             "last is flush right: {}",
             r(2).right()
         );
-        assert!((r(1).x - -50.0).abs() < 1e-3, "middle is centred: {}", r(1).x);
+        assert!(
+            (r(1).x - -50.0).abs() < 1e-3,
+            "middle is centred: {}",
+            r(1).x
+        );
         // Widths are untouched by justification.
         for i in 0..3 {
             assert!((r(i).width - 100.0).abs() < 1e-3);
@@ -3647,7 +3675,10 @@ mod tests {
             (r(1).x - (r(0).right() + 10.0)).abs() < 1e-3,
             "gap preserved between centred items"
         );
-        assert!((r(1).width - 100.0).abs() < 1e-3, "gap is not folded into w");
+        assert!(
+            (r(1).width - 100.0).abs() < 1e-3,
+            "gap is not folded into w"
+        );
     }
 
     #[test]
@@ -3680,7 +3711,11 @@ mod tests {
         );
         let (world, h) = flow_row((200, 100), &[("ui_align", "end")], &children);
         let e = world.resolved_rect(h[0]).unwrap();
-        assert!((e.y - -50.0).abs() < 1e-3, "end pins to the bottom: {}", e.y);
+        assert!(
+            (e.y - -50.0).abs() < 1e-3,
+            "end pins to the bottom: {}",
+            e.y
+        );
     }
 
     #[test]

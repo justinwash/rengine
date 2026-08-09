@@ -1514,7 +1514,11 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
             let shot = play_script
                 .as_mut()
                 .and_then(|script| script.step(&mut engine.input));
-            headless_frame.begin_with_fonts(engine.game_size(), engine.font_atlas(), engine.fonts());
+            headless_frame.begin_with_fonts(
+                engine.game_size(),
+                engine.font_atlas(),
+                engine.fonts(),
+            );
             game.update(&engine, &mut headless_frame);
             game.render(&engine, &mut headless_frame);
             if let Some(shot_path) = shot {
