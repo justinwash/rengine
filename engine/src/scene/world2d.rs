@@ -1246,6 +1246,11 @@ impl SceneWorld2D {
     /// by the parent's `ui_justify` (`"start"` by default — packed from the
     /// start, exactly as before).
     ///
+    /// A child may also author `ui_lead`: extra space *before* it on the main
+    /// axis, on top of the uniform `ui_gap` — the mockups' `margin-top:34px`
+    /// between blocks. Leading only, and its own property rather than
+    /// `ui_margin_*`, which already means something else on a stretched node.
+    ///
     /// Main-axis size is still read directly here rather than via
     /// `resolve_ui_rect`, which also resolves *position*; `ui_w_frac` /
     /// `ui_stretch_x` on the main axis remain unsupported in a flow container —
@@ -1295,10 +1300,12 @@ impl SceneWorld2D {
         // read when `ui_align` is not the default `stretch`).
         let mut tracks: Vec<Track> = Vec::with_capacity(children.len());
         let mut cross: Vec<f32> = Vec::with_capacity(children.len());
+        let mut lead: Vec<f32> = Vec::with_capacity(children.len());
         for &child in children {
             let Some(child_node) = self.get(child) else {
                 tracks.push(Track::Fixed(0.0));
                 cross.push(0.0);
+                lead.push(0.0);
                 continue;
             };
             // Substituted, not raw: the parent's own layout properties go
@@ -1335,6 +1342,27 @@ impl SceneWorld2D {
             let content_main = content.map(|(w, h)| if vertical { h } else { w });
             let content_cross = content.map(|(w, h)| if vertical { w } else { h });
 
+            // Space *before* this child on the main axis, on top of the
+            // parent's uniform `ui_gap` — the mockups' `margin-top:34px`
+            // between blocks of a column, which a single gap can't express
+            // and which would otherwise be an empty spacer node per block.
+            //
+            // Its own property rather than reusing `ui_margin_top`/`_left`:
+            // those already mean "inset this stretched node's rect" in
+            // `resolve_ui_rect`, and a flow child that also stretches would
+            // apply both and land at twice the offset. One name, one meaning,
+            // and `ui_lead` reads as the flow concept it is on either axis.
+            //
+            // Leading only: a trailing space is the next child's leading one,
+            // and supporting both invites CSS's margin-collapse rules.
+            lead.push(
+                child_get("ui_lead")
+                    .and_then(|v| v.trim().parse::<f32>().ok())
+                    .unwrap_or(0.0)
+                    .max(0.0)
+                    * scale_main,
+            );
+
             let grow = child_get("ui_grow").and_then(|v| v.trim().parse::<f32>().ok());
             tracks.push(match grow {
                 Some(weight) if weight > 0.0 => Track::Weight(weight),
@@ -1360,17 +1388,37 @@ impl SceneWorld2D {
         // `justify` only applies when nothing grows — matching flexbox, where
         // `justify-content` has no visible effect once a child has `flex:1`.
         let grows = tracks.iter().any(|t| !matches!(t, Track::Fixed(_)));
+        // A leading margin is space the child does not occupy, so it rides
+        // inside that child's own track and is trimmed off the front of the
+        // slot afterwards — the same fold-then-trim the justified path below
+        // already uses for `gap`. Folding it in (rather than shifting the
+        // child after placement) is what makes a growing sibling see the
+        // margin as space already spoken for, so the row still sums to the
+        // container instead of overflowing by the margins.
+        let padded_tracks: Vec<Track> = tracks
+            .iter()
+            .zip(&lead)
+            .map(|(t, m)| match t {
+                // A weighted track has no pixels to fold into, so a growing
+                // child's own margin is taken out of its slot at trim time
+                // below; that is the one case where the margin comes out of
+                // the child's share rather than the container's slack, which
+                // is also what flexbox does with `flex:1` plus a margin.
+                Track::Fixed(px) => Track::Fixed(px + m),
+                other => *other,
+            })
+            .collect();
         let slots = if grows {
             if vertical {
-                padded.distribute_v(&tracks, gap)
+                padded.distribute_v(&padded_tracks, gap)
             } else {
-                padded.distribute_h(&tracks, gap)
+                padded.distribute_h(&padded_tracks, gap)
             }
         } else {
             // `justify_*` spaces items by slack alone, so the authored `gap`
             // is folded into the sizes and removed afterwards. Simpler than a
             // second justify variant that also knows about gaps.
-            let sizes: Vec<f32> = tracks
+            let sizes: Vec<f32> = padded_tracks
                 .iter()
                 .enumerate()
                 .map(|(i, t)| match t {
@@ -1398,6 +1446,25 @@ impl SceneWorld2D {
                 })
                 .collect()
         };
+
+        // Trim each folded-in leading margin back off the front of its slot,
+        // so the child draws after the space rather than inside it. One pass
+        // over both branches, since both placed with the margin folded in.
+        let slots: Vec<Rect> = slots
+            .into_iter()
+            .zip(&lead)
+            .map(|(r, &m)| {
+                if m <= 0.0 {
+                    r
+                } else if vertical {
+                    // y-up again: the leading edge of a column child is its
+                    // top, so the margin comes off the top of the slot.
+                    Rect::new(r.x, r.y, r.width, (r.height - m).max(0.0))
+                } else {
+                    Rect::new(r.x + m, r.y, (r.width - m).max(0.0), r.height)
+                }
+            })
+            .collect();
 
         // A grown child is told the extent it won, so resolving its own rect
         // fills the slot instead of collapsing to its (absent) ui_w/ui_h.
@@ -3716,6 +3783,103 @@ mod tests {
             "end pins to the bottom: {}",
             e.y
         );
+    }
+
+    #[test]
+    fn ui_lead_adds_space_a_uniform_gap_cannot() {
+        // The mockups' `margin-top:34px` between blocks of a column: space
+        // before one child only, which `ui_gap` (uniform) can't express and
+        // which would otherwise be an empty spacer node per block.
+        let (world, h) = flow_row(
+            (400, 100),
+            &[],
+            &[
+                ("a", &[("ui_w", "50")]),
+                ("b", &[("ui_w", "50"), ("ui_lead", "30")]),
+                ("c", &[("ui_w", "50")]),
+            ],
+        );
+        let r = |i: usize| world.resolved_rect(h[i]).expect("child drawn");
+        assert!((r(0).x - -200.0).abs() < 1e-3);
+        // b starts 30 after a ends, and is still its own 50 wide — the margin
+        // is space before it, not extra size.
+        assert!(
+            (r(1).x - (r(0).right() + 30.0)).abs() < 1e-3,
+            "margin precedes b: {} vs {}",
+            r(1).x,
+            r(0).right()
+        );
+        assert!((r(1).width - 50.0).abs() < 1e-3, "b keeps its width");
+        // c is unaffected beyond being pushed along.
+        assert!((r(2).x - r(1).right()).abs() < 1e-3);
+
+        // With a growing sibling the row must still sum to the container:
+        // the margin is space already spoken for, not an overflow.
+        let (world, h) = flow_row(
+            (400, 100),
+            &[],
+            &[
+                ("a", &[("ui_w", "50")]),
+                ("grow", &[("ui_grow", "1")]),
+                ("c", &[("ui_w", "50"), ("ui_lead", "30")]),
+            ],
+        );
+        let r = |i: usize| world.resolved_rect(h[i]).expect("child drawn");
+        // 400 - 50 - 50 - 30 = 270 left for the growing child.
+        assert!(
+            (r(1).width - 270.0).abs() < 1e-3,
+            "grower absorbs the margin as spoken-for space: {}",
+            r(1).width
+        );
+        assert!((r(2).x - (r(1).right() + 30.0)).abs() < 1e-3);
+        assert!(
+            (r(2).right() - 200.0).abs() < 1e-3,
+            "row still ends at the container edge: {}",
+            r(2).right()
+        );
+    }
+
+    #[test]
+    fn ui_lead_in_a_column_comes_off_the_top() {
+        // y-up: a column packs downward, so a child's leading edge is its
+        // top and the margin has to move it *down*, not up. Getting this
+        // backwards is invisible until two blocks overlap.
+        let mut world = SceneWorld2D::new();
+        let container = world.spawn(SceneNode2D::new("root"));
+        {
+            let n = world.get_mut(container).unwrap();
+            n.set_property("ui", "rect");
+            n.set_property("ui_layout", "column");
+            n.set_property("ui_stretch_x", "true");
+            n.set_property("ui_stretch_y", "true");
+        }
+        let mut handles = Vec::new();
+        for (name, props) in [
+            ("a", &[("ui_h", "40")][..]),
+            ("b", &[("ui_h", "40"), ("ui_lead", "20")][..]),
+        ] {
+            let h = world.spawn_child(container, SceneNode2D::new(name));
+            let n = world.get_mut(h).unwrap();
+            n.set_property("ui", "rect");
+            n.set_property("ui_stretch_x", "true");
+            n.set_property("ui_stretch_y", "true");
+            for &(k, v) in props {
+                n.set_property(k, v);
+            }
+            handles.push(h);
+        }
+        let mut canvas = Canvas::new((200, 200), std::ptr::null());
+        world.draw_to_canvas(&mut canvas, 0.0);
+        let a = world.resolved_rect(handles[0]).unwrap();
+        let b = world.resolved_rect(handles[1]).unwrap();
+        assert!((a.y + a.height - 100.0).abs() < 1e-3, "a starts at the top");
+        assert!(
+            (b.y + b.height - (a.y - 20.0)).abs() < 1e-3,
+            "b's top sits 20 below a's bottom: b_top={} a_bottom={}",
+            b.y + b.height,
+            a.y
+        );
+        assert!((b.height - 40.0).abs() < 1e-3, "b keeps its height");
     }
 
     #[test]
