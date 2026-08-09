@@ -238,6 +238,7 @@ fn resolve_ui_rect(
     get: impl Fn(&str) -> Option<String>,
     pixel_grid: f32,
     content_size: Option<(f32, f32)>,
+    grow_extent: Option<(bool, f32)>,
 ) -> (f32, f32, f32, f32) {
     let prop_f32 = |n: &str| get(n).and_then(|v| v.trim().parse::<f32>().ok());
     let prop_bool =
@@ -249,15 +250,21 @@ fn resolve_ui_rect(
     // literal/bound `ui_w`/`ui_h` — a node can be *either* sized by its
     // author or sized by its children, not both.
     let sizes_to_content = get("ui_size").as_deref() == Some("content");
-    let w_fixed = match content_size.filter(|_| sizes_to_content) {
-        Some((w, _)) => w * scale.x,
+    // `ui_grow` (E-A) wins on its own axis: the parent's flow already decided
+    // this node's main-axis extent, and it is the whole meaning of the
+    // property. `ui_size: "content"` still wins on the *other* axis, so a
+    // growing row can size to its children vertically.
+    let grow_w = grow_extent.and_then(|(v, e)| (!v).then_some(e));
+    let grow_h = grow_extent.and_then(|(v, e)| v.then_some(e));
+    let w_fixed = match grow_w.or_else(|| content_size.filter(|_| sizes_to_content).map(|(w, _)| w * scale.x)) {
+        Some(w) => w,
         None => match prop_f32("ui_w_frac") {
             Some(f) => rw * f,
             None => prop_f32("ui_w").unwrap_or(0.0) * scale.x,
         },
     };
-    let h_fixed = match content_size.filter(|_| sizes_to_content) {
-        Some((_, h)) => h * scale.y,
+    let h_fixed = match grow_h.or_else(|| content_size.filter(|_| sizes_to_content).map(|(_, h)| h * scale.y)) {
+        Some(h) => h,
         None => match prop_f32("ui_h_frac") {
             Some(f) => rh * f,
             None => prop_f32("ui_h").unwrap_or(0.0) * scale.y,
@@ -664,6 +671,7 @@ pub(crate) fn draw_ui_node<'a>(
         0.0,
         UiInteractionState::default(),
         None,
+        None,
         false,
     )
 }
@@ -690,6 +698,7 @@ pub(crate) fn draw_ui_node_with_bindings(
     pixel_grid: f32,
     state: UiInteractionState,
     content_size: Option<(f32, f32)>,
+    grow_extent: Option<(bool, f32)>,
     has_children: bool,
 ) -> ((f32, f32, f32, f32), bool) {
     let get = |n: &str| get(n).map(|v| substitute_bindings(&v, bindings).into_owned());
@@ -702,6 +711,7 @@ pub(crate) fn draw_ui_node_with_bindings(
         &get,
         pixel_grid,
         content_size,
+        grow_extent,
     );
     let visible = !matches!(
         get("ui_visible").as_deref().map(str::trim),
@@ -736,6 +746,7 @@ pub(crate) fn draw_ui_node_on_with_bindings(
     pixel_grid: f32,
     state: UiInteractionState,
     content_size: Option<(f32, f32)>,
+    grow_extent: Option<(bool, f32)>,
     has_children: bool,
 ) -> ((f32, f32, f32, f32), bool) {
     let get = |n: &str| get(n).map(|v| substitute_bindings(&v, bindings).into_owned());
@@ -748,6 +759,7 @@ pub(crate) fn draw_ui_node_on_with_bindings(
         &get,
         pixel_grid,
         content_size,
+        grow_extent,
     );
     let visible = !matches!(
         get("ui_visible").as_deref().map(str::trim),
@@ -1657,6 +1669,7 @@ mod tests {
                 0.0,
                 |n| map.get(n).cloned(),
                 0.0,
+                None,
                 None,
             )
         };

@@ -19,7 +19,7 @@ use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 
 use crate::canvas::Canvas;
-use crate::layout::Stack;
+use crate::layout::{Justify, Track};
 use crate::renderer::{DrawParams, Frame};
 use crate::{Rect, Vec2};
 
@@ -147,6 +147,19 @@ pub struct SceneNode2D {
     /// is opt-in). `Cell` for the same reason as `ui_rect`: a draw-time
     /// cache, not observable state, so draw can stay `&self`.
     content_size: Cell<Option<(f32, f32)>>,
+    /// Main-axis extent assigned to this node by its parent's flow layout when
+    /// it authored `ui_grow` (E-A) — the share of the leftover space it won.
+    ///
+    /// Needed because a node resolves its own rect from the slot it is handed,
+    /// and a slot is only a *reference*: without this, `ui_grow: "1"` would
+    /// widen the slot while the node itself still resolved to its (absent)
+    /// `ui_w` of zero, and every growing panel would draw nothing. Making
+    /// `ui_grow` imply the fill is the whole point — needing to pair it with
+    /// `ui_stretch_x` would be one more two-property gotcha to remember.
+    ///
+    /// `(vertical, extent)`, so the draw knows which axis it applies to.
+    /// `Cell` for the same reason as `content_size`: a draw-time cache.
+    grow_extent: Cell<Option<(bool, f32)>>,
     /// Per-instance binding overlay (E3 repeaters): set by
     /// `SceneWorld2D::sync_repeaters` on each cloned instance root, merged
     /// over the ambient `Bindings` when drawing that instance, so
@@ -173,6 +186,7 @@ impl SceneNode2D {
             children: Vec::new(),
             ui_rect: Cell::new(None),
             content_size: Cell::new(None),
+            grow_extent: Cell::new(None),
             instance_bindings: None,
         }
     }
@@ -1207,18 +1221,41 @@ impl SceneWorld2D {
     /// stretch anchors within it as usual. Absent `ui_layout` returns
     /// `parent_rect` unchanged for every child — today's behaviour, zero cost.
     ///
-    /// Deliberately a single peek-one/place-one pass, not a two-pass
-    /// measure-then-place: `Stack::next` only needs one child's size at a
-    /// time, so there's no need to resolve every sibling before placing the
-    /// first. `Rect::distribute_v/h` (`Track::Even`/`Weight`) and `Justify::*`
-    /// both need the *sum* of every sibling's size before placing item 0 —
-    /// out of scope until something actually needs proportional/justified
-    /// distribution instead of packed-from-the-start flow.
+    /// Two passes, not one: every child's main-axis extent is measured before
+    /// any child is placed, because proportional (`ui_grow`) and justified
+    /// (`ui_justify`) distribution both need the *sum* of the siblings before
+    /// item 0 can be positioned. A packed-from-the-start `Stack` cannot express
+    /// either. The measure pass is a property read per child — no recursion —
+    /// so the second pass costs one extra walk of an already-cloned slice.
     ///
-    /// Main-axis size is read directly here (not via `resolve_ui_rect`, which
-    /// also resolves *position* — not wanted yet) — a child on the main axis
-    /// only reads plain `ui_w`/`ui_h`; `ui_w_frac`/`ui_stretch_x` on the main
-    /// axis are not supported in a flow container for this first pass.
+    /// A child's main-axis extent resolves in priority order (E-A + E-G):
+    ///
+    /// 1. `ui_grow: "<weight>"` → a weighted track sharing the leftover space.
+    ///    `"1"` is the common case; the value is a weight, so `"2"` takes twice
+    ///    the share of a `"1"` sibling.
+    /// 2. `ui_size: "content"` → its measured content size, already computed by
+    ///    the bottom-up pre-pass that runs *before* layout, so the value is
+    ///    simply read. This is what lets a sidebar be exactly as wide as its
+    ///    widest row instead of carrying a hand-measured constant.
+    /// 3. literal `ui_w`/`ui_h` → a fixed track. Today's behaviour, unchanged.
+    ///
+    /// Cross-axis (E-B): `ui_align` on the *parent* — `"stretch"` (default,
+    /// today's behaviour: the slot spans the full cross-axis), or
+    /// `"start"`/`"center"`/`"end"`, which size the slot to the child's own
+    /// cross extent and place it within the container.
+    ///
+    /// With no `ui_grow` on any child, leftover main-axis space is distributed
+    /// by the parent's `ui_justify` (`"start"` by default — packed from the
+    /// start, exactly as before).
+    ///
+    /// Main-axis size is still read directly here rather than via
+    /// `resolve_ui_rect`, which also resolves *position*; `ui_w_frac` /
+    /// `ui_stretch_x` on the main axis remain unsupported in a flow container —
+    /// `ui_grow` is how a flow child asks for a share of the space.
+    ///
+    /// Absent `ui_layout` returns `parent_rect` unchanged for every child, and
+    /// absent `ui_grow`/`ui_justify`/`ui_align` reproduces the previous
+    /// packed-from-the-start flow exactly.
     fn resolve_child_references(
         &self,
         parent: &SceneNode2D,
@@ -1244,6 +1281,8 @@ impl SceneWorld2D {
         let pad_top = prop_f32("ui_pad_top").unwrap_or(0.0);
         let pad_bottom = prop_f32("ui_pad_bottom").unwrap_or(0.0);
         let gap = prop_f32("ui_gap").unwrap_or(0.0);
+        let justify = parse_justify(get(parent, "ui_justify").as_deref());
+        let align = parse_align(get(parent, "ui_align").as_deref());
 
         let (px, py, pw, ph) = parent_rect;
         let padded = Rect::new(
@@ -1252,45 +1291,134 @@ impl SceneWorld2D {
             (pw - pad_left - pad_right).max(0.0),
             (ph - pad_top - pad_bottom).max(0.0),
         );
-        let mut stack = if vertical {
-            Stack::vertical(padded, gap)
+
+        // --- Pass 1: measure ------------------------------------------------
+        // Per child: its main-axis track, and its own cross-axis extent (only
+        // read when `ui_align` is not the default `stretch`).
+        let mut tracks: Vec<Track> = Vec::with_capacity(children.len());
+        let mut cross: Vec<f32> = Vec::with_capacity(children.len());
+        for &child in children {
+            let Some(child_node) = self.get(child) else {
+                tracks.push(Track::Fixed(0.0));
+                cross.push(0.0);
+                continue;
+            };
+            // Substituted, not raw: the parent's own layout properties go
+            // through `get` above, and a child's size has to as well or
+            // `ui_h: "{row_h}"` silently measures as zero and every slot
+            // collapses. A repeater instance's own scope (E3) overlays the
+            // ambient one here exactly as it does when the child draws —
+            // per-item sizing is the point of a repeater.
+            let merged;
+            let child_bindings = match &child_node.instance_bindings {
+                Some(scope) => {
+                    merged = merge_bindings(bindings, scope);
+                    &merged
+                }
+                None => bindings,
+            };
+            let child_get = |name: &str| {
+                child_node
+                    .property(name)
+                    .map(|v| super::data2d::substitute_bindings(v, child_bindings).into_owned())
+            };
+            let (scale_main, scale_cross) = if vertical {
+                (child_node.transform.scale.y, child_node.transform.scale.x)
+            } else {
+                (child_node.transform.scale.x, child_node.transform.scale.y)
+            };
+            let (main_prop, cross_prop) = if vertical {
+                ("ui_h", "ui_w")
+            } else {
+                ("ui_w", "ui_h")
+            };
+            let literal = |name: &str| child_get(name).and_then(|v| v.trim().parse::<f32>().ok());
+            let content = child_node.content_size.get();
+            let content_main = content.map(|(w, h)| if vertical { h } else { w });
+            let content_cross = content.map(|(w, h)| if vertical { w } else { h });
+
+            let grow = child_get("ui_grow").and_then(|v| v.trim().parse::<f32>().ok());
+            tracks.push(match grow {
+                Some(weight) if weight > 0.0 => Track::Weight(weight),
+                _ => Track::Fixed(
+                    content_main
+                        .or_else(|| literal(main_prop))
+                        .unwrap_or(0.0)
+                        .max(0.0)
+                        * scale_main,
+                ),
+            });
+            cross.push(
+                content_cross
+                    .or_else(|| literal(cross_prop))
+                    .unwrap_or(0.0)
+                    .max(0.0)
+                    * scale_cross,
+            );
+        }
+
+        // --- Pass 2: place --------------------------------------------------
+        // Growing children mean the leftover space is already spoken for, so
+        // `justify` only applies when nothing grows — matching flexbox, where
+        // `justify-content` has no visible effect once a child has `flex:1`.
+        let grows = tracks.iter().any(|t| !matches!(t, Track::Fixed(_)));
+        let slots = if grows {
+            if vertical {
+                padded.distribute_v(&tracks, gap)
+            } else {
+                padded.distribute_h(&tracks, gap)
+            }
         } else {
-            Stack::horizontal(padded, gap)
+            // `justify_*` spaces items by slack alone, so the authored `gap`
+            // is folded into the sizes and removed afterwards. Simpler than a
+            // second justify variant that also knows about gaps.
+            let sizes: Vec<f32> = tracks
+                .iter()
+                .enumerate()
+                .map(|(i, t)| match t {
+                    Track::Fixed(px) => px + if i + 1 < tracks.len() { gap } else { 0.0 },
+                    _ => 0.0,
+                })
+                .collect();
+            let placed = if vertical {
+                padded.justify_v(&sizes, justify)
+            } else {
+                padded.justify_h(&sizes, justify)
+            };
+            placed
+                .into_iter()
+                .enumerate()
+                .map(|(i, r)| {
+                    let trim = if i + 1 < tracks.len() { gap } else { 0.0 };
+                    if vertical {
+                        // y-up: a row's own extent is at its top, so trimming
+                        // the folded-in gap moves the origin up, not down.
+                        Rect::new(r.x, r.y + trim, r.width, (r.height - trim).max(0.0))
+                    } else {
+                        Rect::new(r.x, r.y, (r.width - trim).max(0.0), r.height)
+                    }
+                })
+                .collect()
         };
 
-        children
-            .iter()
-            .map(|&child| {
-                let Some(child_node) = self.get(child) else {
-                    return parent_rect;
-                };
-                let main_axis_prop = if vertical { "ui_h" } else { "ui_w" };
-                let scale = if vertical {
-                    child_node.transform.scale.y
-                } else {
-                    child_node.transform.scale.x
-                };
-                // Substituted, not raw: the parent's own layout properties go
-                // through `get` above, and a child's size has to as well or
-                // `ui_h: "{row_h}"` silently measures as zero and every slot
-                // collapses. A repeater instance's own scope (E3) overlays the
-                // ambient one here exactly as it does when the child draws —
-                // per-item sizing is the point of a repeater.
-                let merged;
-                let child_bindings = match &child_node.instance_bindings {
-                    Some(scope) => {
-                        merged = merge_bindings(bindings, scope);
-                        &merged
-                    }
-                    None => bindings,
-                };
-                let extent = child_node
-                    .property(main_axis_prop)
-                    .map(|v| super::data2d::substitute_bindings(v, child_bindings).into_owned())
-                    .and_then(|v| v.trim().parse::<f32>().ok())
-                    .unwrap_or(0.0)
-                    * scale;
-                let slot = stack.next(extent);
+        // A grown child is told the extent it won, so resolving its own rect
+        // fills the slot instead of collapsing to its (absent) ui_w/ui_h.
+        // Cleared otherwise, so a node that stops growing — or moves out of a
+        // flow entirely — does not keep a stale extent from a previous frame.
+        for ((&child, track), slot) in children.iter().zip(&tracks).zip(&slots) {
+            if let Some(child_node) = self.get(child) {
+                child_node.grow_extent.set(match track {
+                    Track::Fixed(_) => None,
+                    _ => Some((vertical, if vertical { slot.height } else { slot.width })),
+                });
+            }
+        }
+
+        slots
+            .into_iter()
+            .zip(cross)
+            .map(|(slot, cross_extent)| {
+                let slot = apply_cross_align(slot, vertical, align, cross_extent);
                 (slot.x, slot.y, slot.width, slot.height)
             })
             .collect()
@@ -1358,6 +1486,7 @@ impl SceneWorld2D {
             self.pixel_grid.get(),
             state,
             node.content_size.get(),
+            node.grow_extent.get(),
             !node.children.is_empty(),
         );
         // A hidden ui node (ui_visible: false) drew nothing, so it shouldn't
@@ -1633,6 +1762,7 @@ impl SceneWorld2D {
             self.pixel_grid.get(),
             state,
             node.content_size.get(),
+            node.grow_extent.get(),
             !node.children.is_empty(),
         );
         if ui_visible && node.property("ui").is_some() {
@@ -1810,6 +1940,76 @@ fn node_own_extent(node: &SceneNode2D, canvas: &Canvas, bindings: &Bindings) -> 
         prop_f32("ui_w").unwrap_or(measured.0),
         prop_f32("ui_h").unwrap_or(measured.1),
     )
+}
+
+/// How a flow container spreads leftover main-axis space when no child grows
+/// (E-A). Unset — and any unrecognised value — is `Start`, which is the
+/// packed-from-the-start flow this layer did before `ui_justify` existed.
+fn parse_justify(value: Option<&str>) -> Justify {
+    match value {
+        Some("center") => Justify::Center,
+        Some("end") => Justify::End,
+        Some("space_between") => Justify::SpaceBetween,
+        Some("space_around") => Justify::SpaceAround,
+        Some("space_evenly") => Justify::SpaceEvenly,
+        _ => Justify::Start,
+    }
+}
+
+/// Cross-axis placement of a child within its flow slot (E-B).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CrossAlign {
+    /// The slot spans the full cross-axis and the child resolves within it.
+    /// The default, and what every scene authored before E-B relies on.
+    Stretch,
+    Start,
+    Center,
+    End,
+}
+
+fn parse_align(value: Option<&str>) -> CrossAlign {
+    match value {
+        Some("start") => CrossAlign::Start,
+        Some("center") => CrossAlign::Center,
+        Some("end") => CrossAlign::End,
+        _ => CrossAlign::Stretch,
+    }
+}
+
+/// Narrow a full-cross-axis flow slot down to `extent` and place it (E-B).
+///
+/// `Stretch` returns the slot untouched, so the default path adds nothing but
+/// a comparison. A child that never declared a cross-axis size measures as
+/// zero, which would collapse it — so a zero extent also falls back to the
+/// full slot rather than silently vanishing.
+fn apply_cross_align(slot: Rect, vertical: bool, align: CrossAlign, extent: f32) -> Rect {
+    if align == CrossAlign::Stretch || extent <= 0.0 {
+        return slot;
+    }
+    if vertical {
+        // Column: the cross axis is x, which runs left→right.
+        let free = (slot.width - extent).max(0.0);
+        let x = match align {
+            CrossAlign::Start => slot.x,
+            CrossAlign::Center => slot.x + free * 0.5,
+            CrossAlign::End => slot.x + free,
+            CrossAlign::Stretch => unreachable!(),
+        };
+        Rect::new(x, slot.y, extent, slot.height)
+    } else {
+        // Row: the cross axis is y, which is **y-up** — `start` is the top
+        // edge, matching how `Stack` and `distribute_v` hand out rows in
+        // reading order. Getting this backwards would mirror every aligned
+        // row in the game and look like a data bug, not a layout one.
+        let free = (slot.height - extent).max(0.0);
+        let y = match align {
+            CrossAlign::Start => slot.top() - extent,
+            CrossAlign::Center => slot.y + free * 0.5,
+            CrossAlign::End => slot.y,
+            CrossAlign::Stretch => unreachable!(),
+        };
+        Rect::new(slot.x, y, slot.width, extent)
+    }
 }
 
 /// Overlay a repeater instance's own scope onto the ambient bindings — the
@@ -3227,5 +3427,288 @@ mod tests {
         assert!((r.y - root.1).abs() < 1e-3);
         assert!((r.width - root.2).abs() < 1e-3);
         assert!((r.height - root.3).abs() < 1e-3);
+    }
+
+    /// A row container holding children built from `children`, drawn against a
+    /// `viewport`-sized canvas. Returns the world so callers can read back each
+    /// child's resolved rect.
+    ///
+    /// The sidebar-and-centre shape every responsive rule in the UI overhaul is
+    /// stated in terms of, reduced to the smallest thing that still shows it.
+    fn flow_row(
+        viewport: (u32, u32),
+        container_props: &[(&str, &str)],
+        children: &[(&str, &[(&str, &str)])],
+    ) -> (SceneWorld2D, Vec<NodeHandle2D>) {
+        let mut world = SceneWorld2D::new();
+        let container = world.spawn(SceneNode2D::new("root"));
+        {
+            let n = world.get_mut(container).unwrap();
+            n.set_property("ui", "rect");
+            n.set_property("ui_layout", "row");
+            n.set_property("ui_stretch_x", "true");
+            n.set_property("ui_stretch_y", "true");
+            for &(k, v) in container_props {
+                n.set_property(k, v);
+            }
+        }
+        let handles = children
+            .iter()
+            .map(|(name, props)| {
+                let h = world.spawn_child(container, SceneNode2D::new(*name));
+                let n = world.get_mut(h).unwrap();
+                n.set_property("ui", "rect");
+                // A slot is only a *reference* rect: a child still resolves
+                // its own rect within it, so filling the slot on the main
+                // axis is opt-in exactly as it is for any other node. These
+                // rows want the slot they were given, which is what a real
+                // scene authors too — except on the main axis, where ui_grow
+                // now implies the fill on its own.
+                n.set_property("ui_stretch_x", "true");
+                n.set_property("ui_stretch_y", "true");
+                for &(k, v) in props.iter() {
+                    n.set_property(k, v);
+                }
+                h
+            })
+            .collect();
+        let mut canvas = Canvas::new(viewport, std::ptr::null());
+        world.draw_to_canvas(&mut canvas, 0.0);
+        (world, handles)
+    }
+
+    #[test]
+    fn ui_grow_shares_leftover_space_by_weight() {
+        // E-A. The race screen's main row: two fixed sidebars and a centre
+        // that takes whatever is left. Before this, a flow child could only be
+        // its literal ui_w, so "the rest" had to be hand-computed against a
+        // known viewport — which is exactly what breaks on resize.
+        let (world, h) = flow_row(
+            (1000, 200),
+            &[],
+            &[
+                ("left", &[("ui_w", "250")]),
+                ("centre", &[("ui_grow", "1")]),
+                ("right", &[("ui_w", "322")]),
+            ],
+        );
+        let r = |i: usize| world.resolved_rect(h[i]).expect("child drawn");
+        assert!((r(0).width - 250.0).abs() < 1e-3, "left keeps its width");
+        assert!((r(2).width - 322.0).abs() < 1e-3, "right keeps its width");
+        // 1000 - 250 - 322 = 428 for the one growing child.
+        assert!(
+            (r(1).width - 428.0).abs() < 1e-3,
+            "centre takes the rest: {}",
+            r(1).width
+        );
+        // Placed in order, no overlap, no gaps.
+        assert!((r(0).x - -500.0).abs() < 1e-3);
+        assert!((r(1).x - r(0).right()).abs() < 1e-3);
+        assert!((r(2).x - r(1).right()).abs() < 1e-3);
+
+        // Weights are proportional, not just "share equally".
+        let (world, h) = flow_row(
+            (900, 200),
+            &[],
+            &[("a", &[("ui_grow", "2")]), ("b", &[("ui_grow", "1")])],
+        );
+        let r = |i: usize| world.resolved_rect(h[i]).expect("child drawn");
+        assert!((r(0).width - 600.0).abs() < 1e-3, "weight 2: {}", r(0).width);
+        assert!((r(1).width - 300.0).abs() < 1e-3, "weight 1: {}", r(1).width);
+    }
+
+    #[test]
+    fn a_growing_centre_absorbs_the_viewport_change() {
+        // The responsive contract, stated as a test: the *same* authored
+        // document at two sizes keeps its sidebars fixed and gives every new
+        // pixel to the centre. This is the property the plan's per-screen
+        // 1920x1200 capture checks by eye.
+        let build = || {
+            [
+                ("left", &[("ui_w", "250")][..]),
+                ("centre", &[("ui_grow", "1")][..]),
+            ]
+        };
+        let (w1, h1) = flow_row((1280, 800), &[], &build());
+        let (w2, h2) = flow_row((1920, 800), &[], &build());
+        let left1 = w1.resolved_rect(h1[0]).unwrap();
+        let left2 = w2.resolved_rect(h2[0]).unwrap();
+        let mid1 = w1.resolved_rect(h1[1]).unwrap();
+        let mid2 = w2.resolved_rect(h2[1]).unwrap();
+        assert!(
+            (left1.width - left2.width).abs() < 1e-3,
+            "sidebar width is viewport-independent"
+        );
+        assert!(
+            (mid2.width - mid1.width - 640.0).abs() < 1e-3,
+            "centre absorbs all 640 new pixels: {} -> {}",
+            mid1.width,
+            mid2.width
+        );
+        // And it grew on the cross axis for free: a row child spans the full
+        // height by default, which is what makes a sidebar fill the viewport.
+        assert!((left1.height - 800.0).abs() < 1e-3, "sidebar spans height");
+    }
+
+    #[test]
+    fn content_sized_child_measures_itself_inside_a_flow() {
+        // E-G, the gap that blocked "a sidebar is only as wide as its widest
+        // row". A flow child used to take its main-axis extent from a literal
+        // ui_w only, so ui_size: "content" measured as zero and collapsed —
+        // forcing the hand-tuned constant this overhaul exists to delete.
+        let mut world = SceneWorld2D::new();
+        let root = world.spawn(SceneNode2D::new("root"));
+        {
+            let n = world.get_mut(root).unwrap();
+            n.set_property("ui", "rect");
+            n.set_property("ui_layout", "row");
+            n.set_property("ui_stretch_x", "true");
+            n.set_property("ui_stretch_y", "true");
+        }
+        // A sidebar that sizes to its own content: a column whose widest child
+        // is 120 wide, plus 8px of padding each side.
+        let sidebar = world.spawn_child(root, SceneNode2D::new("sidebar"));
+        {
+            let n = world.get_mut(sidebar).unwrap();
+            n.set_property("ui", "rect");
+            n.set_property("ui_size", "content");
+            n.set_property("ui_layout", "column");
+            n.set_property("ui_pad_left", "8");
+            n.set_property("ui_pad_right", "8");
+        }
+        for (name, w, h) in [("narrow", "60", "20"), ("widest", "120", "20")] {
+            let row = world.spawn_child(sidebar, SceneNode2D::new(name));
+            let n = world.get_mut(row).unwrap();
+            n.set_property("ui", "rect");
+            n.set_property("ui_w", w);
+            n.set_property("ui_h", h);
+        }
+        let centre = world.spawn_child(root, SceneNode2D::new("centre"));
+        {
+            let n = world.get_mut(centre).unwrap();
+            n.set_property("ui", "rect");
+            n.set_property("ui_grow", "1");
+        }
+
+        let mut canvas = Canvas::new((1000, 200), std::ptr::null());
+        world.draw_to_canvas(&mut canvas, 0.0);
+
+        let bar = world.resolved_rect(sidebar).expect("sidebar drawn");
+        assert!(
+            (bar.width - 136.0).abs() < 1e-3,
+            "sidebar is its widest row + padding, not zero: {}",
+            bar.width
+        );
+        let mid = world.resolved_rect(centre).expect("centre drawn");
+        assert!(
+            (mid.width - 864.0).abs() < 1e-3,
+            "centre takes exactly what the measured sidebar left: {}",
+            mid.width
+        );
+    }
+
+    #[test]
+    fn ui_justify_spreads_slack_when_nothing_grows() {
+        // E-A's other half: the mockups' 38 space-between bars (a top bar with
+        // groups pushed to both ends). Only meaningful when no child grows,
+        // since a growing child has already eaten the slack.
+        let (world, h) = flow_row(
+            (1000, 100),
+            &[("ui_justify", "space_between")],
+            &[
+                ("a", &[("ui_w", "100")]),
+                ("b", &[("ui_w", "100")]),
+                ("c", &[("ui_w", "100")]),
+            ],
+        );
+        let r = |i: usize| world.resolved_rect(h[i]).expect("child drawn");
+        assert!((r(0).x - -500.0).abs() < 1e-3, "first is flush left");
+        assert!(
+            (r(2).right() - 500.0).abs() < 1e-3,
+            "last is flush right: {}",
+            r(2).right()
+        );
+        assert!((r(1).x - -50.0).abs() < 1e-3, "middle is centred: {}", r(1).x);
+        // Widths are untouched by justification.
+        for i in 0..3 {
+            assert!((r(i).width - 100.0).abs() < 1e-3);
+        }
+
+        // `center` packs the block and centres it, gap included.
+        let (world, h) = flow_row(
+            (1000, 100),
+            &[("ui_justify", "center"), ("ui_gap", "10")],
+            &[("a", &[("ui_w", "100")]), ("b", &[("ui_w", "100")])],
+        );
+        let r = |i: usize| world.resolved_rect(h[i]).expect("child drawn");
+        // Content is 100 + 10 + 100 = 210, centred in 1000 -> starts at -105.
+        assert!((r(0).x - -105.0).abs() < 1e-3, "centred block: {}", r(0).x);
+        assert!(
+            (r(1).x - (r(0).right() + 10.0)).abs() < 1e-3,
+            "gap preserved between centred items"
+        );
+        assert!((r(1).width - 100.0).abs() < 1e-3, "gap is not folded into w");
+    }
+
+    #[test]
+    fn ui_align_places_a_child_across_the_cross_axis() {
+        // E-B: align-items:center, used 80 times in the mockups. The default
+        // stays `stretch` — the slot spans the full cross axis — because every
+        // scene authored before this relies on it.
+        let children = [("box", &[("ui_w", "50"), ("ui_h", "40")][..])];
+        let (world, h) = flow_row((200, 100), &[], &children);
+        let d = world.resolved_rect(h[0]).unwrap();
+        assert!(
+            (d.height - 100.0).abs() < 1e-3,
+            "default stretch spans the cross axis: {}",
+            d.height
+        );
+
+        // Centred: a 40-tall child in a 100-tall row sits 30 from each edge.
+        let (world, h) = flow_row((200, 100), &[("ui_align", "center")], &children);
+        let c = world.resolved_rect(h[0]).unwrap();
+        assert!((c.height - 40.0).abs() < 1e-3, "keeps its own height");
+        assert!((c.y - -20.0).abs() < 1e-3, "centred on y: {}", c.y);
+
+        // y-up: `start` is the TOP edge, matching reading order.
+        let (world, h) = flow_row((200, 100), &[("ui_align", "start")], &children);
+        let s = world.resolved_rect(h[0]).unwrap();
+        assert!(
+            (s.y + s.height - 50.0).abs() < 1e-3,
+            "start pins to the top edge: top={}",
+            s.y + s.height
+        );
+        let (world, h) = flow_row((200, 100), &[("ui_align", "end")], &children);
+        let e = world.resolved_rect(h[0]).unwrap();
+        assert!((e.y - -50.0).abs() < 1e-3, "end pins to the bottom: {}", e.y);
+    }
+
+    #[test]
+    fn absent_flow_properties_place_children_exactly_as_before() {
+        // The correctness check the plan calls for on the two-pass rewrite:
+        // with no ui_grow/ui_justify/ui_align anywhere, placement must match
+        // the old packed-from-the-start flow. Every existing scene depends on
+        // this and none of them author the new properties.
+        let (world, h) = flow_row(
+            (400, 100),
+            &[("ui_gap", "5"), ("ui_pad_left", "10")],
+            &[
+                ("a", &[("ui_w", "30")]),
+                ("b", &[("ui_w", "40")]),
+                ("c", &[("ui_w", "50")]),
+            ],
+        );
+        let r = |i: usize| world.resolved_rect(h[i]).expect("child drawn");
+        // Packed from the padded start, each taking its literal width.
+        assert!((r(0).x - -190.0).abs() < 1e-3, "a.x: {}", r(0).x);
+        assert!((r(1).x - -155.0).abs() < 1e-3, "b.x: {}", r(1).x);
+        assert!((r(2).x - -110.0).abs() < 1e-3, "c.x: {}", r(2).x);
+        assert!((r(0).width - 30.0).abs() < 1e-3);
+        assert!((r(1).width - 40.0).abs() < 1e-3);
+        assert!((r(2).width - 50.0).abs() < 1e-3);
+        // Full cross axis, as before.
+        for i in 0..3 {
+            assert!((r(i).height - 100.0).abs() < 1e-3, "spans cross axis");
+        }
     }
 }
