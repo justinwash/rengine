@@ -1479,31 +1479,33 @@ impl SceneWorld2D {
             .collect();
 
         // Tell each child the size the flow decided for it, so resolving its
-        // own rect fills the slot instead of collapsing to its (absent)
-        // ui_w/ui_h or re-anchoring inside it. Per axis, and only where the
-        // flow actually decided: a fixed track leaves the main axis alone
-        // (the child's own ui_w/ui_h is the truth there) and the default
-        // `stretch` leaves the cross axis alone (the slot already spans it,
-        // and stretching into it is the child's own opt-in as before).
-        // Cleared otherwise, so a node that stops growing — or moves out of a
-        // flow entirely — does not keep a stale size from a previous frame.
+        // own rect takes the slot instead of collapsing to its (absent)
+        // ui_w/ui_h or re-anchoring inside it.
+        //
+        // The **main axis is always decided**: the flow placed this child
+        // there, and the slot is either the share it grew to or exactly its
+        // own measured extent. Either way the child belongs *at* its slot,
+        // which is the one thing a flow is for.
+        //
+        // The **cross axis is decided only under a non-stretch `ui_align`**,
+        // where the slot was likewise sized to the child and placed. The
+        // default `stretch` decides nothing: the slot spans the whole cross
+        // axis and filling it stays the child's own `ui_stretch_*` opt-in,
+        // exactly as every scene authored before `ui_align` assumes.
+        //
+        // Cleared otherwise, so a node that leaves a flow does not keep a
+        // stale size from a previous frame.
         let cross_decided = align != CrossAlign::Stretch;
-        for ((&child, track), slot) in children.iter().zip(&tracks).zip(&aligned) {
+        for (&child, slot) in children.iter().zip(&aligned) {
             if let Some(child_node) = self.get(child) {
-                let main = (!matches!(track, Track::Fixed(_))).then(|| {
-                    if vertical {
-                        slot.height
-                    } else {
-                        slot.width
-                    }
-                });
+                let main = if vertical { slot.height } else { slot.width };
                 let cross = cross_decided
                     .then(|| if vertical { slot.width } else { slot.height })
                     .filter(|e| *e > 0.0);
                 child_node.flow_size.set(if vertical {
-                    (cross, main)
+                    (cross, Some(main))
                 } else {
-                    (main, cross)
+                    (Some(main), cross)
                 });
             }
         }
