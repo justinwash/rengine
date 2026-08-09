@@ -206,6 +206,11 @@ impl SceneInstance2D {
     /// - `ui_color_bottom`, `ui_color_top`: gradient ends / bevel shadow+highlight
     /// - `ui_radius`: corner radius for `rect`
     /// - `ui_line_w`: edge thickness for `bevel`
+    /// - `ui_border_w`, `ui_border_color`: an inset border on **any** kind,
+    ///   with `ui_border_left`/`_right`/`_top`/`_bottom` overriding one side
+    ///   (a divider rule is a one-sided border, not a separate line node)
+    /// - `ui_shadow_color`, `ui_shadow_x`, `ui_shadow_y`: a hard offset drop
+    ///   shadow under **any** kind, `ui_shadow_y` positive = down (CSS sense)
     /// - `ui_text`, `ui_text_size`: text contents and size
     pub fn draw_ui_primitive(&self, frame: &mut Frame, time: f32) {
         if self.property("ui").is_none() {
@@ -348,14 +353,111 @@ pub(crate) fn node_font(get: &impl Fn(&str) -> Option<String>) -> FontId {
         .map_or(FontId::DEFAULT, FontId)
 }
 
+/// A node's authored border, if it has one: `(color, per-side widths)` in
+/// `(left, right, bottom, top)` order.
+///
+/// `ui_border_w` + `ui_border_color` is the whole feature for the common case
+/// (`border:2px solid #3f4854`, which the mockups use 97 times); the four
+/// per-side widths exist because a divider rule is a one-sided border
+/// (`border-top`, 34 more uses) and authoring that as a separate line node
+/// would put the panel's edge in two places. Widths are in the node's own
+/// space and scale with it, like every other `ui_*` metric.
+///
+/// Returns `None` when nothing is authored or the border would be invisible,
+/// so a node without one costs two failed property lookups and no drawing.
+fn node_border(get: &dyn Fn(&str) -> Option<String>, scale: Vec2) -> Option<(Color, [f32; 4])> {
+    let f32_of = |n: &str| get(n).and_then(|v| v.trim().parse::<f32>().ok());
+    let all = f32_of("ui_border_w");
+    let side = |n: &str| (f32_of(n).or(all).unwrap_or(0.0)).max(0.0);
+    // x-scale for the vertical edges, y-scale for the horizontal ones: a
+    // border tracks the edge it sits on, so a node stretched in one axis
+    // doesn't get a lopsided outline.
+    let widths = [
+        side("ui_border_left") * scale.x,
+        side("ui_border_right") * scale.x,
+        side("ui_border_bottom") * scale.y,
+        side("ui_border_top") * scale.y,
+    ];
+    let color = parse_srgb_color(get("ui_border_color").as_deref(), Color::WHITE);
+    (widths.iter().any(|w| *w > 0.0) && color.a > 0.0).then_some((color, widths))
+}
+
+/// The edge rects of a border drawn *inside* `rect`, CSS `box-sizing:
+/// border-box` style — the edges eat into the node's own rect rather than
+/// growing it, which is what the mockups assume and what keeps a bordered
+/// panel the size it says it is.
+///
+/// Verticals span the full height and the horizontals fill only between them,
+/// so the corners are covered exactly once — overlapping them would show
+/// through as a darker square on a translucent border colour. Zero-width
+/// sides are omitted, so a one-sided rule is one rect.
+///
+/// Split out from the drawing so the geometry is testable: a `Canvas` needs a
+/// live renderer, which a unit test has no way to build.
+fn border_rects(rect: (f32, f32, f32, f32), widths: [f32; 4]) -> Vec<(f32, f32, f32, f32)> {
+    let (x, y, w, h) = rect;
+    let [left, right, bottom, top] = widths;
+    // Clamped so a border thicker than the node it edges stays inside it
+    // rather than the two sides overdrawing past each other.
+    let left = left.min(w);
+    let right = right.min(w - left);
+    let bottom = bottom.min(h);
+    let top = top.min(h - bottom);
+    let inner_x = x + left;
+    let inner_w = (w - left - right).max(0.0);
+    [
+        (x, y, left, h),
+        (x + w - right, y, right, h),
+        (inner_x, y, inner_w, bottom),
+        (inner_x, y + h - top, inner_w, top),
+    ]
+    .into_iter()
+    .filter(|(_, _, rw, rh)| *rw > 0.0 && *rh > 0.0)
+    .collect()
+}
+
+fn draw_border(canvas: &mut Canvas, rect: (f32, f32, f32, f32), color: Color, widths: [f32; 4]) {
+    for (x, y, w, h) in border_rects(rect, widths) {
+        canvas.rect(x, y, w, h, color);
+    }
+}
+
 /// Draw the `ui` primitive named by a node's props into the resolved `rect`.
 /// `sprite` is the node's own first sprite layer, used only by `"image"`.
 /// `has_children` is used only by `"button"` (see its arm below).
+///
+/// Two decorations apply to *every* kind rather than being kinds of their own,
+/// because the alternative is authoring a stack of Panels to fake one visual:
+///
+/// - **`ui_shadow_color` (+ `ui_shadow_x`/`ui_shadow_y`)** — a hard offset
+///   drop shadow painted under the node, matching the mockups' pixel-art
+///   `box-shadow`/`text-shadow` (no blur; there is no blurred shadow anywhere
+///   in the set). On a text node it offsets the glyphs, on anything else the
+///   rect.
+/// - **`ui_border_w`/`ui_border_color`** (see [`node_border`]) — painted last,
+///   over the node's own fill and under its children.
+///
+/// Both resolve `_hover`/`_press`/`_focus` variants like any other property,
+/// since `get` has already applied the interaction state.
 fn draw_ui_kind(
     canvas: &mut Canvas,
     rect: (f32, f32, f32, f32),
     scale: Vec2,
     get: impl Fn(&str) -> Option<String>,
+    sprite: Option<&PrefabSprite2D>,
+    has_children: bool,
+) {
+    // `&dyn` at the boundary, not `impl`: the shadow pass calls back in with a
+    // wrapper closure, and a generic parameter would try to monomorphize that
+    // nesting forever.
+    draw_ui_kind_dyn(canvas, rect, scale, &get, sprite, has_children);
+}
+
+fn draw_ui_kind_dyn(
+    canvas: &mut Canvas,
+    rect: (f32, f32, f32, f32),
+    scale: Vec2,
+    get: &dyn Fn(&str) -> Option<String>,
     sprite: Option<&PrefabSprite2D>,
     has_children: bool,
 ) {
@@ -366,6 +468,42 @@ fn draw_ui_kind(
     let prop_f32 = |n: &str| get(n).and_then(|v| v.trim().parse::<f32>().ok());
     let prop_i64 = |n: &str| get(n).and_then(|v| v.trim().parse::<i64>().ok());
     let font = node_font(&get);
+    // A shadow is the same primitive drawn once more, offset and recoloured,
+    // so it recurses with the shadow properties stripped rather than every
+    // arm below growing a shadow branch of its own.
+    if let Some(shadow) = get("ui_shadow_color") {
+        let color = parse_srgb_color(Some(shadow.as_str()), Color::BLACK);
+        let dx = prop_f32("ui_shadow_x").unwrap_or(0.0) * scale.x;
+        // y-down to match the mockups' CSS, where a positive offset drops the
+        // shadow *below* the node; canvas space is y-up.
+        let dy = -prop_f32("ui_shadow_y").unwrap_or(0.0) * scale.y;
+        if color.a > 0.0 && (dx != 0.0 || dy != 0.0) {
+            let flat = |n: &str| match n {
+                "ui_shadow_color" | "ui_border_color" => None,
+                // The whole silhouette takes the shadow colour, whichever
+                // property the kind paints itself with.
+                "ui_color" | "ui_bar_color" | "ui_marker_color" | "ui_color_top"
+                | "ui_color_bottom" => Some(shadow.clone()),
+                _ => get(n),
+            };
+            draw_ui_kind_dyn(
+                canvas,
+                (x + dx, y + dy, w, h),
+                scale,
+                &flat,
+                sprite,
+                has_children,
+            );
+        }
+    }
+    let border = node_border(&get, scale);
+    // Painted after the kind's own fill, below — a closure so the early-return
+    // arms can't forget it.
+    let draw = |canvas: &mut Canvas| {
+        if let Some((color, widths)) = border {
+            draw_border(canvas, rect, color, widths);
+        }
+    };
     match kind.as_str() {
         "rect" => {
             let color = parse_srgb_color(get("ui_color").as_deref(), Color::WHITE);
@@ -556,9 +694,7 @@ fn draw_ui_kind(
             // convention every other kind uses for its own geometry.
             let color = parse_srgb_color(get("ui_color").as_deref(), Color::WHITE);
             let line_w = prop_f32("ui_line_w").unwrap_or(1.0);
-            let Some(raw) = get("ui_points") else {
-                return;
-            };
+            let raw = get("ui_points").unwrap_or_default();
             let points: Vec<(f32, f32)> = raw
                 .split(';')
                 .filter_map(|pair| {
@@ -575,6 +711,7 @@ fn draw_ui_kind(
         }
         _ => {}
     }
+    draw(canvas);
 }
 
 /// Parse `ui_text_align`: `left` (default) | `center` | `right`.
@@ -2743,5 +2880,108 @@ mod tests {
         // A binding that failed to resolve leaves the literal `{font_hud}`;
         // rendering in the default face beats panicking mid-frame.
         assert_eq!(font(&[("ui_font", "{font_hud}")]), FontId::DEFAULT);
+    }
+
+    #[test]
+    fn ui_border_is_opt_in_and_per_side() {
+        // A border on any kind, so the mockups' 97 `border:2px solid` panels
+        // stay one node each instead of becoming a fill plus four edge rects.
+        let border = |props: &[(&str, &str)], scale: Vec2| {
+            let map: HashMap<String, String> = props
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect();
+            node_border(&|n: &str| map.get(n).cloned(), scale)
+        };
+        let one = Vec2::new(1.0, 1.0);
+
+        // Nothing authored: every existing scene must be untouched.
+        assert!(border(&[], one).is_none());
+        // A width with no colour still draws (white default), but a colour
+        // with no width must not — otherwise `ui_border_color` alone, the
+        // easy authoring slip, would paint the node's whole rect.
+        assert!(border(&[("ui_border_color", "63,72,84,255")], one).is_none());
+
+        let (color, widths) = border(
+            &[("ui_border_w", "2"), ("ui_border_color", "63,72,84,255")],
+            one,
+        )
+        .expect("a width and a colour is a border");
+        assert_eq!(widths, [2.0, 2.0, 2.0, 2.0]);
+        assert_eq!(color.to_srgb8(), (63, 72, 84, 255));
+
+        // One side overrides `ui_border_w`; the rest keep it. This is what
+        // makes a divider rule a border rather than a second node.
+        let (_, widths) = border(
+            &[
+                ("ui_border_w", "2"),
+                ("ui_border_top", "0"),
+                ("ui_border_color", "63,72,84,255"),
+            ],
+            one,
+        )
+        .expect("partial border");
+        assert_eq!(widths, [2.0, 2.0, 2.0, 0.0]);
+
+        // A lone side with no `ui_border_w` is the `border-top:3px` case.
+        let (_, widths) = border(
+            &[("ui_border_top", "3"), ("ui_border_color", "63,72,84,255")],
+            one,
+        )
+        .expect("one-sided border");
+        assert_eq!(widths, [0.0, 0.0, 0.0, 3.0]);
+
+        // Vertical edges scale in x, horizontal in y — a stretched node gets
+        // an even outline, not a lopsided one.
+        let (_, widths) = border(
+            &[("ui_border_w", "2"), ("ui_border_color", "63,72,84,255")],
+            Vec2::new(3.0, 5.0),
+        )
+        .expect("scaled border");
+        assert_eq!(widths, [6.0, 6.0, 10.0, 10.0]);
+
+        // A fully transparent border is nothing to draw.
+        assert!(border(
+            &[("ui_border_w", "2"), ("ui_border_color", "63,72,84,0")],
+            one
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn border_rects_inset_and_cover_each_corner_once() {
+        let rect = (0.0, 0.0, 100.0, 50.0);
+        let rects = border_rects(rect, [2.0, 2.0, 2.0, 2.0]);
+        // Verticals span the full height; horizontals fill only between them,
+        // so no pixel is painted twice.
+        assert_eq!(
+            rects,
+            vec![
+                (0.0, 0.0, 2.0, 50.0),
+                (98.0, 0.0, 2.0, 50.0),
+                (2.0, 0.0, 96.0, 2.0),
+                (2.0, 48.0, 96.0, 2.0),
+            ]
+        );
+        // Every edge stays inside the node's own rect (`box-sizing:
+        // border-box`) — a bordered panel is the size it says it is.
+        let (x, y, w, h) = rect;
+        for (rx, ry, rw, rh) in &rects {
+            assert!(*rx >= x && *ry >= y && rx + rw <= x + w && ry + rh <= y + h);
+        }
+        // Total area == perimeter band, which is only true with no overlap.
+        let painted: f32 = rects.iter().map(|(_, _, rw, rh)| rw * rh).sum();
+        assert_eq!(painted, 100.0 * 50.0 - 96.0 * 46.0);
+
+        // A one-sided rule is one rect, not four.
+        assert_eq!(
+            border_rects(rect, [0.0, 0.0, 0.0, 3.0]),
+            vec![(0.0, 47.0, 100.0, 3.0)]
+        );
+        // A border thicker than the node stays inside it rather than the
+        // opposing sides overdrawing past each other.
+        for (rx, ry, rw, rh) in border_rects((0.0, 0.0, 4.0, 4.0), [10.0, 10.0, 10.0, 10.0]) {
+            assert!(rx >= 0.0 && ry >= 0.0 && rx + rw <= 4.0 && ry + rh <= 4.0);
+        }
     }
 }
