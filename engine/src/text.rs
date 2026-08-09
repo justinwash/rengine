@@ -5,6 +5,14 @@ pub struct FontId(pub(crate) usize);
 
 impl FontId {
     pub const DEFAULT: FontId = FontId(0);
+
+    /// The raw index, for a host that has to hand this id to something that
+    /// only speaks numbers — publishing it to a scene as an `ui_font` binding,
+    /// say. Construction stays crate-private: an id is only meaningful if the
+    /// renderer actually loaded that font.
+    pub fn index(self) -> usize {
+        self.0
+    }
 }
 
 #[derive(Clone, Copy)]

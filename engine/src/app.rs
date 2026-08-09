@@ -1200,6 +1200,12 @@ impl Engine {
         self.font(text::FontId::DEFAULT)
     }
 
+    /// Every loaded atlas, in `FontId` order. Handed to `Frame::begin_with_fonts`
+    /// so scene text can resolve `ui_font` to any of them.
+    pub fn fonts(&self) -> &[text::FontAtlas] {
+        &self.renderer.fonts
+    }
+
     pub fn load_font<P: AsRef<Path>>(&mut self, path: P) -> Result<text::FontId, AssetError> {
         self.assets
             .load_font(path, |font_bytes| self.renderer.load_font(font_bytes))
@@ -1508,7 +1514,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
             let shot = play_script
                 .as_mut()
                 .and_then(|script| script.step(&mut engine.input));
-            headless_frame.begin(engine.game_size(), engine.font_atlas());
+            headless_frame.begin_with_fonts(engine.game_size(), engine.font_atlas(), engine.fonts());
             game.update(&engine, &mut headless_frame);
             game.render(&engine, &mut headless_frame);
             if let Some(shot_path) = shot {
@@ -1637,7 +1643,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
                     while engine.time.consume_fixed_step() {
                         game.fixed_update(&engine);
                     }
-                    frame.begin(engine.game_size(), engine.font_atlas());
+                    frame.begin_with_fonts(engine.game_size(), engine.font_atlas(), engine.fonts());
                     game.update(&engine, &mut frame);
 
                     if game.should_exit() {
@@ -1750,7 +1756,7 @@ where
                 }
             }
 
-            frame.begin(engine.game_size(), engine.font_atlas());
+            frame.begin_with_fonts(engine.game_size(), engine.font_atlas(), engine.fonts());
             let op = if let Some(scene) = stack.last_mut() {
                 scene.update(&engine, &mut globals, &mut frame)
             } else {
@@ -1851,7 +1857,7 @@ where
                         }
                     }
 
-                    frame.begin(engine.game_size(), engine.font_atlas());
+                    frame.begin_with_fonts(engine.game_size(), engine.font_atlas(), engine.fonts());
 
                     if transition.is_none() {
                         let op = if let Some(scene) = stack.last_mut() {

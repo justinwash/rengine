@@ -1,6 +1,6 @@
 use crate::assets::Color;
 use crate::renderer::TextureId;
-use crate::text::{FontAtlas, ATLAS_SIZE, FONT_SIZE};
+use crate::text::{FontAtlas, FontId, ATLAS_SIZE, FONT_SIZE};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TextAlign {
@@ -68,10 +68,23 @@ pub struct Canvas {
     segment_start: usize,
     current_texture: DrawTexture,
     atlas: *const FontAtlas,
+    /// Every loaded atlas, so a caller holding only a [`FontId`] can measure
+    /// and draw with it. `atlas` above is element 0 — the default font — kept
+    /// as its own pointer so the no-font-table case (a `Canvas` built for a
+    /// test with a null table) still behaves exactly as before.
+    fonts: *const [FontAtlas],
 }
 
 impl Canvas {
     pub(crate) fn new(screen_size: (u32, u32), atlas: *const FontAtlas) -> Self {
+        Self::with_fonts(screen_size, atlas, std::ptr::slice_from_raw_parts(atlas, 0))
+    }
+
+    pub(crate) fn with_fonts(
+        screen_size: (u32, u32),
+        atlas: *const FontAtlas,
+        fonts: *const [FontAtlas],
+    ) -> Self {
         Self {
             verts: Vec::new(),
             segments: Vec::new(),
@@ -80,6 +93,7 @@ impl Canvas {
             segment_start: 0,
             current_texture: DrawTexture::Font(0),
             atlas,
+            fonts,
         }
     }
 
@@ -94,6 +108,32 @@ impl Canvas {
             "Canvas font atlas not initialized; call Frame::begin() before drawing text"
         );
         unsafe { &*ptr }
+    }
+
+    /// The atlas for `font`, or the default atlas if the table doesn't hold
+    /// it. Falling back rather than panicking is deliberate: `ui_font` names a
+    /// font the *scene* believes in, and a scene authored against a bundle the
+    /// host didn't load should render in the default face, not crash.
+    pub fn font_atlas(&self, font: FontId) -> &FontAtlas {
+        // SAFETY: same lifetime argument as `atlas` — the table lives in the
+        // renderer for the program's life and outlives every Canvas.
+        let fonts = unsafe { self.fonts.as_ref() };
+        match fonts {
+            Some(fonts) => fonts.get(font.0).unwrap_or_else(|| self.atlas()),
+            None => self.atlas(),
+        }
+    }
+
+    /// [`measure_text`](Self::measure_text) in a specific font. Content sizing
+    /// and text centring must go through this, not the default-font version,
+    /// or a node drawn in one face is measured in another.
+    pub fn measure_text_in(&self, font: FontId, text: &str, size: f32) -> (f32, f32) {
+        self.font_atlas(font).measure_text(text, size)
+    }
+
+    /// [`line_height`](Self::line_height) in a specific font.
+    pub fn line_height_in(&self, font: FontId, size: f32) -> f32 {
+        self.font_atlas(font).line_height(size)
     }
 
     pub fn screen_size(&self) -> (u32, u32) {
@@ -495,7 +535,23 @@ impl Canvas {
         color: Color,
         align: TextAlign,
     ) {
-        let atlas = self.atlas();
+        self.text_aligned_in(FontId::DEFAULT, x, y, text, size, color, align);
+    }
+
+    /// [`text_aligned`](Self::text_aligned) in a specific font. Alignment is
+    /// measured in the same font it draws in, which is the whole point.
+    #[allow(clippy::too_many_arguments)]
+    pub fn text_aligned_in(
+        &mut self,
+        font: FontId,
+        x: f32,
+        y: f32,
+        text: &str,
+        size: f32,
+        color: Color,
+        align: TextAlign,
+    ) {
+        let atlas = self.font_atlas(font);
         let offset = if align == TextAlign::Left {
             0.0
         } else {
@@ -506,7 +562,10 @@ impl Canvas {
                 TextAlign::Left => unreachable!(),
             }
         };
-        self.text(x + offset, y, text, size, color);
+        // SAFETY-adjacent: re-resolve rather than holding `atlas` across the
+        // `&mut self` call below.
+        let atlas = self.font_atlas(font) as *const FontAtlas;
+        self.text_with_font(x + offset, y, text, size, color, unsafe { &*atlas });
     }
 
     pub fn text_spans(&mut self, x: f32, y: f32, spans: &[(&str, Color)], size: f32) {
@@ -651,7 +710,20 @@ impl Canvas {
         size: f32,
         align: TextAlign,
     ) {
-        let atlas = self.atlas();
+        self.text_spans_aligned_in(FontId::DEFAULT, x, y, spans, size, align);
+    }
+
+    /// [`text_spans_aligned`](Self::text_spans_aligned) in a specific font.
+    pub fn text_spans_aligned_in(
+        &mut self,
+        font: FontId,
+        x: f32,
+        y: f32,
+        spans: &[(&str, Color)],
+        size: f32,
+        align: TextAlign,
+    ) {
+        let atlas = self.font_atlas(font);
         let offset = if align == TextAlign::Left {
             0.0
         } else {
@@ -665,7 +737,8 @@ impl Canvas {
                 TextAlign::Left => unreachable!(),
             }
         };
-        self.text_spans(x + offset, y, spans, size);
+        let atlas = self.font_atlas(font) as *const FontAtlas;
+        self.text_spans_with_font(x + offset, y, spans, size, unsafe { &*atlas });
     }
 
     pub fn text_block(
@@ -678,11 +751,25 @@ impl Canvas {
         max_width: f32,
         align: TextAlign,
     ) {
-        let lines = {
-            let atlas = self.atlas();
-            wrap_text(text, size, max_width, atlas)
-        };
-        self.text_block_lines(x, y, &lines, size, color, align);
+        self.text_block_in(FontId::DEFAULT, x, y, text, size, color, max_width, align);
+    }
+
+    /// [`text_block`](Self::text_block) in a specific font — wrapping included,
+    /// since where the lines break depends on which face measures them.
+    #[allow(clippy::too_many_arguments)]
+    pub fn text_block_in(
+        &mut self,
+        font: FontId,
+        x: f32,
+        y: f32,
+        text: &str,
+        size: f32,
+        color: Color,
+        max_width: f32,
+        align: TextAlign,
+    ) {
+        let lines = wrap_text(text, size, max_width, self.font_atlas(font));
+        self.text_block_lines_in(font, x, y, &lines, size, color, align);
     }
 
     pub(crate) fn text_block_lines(
@@ -694,11 +781,24 @@ impl Canvas {
         color: Color,
         align: TextAlign,
     ) {
-        let atlas = self.atlas();
-        let lh = atlas.line_height(size);
+        self.text_block_lines_in(FontId::DEFAULT, x, y, lines, size, color, align);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn text_block_lines_in(
+        &mut self,
+        font: FontId,
+        x: f32,
+        y: f32,
+        lines: &[String],
+        size: f32,
+        color: Color,
+        align: TextAlign,
+    ) {
+        let lh = self.font_atlas(font).line_height(size);
         for (i, line) in lines.iter().enumerate() {
             let ly = y - (i as f32) * lh;
-            self.text_aligned(x, ly, line, size, color, align);
+            self.text_aligned_in(font, x, ly, line, size, color, align);
         }
     }
 

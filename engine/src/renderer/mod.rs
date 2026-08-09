@@ -61,6 +61,9 @@ pub struct Frame {
     render_targets: Vec<TargetFrame>,
     screen_size: (u32, u32),
     atlas: *const FontAtlas,
+    /// Every loaded atlas, handed to each `Canvas` so `ui_font` (and any
+    /// caller holding a `FontId`) can draw and measure in a non-default face.
+    fonts: *const [FontAtlas],
 }
 
 impl Frame {
@@ -73,6 +76,7 @@ impl Frame {
             render_targets: Vec::new(),
             screen_size: (1, 1),
             atlas: std::ptr::null(),
+            fonts: std::ptr::slice_from_raw_parts(std::ptr::null(), 0),
         }
     }
 
@@ -109,12 +113,25 @@ impl Frame {
     }
 
     pub fn begin(&mut self, screen_size: (u32, u32), atlas: &FontAtlas) {
+        self.begin_with_fonts(screen_size, atlas, std::slice::from_ref(atlas));
+    }
+
+    /// [`begin`](Self::begin) with the renderer's full font table, so a
+    /// `Canvas` can resolve any loaded [`FontId`](crate::text::FontId) rather
+    /// than only the default face. `atlas` stays the default (font 0).
+    pub fn begin_with_fonts(
+        &mut self,
+        screen_size: (u32, u32),
+        atlas: &FontAtlas,
+        fonts: &[FontAtlas],
+    ) {
         self.sprites.clear();
         self.canvases.clear();
         self.render_targets.clear();
         self.clear_color = Color::BLACK;
         self.screen_size = screen_size;
         self.atlas = atlas as *const FontAtlas;
+        self.fonts = fonts as *const [FontAtlas];
     }
 
     pub fn canvas(&mut self, index: usize) -> &mut Canvas {
@@ -124,8 +141,10 @@ impl Frame {
         );
         let ss = self.screen_size;
         let a = self.atlas;
+        let fonts = self.fonts;
         if index >= self.canvases.len() {
-            self.canvases.resize_with(index + 1, || Canvas::new(ss, a));
+            self.canvases
+                .resize_with(index + 1, || Canvas::with_fonts(ss, a, fonts));
         }
         &mut self.canvases[index]
     }
@@ -146,7 +165,10 @@ impl Frame {
 
         let atlas = unsafe { &*self.atlas };
         let mut frame = Frame::new();
-        frame.begin(target.size(), atlas);
+        match unsafe { self.fonts.as_ref() } {
+            Some(fonts) => frame.begin_with_fonts(target.size(), atlas, fonts),
+            None => frame.begin(target.size(), atlas),
+        }
         self.render_targets.push(TargetFrame {
             target_id: target.id,
             texture: target.texture,

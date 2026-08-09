@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::assets::{AssetError, AssetPack, Color};
 use crate::canvas::{Canvas, TextAlign};
 use crate::renderer::{DrawParams, Frame};
+use crate::text::FontId;
 use crate::{TextureId, Vec2};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -324,6 +325,22 @@ fn resolve_ui_rect(
     }
 }
 
+/// Which font a node's text draws and *measures* in (E-C).
+///
+/// `ui_font` is a numeric [`FontId`] — the id the host got back from
+/// `Engine::load_font`, which the host publishes as a binding
+/// (`ui_font: "{font_hud}"`) exactly the way `palette::theme()` publishes
+/// colours. That keeps alias→id resolution in the host, where the asset
+/// bundle already lives, instead of giving the engine a second name registry
+/// that would need loading, validating and editing.
+///
+/// Absent or unparseable → font 0, so every existing scene is unchanged.
+pub(crate) fn node_font(get: &impl Fn(&str) -> Option<String>) -> FontId {
+    get("ui_font")
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .map_or(FontId::DEFAULT, FontId)
+}
+
 /// Draw the `ui` primitive named by a node's props into the resolved `rect`.
 /// `sprite` is the node's own first sprite layer, used only by `"image"`.
 /// `has_children` is used only by `"button"` (see its arm below).
@@ -341,6 +358,7 @@ fn draw_ui_kind(
     let (x, y, w, h) = rect;
     let prop_f32 = |n: &str| get(n).and_then(|v| v.trim().parse::<f32>().ok());
     let prop_i64 = |n: &str| get(n).and_then(|v| v.trim().parse::<i64>().ok());
+    let font = node_font(&get);
     match kind.as_str() {
         "rect" => {
             let color = parse_srgb_color(get("ui_color").as_deref(), Color::WHITE);
@@ -423,7 +441,7 @@ fn draw_ui_kind(
             let size = prop_f32("ui_text_size").unwrap_or(12.0);
             // `line_height` needs the font atlas, so it is computed lazily —
             // a button that draws only its bar must not touch text metrics.
-            let centered_y = |canvas: &Canvas| y + (h - canvas.line_height(size)) * 0.5;
+            let centered_y = |canvas: &Canvas| y + (h - canvas.line_height_in(font, size)) * 0.5;
 
             let marker = get("ui_marker").unwrap_or_default();
             if !marker.is_empty() {
@@ -435,7 +453,8 @@ fn draw_ui_kind(
                     // needing its own hand-placed node.
                     let inset = prop_f32("ui_marker_inset").unwrap_or(10.0);
                     let baseline = centered_y(canvas);
-                    canvas.text_aligned(
+                    canvas.text_aligned_in(
+                        font,
                         x + inset,
                         baseline,
                         &marker,
@@ -456,7 +475,7 @@ fn draw_ui_kind(
                     TextAlign::Right => x + w,
                 };
                 let baseline = centered_y(canvas);
-                canvas.text_aligned(anchor_x, baseline, &text, size, color, align);
+                canvas.text_aligned_in(font, anchor_x, baseline, &text, size, color, align);
             }
         }
         "text" => {
@@ -472,9 +491,9 @@ fn draw_ui_kind(
             // canvas.text's y is the glyph baseline near the rect's bottom
             // edge; centre the line within the rect's height instead of
             // leaving every author to hand-nudge y by half a line height.
-            let line_h = canvas.line_height(size);
+            let line_h = canvas.line_height_in(font, size);
             let centered_y = y + (h - line_h) * 0.5;
-            canvas.text_aligned(anchor_x, centered_y, &text, size, color, align);
+            canvas.text_aligned_in(font, anchor_x, centered_y, &text, size, color, align);
         }
         "text_block" => {
             let color = parse_srgb_color(get("ui_color").as_deref(), Color::WHITE);
@@ -487,9 +506,10 @@ fn draw_ui_kind(
                 TextAlign::Center => x + w * 0.5,
                 TextAlign::Right => x + w,
             };
-            canvas.text_block(
+            canvas.text_block_in(
+                font,
                 anchor_x,
-                y + h - canvas.line_height(size),
+                y + h - canvas.line_height_in(font, size),
                 &text,
                 size,
                 color,
@@ -520,9 +540,9 @@ fn draw_ui_kind(
                 .map(String::as_str)
                 .zip(span_colors.iter().copied())
                 .collect();
-            let line_h = canvas.line_height(size);
+            let line_h = canvas.line_height_in(font, size);
             let centered_y = y + (h - line_h) * 0.5;
-            canvas.text_spans_aligned(x, centered_y, &spans, size, align);
+            canvas.text_spans_aligned_in(font, x, centered_y, &spans, size, align);
         }
         "polyline" => {
             // "x0,y0;x1,y1;..." offsets from the rect's origin — the same
@@ -2688,5 +2708,27 @@ mod tests {
         assert_eq!(definition.prefabs[1].sprites.len(), 1);
         assert_eq!(definition.prefabs[0].name, "wagon");
         assert_eq!(definition.prefabs[1].name, "wagon_lantern");
+    }
+
+    #[test]
+    fn ui_font_selects_a_font_and_defaults_to_zero() {
+        // E-C: `ui_font` is a numeric FontId the host publishes as a binding.
+        // Absent or junk must fall back to font 0, or every scene authored
+        // before E-C would start measuring against a face it never asked for.
+        let font = |props: &[(&str, &str)]| {
+            let map: HashMap<String, String> = props
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect();
+            node_font(&|n: &str| map.get(n).cloned())
+        };
+        assert_eq!(font(&[]), FontId::DEFAULT);
+        assert_eq!(font(&[("ui_font", "0")]), FontId::DEFAULT);
+        assert_eq!(font(&[("ui_font", "2")]), FontId(2));
+        // Whitespace is tolerated the way every other numeric ui_* prop is.
+        assert_eq!(font(&[("ui_font", " 1 ")]), FontId(1));
+        // A binding that failed to resolve leaves the literal `{font_hud}`;
+        // rendering in the default face beats panicking mid-frame.
+        assert_eq!(font(&[("ui_font", "{font_hud}")]), FontId::DEFAULT);
     }
 }

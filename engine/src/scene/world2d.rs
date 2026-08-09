@@ -1796,7 +1796,11 @@ fn node_own_extent(node: &SceneNode2D, canvas: &Canvas, bindings: &Bindings) -> 
                 (0.0, 0.0)
             } else {
                 let size = prop_f32("ui_text_size").unwrap_or(12.0);
-                canvas.measure_text(&text, size)
+                // Measured in the node's *own* font (E-C), not font 0 — a
+                // content-sized Silkscreen label measured with the default
+                // face's metrics would size every screen slightly wrong, and
+                // the error would only show as drift, never as a failure.
+                canvas.measure_text_in(super::data2d::node_font(&get), &text, size)
             }
         }
         _ => (0.0, 0.0),
