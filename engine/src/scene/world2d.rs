@@ -1510,11 +1510,13 @@ impl SceneWorld2D {
         let mut tracks: Vec<Track> = Vec::with_capacity(children.len());
         let mut cross: Vec<f32> = Vec::with_capacity(children.len());
         let mut lead: Vec<f32> = Vec::with_capacity(children.len());
+        let mut auto_lead: Vec<bool> = Vec::with_capacity(children.len());
         for &child in children {
             let Some(child_node) = self.get(child) else {
                 tracks.push(Track::Fixed(0.0));
                 cross.push(0.0);
                 lead.push(0.0);
+                auto_lead.push(false);
                 continue;
             };
             // Substituted, not raw: the parent's own layout properties go
@@ -1581,8 +1583,16 @@ impl SceneWorld2D {
             // Negative is allowed: the mockups' `margin-left:-2px` overlaps
             // one segment onto the previous, which is a real pixel-art idiom
             // (the title screen's cars are three rects joined that way).
+            //
+            // `"auto"` is CSS's `margin-top:auto` — the child takes all the
+            // slack before it, which is how the mockups pin a card's footer to
+            // the bottom of a fixed-height card whose middle rows size
+            // themselves. Resolved to pixels after the measure pass, since the
+            // slack is not known until every sibling has been measured.
+            let authored_lead = child_get("ui_lead");
+            auto_lead.push(authored_lead.as_deref().map(str::trim) == Some("auto"));
             lead.push(
-                child_get("ui_lead")
+                authored_lead
                     .and_then(|v| v.trim().parse::<f32>().ok())
                     .unwrap_or(0.0)
                     * scale_main,
@@ -1613,6 +1623,34 @@ impl SceneWorld2D {
         // `justify` only applies when nothing grows — matching flexbox, where
         // `justify-content` has no visible effect once a child has `flex:1`.
         let grows = tracks.iter().any(|t| !matches!(t, Track::Fixed(_)));
+        // `ui_lead: "auto"` resolved: the container's slack, split evenly
+        // between the auto leads that asked for it, exactly as flexbox splits
+        // it between `margin:auto`s. A growing sibling has already eaten the
+        // slack, so — again as in flexbox — there is nothing left to take and
+        // an auto lead falls back to zero.
+        let autos = auto_lead.iter().filter(|a| **a).count();
+        if autos > 0 && !grows {
+            let content: f32 = tracks
+                .iter()
+                .map(|t| match t {
+                    Track::Fixed(px) => px.max(0.0),
+                    _ => 0.0,
+                })
+                .sum::<f32>()
+                + lead.iter().sum::<f32>()
+                + gap * (children.len().saturating_sub(1)) as f32;
+            let axis = if vertical {
+                padded.height
+            } else {
+                padded.width
+            };
+            let share = ((axis - content) / autos as f32).max(0.0);
+            for (l, auto) in lead.iter_mut().zip(&auto_lead) {
+                if *auto {
+                    *l = share;
+                }
+            }
+        }
         // A leading margin is space the child does not occupy, so it rides
         // inside that child's own track and is trimmed off the front of the
         // slot afterwards — the same fold-then-trim the justified path below
@@ -5204,6 +5242,53 @@ mod tests {
             a.y
         );
         assert!((b.height - 40.0).abs() < 1e-3, "b keeps its height");
+    }
+
+    #[test]
+    fn an_auto_lead_pins_a_child_to_the_end_of_the_flow() {
+        // CSS `margin-top:auto` — the deck screen's card footer, pinned to the
+        // bottom of a fixed-height card whose rows above it size themselves.
+        // The slack goes into the auto lead, not after the last child, which is
+        // the difference between this and `ui_justify`.
+        let mut world = SceneWorld2D::new();
+        let container = world.spawn(SceneNode2D::new("root"));
+        {
+            let n = world.get_mut(container).unwrap();
+            n.set_property("ui", "rect");
+            n.set_property("ui_layout", "column");
+            n.set_property("ui_stretch_x", "true");
+            n.set_property("ui_stretch_y", "true");
+        }
+        let mut handles = Vec::new();
+        for (name, props) in [
+            ("head", &[("ui_h", "30")][..]),
+            ("foot", &[("ui_h", "20"), ("ui_lead", "auto")][..]),
+        ] {
+            let h = world.spawn_child(container, SceneNode2D::new(name));
+            let n = world.get_mut(h).unwrap();
+            n.set_property("ui", "rect");
+            n.set_property("ui_stretch_x", "true");
+            for &(k, v) in props {
+                n.set_property(k, v);
+            }
+            handles.push(h);
+        }
+        let mut canvas = Canvas::new((200, 200), std::ptr::null());
+        world.draw_to_canvas(&mut canvas, 0.0);
+        let head = world.resolved_rect(handles[0]).unwrap();
+        let foot = world.resolved_rect(handles[1]).unwrap();
+        // The container is the full 200 tall, centred on the origin: top +100,
+        // bottom -100. The header keeps its slot at the top...
+        assert!(
+            (head.y + head.height - 100.0).abs() < 1e-3,
+            "head at the top: {}",
+            head.y + head.height
+        );
+        assert!((head.height - 30.0).abs() < 1e-3, "head keeps its height");
+        // ...and the footer sits on the bottom edge, still its own 20 tall —
+        // the slack became space *before* it, not extra size.
+        assert!((foot.y - -100.0).abs() < 1e-3, "foot on the bottom: {}", foot.y);
+        assert!((foot.height - 20.0).abs() < 1e-3, "foot keeps its height");
     }
 
     #[test]

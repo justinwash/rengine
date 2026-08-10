@@ -491,6 +491,87 @@ fn draw_border(canvas: &mut Canvas, rect: (f32, f32, f32, f32), color: Color, wi
     }
 }
 
+/// The stripes of a 45° hatch fill: CSS
+/// `repeating-linear-gradient(45deg, <hatch> 0 <w>, transparent <w> <w+gap>)`,
+/// as `(x0, y0, x1, y1)` line centres in canvas space.
+///
+/// The mockups use it for every "nothing here yet" plate — a card's art
+/// placeholder, an empty garage slot — where a flat fill reads as a bug and a
+/// texture would be an asset. It is a decoration on any kind, like the border
+/// and the shadow above it, because the alternative is a stack of hand-placed
+/// 1px Panels per stripe.
+///
+/// Stripes run bottom-left to top-right. `pitch` is the CSS period — measured
+/// **perpendicular** to the stripes, as a gradient's colour stops are — so a
+/// 5px band with a 5px gap repeats every 10px across its own axis, not every
+/// 10px along x. The two differ by √2 at 45°, which is the difference between
+/// matching the mockup and being 30% too dense.
+///
+/// [`Canvas::line`] already thickens along the normal, so the stripe *width*
+/// needs no such conversion; only the spacing between them does.
+///
+/// They start before the rect's left edge and end past its right so the corners
+/// are covered; the caller clips.
+///
+/// Split out from the drawing so the geometry is testable without a live
+/// renderer, exactly as [`border_rects`] is.
+fn hatch_lines(
+    rect: (f32, f32, f32, f32),
+    pitch: f32,
+    diag: f32,
+) -> impl Iterator<Item = (f32, f32, f32, f32)> {
+    let (x, y, w, h) = rect;
+    // A 45° line through the rect is anchored by its x-intercept at the rect's
+    // bottom edge, and a perpendicular period of `pitch` is a horizontal one of
+    // `pitch * sqrt(2)`.
+    let step = pitch * std::f32::consts::SQRT_2;
+    // The first covering stripe starts a full height to the left (its top-right
+    // corner is the rect's bottom-left); the last starts at the right edge.
+    let count = ((w + h) / step).ceil().max(0.0) as usize;
+    (0..count).map(move |i| {
+        let x0 = x - h + i as f32 * step;
+        (x0, y, x0 + diag, y + diag)
+    })
+}
+
+/// A node's authored hatch, if it has one: `(color, pitch, stripe width)`.
+///
+/// `ui_hatch_color` alone is enough — `ui_hatch_w` (stripe) and `ui_hatch_gap`
+/// (the transparent run after it) both default to the mockups' 5px.
+fn node_hatch(get: &dyn Fn(&str) -> Option<String>, scale: Vec2) -> Option<(Color, f32, f32)> {
+    let authored = get("ui_hatch_color")?;
+    let color = parse_srgb_color(Some(authored.as_str()), Color::WHITE);
+    let f32_of = |n: &str, d: f32| {
+        get(n)
+            .and_then(|v| v.trim().parse::<f32>().ok())
+            .unwrap_or(d)
+            .max(0.0)
+    };
+    // One scale for both: the stripes are diagonal, so scaling them per axis
+    // would shear the 45° they are defined by.
+    let s = scale.x.min(scale.y);
+    let (stripe, gap) = (f32_of("ui_hatch_w", 5.0) * s, f32_of("ui_hatch_gap", 5.0) * s);
+    let pitch = stripe + gap;
+    (color.a > 0.0 && stripe > 0.0 && pitch > 0.0).then_some((color, pitch, stripe))
+}
+
+fn draw_hatch(canvas: &mut Canvas, rect: (f32, f32, f32, f32), color: Color, pitch: f32, w: f32) {
+    let (rx, ry, rw, rh) = rect;
+    if rw <= 0.0 || rh <= 0.0 {
+        return;
+    }
+    canvas.push_clip(rx, ry, rw, rh);
+    // A 45° line of thickness `w` needs to be drawn `w` thick along its own
+    // normal, which `Canvas::line` already does — the diagonal only sets how
+    // far each stripe runs, and one that spans the rect's diagonal extent
+    // reaches both far corners.
+    let diag = rw + rh;
+    for (x0, y0, x1, y1) in hatch_lines(rect, pitch, diag) {
+        canvas.line(x0, y0, x1, y1, w, color);
+    }
+    canvas.pop_clip();
+}
+
 /// An unauthored Button bar/marker is invisible rather than white, so a bare
 /// Button is just its label until those are given colours.
 const BUTTON_TRANSPARENT: Color = Color::new(0.0, 0.0, 0.0, 0.0);
@@ -552,7 +633,9 @@ fn draw_ui_kind_dyn(
         let dy = -prop_f32("ui_shadow_y").unwrap_or(0.0) * scale.y;
         if color.a > 0.0 && (dx != 0.0 || dy != 0.0) {
             let flat = |n: &str| match n {
-                "ui_shadow_color" | "ui_border_color" => None,
+                // A shadow is a flat silhouette: its border and its hatch are
+                // detail that would show through as a second, offset pattern.
+                "ui_shadow_color" | "ui_border_color" | "ui_hatch_color" => None,
                 // The whole silhouette takes the shadow colour, whichever
                 // property the kind paints itself with.
                 "ui_color" | "ui_bar_color" | "ui_marker_color" | "ui_color_top"
@@ -575,6 +658,7 @@ fn draw_ui_kind_dyn(
     // shared with every other node in the frame.
     let prev_tracking = canvas.set_tracking(prop_f32("ui_tracking").unwrap_or(0.0) * scale.x);
     let border = node_border(&get, scale);
+    let hatch = node_hatch(&get, scale);
     // The box the text arms below lay their line into: the node's rect inset by
     // its own padding, CSS `padding` on a box that holds text rather than
     // children. `ui_pad_*` already insets a *flow container's* children; a leaf
@@ -589,8 +673,12 @@ fn draw_ui_kind_dyn(
         (x + l, y + b, (w - l - r).max(0.0), (h - t - b).max(0.0))
     };
     // Painted after the kind's own fill, below — a closure so the early-return
-    // arms can't forget it.
+    // arms can't forget it. The hatch goes over the fill and under the border,
+    // which is the order CSS paints a background layer in.
     let draw = |canvas: &mut Canvas| {
+        if let Some((color, pitch, stripe)) = hatch {
+            draw_hatch(canvas, rect, color, pitch, stripe);
+        }
         if let Some((color, widths)) = border {
             draw_border(canvas, rect, color, widths);
         }
@@ -3115,6 +3203,62 @@ mod tests {
             one
         )
         .is_none());
+    }
+
+    #[test]
+    fn hatch_lines_cover_the_rect_at_45_degrees() {
+        // `repeating-linear-gradient(45deg, X 0 5px, Y 5px 10px)` — a 10px
+        // pitch of 45° stripes, which is the mockups' placeholder plate.
+        let rect = (0.0, 0.0, 100.0, 50.0);
+        let lines: Vec<_> = hatch_lines(rect, 10.0, 150.0).collect();
+        // Every stripe is exactly 45°: equal run and rise.
+        for (x0, y0, x1, y1) in &lines {
+            assert!(
+                ((x1 - x0) - (y1 - y0)).abs() < 1e-3,
+                "45 degrees: {:?}",
+                (x0, y0, x1, y1)
+            );
+        }
+        // Starting a full height to the left so the bottom-left corner is
+        // covered.
+        assert!((lines[0].0 - -50.0).abs() < 1e-3, "first x0: {}", lines[0].0);
+        // The CSS period is perpendicular to the stripes, so the *horizontal*
+        // spacing is pitch * sqrt(2). Measuring the true distance between two
+        // parallel 45° lines from their x-intercepts gives the pitch back.
+        let dx = lines[1].0 - lines[0].0;
+        assert!(
+            (dx / std::f32::consts::SQRT_2 - 10.0).abs() < 1e-3,
+            "10px perpendicular period, {dx} horizontal"
+        );
+        // The last stripe starts at or past the right edge, so the top-right
+        // corner is covered too.
+        assert_eq!(lines.len(), 11);
+        assert!(
+            lines.last().unwrap().0 >= 100.0 - dx,
+            "reaches the right edge: {}",
+            lines.last().unwrap().0
+        );
+        // A zero-area rect asks for nothing rather than looping forever.
+        assert_eq!(hatch_lines((0.0, 0.0, 0.0, 0.0), 10.0, 0.0).count(), 0);
+    }
+
+    #[test]
+    fn a_hatch_needs_only_its_colour() {
+        // `ui_hatch_color` alone is a full hatch: the stripe and gap default to
+        // the mockups' 5px, so the common case is one property.
+        let props: HashMap<&str, &str> = HashMap::from([("ui_hatch_color", "34,39,47,255")]);
+        let get = |n: &str| props.get(n).map(|v| v.to_string());
+        let (color, pitch, stripe) = node_hatch(&get, Vec2::new(1.0, 1.0)).expect("hatched");
+        assert_eq!(color.to_srgb8(), (34, 39, 47, 255));
+        assert!((pitch - 10.0).abs() < 1e-3, "5px stripe + 5px gap");
+        assert!((stripe - 5.0).abs() < 1e-3);
+        // No colour, no hatch — and no cost beyond one failed lookup.
+        let none = |_: &str| None;
+        assert!(node_hatch(&none, Vec2::new(1.0, 1.0)).is_none());
+        // A fully transparent hatch is nothing to draw, like an invisible border.
+        let clear: HashMap<&str, &str> = HashMap::from([("ui_hatch_color", "34,39,47,0")]);
+        let get_clear = |n: &str| clear.get(n).map(|v| v.to_string());
+        assert!(node_hatch(&get_clear, Vec2::new(1.0, 1.0)).is_none());
     }
 
     #[test]
