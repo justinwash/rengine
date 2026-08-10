@@ -2299,6 +2299,22 @@ fn node_own_extent(node: &SceneNode2D, canvas: &Canvas, bindings: &Bindings) -> 
                 )
             }
         }
+        // A run of differently-coloured spans measures as the one line it
+        // paints: the widths sum, the height is a single line box. Without
+        // this a content-sized `text_spans` measured zero, so a row of them
+        // (`BANK $1.9M | LEGACY 25 | SEED …`) stacked at the same x.
+        Some("text_spans") => {
+            let size = prop_f32("ui_text_size").unwrap_or(12.0);
+            let font = super::data2d::node_font(&get);
+            let width: f32 = (0..)
+                .map_while(|i| get(&format!("ui_span_{i}_text")))
+                .map(|text| canvas.measure_text_tracked(font, &text, size, 0.0).0)
+                .sum();
+            match width > 0.0 {
+                true => (width, canvas.line_height_in(font, size)),
+                false => (0.0, 0.0),
+            }
+        }
         // A wrapped block measures to the box its own wrap produces, so a
         // prose panel can be `ui_size: "content"` and be exactly as tall as
         // the text needs. Without this it measured zero and collapsed, which
@@ -3731,6 +3747,43 @@ mod tests {
         assert!((world.world_transform(child).unwrap().position.x - 17.0).abs() < 1e-3);
     }
 
+    /// A scene from `(editor id, parent id, name, properties)` rows, so a test
+    /// can build a real multi-node document instead of hand-spawning nodes —
+    /// which is the only way to exercise anything that runs at *load* time,
+    /// nested-scene expansion included.
+    fn scene_from_instances(rows: &[(u64, Option<u64>, &str, &[(&str, &str)])]) -> Scene2D {
+        let instances = rows
+            .iter()
+            .map(|(id, parent, name, extra)| {
+                let mut properties = props(&[
+                    ("editor_node_id", id.to_string().as_str()),
+                    ("editor_name", name),
+                ]);
+                if let Some(parent) = parent {
+                    properties.insert("editor_parent_id".to_string(), parent.to_string());
+                }
+                for (key, value) in *extra {
+                    properties.insert(key.to_string(), value.to_string());
+                }
+                SceneInstance2DDef {
+                    prefab: "marker".to_string(),
+                    position: [0.0, 0.0],
+                    scale: [1.0, 1.0],
+                    properties,
+                }
+            })
+            .collect();
+        let definition = Scene2DDef {
+            prefabs: vec![Prefab2DDef {
+                name: "marker".to_string(),
+                sprites: vec![],
+            }],
+            instances,
+        };
+        Scene2D::from_definition(Path::new("t.scene.json"), definition, &AssetPack::default())
+            .unwrap()
+    }
+
     fn single_node_scene(name: &str, extra: &[(&str, &str)]) -> Scene2D {
         let mut properties = props(&[("editor_node_id", "1"), ("editor_name", name)]);
         for (key, value) in extra {
@@ -4108,6 +4161,90 @@ mod tests {
     }
 
     #[test]
+    fn a_nested_scene_fills_the_slot_its_host_was_given() {
+        // A shared component (the game's chrome bar) authored as its own scene
+        // and grafted under a host node in a flow: the host takes a 32px track
+        // in the column, and the nested root must resolve against *that*, not
+        // against the screen.
+        let mut library = SceneLibrary::new();
+        library.insert(
+            "chrome",
+            single_node_scene(
+                "bar",
+                &[
+                    ("ui", "rect"),
+                    ("ui_stretch_x", "true"),
+                    ("ui_stretch_y", "true"),
+                ],
+            ),
+        );
+
+        // The screen, as a real scene document: a column whose first child
+        // names the shared scene and whose second grows into the rest. This
+        // is the shape `tools/scene_kit.py:screen_root` emits.
+        let screen = scene_from_instances(&[
+            (
+                1,
+                None,
+                "root",
+                &[
+                    ("ui", "rect"),
+                    ("ui_layout", "column"),
+                    ("ui_stretch_x", "true"),
+                    ("ui_stretch_y", "true"),
+                ][..],
+            ),
+            (
+                2,
+                Some(1),
+                "host",
+                &[
+                    (NESTED_SCENE_PROPERTY, "chrome"),
+                    ("ui_h", "32"),
+                    ("ui_stretch_x", "true"),
+                ][..],
+            ),
+            (3, Some(1), "body", &[("ui_grow", "1")][..]),
+        ]);
+
+        let mut world = SceneWorld2D::new();
+        world.instantiate_scene_tree(&screen, &library, None, Transform2D::default());
+        let host = world.find_by_name("host").expect("host spawned");
+        let expanded: Vec<NodeHandle2D> = world.children(host);
+        assert_eq!(expanded.len(), 1, "the bar was grafted under its host");
+
+        let mut canvas = Canvas::new((1280, 800), std::ptr::null());
+        world.draw_to_canvas(&mut canvas, 0.0);
+
+        let host_rect = world.resolved_rect(host);
+        let bar = world.resolved_rect(expanded[0]).expect("bar drawn");
+        assert!(
+            (bar.height - 32.0).abs() < 1e-3,
+            "the bar is its authored 32 tall, not half of it: {}",
+            bar.height
+        );
+        assert!(
+            (bar.width - 1280.0).abs() < 1e-3,
+            "and spans the viewport: {}",
+            bar.width
+        );
+        // Top of the screen, which is where the column put its first child.
+        assert!(
+            (bar.top() - 400.0).abs() < 1e-3,
+            "flush with the top: {}",
+            bar.top()
+        );
+        if let Some(h) = host_rect {
+            assert!(
+                (bar.top() - h.top()).abs() < 1e-3,
+                "bar sits where its host does: bar {} vs host {}",
+                bar.top(),
+                h.top()
+            );
+        }
+    }
+
+    #[test]
     fn ui_size_content_h_keeps_the_authored_width() {
         // The common mockup panel: "640px wide, as tall as my rows need".
         // `ui_size: "content"` is per node, so before the axis variants the
@@ -4158,6 +4295,54 @@ mod tests {
         // And it is centred on the width it kept, which is what a measured
         // width would have got wrong.
         assert!((rect.x - -320.0).abs() < 1e-3, "centred: {}", rect.x);
+    }
+
+    #[test]
+    fn text_spans_content_sizes_to_the_line_it_paints() {
+        // The chrome bar's readouts: `BANK` in one colour, its value in
+        // another, one line box. Content-sized at zero they all stacked at the
+        // same x, so the row read as one illegible smear.
+        let mut world = SceneWorld2D::new();
+        let root = world.spawn(SceneNode2D::new("root"));
+        {
+            let n = world.get_mut(root).unwrap();
+            n.set_property("ui", "rect");
+            n.set_property("ui_layout", "row");
+            n.set_property("ui_gap", "12");
+            n.set_property("ui_stretch_x", "true");
+            n.set_property("ui_stretch_y", "true");
+        }
+        let mut spans = Vec::new();
+        for (name, label) in [("bank", "BANK "), ("legacy", "LEGACY ")] {
+            let h = world.spawn_child(root, SceneNode2D::new(name));
+            let n = world.get_mut(h).unwrap();
+            n.set_property("ui", "text_spans");
+            n.set_property("ui_text_size", "8");
+            n.set_property("ui_span_0_text", label);
+            n.set_property("ui_span_1_text", "$1.9M");
+            n.set_property("ui_size", "content");
+            spans.push(h);
+        }
+
+        let mut canvas = Canvas::new((800, 200), std::ptr::null());
+        world.draw_to_canvas(&mut canvas, 0.0);
+
+        let a = world.resolved_rect(spans[0]).expect("first drawn");
+        let b = world.resolved_rect(spans[1]).expect("second drawn");
+        assert!(a.width > 0.0, "a span run has width: {}", a.width);
+        assert!(
+            (a.height - canvas.line_height_in(crate::FontId::DEFAULT, 8.0)).abs() < 1e-3,
+            "one line box tall: {}",
+            a.height
+        );
+        // The whole point: the second starts after the first plus the gap,
+        // rather than on top of it.
+        assert!(
+            (b.x - (a.right() + 12.0)).abs() < 1e-3,
+            "laid out in sequence: {} then {}",
+            a.right(),
+            b.x
+        );
     }
 
     #[test]
