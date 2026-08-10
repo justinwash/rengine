@@ -371,6 +371,20 @@ pub(crate) fn node_font(get: &impl Fn(&str) -> Option<String>) -> FontId {
         .map_or(FontId::DEFAULT, FontId)
 }
 
+/// A wrapped block's line-height multiplier — CSS `line-height:1.35`, which
+/// the mockups author on every prose block (card text, archetype blurbs, perk
+/// descriptions).
+///
+/// A multiplier rather than an absolute: the mockups write it as one, and it
+/// stays correct when the same node is authored at a different `ui_text_size`.
+/// Absent → `1.0`, the font's own line box, so existing blocks are unchanged.
+pub(crate) fn node_leading(get: &impl Fn(&str) -> Option<String>) -> f32 {
+    get("ui_line_height")
+        .and_then(|v| v.trim().parse::<f32>().ok())
+        .filter(|v| *v > 0.0)
+        .unwrap_or(1.0)
+}
+
 /// A node's authored border, if it has one: `(color, per-side widths)` in
 /// `(left, right, bottom, top)` order.
 ///
@@ -698,7 +712,17 @@ fn draw_ui_kind_dyn(
                 TextAlign::Center => x + w * 0.5,
                 TextAlign::Right => x + w,
             };
-            canvas.text_block_in(font, anchor_x, y + h, &text, size, color, wrap_w, align);
+            canvas.text_block_leaded_in(
+                font,
+                anchor_x,
+                y + h,
+                &text,
+                size,
+                color,
+                wrap_w,
+                align,
+                node_leading(&get),
+            );
         }
         "text_spans" => {
             // Numbered rows (ui_span_0_text/ui_span_0_color, ui_span_1_...)

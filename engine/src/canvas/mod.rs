@@ -152,8 +152,24 @@ impl Canvas {
         size: f32,
         tracking: f32,
     ) -> (f32, f32) {
-        let (w, h) = self.font_atlas(font).measure_text(text, size);
+        let (w, h) = match self.font_atlas_opt(font) {
+            Some(atlas) => atlas.measure_text(text, size),
+            None => crate::text::measure_builtin_text(text, size),
+        };
         (w + Self::tracking_width_of(text, tracking), h)
+    }
+
+    /// The atlas for `font`, or `None` when no atlas is bound yet.
+    ///
+    /// Measuring is not drawing: content sizing runs over a `&Canvas` and only
+    /// needs advances and a line box, both of which the builtin face knows
+    /// without a GPU atlas. Drawing still asserts — a glyph really does need
+    /// one — but a layout pass must not depend on having begun a frame.
+    fn font_atlas_opt(&self, font: FontId) -> Option<&FontAtlas> {
+        if self.atlas.is_null() {
+            return None;
+        }
+        Some(self.font_atlas(font))
     }
 
     fn atlas(&self) -> &FontAtlas {
@@ -167,6 +183,16 @@ impl Canvas {
             "Canvas font atlas not initialized; call Frame::begin() before drawing text"
         );
         unsafe { &*ptr }
+    }
+
+    /// Whether this canvas can emit glyphs at all.
+    ///
+    /// A layout-only pass (the content-sizing tests, and any headless caller
+    /// that wants rects without pixels) runs on a canvas with no atlas bound.
+    /// Measuring works there — the builtin metrics need no GPU — so text draw
+    /// calls no-op instead of panicking, and layout still resolves fully.
+    fn can_draw_text(&self) -> bool {
+        !self.atlas.is_null()
     }
 
     /// The atlas for `font`, or the default atlas if the table doesn't hold
@@ -193,7 +219,11 @@ impl Canvas {
 
     /// [`line_height`](Self::line_height) in a specific font.
     pub fn line_height_in(&self, font: FontId, size: f32) -> f32 {
-        self.font_atlas(font).line_height(size)
+        match self.font_atlas_opt(font) {
+            Some(atlas) => atlas.line_height(size),
+            // Measuring without a bound atlas: the builtin face's own line box.
+            None => crate::text::measure_builtin_text("", size).1,
+        }
     }
 
     pub fn screen_size(&self) -> (u32, u32) {
@@ -626,6 +656,9 @@ impl Canvas {
         color: Color,
         align: TextAlign,
     ) {
+        if !self.can_draw_text() {
+            return;
+        }
         let offset = if align == TextAlign::Left {
             0.0
         } else {
@@ -803,6 +836,9 @@ impl Canvas {
         size: f32,
         align: TextAlign,
     ) {
+        if !self.can_draw_text() {
+            return;
+        }
         let atlas = self.font_atlas(font);
         let offset = if align == TextAlign::Left {
             0.0
@@ -848,12 +884,79 @@ impl Canvas {
         max_width: f32,
         align: TextAlign,
     ) {
+        self.text_block_leaded_in(font, x, y, text, size, color, max_width, align, 1.0);
+    }
+
+    /// [`text_block_in`](Self::text_block_in) with a line-height multiplier —
+    /// CSS `line-height:1.35`, which the mockups author on every prose block.
+    ///
+    /// `leading` scales the step between lines only; the first line still sits
+    /// at `y`, so a block's ink starts where its rect does regardless.
+    #[allow(clippy::too_many_arguments)]
+    pub fn text_block_leaded_in(
+        &mut self,
+        font: FontId,
+        x: f32,
+        y: f32,
+        text: &str,
+        size: f32,
+        color: Color,
+        max_width: f32,
+        align: TextAlign,
+        leading: f32,
+    ) {
+        if !self.can_draw_text() {
+            return;
+        }
         // ponytail: wraps on untracked widths, so a tracked block can overrun
         // `max_width` by its accumulated spacing. Tracking is for all-caps
         // chrome and wrapping is for prose; nothing authored is both. Give
         // `wrap_text` the tracking if that ever stops being true.
         let lines = wrap_text(text, size, max_width, self.font_atlas(font));
-        self.text_block_lines_in(font, x, y, &lines, size, color, align);
+        self.text_block_lines_leaded_in(font, x, y, &lines, size, color, align, leading);
+    }
+
+    /// How much room a wrapped block needs: the widest line it breaks into, and
+    /// the height those lines occupy at `leading`.
+    ///
+    /// The measuring half of [`text_block_leaded_in`](Self::text_block_leaded_in)
+    /// — same wrap, same metrics — so a content-sized block cannot size to
+    /// something other than what it paints.
+    pub fn measure_text_block_in(
+        &self,
+        font: FontId,
+        text: &str,
+        size: f32,
+        max_width: f32,
+        leading: f32,
+    ) -> (f32, f32) {
+        // Same measuring function the wrap and the widest-line scan both use,
+        // so they cannot disagree about where the breaks fall.
+        let measure = |run: &str| match self.font_atlas_opt(font) {
+            Some(atlas) => atlas.measure_text(run, size).0,
+            None => crate::text::measure_builtin_text(run, size).0,
+        };
+        let lines = wrap_text_measured(text, max_width, &measure);
+        let widest = lines
+            .iter()
+            .map(|line| measure(line))
+            .fold(0.0_f32, f32::max);
+        (
+            widest,
+            Self::block_height(self.line_height_in(font, size), lines.len(), leading),
+        )
+    }
+
+    /// The height `n` stacked line boxes occupy at `leading`.
+    ///
+    /// The last line contributes a full box, not a leaded one — extra leading
+    /// is space *between* lines, so a block is `lh + (n-1) * lh * leading`.
+    /// Getting this wrong pads every prose block with a phantom trailing gap.
+    fn block_height(line_h: f32, lines: usize, leading: f32) -> f32 {
+        match lines {
+            0 => 0.0,
+            n => line_h + (n - 1) as f32 * line_h * leading,
+        }
     }
 
     pub(crate) fn text_block_lines(
@@ -879,11 +982,29 @@ impl Canvas {
         color: Color,
         align: TextAlign,
     ) {
-        // `y` is the first line box's top; each subsequent line is one line
-        // box lower, so the block occupies exactly `lines.len() * lh`.
-        let lh = self.font_atlas(font).line_height(size);
+        self.text_block_lines_leaded_in(font, x, y, lines, size, color, align, 1.0);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn text_block_lines_leaded_in(
+        &mut self,
+        font: FontId,
+        x: f32,
+        y: f32,
+        lines: &[String],
+        size: f32,
+        color: Color,
+        align: TextAlign,
+        leading: f32,
+    ) {
+        if !self.can_draw_text() {
+            return;
+        }
+        // `y` is the first line box's top; each subsequent line is one leaded
+        // step lower, so the block occupies exactly `block_height`.
+        let step = self.font_atlas(font).line_height(size) * leading;
         for (i, line) in lines.iter().enumerate() {
-            let ly = y - (i as f32) * lh;
+            let ly = y - (i as f32) * step;
             self.text_aligned_in(font, x, ly, line, size, color, align);
         }
     }
@@ -905,6 +1026,20 @@ pub fn screen_to_ndc(x: f32, y: f32, screen_size: (u32, u32)) -> [f32; 2] {
 }
 
 pub fn wrap_text(text: &str, size: f32, max_width: f32, atlas: &FontAtlas) -> Vec<String> {
+    wrap_text_measured(text, max_width, |run| atlas.measure_text(run, size).0)
+}
+
+/// [`wrap_text`](wrap_text) against any measuring function.
+///
+/// The wrap algorithm is the same whether the widths come from a live atlas or
+/// the builtin metrics — content sizing runs before a frame begins and has no
+/// atlas, and a block that wrapped differently when measured than when drawn
+/// would size to the wrong height.
+pub fn wrap_text_measured(
+    text: &str,
+    max_width: f32,
+    measure: impl Fn(&str) -> f32,
+) -> Vec<String> {
     let mut lines = Vec::new();
     for raw_line in text.split('\n') {
         if raw_line.is_empty() {
@@ -914,9 +1049,9 @@ pub fn wrap_text(text: &str, size: f32, max_width: f32, atlas: &FontAtlas) -> Ve
         let words: Vec<&str> = raw_line.split(' ').collect();
         let mut current = String::new();
         let mut current_w: f32 = 0.0;
-        let space_w = atlas.measure_text(" ", size).0;
+        let space_w = measure(" ");
         for word in &words {
-            let word_w = atlas.measure_text(word, size).0;
+            let word_w = measure(word);
             if current.is_empty() {
                 if word_w > max_width {
                     lines.push((*word).to_string());

@@ -2277,6 +2277,34 @@ fn node_own_extent(node: &SceneNode2D, canvas: &Canvas, bindings: &Bindings) -> 
                 )
             }
         }
+        // A wrapped block measures to the box its own wrap produces, so a
+        // prose panel can be `ui_size: "content"` and be exactly as tall as
+        // the text needs. Without this it measured zero and collapsed, which
+        // is why every prose block until now carried a hand-counted `ui_h`.
+        //
+        // Width is the wrap width, not the widest line: `ui_wrap_w` is a
+        // constraint the author states, and a block that shrank to its
+        // longest line would re-wrap differently the moment it was measured
+        // inside a content-sized parent.
+        Some("text_block") => {
+            let text = get("ui_text").unwrap_or_default();
+            let wrap_w = prop_f32("ui_wrap_w").or_else(|| prop_f32("ui_w"));
+            match (text.is_empty(), wrap_w) {
+                (false, Some(wrap_w)) if wrap_w > 0.0 => {
+                    let (_, h) = canvas.measure_text_block_in(
+                        super::data2d::node_font(&get),
+                        &text,
+                        prop_f32("ui_text_size").unwrap_or(12.0),
+                        wrap_w,
+                        super::data2d::node_leading(&get),
+                    );
+                    (wrap_w, h)
+                }
+                // No wrap width to wrap against: the block has no intrinsic
+                // width of its own, so it stays zero rather than guessing one.
+                _ => (0.0, 0.0),
+            }
+        }
         _ => (0.0, 0.0),
     };
 
@@ -4044,6 +4072,103 @@ mod tests {
             (r(1).width - 100.0).abs() < 1e-3,
             "gap is not folded into w"
         );
+    }
+
+    #[test]
+    fn text_block_content_sizes_to_its_wrapped_height() {
+        // E-Q. A wrapped prose block used to measure zero and collapse, so
+        // every one carried a hand-counted `ui_h`. Now it measures the box its
+        // own wrap produces — the mockups' card text, perk descriptions and
+        // archetype blurbs are all this shape.
+        let mut world = SceneWorld2D::new();
+        let root = world.spawn(SceneNode2D::new("root"));
+        {
+            let n = world.get_mut(root).unwrap();
+            n.set_property("ui", "rect");
+            n.set_property("ui_layout", "column");
+            n.set_property("ui_stretch_x", "true");
+            n.set_property("ui_stretch_y", "true");
+        }
+        // Narrow enough that this certainly wraps past one line.
+        let block = world.spawn_child(root, SceneNode2D::new("blurb"));
+        {
+            let n = world.get_mut(block).unwrap();
+            n.set_property("ui", "text_block");
+            n.set_property("ui_text", "High pace, risky calls. Extra command point every lap.");
+            n.set_property("ui_text_size", "14");
+            n.set_property("ui_wrap_w", "120");
+            n.set_property("ui_size", "content");
+        }
+
+        let mut canvas = Canvas::new((400, 400), std::ptr::null());
+        world.draw_to_canvas(&mut canvas, 0.0);
+
+        let rect = world.resolved_rect(block).expect("block drawn");
+        let line_h = canvas.line_height_in(crate::FontId::DEFAULT, 14.0);
+        assert!(
+            (rect.width - 120.0).abs() < 1e-3,
+            "block is its wrap width: {}",
+            rect.width
+        );
+        // The point of the feature: taller than one line, and an exact whole
+        // number of them rather than some arbitrary measured ink height.
+        assert!(
+            rect.height > line_h * 1.5,
+            "wrapped block is multiple lines tall: {} vs one line {line_h}",
+            rect.height
+        );
+        let lines = (rect.height / line_h).round();
+        assert!(
+            (rect.height - lines * line_h).abs() < 1e-3,
+            "height is a whole number of line boxes: {} / {line_h}",
+            rect.height
+        );
+    }
+
+    #[test]
+    fn ui_line_height_leads_a_block_without_moving_its_first_line() {
+        // E-R: CSS `line-height:1.35`. Extra leading is space *between* lines,
+        // so the first line does not move and the last contributes a full box
+        // — a block that leaded the trailing line would carry a phantom gap.
+        let measure = |leading: Option<&str>| {
+            let mut world = SceneWorld2D::new();
+            let root = world.spawn(SceneNode2D::new("root"));
+            {
+                let n = world.get_mut(root).unwrap();
+                n.set_property("ui", "rect");
+                n.set_property("ui_layout", "column");
+                n.set_property("ui_stretch_x", "true");
+                n.set_property("ui_stretch_y", "true");
+            }
+            let block = world.spawn_child(root, SceneNode2D::new("blurb"));
+            {
+                let n = world.get_mut(block).unwrap();
+                n.set_property("ui", "text_block");
+                n.set_property("ui_text", "one two three four five six seven eight");
+                n.set_property("ui_text_size", "14");
+                n.set_property("ui_wrap_w", "100");
+                n.set_property("ui_size", "content");
+                if let Some(leading) = leading {
+                    n.set_property("ui_line_height", leading);
+                }
+            }
+            let mut canvas = Canvas::new((400, 400), std::ptr::null());
+            world.draw_to_canvas(&mut canvas, 0.0);
+            let rect = world.resolved_rect(block).expect("block drawn");
+            (rect.height, canvas.line_height_in(crate::FontId::DEFAULT, 14.0))
+        };
+
+        let (plain, line_h) = measure(None);
+        let (leaded, _) = measure(Some("1.35"));
+        let lines = (plain / line_h).round();
+        assert!(lines >= 2.0, "test text must wrap to compare leading");
+        // lh + (n-1)*lh*1.35, not n*lh*1.35.
+        let expected = line_h + (lines - 1.0) * line_h * 1.35;
+        assert!(
+            (leaded - expected).abs() < 1e-3,
+            "leading applies between lines only: {leaded} vs {expected}"
+        );
+        assert!(leaded > plain, "1.35 is taller than the font's own box");
     }
 
     #[test]
