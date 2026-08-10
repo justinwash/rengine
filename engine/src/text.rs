@@ -46,13 +46,14 @@ fn builtin_font_metrics() -> &'static BuiltinFontMetrics {
         )
         .expect("failed to parse font");
         let mut advances = [0.0; 128];
-        let mut line_height: f32 = 0.0;
-
         for c in 32u8..127 {
-            let metrics = font.metrics(c as char, FONT_SIZE);
-            advances[c as usize] = metrics.advance_width;
-            line_height = line_height.max(metrics.height as f32);
+            advances[c as usize] = font.metrics(c as char, FONT_SIZE).advance_width;
         }
+        // Same definition as `build_atlas_from_bytes`: the font's own line
+        // box, not the tallest glyph's ink.
+        let line_height = font
+            .horizontal_line_metrics(FONT_SIZE)
+            .map_or(FONT_SIZE, |m| m.new_line_size);
 
         BuiltinFontMetrics {
             advances,
@@ -80,7 +81,17 @@ pub struct FontAtlas {
     pub bind_group: wgpu::BindGroup,
     pub(crate) glyphs: [Option<GlyphEntry>; 128],
     white_uv: [f32; 2],
+    /// The font's own line box at [`FONT_SIZE`]: `ascent - descent +
+    /// line_gap`, the same number CSS calls `normal` line-height.
+    ///
+    /// This used to be the tallest glyph's *ink* height, which is a different
+    /// quantity entirely and is why text drew outside its own node's rect:
+    /// a rect sized to it was shorter than a line, and the draw then measured
+    /// the baseline down from a top that didn't exist.
     pub(crate) line_height: f32,
+    /// Distance from the baseline up to the line box's top, at [`FONT_SIZE`].
+    /// Positive. This is what turns a rect into a baseline.
+    pub(crate) ascent: f32,
     pub(crate) id: FontId,
 }
 
@@ -109,6 +120,16 @@ impl FontAtlas {
 
     pub fn line_height(&self, size: f32) -> f32 {
         self.line_height * (size / FONT_SIZE)
+    }
+
+    /// Where the baseline sits inside a line box whose **top** is at `top`
+    /// (y-up canvas coords, so the baseline is below it).
+    ///
+    /// The one place the rect→baseline conversion lives. Every text path goes
+    /// through it, so a node's ink lands inside the rect the layout gave it
+    /// by construction rather than by each call site guessing.
+    pub fn baseline_below_top(&self, top: f32, size: f32) -> f32 {
+        top - self.ascent * (size / FONT_SIZE)
     }
 }
 
@@ -179,7 +200,18 @@ pub(crate) fn build_atlas_from_bytes(
     let mut cursor_x: u32 = 4;
     let mut cursor_y: u32 = 0;
     let mut row_height: u32 = 0;
-    let mut line_height: f32 = 0.0;
+
+    // The font's own vertical metrics, not the tallest glyph's ink box. A
+    // line box is `ascent - descent + line_gap` — the same number a browser
+    // uses for `line-height: normal`, which is what the mockups are laid out
+    // against. Measuring ink instead made every rect shorter than a real
+    // line and left the baseline undefined.
+    let (ascent, line_height) = match font.horizontal_line_metrics(FONT_SIZE) {
+        Some(m) => (m.ascent, m.new_line_size),
+        // No hhea/OS2 table: fall back to the em box, which is at least
+        // self-consistent (baseline at 80% is the usual default).
+        None => (FONT_SIZE * 0.8, FONT_SIZE),
+    };
 
     for c in 32u8..127 {
         let ch = c as char;
@@ -230,11 +262,6 @@ pub(crate) fn build_atlas_from_bytes(
         let v0 = cursor_y as f32 / ATLAS_SIZE as f32;
         let u1 = (cursor_x + gw) as f32 / ATLAS_SIZE as f32;
         let v1 = (cursor_y + gh) as f32 / ATLAS_SIZE as f32;
-
-        let h = metrics.height as f32;
-        if h > line_height {
-            line_height = h;
-        }
 
         glyphs[c as usize] = Some(GlyphEntry {
             u0,
@@ -317,6 +344,85 @@ pub(crate) fn build_atlas_from_bytes(
         glyphs,
         white_uv,
         line_height,
+        ascent,
         id,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The rect→baseline contract, on the real vendored faces.
+    ///
+    /// This is the bug that cost the most during the UI overhaul: `y` meant
+    /// "rect bottom" to the layout, "baseline" to the draw, and `line_height`
+    /// meant "tallest glyph's ink" to one and "line box" to the other. Text
+    /// drew tens of pixels outside its own node and every screen had been
+    /// hand-nudged against the wrong output.
+    ///
+    /// What must hold: a line box `line_height(size)` tall, with the baseline
+    /// `ascent` below its top, puts every glyph's ink inside that box.
+    fn assert_ink_fits_line_box(bytes: &[u8], name: &str) {
+        let font = fontdue::Font::from_bytes(bytes, fontdue::FontSettings::default())
+            .expect("vendored font should parse");
+        for size in [10.0f32, 12.0, 18.0, 44.0] {
+            let m = font
+                .horizontal_line_metrics(size)
+                .expect("a UI font declares vertical metrics");
+            // Same numbers the atlas stores and `baseline_below_top` uses.
+            let (line_height, ascent) = (m.new_line_size, m.ascent);
+            let top = 0.0f32;
+            let baseline = top - ascent;
+            let bottom = top - line_height;
+            for ch in " !ABCFMWgjpqy0123456789".chars() {
+                let g = font.metrics(ch, size);
+                if g.height == 0 {
+                    continue;
+                }
+                // Canvas places a glyph's bottom at `baseline + ymin`.
+                let ink_bottom = baseline + g.ymin as f32;
+                let ink_top = ink_bottom + g.height as f32;
+                assert!(
+                    ink_top <= top + 0.5,
+                    "{name} @{size}: '{ch}' ink rises above its line box \
+                     (ink_top={ink_top}, box_top={top})"
+                );
+                assert!(
+                    ink_bottom >= bottom - 0.5,
+                    "{name} @{size}: '{ch}' ink drops below its line box \
+                     (ink_bottom={ink_bottom}, box_bottom={bottom})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn builtin_font_ink_stays_inside_its_line_box() {
+        assert_ink_fits_line_box(&include_bytes!("../assets/font.ttf")[..], "builtin");
+    }
+
+    #[test]
+    fn line_height_is_the_font_line_box_not_the_tallest_glyph() {
+        // The distinction the old code collapsed. `line_height` must be the
+        // font's declared line box (ascent - descent + gap), which is
+        // strictly taller than any single glyph's ink — a face whose glyphs
+        // sit high in the em box (Silkscreen declares ascent 49.44 with a cap
+        // height of 28) is exactly where measuring ink instead goes wrong.
+        let font = fontdue::Font::from_bytes(
+            &include_bytes!("../assets/font.ttf")[..],
+            fontdue::FontSettings::default(),
+        )
+        .unwrap();
+        let m = font.horizontal_line_metrics(FONT_SIZE).unwrap();
+        let tallest_ink = (32u8..127)
+            .map(|c| font.metrics(c as char, FONT_SIZE).height as f32)
+            .fold(0.0, f32::max);
+        assert!(
+            m.new_line_size >= tallest_ink,
+            "a line box must hold the tallest glyph: line={} ink={tallest_ink}",
+            m.new_line_size
+        );
+        assert!((m.new_line_size - (m.ascent - m.descent + m.line_gap)).abs() < 1e-3);
     }
 }

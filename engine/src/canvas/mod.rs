@@ -526,6 +526,13 @@ impl Canvas {
         self.text_with_font(x, y, text, size, color, atlas);
     }
 
+    /// Draw `text` with its **line box's top-left** at `(x, y)`.
+    ///
+    /// Top-left, not baseline: a node's rect is what the layout produced, and
+    /// a caller that had to convert a rect into a baseline itself needed the
+    /// font's ascent to do it — which is exactly the conversion every call
+    /// site used to get wrong. `FontAtlas::baseline_below_top` owns it now,
+    /// and the whole run lands inside a rect `line_height(size)` tall.
     pub fn text_with_font(
         &mut self,
         x: f32,
@@ -538,6 +545,7 @@ impl Canvas {
         self.set_font(atlas.id().0);
         let scale = size / FONT_SIZE;
         let c = color.to_array();
+        let baseline = atlas.baseline_below_top(y, size);
         let mut cursor_x = x;
 
         for ch in text.chars() {
@@ -552,7 +560,14 @@ impl Canvas {
 
             if entry.width_px > 0.0 {
                 let gx = cursor_x + entry.x_offset * scale;
-                let gy = y - (atlas.line_height - entry.y_offset) * scale;
+                // `entry.y_offset` is `ymin` — the glyph's bottom relative to
+                // the **baseline** — so it only means anything measured from
+                // a baseline. Previously this subtracted it from
+                // `line_height` (the tallest glyph's ink height at the time)
+                // against a `y` that callers passed as a rect edge: three
+                // different origins in one expression, which is why text drew
+                // outside its own node.
+                let gy = baseline + entry.y_offset * scale;
                 let gw = entry.width_px * scale;
                 let gh = entry.height_px * scale;
 
@@ -648,6 +663,8 @@ impl Canvas {
         self.set_font(atlas.id().0);
         let scale = size / FONT_SIZE;
         let tracking = self.tracking;
+        // `y` is the line box's top, as in `text_with_font`.
+        let baseline = atlas.baseline_below_top(y, size);
         let mut cursor_x = x;
 
         for &(span_text, span_color) in spans {
@@ -664,7 +681,7 @@ impl Canvas {
 
                 if entry.width_px > 0.0 {
                     let gx = cursor_x + entry.x_offset * scale;
-                    let gy = y - (atlas.line_height - entry.y_offset) * scale;
+                    let gy = baseline + entry.y_offset * scale;
                     let gw = entry.width_px * scale;
                     let gh = entry.height_px * scale;
 
@@ -862,6 +879,8 @@ impl Canvas {
         color: Color,
         align: TextAlign,
     ) {
+        // `y` is the first line box's top; each subsequent line is one line
+        // box lower, so the block occupies exactly `lines.len() * lh`.
         let lh = self.font_atlas(font).line_height(size);
         for (i, line) in lines.iter().enumerate() {
             let ly = y - (i as f32) * lh;

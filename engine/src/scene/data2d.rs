@@ -609,7 +609,11 @@ fn draw_ui_kind_dyn(
             let size = prop_f32("ui_text_size").unwrap_or(12.0);
             // `line_height` needs the font atlas, so it is computed lazily —
             // a button that draws only its bar must not touch text metrics.
-            let centered_y = |canvas: &Canvas| y + (h - canvas.line_height_in(font, size)) * 0.5;
+            // The line box's TOP, centred in the button's height. `y` is the
+            // rect's BOTTOM (the canvas is y-up), so the top of a centred
+            // line box is half the slack down from the rect's top — not half
+            // the slack up from its bottom, which is a whole line box lower.
+            let line_top = |canvas: &Canvas| y + h - (h - canvas.line_height_in(font, size)) * 0.5;
 
             let marker = get("ui_marker").unwrap_or_default();
             if !marker.is_empty() {
@@ -619,11 +623,11 @@ fn draw_ui_kind_dyn(
                     // edge, so the marker tracks the bar rather than
                     // needing its own hand-placed node.
                     let inset = prop_f32("ui_marker_inset").unwrap_or(10.0);
-                    let baseline = centered_y(canvas);
+                    let top = line_top(canvas);
                     canvas.text_aligned_in(
                         font,
                         x + inset,
-                        baseline,
+                        top,
                         &marker,
                         size,
                         marker_color,
@@ -641,8 +645,8 @@ fn draw_ui_kind_dyn(
                     TextAlign::Center => x + w * 0.5,
                     TextAlign::Right => x + w,
                 };
-                let baseline = centered_y(canvas);
-                canvas.text_aligned_in(font, anchor_x, baseline, &text, size, color, align);
+                let top = line_top(canvas);
+                canvas.text_aligned_in(font, anchor_x, top, &text, size, color, align);
             }
         }
         "text" => {
@@ -655,12 +659,13 @@ fn draw_ui_kind_dyn(
                 TextAlign::Center => x + w * 0.5,
                 TextAlign::Right => x + w,
             };
-            // canvas.text's y is the glyph baseline near the rect's bottom
-            // edge; centre the line within the rect's height instead of
-            // leaving every author to hand-nudge y by half a line height.
+            // Canvas text takes the line box's TOP. `y` is the rect's bottom
+            // (y-up), so a line centred in `h` starts half the slack below
+            // the rect's top — which for the common `h == line_height` case
+            // is exactly the rect's top, and the whole run lands inside it.
             let line_h = canvas.line_height_in(font, size);
-            let centered_y = y + (h - line_h) * 0.5;
-            canvas.text_aligned_in(font, anchor_x, centered_y, &text, size, color, align);
+            let line_top = y + h - (h - line_h) * 0.5;
+            canvas.text_aligned_in(font, anchor_x, line_top, &text, size, color, align);
         }
         "text_block" => {
             let color = parse_srgb_color(get("ui_color").as_deref(), Color::WHITE);
@@ -673,16 +678,7 @@ fn draw_ui_kind_dyn(
                 TextAlign::Center => x + w * 0.5,
                 TextAlign::Right => x + w,
             };
-            canvas.text_block_in(
-                font,
-                anchor_x,
-                y + h - canvas.line_height_in(font, size),
-                &text,
-                size,
-                color,
-                wrap_w,
-                align,
-            );
+            canvas.text_block_in(font, anchor_x, y + h, &text, size, color, wrap_w, align);
         }
         "text_spans" => {
             // Numbered rows (ui_span_0_text/ui_span_0_color, ui_span_1_...)
@@ -708,8 +704,8 @@ fn draw_ui_kind_dyn(
                 .zip(span_colors.iter().copied())
                 .collect();
             let line_h = canvas.line_height_in(font, size);
-            let centered_y = y + (h - line_h) * 0.5;
-            canvas.text_spans_aligned_in(font, x, centered_y, &spans, size, align);
+            let line_top = y + h - (h - line_h) * 0.5;
+            canvas.text_spans_aligned_in(font, x, line_top, &spans, size, align);
         }
         "polyline" => {
             // "x0,y0;x1,y1;..." offsets from the rect's origin — the same
