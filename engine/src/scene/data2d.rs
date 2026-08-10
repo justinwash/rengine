@@ -208,7 +208,11 @@ impl SceneInstance2D {
     /// - `ui_line_w`: edge thickness for `bevel`
     /// - `ui_border_w`, `ui_border_color`: an inset border on **any** kind,
     ///   with `ui_border_left`/`_right`/`_top`/`_bottom` overriding one side
-    ///   (a divider rule is a one-sided border, not a separate line node)
+    ///   (a divider rule is a one-sided border, not a separate line node).
+    ///   Inset against an *authored* size, so a node stays the size it says it
+    ///   is; **added** to a *measured* one (`ui_size: "content"`), which has no
+    ///   stated size to inset against — CSS's `border-box` and `content-box`
+    ///   respectively, each applied where it is the useful one
     /// - `ui_shadow_color`, `ui_shadow_x`, `ui_shadow_y`: a hard offset drop
     ///   shadow under **any** kind, `ui_shadow_y` positive = down (CSS sense)
     /// - `ui_text`, `ui_text_size`: text contents and size
@@ -425,6 +429,26 @@ fn node_border(get: &dyn Fn(&str) -> Option<String>, scale: Vec2) -> Option<(Col
     ];
     let color = parse_srgb_color(get("ui_border_color").as_deref(), Color::WHITE);
     (widths.iter().any(|w| *w > 0.0) && color.a > 0.0).then_some((color, widths))
+}
+
+/// How much a node's own border adds to a **measured** size, as
+/// `(horizontal, vertical)`.
+///
+/// [`border_rects`] draws the border *inside* the rect, which is right for an
+/// authored size: a panel that says it is 640px wide is 640px wide, border
+/// included. A measured size has no such statement to honour — the content
+/// decides it — so the border has to be added on top, exactly as CSS's default
+/// `box-sizing: content-box` does. Without this a content-sized box paints its
+/// border over its own padding: the mockup's 2px-bordered info boxes came out
+/// 4px short and their 10px of padding rendered as 8.
+///
+/// `scale` is the node's own, so the extent tracks the edge it sits on the same
+/// way [`node_border`]'s widths do.
+pub(crate) fn border_extent(get: &dyn Fn(&str) -> Option<String>, scale: Vec2) -> (f32, f32) {
+    match node_border(get, scale) {
+        Some((_, [left, right, bottom, top])) => (left + right, bottom + top),
+        None => (0.0, 0.0),
+    }
 }
 
 /// The edge rects of a border drawn *inside* `rect`, CSS `box-sizing:

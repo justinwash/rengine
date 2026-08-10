@@ -2072,10 +2072,15 @@ impl SceneWorld2D {
             }
         };
 
+        // The border sits outside the padding, as in CSS: a measured box has no
+        // authored size for the border to eat into, so it adds to the box the
+        // children asked for rather than being drawn over their padding.
+        let (border_x, border_y) = super::data2d::border_extent(&get, node.transform.scale);
+
         node.content_size.set(Some(clamp_to_min(
             (
-                content_w + pad_left + pad_right,
-                content_h + pad_top + pad_bottom,
+                content_w + pad_left + pad_right + border_x,
+                content_h + pad_top + pad_bottom + border_y,
             ),
             &prop_f32,
         )));
@@ -2372,9 +2377,13 @@ fn node_own_extent(node: &SceneNode2D, canvas: &Canvas, bindings: &Bindings) -> 
     // one line box; measuring only the line would size it to the ink and clip
     // its own padding away.
     let pad = |n: &str| prop_f32(n).unwrap_or(0.0);
+    // …and so is its border, for the same reason: a card header measured to its
+    // line box plus its padding would have its own 2px rule drawn over that
+    // padding rather than around it.
+    let (border_x, border_y) = super::data2d::border_extent(&get, node.transform.scale);
     let measured = (
-        measured.0 + pad("ui_pad_left") + pad("ui_pad_right"),
-        measured.1 + pad("ui_pad_top") + pad("ui_pad_bottom"),
+        measured.0 + pad("ui_pad_left") + pad("ui_pad_right") + border_x,
+        measured.1 + pad("ui_pad_top") + pad("ui_pad_bottom") + border_y,
     );
 
     clamp_to_min(
@@ -4435,6 +4444,71 @@ mod tests {
             "measures the line box plus both vertical pads: {} vs {}",
             rect.height,
             line_h + 18.0
+        );
+    }
+
+    #[test]
+    fn a_measured_size_grows_by_its_own_border() {
+        // E-X. `border_rects` draws a border *inside* the rect, which is right
+        // for an authored size — a 640px panel stays 640px. A measured size has
+        // no such statement to honour, so the border has to add to it, as CSS's
+        // default `content-box` does. Without this the NAME screen's info boxes
+        // came out 4px short and painted their 2px rule over their own padding,
+        // leaving 8px of the 10px authored.
+        let mut world = SceneWorld2D::new();
+        let root = world.spawn(SceneNode2D::new("root"));
+        {
+            let n = world.get_mut(root).unwrap();
+            n.set_property("ui_layout", "column");
+            n.set_property("ui_stretch_x", "true");
+            n.set_property("ui_stretch_y", "true");
+        }
+        // background:#1b1f26;border:2px solid #3f4854;padding:10px 16px — one
+        // 18px child, so every term in the expected size is stated.
+        let boxed = world.spawn_child(root, SceneNode2D::new("box"));
+        {
+            let n = world.get_mut(boxed).unwrap();
+            n.set_property("ui", "rect");
+            n.set_property("ui_size", "content");
+            n.set_property("ui_layout", "column");
+            n.set_property("ui_border_w", "2");
+            n.set_property("ui_border_color", "63,72,84,255");
+            n.set_property("ui_pad_left", "16");
+            n.set_property("ui_pad_right", "16");
+            n.set_property("ui_pad_top", "10");
+            n.set_property("ui_pad_bottom", "10");
+        }
+        let swatch = world.spawn_child(boxed, SceneNode2D::new("swatch"));
+        {
+            let n = world.get_mut(swatch).unwrap();
+            n.set_property("ui", "rect");
+            n.set_property("ui_w", "18");
+            n.set_property("ui_h", "18");
+        }
+
+        let mut canvas = Canvas::new((400, 200), std::ptr::null());
+        world.draw_to_canvas(&mut canvas, 0.0);
+
+        let rect = world.resolved_rect(boxed).expect("box drawn");
+        assert!(
+            (rect.width - 54.0).abs() < 1e-3,
+            "18 content + 32 padding + 4 border: {}",
+            rect.width
+        );
+        assert!(
+            (rect.height - 42.0).abs() < 1e-3,
+            "18 content + 20 padding + 4 border: {}",
+            rect.height
+        );
+        // The point of the extra 4: with the border outside the padding there
+        // is room for both, so the child still clears the box's edge by the
+        // full 10px authored rather than by 8.
+        let sw = world.resolved_rect(swatch).expect("swatch drawn");
+        assert!(
+            (sw.y + sw.height - (rect.y + rect.height - 10.0)).abs() < 1e-3,
+            "the child's top sits a full pad_top below the box's: {} vs {}",
+            sw.y + sw.height,
+            rect.y + rect.height - 10.0
         );
     }
 
