@@ -440,6 +440,10 @@ fn draw_border(canvas: &mut Canvas, rect: (f32, f32, f32, f32), color: Color, wi
     }
 }
 
+/// An unauthored Button bar/marker is invisible rather than white, so a bare
+/// Button is just its label until those are given colours.
+const BUTTON_TRANSPARENT: Color = Color::new(0.0, 0.0, 0.0, 0.0);
+
 /// Draw the `ui` primitive named by a node's props into the resolved `rect`.
 /// `sprite` is the node's own first sprite layer, used only by `"image"`.
 /// `has_children` is used only by `"button"` (see its arm below).
@@ -568,19 +572,35 @@ fn draw_ui_kind_dyn(
                 canvas.image_region(sprite.texture, x, y, w, h, sprite.uv_rect, color);
             }
         }
+        // A Button with authored children draws no marker or label of its
+        // own: those children are its content and draw themselves in the
+        // normal top-down pass, with Button contributing the hit rect and the
+        // interaction state they inherit.
+        //
+        // Its **bar still draws** when one is authored, because a fill and
+        // content are not alternatives — the mockups' menu rows are a div
+        // with a background that also holds a caret and a label, and a
+        // selected row needs both. Deferring the bar too meant an authored
+        // `ui_bar_color_focus` silently painted nothing, and the only way to
+        // get a fill under content was a sibling Panel behind it: the
+        // stacked-node shape we are removing. Absent `ui_bar_color` still
+        // paints nothing, so a Button that really is only its children is
+        // unchanged.
         "button" if has_children => {
-            // A Button with authored children (a Panel holding its own
-            // marker/label, say — see docs/SCENE_CONTAINER_AUTOSIZE.md)
-            // draws none of its own bar/marker/label: the children draw
-            // themselves in the normal top-down pass like any other node's
-            // children, and Button contributes only its hit rect and
-            // interaction state. Whether it has children, not a property, is
-            // the switch — nothing to author and forget to unset.
+            let bar = parse_srgb_color(get("ui_bar_color").as_deref(), BUTTON_TRANSPARENT);
+            if bar.a > 0.0 {
+                let radius = prop_f32("ui_radius").unwrap_or(0.0);
+                if radius > 0.5 {
+                    canvas.rounded_rect(x, y, w, h, radius, bar);
+                } else {
+                    canvas.rect(x, y, w, h, bar);
+                }
+            }
         }
         "button" => {
             // Unauthored bar/marker default to invisible, so a bare
             // Button is just its label until those are given colours.
-            const TRANSPARENT: Color = Color::new(0.0, 0.0, 0.0, 0.0);
+            const TRANSPARENT: Color = BUTTON_TRANSPARENT;
             // One node draws what used to be three hand-wired siblings kept
             // in sync by matching `ui_color_hover` values: a highlight bar,
             // an optional leading marker, and the label. `get` has already
@@ -938,25 +958,28 @@ fn resolve_interaction_property(
     name: &str,
     state: UiInteractionState,
 ) -> Option<String> {
-    // A `button` node composes a bar, a marker and a label, and all three
-    // change with interaction state — that is what the hand-wired sibling
-    // nodes it replaces were each doing with their own `ui_color_hover`.
-    const OVERRIDABLE: &[&str] = &["ui_color", "ui_bar_color", "ui_marker_color"];
-    if OVERRIDABLE.contains(&name) {
-        if state.pressed {
-            if let Some(v) = get(&format!("{name}_press")) {
-                return Some(v);
-            }
+    // Any property may carry state variants, not a fixed list of three.
+    //
+    // This was an allowlist of `ui_color`/`ui_bar_color`/`ui_marker_color`,
+    // which silently ignored every property added since — `ui_border_color`,
+    // `ui_shadow_color`, `ui_tracking` — so an authored
+    // `ui_border_color_focus` did nothing and looked like a scene bug. An
+    // allowlist here has to be updated by whoever adds a property, and
+    // forgetting is invisible; a suffix lookup cannot be forgotten, and a
+    // variant nobody authored is just a failed lookup.
+    if state.pressed {
+        if let Some(v) = get(&format!("{name}_press")) {
+            return Some(v);
         }
-        if state.hovered {
-            if let Some(v) = get(&format!("{name}_hover")) {
-                return Some(v);
-            }
+    }
+    if state.hovered {
+        if let Some(v) = get(&format!("{name}_hover")) {
+            return Some(v);
         }
-        if state.focused {
-            if let Some(v) = get(&format!("{name}_focus")) {
-                return Some(v);
-            }
+    }
+    if state.focused {
+        if let Some(v) = get(&format!("{name}_focus")) {
+            return Some(v);
         }
     }
     get(name)
@@ -2254,6 +2277,58 @@ mod tests {
         let resolved =
             resolve_interaction_property(&|n: &str| props.get(n).cloned(), "ui_bar_color", idle);
         assert_eq!(resolved.as_deref(), Some("230,178,60,0"));
+    }
+
+    #[test]
+    fn any_property_can_carry_interaction_variants() {
+        // This was an allowlist of three colour properties, so every property
+        // added later — `ui_border_color`, `ui_shadow_color`, `ui_tracking` —
+        // silently ignored its own `_focus`/`_hover`/`_press` variant. The
+        // title screen's selected row authored `ui_border_color_focus` and
+        // got nothing, which reads as a scene bug rather than an engine one.
+        let props: HashMap<String, String> = [
+            ("ui_border_color", "63,72,84,255"),
+            ("ui_border_color_focus", "224,161,60,255"),
+            ("ui_tracking", "2"),
+            ("ui_tracking_hover", "4"),
+            ("ui_shadow_color", "0,0,0,128"),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+        let get = |n: &str| props.get(n).cloned();
+        let resolve = |name: &str, state| resolve_interaction_property(&get, name, state);
+
+        let focused = UiInteractionState {
+            focused: true,
+            ..Default::default()
+        };
+        let hovered = UiInteractionState {
+            hovered: true,
+            ..Default::default()
+        };
+        let idle = UiInteractionState::default();
+
+        assert_eq!(
+            resolve("ui_border_color", focused).as_deref(),
+            Some("224,161,60,255"),
+            "a border takes its focus variant"
+        );
+        assert_eq!(
+            resolve("ui_border_color", idle).as_deref(),
+            Some("63,72,84,255")
+        );
+        // Not just colours: anything a node reads through `get`.
+        assert_eq!(resolve("ui_tracking", hovered).as_deref(), Some("4"));
+        assert_eq!(resolve("ui_tracking", idle).as_deref(), Some("2"));
+        // A property with no variant authored is unaffected in every state.
+        assert_eq!(
+            resolve("ui_shadow_color", focused).as_deref(),
+            Some("0,0,0,128")
+        );
+        // And an absent property stays absent rather than resolving to a
+        // variant of itself.
+        assert_eq!(resolve("ui_radius", focused), None);
     }
 
     #[test]

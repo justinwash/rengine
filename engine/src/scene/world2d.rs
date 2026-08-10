@@ -2609,38 +2609,64 @@ mod tests {
     }
 
     #[test]
-    fn a_button_with_children_draws_them_instead_of_its_own_bar() {
-        // The user's caveat: Button keeps its built-in bar/marker/label for
-        // the simple case (title's menu rows), but a Button with authored
-        // children — a Panel holding its own content — draws only the
-        // children, not both. Whether it has children is the switch.
-        let mut world = SceneWorld2D::new();
-        let button = world.spawn(SceneNode2D::new("row"));
-        {
-            let n = world.get_mut(button).unwrap();
-            n.set_property("ui", "button");
-            // If the built-in draw ran, this bar would paint a quad.
-            n.set_property("ui_bar_color", "230,178,60,200");
-        }
-        let child = world.spawn_child(button, SceneNode2D::new("bg"));
-        {
-            let n = world.get_mut(child).unwrap();
-            n.set_property("ui", "rect");
-            n.set_property("ui_color", "40,52,78,255");
-            n.set_property("ui_w", "40");
-            n.set_property("ui_h", "20");
-        }
+    fn a_button_with_children_defers_its_marker_and_label_but_keeps_its_bar() {
+        // A Button with authored children treats them as its content: it
+        // draws no marker or label of its own, because those children *are*
+        // the content. But its **bar still paints when authored** — a fill
+        // and content are not alternatives. The mockups' menu rows are a div
+        // with a background that also holds a caret and a label, and the
+        // selected row needs both.
+        //
+        // This originally deferred the bar too, so an authored
+        // `ui_bar_color_focus` silently painted nothing and the only way to
+        // get a fill under content was a sibling Panel behind it — the
+        // stacked-node shape the UI overhaul exists to remove.
+        let build = |bar: Option<&str>| {
+            let mut world = SceneWorld2D::new();
+            let button = world.spawn(SceneNode2D::new("row"));
+            {
+                let n = world.get_mut(button).unwrap();
+                n.set_property("ui", "button");
+                n.set_property("ui_w", "80");
+                n.set_property("ui_h", "30");
+                // A marker and a label that must NOT draw: the children are
+                // the content now.
+                n.set_property("ui_marker", ">");
+                n.set_property("ui_marker_color", "230,178,60,255");
+                n.set_property("ui_text", "NEW GAME");
+                if let Some(bar) = bar {
+                    n.set_property("ui_bar_color", bar);
+                }
+            }
+            let child = world.spawn_child(button, SceneNode2D::new("label"));
+            {
+                let n = world.get_mut(child).unwrap();
+                n.set_property("ui", "rect");
+                n.set_property("ui_color", "40,52,78,255");
+                n.set_property("ui_w", "40");
+                n.set_property("ui_h", "20");
+            }
+            let mut canvas = Canvas::new((200, 100), std::ptr::null());
+            world.draw_to_canvas(&mut canvas, 0.0);
+            (canvas.verts.len(), world.resolved_rect(button).is_some())
+        };
 
-        let mut canvas = Canvas::new((200, 100), std::ptr::null());
-        world.draw_to_canvas(&mut canvas, 0.0);
+        // No bar authored: only the child draws. A Button that really is just
+        // its children is unchanged — and the built-in marker/label stay
+        // deferred, or this would be far more than one quad. (Text needs a
+        // font atlas a test Canvas doesn't have, so a drawn label would
+        // panic rather than merely add quads.)
+        let (verts, has_rect) = build(None);
+        assert_eq!(verts, 6, "only the child draws when no bar is authored");
+        assert!(has_rect, "Button still contributes its hit rect");
 
-        // Exactly one quad: the child's rect. A second (from Button's own
-        // bar) would mean the built-in draw ran despite having a child.
-        assert_eq!(canvas.verts.len(), 6, "only the child should have drawn");
+        // Bar authored: the fill draws *under* the child, so two quads.
+        let (verts, _) = build(Some("230,178,60,200"));
+        assert_eq!(verts, 12, "an authored bar paints beneath the content");
 
-        // The button still resolves a hit rect — it contributes interaction
-        // state and a rect, just not its own visuals, when it has children.
-        assert!(world.resolved_rect(button).is_some());
+        // A fully transparent bar is nothing to draw, same as everywhere else.
+        let (verts, _) = build(Some("230,178,60,0"));
+        assert_eq!(verts, 6, "a transparent bar paints nothing");
     }
 
     #[test]
