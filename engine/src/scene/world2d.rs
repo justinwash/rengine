@@ -1301,6 +1301,55 @@ impl SceneWorld2D {
             (ph - pad_top - pad_bottom).max(0.0),
         );
 
+        // `ui_absolute: true` is CSS `position:absolute` — the child is taken
+        // out of the flow entirely and resolves against the parent's *full*
+        // rect (padding included, as in CSS), so `ui_anchor` + `position`
+        // place it from whichever edge it names. The mockups lean on this for
+        // every overlay: the title's corner flags and its bottom apron, the
+        // race screen's modals, every badge pinned to a panel corner.
+        //
+        // Without it those children would take a slot in the column and push
+        // their siblings down, so the only alternative is hoisting them out
+        // of the parent they visually belong to — which is exactly the kind
+        // of structural divergence from the markup this is here to avoid.
+        let absolute: Vec<bool> = children
+            .iter()
+            .map(|&child| {
+                self.get(child).is_some_and(|c| {
+                    matches!(
+                        c.property("ui_absolute").map(str::trim),
+                        Some("true" | "1" | "yes")
+                    )
+                })
+            })
+            .collect();
+        // The flow lays out only the in-flow children; absolutes are spliced
+        // back into their original positions at the end so the returned
+        // vector still lines up index-for-index with `children`.
+        let in_flow: Vec<NodeHandle2D> = children
+            .iter()
+            .zip(&absolute)
+            .filter(|(_, abs)| !**abs)
+            .map(|(c, _)| *c)
+            .collect();
+        if in_flow.len() != children.len() {
+            let flowed = self.resolve_child_references(parent, parent_rect, &in_flow, bindings);
+            let mut flowed = flowed.into_iter();
+            return absolute
+                .iter()
+                .map(|abs| {
+                    if *abs {
+                        // Full rect, not `padded`: CSS positions an absolute
+                        // child against its containing block's padding box.
+                        parent_rect
+                    } else {
+                        flowed.next().unwrap_or(parent_rect)
+                    }
+                })
+                .collect();
+        }
+        let children = &in_flow[..];
+
         // --- Pass 1: measure ------------------------------------------------
         // Per child: its main-axis track, and its own cross-axis extent (only
         // read when `ui_align` is not the default `stretch`).
@@ -1361,11 +1410,13 @@ impl SceneWorld2D {
             //
             // Leading only: a trailing space is the next child's leading one,
             // and supporting both invites CSS's margin-collapse rules.
+            // Negative is allowed: the mockups' `margin-left:-2px` overlaps
+            // one segment onto the previous, which is a real pixel-art idiom
+            // (the title screen's cars are three rects joined that way).
             lead.push(
                 child_get("ui_lead")
                     .and_then(|v| v.trim().parse::<f32>().ok())
                     .unwrap_or(0.0)
-                    .max(0.0)
                     * scale_main,
             );
 
@@ -1460,11 +1511,13 @@ impl SceneWorld2D {
             .into_iter()
             .zip(&lead)
             .map(|(r, &m)| {
-                if m <= 0.0 {
+                if m == 0.0 {
                     r
                 } else if vertical {
                     // y-up again: the leading edge of a column child is its
-                    // top, so the margin comes off the top of the slot.
+                    // top, so the margin comes off the top of the slot. A
+                    // negative lead adds height instead, pulling the child up
+                    // to overlap its predecessor.
                     Rect::new(r.x, r.y, r.width, (r.height - m).max(0.0))
                 } else {
                     Rect::new(r.x + m, r.y, (r.width - m).max(0.0), r.height)
@@ -1745,6 +1798,23 @@ impl SceneWorld2D {
             node_own_extent(c, canvas, &child_bindings)
         };
 
+        // Out-of-flow children (`ui_absolute`) contribute nothing to their
+        // parent's size, exactly as in CSS — an overlay pinned to a panel
+        // must not inflate the panel it overlays.
+        let flow_children: Vec<NodeHandle2D> = node
+            .children
+            .iter()
+            .copied()
+            .filter(|&c| {
+                !self.get(c).is_some_and(|c| {
+                    matches!(
+                        c.property("ui_absolute").map(str::trim),
+                        Some("true" | "1" | "yes")
+                    )
+                })
+            })
+            .collect();
+
         // A child's own `ui_lead` is main-axis space the flow will insert
         // before it, so a container measured without it comes out short by
         // exactly the leads it holds — and then packs its children tighter
@@ -1761,14 +1831,13 @@ impl SceneWorld2D {
                 .map(|v| super::data2d::substitute_bindings(v, &child_bindings).into_owned())
                 .and_then(|v| v.trim().parse::<f32>().ok())
                 .unwrap_or(0.0)
-                .max(0.0)
         };
-        let leads: f32 = node.children.iter().map(|&c| child_lead(c)).sum();
+        let leads: f32 = flow_children.iter().map(|&c| child_lead(c)).sum();
 
         let (content_w, content_h) = match layout.as_deref() {
             Some("row") => {
-                let n = node.children.len();
-                let sum_w: f32 = node.children.iter().map(|&c| child_size(c).0).sum();
+                let n = flow_children.len();
+                let sum_w: f32 = flow_children.iter().map(|&c| child_size(c).0).sum();
                 let max_h: f32 = node
                     .children
                     .iter()
@@ -1778,8 +1847,8 @@ impl SceneWorld2D {
                 (sum_w + gaps + leads, max_h)
             }
             Some("column") => {
-                let n = node.children.len();
-                let sum_h: f32 = node.children.iter().map(|&c| child_size(c).1).sum();
+                let n = flow_children.len();
+                let sum_h: f32 = flow_children.iter().map(|&c| child_size(c).1).sum();
                 let max_w: f32 = node
                     .children
                     .iter()
