@@ -854,7 +854,7 @@ impl SceneWorld2D {
     /// on the captured `SceneNode2D` are meaningless once detached from the
     /// live graph; `materialize_template` rebuilds them via `spawn_child`.
     fn capture_template(&self, handle: NodeHandle2D) -> NodeTemplate {
-        let node = self
+        let mut node = self
             .get(handle)
             .cloned()
             .expect("capture_template called with a live handle");
@@ -863,6 +863,15 @@ impl SceneWorld2D {
             .iter()
             .map(|&child| self.capture_template(child))
             .collect();
+        // The captured node is a *blueprint*, not a live node: its `children`
+        // are handles into a world where the template has already been
+        // despawned. `materialize_template` re-links real children as it
+        // recurses, so carrying the old list forward left every instance with
+        // one dangling handle per template child, in front of its real ones.
+        // Invisible until a flow laid the instance out — then those phantoms
+        // took a zero-width track each and pushed every real child right by a
+        // gap apiece.
+        node.children.clear();
         NodeTemplate { node, children }
     }
 
@@ -1441,30 +1450,46 @@ impl SceneWorld2D {
         // their siblings down, so the only alternative is hoisting them out
         // of the parent they visually belong to — which is exactly the kind
         // of structural divergence from the markup this is here to avoid.
-        let absolute: Vec<bool> = children
+        //
+        // `ui_visible: false` is taken out for the same reason, and it is CSS
+        // `display:none` rather than `visibility:hidden`: the mockups switch
+        // between screen variants with `<sc-if>`, which removes the element.
+        // A hidden node that kept its track left a variant-sized hole — the
+        // sponsor screen shows one of two titles, one of two subtitles and one
+        // of two figures, and reserving the unshown one of each pushed
+        // everything below it down by a whole line.
+        let out_of_flow: Vec<bool> = children
             .iter()
             .map(|&child| {
                 self.get(child).is_some_and(|c| {
-                    matches!(
-                        c.property("ui_absolute").map(str::trim),
-                        Some("true" | "1" | "yes")
-                    )
+                    // Substituted: `ui_visible` is nearly always a binding
+                    // (`{founding}`), and the raw `"{founding}"` matches
+                    // neither "false" nor "true".
+                    let hidden = c
+                        .property("ui_visible")
+                        .map(|v| super::data2d::substitute_bindings(v, bindings))
+                        .is_some_and(|v| matches!(v.trim(), "false" | "0" | "no"));
+                    hidden
+                        || matches!(
+                            c.property("ui_absolute").map(str::trim),
+                            Some("true" | "1" | "yes")
+                        )
                 })
             })
             .collect();
-        // The flow lays out only the in-flow children; absolutes are spliced
+        // The flow lays out only the in-flow children; the rest are spliced
         // back into their original positions at the end so the returned
         // vector still lines up index-for-index with `children`.
         let in_flow: Vec<NodeHandle2D> = children
             .iter()
-            .zip(&absolute)
-            .filter(|(_, abs)| !**abs)
+            .zip(&out_of_flow)
+            .filter(|(_, out)| !**out)
             .map(|(c, _)| *c)
             .collect();
         if in_flow.len() != children.len() {
             let flowed = self.resolve_child_references(parent, parent_rect, &in_flow, bindings);
             let mut flowed = flowed.into_iter();
-            return absolute
+            return out_of_flow
                 .iter()
                 .map(|abs| {
                     if *abs {
@@ -1957,19 +1982,27 @@ impl SceneWorld2D {
             }
         };
 
-        // Out-of-flow children (`ui_absolute`) contribute nothing to their
-        // parent's size, exactly as in CSS — an overlay pinned to a panel
-        // must not inflate the panel it overlays.
+        // Out-of-flow children contribute nothing to their parent's size,
+        // exactly as in CSS — an overlay pinned to a panel (`ui_absolute`)
+        // must not inflate the panel it overlays, and a hidden variant
+        // (`ui_visible: false`, this layer's `display:none`) must not size the
+        // container to the branch that is not showing. Same test as the flow
+        // itself applies, so a container measures exactly what it lays out.
         let flow_children: Vec<NodeHandle2D> = node
             .children
             .iter()
             .copied()
             .filter(|&c| {
                 !self.get(c).is_some_and(|c| {
-                    matches!(
-                        c.property("ui_absolute").map(str::trim),
-                        Some("true" | "1" | "yes")
-                    )
+                    let hidden = c
+                        .property("ui_visible")
+                        .map(|v| super::data2d::substitute_bindings(v, &effective_bindings))
+                        .is_some_and(|v| matches!(v.trim(), "false" | "0" | "no"));
+                    hidden
+                        || matches!(
+                            c.property("ui_absolute").map(str::trim),
+                            Some("true" | "1" | "yes")
+                        )
                 })
             })
             .collect();
@@ -1997,8 +2030,10 @@ impl SceneWorld2D {
             Some("row") => {
                 let n = flow_children.len();
                 let sum_w: f32 = flow_children.iter().map(|&c| child_size(c).0).sum();
-                let max_h: f32 = node
-                    .children
+                // `flow_children`, not every child: the cross axis has the same
+                // stake in it as the main one — an absolute overlay or a hidden
+                // variant must not make the row taller than what it lays out.
+                let max_h: f32 = flow_children
                     .iter()
                     .map(|&c| child_size(c).1)
                     .fold(0.0, f32::max);
@@ -2008,8 +2043,7 @@ impl SceneWorld2D {
             Some("column") => {
                 let n = flow_children.len();
                 let sum_h: f32 = flow_children.iter().map(|&c| child_size(c).1).sum();
-                let max_w: f32 = node
-                    .children
+                let max_w: f32 = flow_children
                     .iter()
                     .map(|&c| child_size(c).0)
                     .fold(0.0, f32::max);
@@ -2967,6 +3001,55 @@ mod tests {
         );
         world.sync_repeaters(&sources);
         assert_eq!(world.get(list).unwrap().children().len(), 4);
+    }
+
+    #[test]
+    fn an_instance_gets_exactly_its_templates_children() {
+        // `capture_template` clones the template *node*, whose `children` are
+        // handles into a world where that template is about to be despawned.
+        // Carrying the list forward gave every instance one dangling child per
+        // template child, in front of its real ones. Invisible until the
+        // instance laid its children out in a flow — then each phantom took a
+        // zero-width track and a gap, shifting every real child right by a gap
+        // apiece (the sponsor screen's caret column, 14px per phantom).
+        let mut world = SceneWorld2D::new();
+        let list = world.spawn(SceneNode2D::new("list"));
+        world.get_mut(list).unwrap().set_property("ui", "repeat");
+        world
+            .get_mut(list)
+            .unwrap()
+            .set_property("ui_repeat_source", "rows");
+        let template = world.spawn_child(list, SceneNode2D::new("row"));
+        for name in ["caret", "text", "figures"] {
+            world.spawn_child(template, SceneNode2D::new(name));
+        }
+
+        let mut sources = RepeaterSources::new();
+        sources.insert(
+            "rows".to_string(),
+            repeat_source(&[("1", "a"), ("2", "b"), ("3", "c")]),
+        );
+        world.sync_repeaters(&sources);
+
+        for instance in world.get(list).unwrap().children() {
+            let kids = world.get(*instance).unwrap().children().to_vec();
+            assert_eq!(kids.len(), 3, "one child per template child, no phantoms");
+            // A phantom is a handle into a despawned slot, so it resolves to
+            // nothing — and would have laid out as a zero-width track.
+            let prefabs: Vec<_> = kids
+                .iter()
+                .map(|&k| world.get(k).map(|n| n.prefab().to_string()))
+                .collect();
+            assert_eq!(
+                prefabs,
+                vec![
+                    Some("caret".to_string()),
+                    Some("text".to_string()),
+                    Some("figures".to_string())
+                ],
+                "the template's children, in order, all live"
+            );
+        }
     }
 
     /// A repeat node whose rows are authored on the node itself.
@@ -4723,6 +4806,57 @@ mod tests {
             "leading applies between lines only: {leaded} vs {expected}"
         );
         assert!(leaded > plain, "1.35 is taller than the font's own box");
+    }
+
+    #[test]
+    fn a_hidden_child_takes_no_slot_and_no_gap() {
+        // `ui_visible: false` is CSS `display:none` here, not
+        // `visibility:hidden`. The mockups switch between screen variants with
+        // `<sc-if>`, which removes the element — so a variant that is not
+        // showing must not hold a slot open. Reserving one left every sponsor
+        // row's second figure a whole line low, and pushed each of the three
+        // heading lines down by the unshown variant above it.
+        let children = [
+            ("a", &[("ui_w", "40")][..]),
+            ("hidden", &[("ui_w", "40"), ("ui_visible", "false")][..]),
+            ("b", &[("ui_w", "40")][..]),
+        ];
+        let (world, h) = flow_row((400, 100), &[("ui_gap", "10")], &children);
+        let r = |i: usize| world.resolved_rect(h[i]).expect("child resolved");
+        // Packed from the left: a at -200, b immediately after it plus one
+        // gap. With the hidden child holding a slot, b sat 50 further right.
+        assert!((r(0).x - -200.0).abs() < 1e-3, "first child at the edge");
+        assert!(
+            (r(2).x - -150.0).abs() < 1e-3,
+            "the hidden child costs neither its 40px nor a gap: {}",
+            r(2).x
+        );
+
+        // And it does not inflate the container that measures its children.
+        let mut world = SceneWorld2D::new();
+        let col = world.spawn(SceneNode2D::new("col"));
+        {
+            let n = world.get_mut(col).unwrap();
+            n.set_property("ui", "rect");
+            n.set_property("ui_layout", "column");
+            n.set_property("ui_size", "content");
+        }
+        for (name, visible) in [("shown", "true"), ("gone", "false")] {
+            let kid = world.spawn_child(col, SceneNode2D::new(name));
+            let n = world.get_mut(kid).unwrap();
+            n.set_property("ui", "rect");
+            n.set_property("ui_w", "60");
+            n.set_property("ui_h", "20");
+            n.set_property("ui_visible", visible);
+        }
+        let mut canvas = Canvas::new((400, 400), std::ptr::null());
+        world.draw_to_canvas(&mut canvas, 0.0);
+        let measured = world.resolved_rect(col).expect("column resolved");
+        assert!(
+            (measured.height - 20.0).abs() < 1e-3,
+            "measures only the child it lays out: {}",
+            measured.height
+        );
     }
 
     #[test]
