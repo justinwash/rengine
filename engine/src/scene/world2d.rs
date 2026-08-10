@@ -1265,6 +1265,134 @@ impl SceneWorld2D {
     /// Absent `ui_layout` returns `parent_rect` unchanged for every child, and
     /// absent `ui_grow`/`ui_justify`/`ui_align` reproduces the previous
     /// packed-from-the-start flow exactly.
+    /// `ui_layout: "grid"` — children in row-major order across a fixed
+    /// number of columns, wrapping onto as many rows as they need.
+    ///
+    /// Two ways to say how wide a column is, matching the two things authors
+    /// actually want:
+    ///
+    /// - `ui_cols: <n>` — exactly `n` equal columns sharing the width, which
+    ///   is CSS `repeat(n, 1fr)`. A layout that must stay `n` across at any
+    ///   size (the mockups' `1fr 1fr` panels).
+    /// - `ui_col_w: <px>` — as many `px`-wide columns as fit, which is CSS
+    ///   `repeat(auto-fill, px)`. A gallery that reflows: a deck view gets
+    ///   more cards per row on a wider window without re-authoring.
+    ///
+    /// `ui_gap` spaces both axes (`ui_gap_y` overrides the vertical one), and
+    /// `ui_row_h` sets the row height — absent, rows are as tall as the
+    /// tallest cell in them, measured the same way a flow measures a child.
+    ///
+    /// A grid is not a flow, so `ui_grow`/`ui_justify`/`ui_lead` do not apply
+    /// to its children: a cell's size is the track it lands in. `ui_absolute`
+    /// children are still taken out, exactly as in a flow.
+    fn resolve_grid_references(
+        &self,
+        parent: &SceneNode2D,
+        parent_rect: (f32, f32, f32, f32),
+        children: &[NodeHandle2D],
+        bindings: &Bindings,
+    ) -> Vec<(f32, f32, f32, f32)> {
+        let get = |name: &str| {
+            parent
+                .property(name)
+                .map(|v| super::data2d::substitute_bindings(v, bindings).into_owned())
+        };
+        let prop_f32 = |name: &str| get(name).and_then(|v| v.trim().parse::<f32>().ok());
+        let pad_left = prop_f32("ui_pad_left").unwrap_or(0.0);
+        let pad_right = prop_f32("ui_pad_right").unwrap_or(0.0);
+        let pad_top = prop_f32("ui_pad_top").unwrap_or(0.0);
+        // No `ui_pad_bottom`: rows are laid out downward from the top and the
+        // grid runs as many as its children need, so nothing is measured
+        // against the bottom edge. A grid inside a fixed-height parent can
+        // overflow it, same as a column does.
+        let gap_x = prop_f32("ui_gap").unwrap_or(0.0);
+        let gap_y = prop_f32("ui_gap_y").unwrap_or(gap_x);
+
+        let (px, py, pw, ph) = parent_rect;
+        let inner_w = (pw - pad_left - pad_right).max(0.0);
+        let left = px + pad_left;
+        let top = py + ph - pad_top;
+
+        let is_absolute = |child: NodeHandle2D| {
+            self.get(child).is_some_and(|c| {
+                matches!(
+                    c.property("ui_absolute").map(str::trim),
+                    Some("true" | "1" | "yes")
+                )
+            })
+        };
+        let flowed: Vec<NodeHandle2D> = children
+            .iter()
+            .copied()
+            .filter(|&c| !is_absolute(c))
+            .collect();
+
+        // Columns: an explicit count, else as many fixed-width ones as fit.
+        let cols = match prop_f32("ui_cols") {
+            Some(n) if n >= 1.0 => n as usize,
+            _ => match prop_f32("ui_col_w") {
+                Some(w) if w > 0.0 => (((inner_w + gap_x) / (w + gap_x)).floor() as usize).max(1),
+                _ => flowed.len().max(1),
+            },
+        };
+        let col_w = ((inner_w - gap_x * (cols as f32 - 1.0)) / cols as f32).max(0.0);
+
+        // Row height: authored, else the tallest cell in the whole grid, so
+        // rows line up rather than each being its own height. Uniform rows
+        // are what every grid in the mockups is, and they keep a repeater's
+        // instances interchangeable.
+        let cell_h = |child: NodeHandle2D| -> f32 {
+            let Some(c) = self.get(child) else {
+                return 0.0;
+            };
+            if let Some((_, h)) = c.content_size.get() {
+                return h;
+            }
+            let merged;
+            let child_bindings = match &c.instance_bindings {
+                Some(scope) => {
+                    merged = merge_bindings(bindings, scope);
+                    &merged
+                }
+                None => bindings,
+            };
+            c.property("ui_h")
+                .map(|v| super::data2d::substitute_bindings(v, child_bindings).into_owned())
+                .and_then(|v| v.trim().parse::<f32>().ok())
+                .unwrap_or(0.0)
+                .max(0.0)
+                * c.transform.scale.y
+        };
+        let row_h = prop_f32("ui_row_h")
+            .unwrap_or_else(|| flowed.iter().map(|&c| cell_h(c)).fold(0.0, f32::max));
+
+        let mut next = 0usize;
+        children
+            .iter()
+            .map(|&child| {
+                if is_absolute(child) {
+                    if let Some(c) = self.get(child) {
+                        c.flow_size.set((None, None));
+                    }
+                    return parent_rect;
+                }
+                let i = next;
+                next += 1;
+                let (row, col) = (i / cols, i % cols);
+                let x = left + col as f32 * (col_w + gap_x);
+                // y-up: row 0 is at the top, each row one step lower.
+                let y = top - (row + 1) as f32 * row_h - row as f32 * gap_y;
+                // The cell IS the child on both axes — same reasoning as a
+                // flow-decided axis, so a grid item needs no `ui_stretch_*`
+                // or `ui_origin_*` to fill the cell it was placed in.
+                if let Some(c) = self.get(child) {
+                    c.flow_size.set((Some(col_w), Some(row_h)));
+                }
+                (x, y, col_w, row_h)
+            })
+            .collect()
+    }
+
     fn resolve_child_references(
         &self,
         parent: &SceneNode2D,
@@ -1282,6 +1410,7 @@ impl SceneWorld2D {
         let vertical = match layout.as_str() {
             "column" => true,
             "row" => false,
+            "grid" => return self.resolve_grid_references(parent, parent_rect, children, bindings),
             _ => return vec![parent_rect; children.len()],
         };
         let prop_f32 = |name: &str| get(parent, name).and_then(|v| v.trim().parse::<f32>().ok());
@@ -1856,6 +1985,33 @@ impl SceneWorld2D {
                     .fold(0.0, f32::max);
                 let gaps = if n > 1 { gap * (n as f32 - 1.0) } else { 0.0 };
                 (max_w, sum_h + gaps + leads)
+            }
+            Some("grid") => {
+                // A content-sized grid is as wide as its columns and as tall
+                // as the rows its children wrap onto. Only `ui_cols` can be
+                // measured this way: `ui_col_w`'s auto-fill count depends on
+                // the width the parent is about to be given, which is the
+                // circular case, so it falls back to one row.
+                let n = flow_children.len();
+                let cell_w: f32 = flow_children
+                    .iter()
+                    .map(|&c| child_size(c).0)
+                    .fold(0.0, f32::max);
+                let cell_h = prop_f32("ui_row_h").unwrap_or_else(|| {
+                    flow_children
+                        .iter()
+                        .map(|&c| child_size(c).1)
+                        .fold(0.0, f32::max)
+                });
+                let cols = prop_f32("ui_cols")
+                    .filter(|c| *c >= 1.0)
+                    .map_or(n.max(1), |c| c as usize);
+                let rows = n.div_ceil(cols.max(1)).max(1);
+                let gap_y = prop_f32("ui_gap_y").unwrap_or(gap);
+                (
+                    cols as f32 * cell_w + (cols.saturating_sub(1)) as f32 * gap,
+                    rows as f32 * cell_h + (rows.saturating_sub(1)) as f32 * gap_y,
+                )
             }
             _ => {
                 // No ui_layout: children overlay (Button's implicit single
@@ -4020,6 +4176,114 @@ mod tests {
             "row still ends at the container edge: {}",
             r(2).right()
         );
+    }
+
+    /// A grid container with `n` equally-sized children, at a given viewport.
+    fn grid(
+        viewport: (u32, u32),
+        container_props: &[(&str, &str)],
+        child_props: &[(&str, &str)],
+        n: usize,
+    ) -> (SceneWorld2D, Vec<NodeHandle2D>) {
+        let mut world = SceneWorld2D::new();
+        let container = world.spawn(SceneNode2D::new("root"));
+        {
+            let c = world.get_mut(container).unwrap();
+            c.set_property("ui", "rect");
+            c.set_property("ui_layout", "grid");
+            c.set_property("ui_stretch_x", "true");
+            c.set_property("ui_stretch_y", "true");
+            for &(k, v) in container_props {
+                c.set_property(k, v);
+            }
+        }
+        let handles = (0..n)
+            .map(|i| {
+                let h = world.spawn_child(container, SceneNode2D::new(&format!("cell{i}")));
+                let c = world.get_mut(h).unwrap();
+                c.set_property("ui", "rect");
+                for &(k, v) in child_props {
+                    c.set_property(k, v);
+                }
+                h
+            })
+            .collect();
+        let mut canvas = Canvas::new(viewport, std::ptr::null());
+        world.draw_to_canvas(&mut canvas, 0.0);
+        (world, handles)
+    }
+
+    #[test]
+    fn grid_places_children_row_major_across_fixed_columns() {
+        // `ui_cols: 3` is CSS `repeat(3, 1fr)`: three equal columns that stay
+        // three at any width. 300 wide, gap 10 → columns of (300-20)/3 ≈ 93.3.
+        let (world, h) = grid(
+            (300, 400),
+            &[("ui_cols", "3"), ("ui_gap", "10"), ("ui_row_h", "50")],
+            &[],
+            7,
+        );
+        let r = |i: usize| world.resolved_rect(h[i]).expect("cell drawn");
+        let col_w = (300.0 - 20.0) / 3.0;
+        for i in 0..7 {
+            assert!(
+                (r(i).width - col_w).abs() < 1e-3,
+                "cell {i} width {} != {col_w}",
+                r(i).width
+            );
+            assert!((r(i).height - 50.0).abs() < 1e-3);
+        }
+        // Row-major: 0,1,2 across the top; 3 wraps to the second row.
+        assert!((r(0).x - -150.0).abs() < 1e-3);
+        assert!((r(1).x - (r(0).x + col_w + 10.0)).abs() < 1e-3);
+        assert!((r(2).x - (r(1).x + col_w + 10.0)).abs() < 1e-3);
+        assert!((r(3).x - r(0).x).abs() < 1e-3, "index 3 starts a new row");
+        // First row's top is the container's top; the next row is one row
+        // plus one gap below it.
+        assert!((r(0).y + r(0).height - 200.0).abs() < 1e-3);
+        assert!((r(3).y - (r(0).y - 50.0 - 10.0)).abs() < 1e-3);
+        // The last row is partial: 7 items over 3 columns is 3 rows.
+        assert!((r(6).y - (r(0).y - 2.0 * 60.0)).abs() < 1e-3);
+    }
+
+    #[test]
+    fn grid_auto_fills_as_many_fixed_width_columns_as_fit() {
+        // `ui_col_w` is CSS `repeat(auto-fill, <px>)` — the deck-view case,
+        // where a wider window shows more cards per row without the scene
+        // being re-authored.
+        let cols_at = |width: u32| {
+            let (world, h) = grid(
+                (width, 400),
+                &[("ui_col_w", "100"), ("ui_gap", "10"), ("ui_row_h", "40")],
+                &[],
+                12,
+            );
+            // How many share the first row: count cells at the top row's y.
+            let top = world.resolved_rect(h[0]).unwrap().y;
+            (0..12)
+                .filter(|&i| (world.resolved_rect(h[i]).unwrap().y - top).abs() < 1e-3)
+                .count()
+        };
+        // 340 = 3*100 + 2*10 exactly; 450 fits 4 (4*100 + 3*10 = 430).
+        assert_eq!(cols_at(340), 3, "three 100px columns fit exactly");
+        assert_eq!(cols_at(450), 4, "a wider window reflows to four");
+        assert_eq!(cols_at(90), 1, "never fewer than one column");
+    }
+
+    #[test]
+    fn a_grid_cell_is_the_child_and_needs_no_stretch() {
+        // Same contract as a flow-decided axis: the cell IS the child, so it
+        // fills without `ui_stretch_*` and without a paired `ui_origin_*`.
+        // These children author no size at all.
+        let (world, h) = grid((200, 200), &[("ui_cols", "2"), ("ui_row_h", "60")], &[], 2);
+        let a = world.resolved_rect(h[0]).unwrap();
+        assert!(
+            (a.width - 100.0).abs() < 1e-3,
+            "fills its cell: {}",
+            a.width
+        );
+        assert!((a.height - 60.0).abs() < 1e-3);
+        assert!((a.x - -100.0).abs() < 1e-3, "at its cell, not hung off it");
     }
 
     #[test]
