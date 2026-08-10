@@ -1737,6 +1737,25 @@ impl SceneWorld2D {
             .map(|(slot, &cross_extent)| apply_cross_align(slot, vertical, align, cross_extent))
             .collect();
 
+        // E-D: `ui_scroll_y` shifts this container's children along the column
+        // before `ui_clip` (E5) trims them — 22 timing-tower rows in a 250px
+        // panel, or a race-control log longer than its box. The value is how
+        // far *down the list* the view has scrolled, so it moves children up
+        // the screen, which is +y here.
+        //
+        // Applied to the flow's own slots rather than to each child's rect, so
+        // it lands on both draw paths and on the hit rects at once: a click
+        // after a scroll hits the row the player can actually see. Rust owns
+        // the number — no input handling, no scrollbar, no momentum; the
+        // mockups show none of those.
+        let aligned: Vec<Rect> = match prop_f32("ui_scroll_y") {
+            Some(dy) if dy != 0.0 => aligned
+                .into_iter()
+                .map(|r| Rect::new(r.x, r.y + dy, r.width, r.height))
+                .collect(),
+            _ => aligned,
+        };
+
         // Tell each child the size the flow decided for it, so resolving its
         // own rect takes the slot instead of collapsing to its (absent)
         // ui_w/ui_h or re-anchoring inside it.
@@ -3672,6 +3691,74 @@ mod tests {
         assert!(
             canvas.segments.iter().any(|s| s.scissor.is_none()),
             "the unrelated root's segment should draw unclipped"
+        );
+    }
+
+    #[test]
+    fn ui_scroll_y_shifts_a_columns_children_and_their_hit_rects() {
+        // E-D: the timing tower is more rows than its panel is tall, so Rust
+        // hands the column a `ui_scroll_y` and `ui_clip` (E5) trims what falls
+        // outside. The value is how far *down the list* the view has scrolled,
+        // so rows move up the screen — +y in this y-up space.
+        //
+        // Built twice, identically but for the scroll, because the absent-
+        // property case is the load-bearing half: every scene authored before
+        // this must lay out exactly as it did.
+        let build = |scroll: Option<&str>| {
+            let mut world = SceneWorld2D::new();
+            let panel = world.spawn(SceneNode2D::new("panel"));
+            {
+                let node = world.get_mut(panel).unwrap();
+                node.set_property("ui", "rect");
+                node.set_property("ui_w", "100");
+                node.set_property("ui_h", "100");
+                node.set_property("ui_layout", "column");
+                node.set_property("ui_clip", "true");
+                if let Some(dy) = scroll {
+                    node.set_property("ui_scroll_y", dy);
+                }
+            }
+            let mut rows = Vec::new();
+            for i in 0..4 {
+                let row = world.spawn_child(panel, SceneNode2D::new(&format!("row{i}")));
+                let node = world.get_mut(row).unwrap();
+                node.set_property("ui", "rect");
+                node.set_property("ui_h", "20");
+                rows.push(row);
+            }
+            let mut canvas = Canvas::new((200, 200), std::ptr::null());
+            world.draw_to_canvas(&mut canvas, 0.0);
+            let ys: Vec<f32> = rows
+                .iter()
+                .map(|&r| world.resolved_rect(r).unwrap().y)
+                .collect();
+            let hits: Vec<f32> = rows
+                .iter()
+                .map(|&r| world.get(r).unwrap().ui_rect.get().unwrap().y)
+                .collect();
+            (ys, hits)
+        };
+
+        let (plain, plain_hits) = build(None);
+        let (scrolled, scrolled_hits) = build(Some("30"));
+
+        for (i, (before, after)) in plain.iter().zip(&scrolled).enumerate() {
+            assert!(
+                (after - before - 30.0).abs() < 1e-3,
+                "row {i} should sit 30px higher: {before} -> {after}"
+            );
+        }
+        // The hit rect is the same rect, or a click after a scroll lands on
+        // the row that *used* to be there.
+        for (i, (drawn, hit)) in scrolled.iter().zip(&scrolled_hits).enumerate() {
+            assert!(
+                (drawn - hit).abs() < 1e-3,
+                "row {i} draws at {drawn} but hit-tests at {hit}"
+            );
+        }
+        assert_eq!(
+            plain, plain_hits,
+            "an unscrolled column's hit rects match its draw rects"
         );
     }
 
