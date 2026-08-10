@@ -1533,19 +1533,11 @@ impl SceneWorld2D {
                 _ => (false, false),
             };
             let content = child_node.content_size.get();
-            let axis = |want: bool, pick: fn((f32, f32)) -> f32| {
-                content.filter(|_| want).map(pick)
-            };
+            let axis = |want: bool, pick: fn((f32, f32)) -> f32| content.filter(|_| want).map(pick);
             let (content_main, content_cross) = if vertical {
-                (
-                    axis(wants_h, |(_, h)| h),
-                    axis(wants_w, |(w, _)| w),
-                )
+                (axis(wants_h, |(_, h)| h), axis(wants_w, |(w, _)| w))
             } else {
-                (
-                    axis(wants_w, |(w, _)| w),
-                    axis(wants_h, |(_, h)| h),
-                )
+                (axis(wants_w, |(w, _)| w), axis(wants_h, |(_, h)| h))
             };
 
             // Space *before* this child on the main axis, on top of the
@@ -1939,14 +1931,30 @@ impl SceneWorld2D {
             let Some(c) = self.get(child) else {
                 return (0.0, 0.0);
             };
-            if let Some(measured) = c.content_size.get() {
-                return measured;
-            }
             let child_bindings = match &c.instance_bindings {
                 Some(scope) => merge_bindings(&effective_bindings, scope),
                 None => effective_bindings.clone(),
             };
-            node_own_extent(c, canvas, &child_bindings)
+            let own = node_own_extent(c, canvas, &child_bindings);
+            // `ui_size` is per axis, so a child's measured size counts only on
+            // the axis it actually auto-sizes. A `content_h` card measures a
+            // width from its children too — that value is never applied to the
+            // card itself (`resolve_ui_rect` keeps its authored `ui_w`), so a
+            // parent reading it wholesale sized a row of 246px cards to the
+            // 222px their blurbs happened to measure.
+            match c.content_size.get() {
+                Some(measured) => (
+                    match c.property("ui_size") {
+                        Some("content" | "content_w") => measured.0,
+                        _ => own.0,
+                    },
+                    match c.property("ui_size") {
+                        Some("content" | "content_h") => measured.1,
+                        _ => own.1,
+                    },
+                ),
+                None => own,
+            }
         };
 
         // Out-of-flow children (`ui_absolute`) contribute nothing to their
@@ -2040,7 +2048,16 @@ impl SceneWorld2D {
                 // Panel child, say) — bounding box, the max of each axis,
                 // starting from this node's own extent (a Panel with both a
                 // background image and children sizes to whichever is larger).
+                //
+                // Its own extent already includes its padding (a text leaf
+                // measures the box it paints into), and this pass adds padding
+                // to whatever it returns — so take the extent's *content*
+                // here, or a padded text leaf counts its padding twice.
                 let own = node_own_extent(node, canvas, &effective_bindings);
+                let own = (
+                    (own.0 - pad_left - pad_right).max(0.0),
+                    (own.1 - pad_top - pad_bottom).max(0.0),
+                );
                 let max_w: f32 = node
                     .children
                     .iter()
@@ -2055,9 +2072,12 @@ impl SceneWorld2D {
             }
         };
 
-        node.content_size.set(Some((
-            content_w + pad_left + pad_right,
-            content_h + pad_top + pad_bottom,
+        node.content_size.set(Some(clamp_to_min(
+            (
+                content_w + pad_left + pad_right,
+                content_h + pad_top + pad_bottom,
+            ),
+            &prop_f32,
         )));
     }
 
@@ -2346,9 +2366,38 @@ fn node_own_extent(node: &SceneNode2D, canvas: &Canvas, bindings: &Bindings) -> 
         _ => (0.0, 0.0),
     };
 
+    // A text leaf's own padding is part of the box it measures to, the same way
+    // it is part of the box the text is drawn into (`draw_ui_kind_dyn` insets
+    // the line by it). A content-sized card header is `padding:9px 10px` around
+    // one line box; measuring only the line would size it to the ink and clip
+    // its own padding away.
+    let pad = |n: &str| prop_f32(n).unwrap_or(0.0);
+    let measured = (
+        measured.0 + pad("ui_pad_left") + pad("ui_pad_right"),
+        measured.1 + pad("ui_pad_top") + pad("ui_pad_bottom"),
+    );
+
+    clamp_to_min(
+        (
+            prop_f32("ui_w").unwrap_or(measured.0),
+            prop_f32("ui_h").unwrap_or(measured.1),
+        ),
+        &prop_f32,
+    )
+}
+
+/// CSS `min-width`/`min-height` on a measured size — a floor, never a cap.
+///
+/// Only measured sizes need it: an authored `ui_w` is already whatever the
+/// author said. The mockups use it to keep a row of cards the same height when
+/// their blurbs wrap to different line counts (`min-height:52px` on the
+/// archetype cards), which is otherwise the one thing content sizing cannot
+/// express — the shortest card would set its own height and the row would come
+/// out ragged.
+fn clamp_to_min(size: (f32, f32), prop_f32: &impl Fn(&str) -> Option<f32>) -> (f32, f32) {
     (
-        prop_f32("ui_w").unwrap_or(measured.0),
-        prop_f32("ui_h").unwrap_or(measured.1),
+        size.0.max(prop_f32("ui_min_w").unwrap_or(0.0)),
+        size.1.max(prop_f32("ui_min_h").unwrap_or(0.0)),
     )
 }
 
@@ -4298,6 +4347,160 @@ mod tests {
     }
 
     #[test]
+    fn a_content_sized_parent_reads_a_childs_measured_size_per_axis() {
+        // The archetype cards: a content-sized row of four cards that are
+        // `ui_size: "content_h"` with an authored `ui_w`. A `content_h` child
+        // still *measures* a width from its own children — a value its own
+        // rect never uses — so a parent that read the measured pair wholesale
+        // sized the row to the cards' contents rather than to the width they
+        // state, and every card after the first landed short.
+        let mut world = SceneWorld2D::new();
+        let row = world.spawn(SceneNode2D::new("row"));
+        {
+            let n = world.get_mut(row).unwrap();
+            n.set_property("ui", "rect");
+            n.set_property("ui_layout", "row");
+            n.set_property("ui_gap", "12");
+            n.set_property("ui_size", "content");
+        }
+        for i in 0..4 {
+            let card = world.spawn_child(row, SceneNode2D::new(&format!("card_{i}")));
+            {
+                let n = world.get_mut(card).unwrap();
+                n.set_property("ui", "rect");
+                n.set_property("ui_w", "246");
+                n.set_property("ui_layout", "column");
+                n.set_property("ui_size", "content_h");
+            }
+            // Narrower than the card states, which is what used to win.
+            let body = world.spawn_child(card, SceneNode2D::new(&format!("body_{i}")));
+            let n = world.get_mut(body).unwrap();
+            n.set_property("ui", "rect");
+            n.set_property("ui_w", "222");
+            n.set_property("ui_h", "86");
+        }
+
+        let mut canvas = Canvas::new((1280, 768), std::ptr::null());
+        world.draw_to_canvas(&mut canvas, 0.0);
+
+        let rect = world.resolved_rect(row).expect("row drawn");
+        assert!(
+            (rect.width - 1020.0).abs() < 1e-3,
+            "four 246px cards and three 12px gaps: {} (222px-wide contents won?)",
+            rect.width
+        );
+        assert!(
+            (rect.height - 86.0).abs() < 1e-3,
+            "as tall as a card: {}",
+            rect.height
+        );
+    }
+
+    #[test]
+    fn a_text_leafs_own_padding_is_part_of_the_box_it_measures() {
+        // The archetype card's header: `padding:9px 10px` around one line of
+        // text. `ui_pad_*` insets a *flow container's* children, so a leaf that
+        // paints its own text used to get no inset at all — it measured to the
+        // ink and drew its label flush against its own border.
+        let mut world = SceneWorld2D::new();
+        let head = world.spawn(SceneNode2D::new("head"));
+        {
+            let n = world.get_mut(head).unwrap();
+            n.set_property("ui", "button");
+            n.set_property("ui_text", "Aggressive");
+            n.set_property("ui_text_size", "12");
+            n.set_property("ui_text_align", "left");
+            n.set_property("ui_size", "content");
+            n.set_property("ui_pad_left", "10");
+            n.set_property("ui_pad_right", "10");
+            n.set_property("ui_pad_top", "9");
+            n.set_property("ui_pad_bottom", "9");
+        }
+
+        let mut canvas = Canvas::new((1000, 600), std::ptr::null());
+        world.draw_to_canvas(&mut canvas, 0.0);
+
+        let rect = world.resolved_rect(head).expect("header drawn");
+        let (ink_w, _) =
+            canvas.measure_text_tracked(crate::FontId::DEFAULT, "Aggressive", 12.0, 0.0);
+        let line_h = canvas.line_height_in(crate::FontId::DEFAULT, 12.0);
+        assert!(
+            (rect.width - (ink_w + 20.0)).abs() < 1e-3,
+            "measures the run plus both side pads: {} vs {}",
+            rect.width,
+            ink_w + 20.0
+        );
+        assert!(
+            (rect.height - (line_h + 18.0)).abs() < 1e-3,
+            "measures the line box plus both vertical pads: {} vs {}",
+            rect.height,
+            line_h + 18.0
+        );
+    }
+
+    #[test]
+    fn ui_min_h_floors_a_content_sized_node_but_never_caps_it() {
+        // The archetype cards' `min-height:52px`: four blurbs of different
+        // lengths in a row, each as tall as it needs but never shorter than
+        // 52 — without which the shortest card sets its own height and the row
+        // comes out ragged.
+        let mut world = SceneWorld2D::new();
+        let root = world.spawn(SceneNode2D::new("root"));
+        {
+            let n = world.get_mut(root).unwrap();
+            n.set_property("ui_layout", "column");
+            n.set_property("ui_stretch_x", "true");
+            n.set_property("ui_stretch_y", "true");
+        }
+        // A one-row block that measures well under the floor, and a stack of
+        // rows that measures well over it. Same `ui_min_h` on both.
+        let short = world.spawn_child(root, SceneNode2D::new("short"));
+        {
+            let n = world.get_mut(short).unwrap();
+            n.set_property("ui", "rect");
+            n.set_property("ui_layout", "column");
+            n.set_property("ui_stretch_x", "true");
+            n.set_property("ui_size", "content_h");
+            n.set_property("ui_min_h", "52");
+        }
+        {
+            let row = world.spawn_child(short, SceneNode2D::new("short_row"));
+            let n = world.get_mut(row).unwrap();
+            n.set_property("ui", "rect");
+            n.set_property("ui_h", "20");
+        }
+        let tall = world.spawn_child(root, SceneNode2D::new("tall"));
+        {
+            let n = world.get_mut(tall).unwrap();
+            n.set_property("ui", "rect");
+            n.set_property("ui_layout", "column");
+            n.set_property("ui_stretch_x", "true");
+            n.set_property("ui_size", "content_h");
+            n.set_property("ui_min_h", "52");
+        }
+        for name in ["tall_a", "tall_b", "tall_c"] {
+            let row = world.spawn_child(tall, SceneNode2D::new(name));
+            let n = world.get_mut(row).unwrap();
+            n.set_property("ui", "rect");
+            n.set_property("ui_h", "30");
+        }
+
+        let mut canvas = Canvas::new((1000, 600), std::ptr::null());
+        world.draw_to_canvas(&mut canvas, 0.0);
+
+        let short_h = world.resolved_rect(short).expect("short drawn").height;
+        let tall_h = world.resolved_rect(tall).expect("tall drawn").height;
+        assert!(
+            (short_h - 52.0).abs() < 1e-3,
+            "20px of content is floored to the authored 52: {short_h}"
+        );
+        assert!(
+            (tall_h - 90.0).abs() < 1e-3,
+            "90px of content is a floor, not a cap: {tall_h}"
+        );
+    }
+
+    #[test]
     fn text_spans_content_sizes_to_the_line_it_paints() {
         // The chrome bar's readouts: `BANK` in one colour, its value in
         // another, one line box. Content-sized at zero they all stacked at the
@@ -4365,7 +4568,10 @@ mod tests {
         {
             let n = world.get_mut(block).unwrap();
             n.set_property("ui", "text_block");
-            n.set_property("ui_text", "High pace, risky calls. Extra command point every lap.");
+            n.set_property(
+                "ui_text",
+                "High pace, risky calls. Extra command point every lap.",
+            );
             n.set_property("ui_text_size", "14");
             n.set_property("ui_wrap_w", "120");
             n.set_property("ui_size", "content");
@@ -4426,7 +4632,10 @@ mod tests {
             let mut canvas = Canvas::new((400, 400), std::ptr::null());
             world.draw_to_canvas(&mut canvas, 0.0);
             let rect = world.resolved_rect(block).expect("block drawn");
-            (rect.height, canvas.line_height_in(crate::FontId::DEFAULT, 14.0))
+            (
+                rect.height,
+                canvas.line_height_in(crate::FontId::DEFAULT, 14.0),
+            )
         };
 
         let (plain, line_h) = measure(None);

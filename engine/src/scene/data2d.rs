@@ -551,6 +551,19 @@ fn draw_ui_kind_dyn(
     // shared with every other node in the frame.
     let prev_tracking = canvas.set_tracking(prop_f32("ui_tracking").unwrap_or(0.0) * scale.x);
     let border = node_border(&get, scale);
+    // The box the text arms below lay their line into: the node's rect inset by
+    // its own padding, CSS `padding` on a box that holds text rather than
+    // children. `ui_pad_*` already insets a *flow container's* children; a leaf
+    // that paints its own text (a card header, `padding:9px 10px`) got no
+    // inset at all, so its label sat flush against its own border. Same
+    // property, same meaning, on the one kind of node that was missing it —
+    // fills and borders still use the full rect, as in `box-sizing:border-box`.
+    let (tx, ty, tw, th) = {
+        let pad = |n: &str, s: f32| prop_f32(n).unwrap_or(0.0) * s;
+        let (l, r) = (pad("ui_pad_left", scale.x), pad("ui_pad_right", scale.x));
+        let (b, t) = (pad("ui_pad_bottom", scale.y), pad("ui_pad_top", scale.y));
+        (x + l, y + b, (w - l - r).max(0.0), (h - t - b).max(0.0))
+    };
     // Painted after the kind's own fill, below — a closure so the early-return
     // arms can't forget it.
     let draw = |canvas: &mut Canvas| {
@@ -656,11 +669,12 @@ fn draw_ui_kind_dyn(
             let size = prop_f32("ui_text_size").unwrap_or(12.0);
             // `line_height` needs the font atlas, so it is computed lazily —
             // a button that draws only its bar must not touch text metrics.
-            // The line box's TOP, centred in the button's height. `y` is the
-            // rect's BOTTOM (the canvas is y-up), so the top of a centred
-            // line box is half the slack down from the rect's top — not half
+            // The line box's TOP, centred in the button's padded height. `ty`
+            // is that box's BOTTOM (the canvas is y-up), so the top of a
+            // centred line box is half the slack down from its top — not half
             // the slack up from its bottom, which is a whole line box lower.
-            let line_top = |canvas: &Canvas| y + h - (h - canvas.line_height_in(font, size)) * 0.5;
+            let line_top =
+                |canvas: &Canvas| ty + th - (th - canvas.line_height_in(font, size)) * 0.5;
 
             let marker = get("ui_marker").unwrap_or_default();
             if !marker.is_empty() {
@@ -673,7 +687,7 @@ fn draw_ui_kind_dyn(
                     let top = line_top(canvas);
                     canvas.text_aligned_in(
                         font,
-                        x + inset,
+                        tx + inset,
                         top,
                         &marker,
                         size,
@@ -688,9 +702,9 @@ fn draw_ui_kind_dyn(
                 let color = parse_srgb_color(get("ui_color").as_deref(), Color::WHITE);
                 let align = parse_text_align(get("ui_text_align").as_deref());
                 let anchor_x = match align {
-                    TextAlign::Left => x,
-                    TextAlign::Center => x + w * 0.5,
-                    TextAlign::Right => x + w,
+                    TextAlign::Left => tx,
+                    TextAlign::Center => tx + tw * 0.5,
+                    TextAlign::Right => tx + tw,
                 };
                 let top = line_top(canvas);
                 canvas.text_aligned_in(font, anchor_x, top, &text, size, color, align);
@@ -702,16 +716,16 @@ fn draw_ui_kind_dyn(
             let text = get("ui_text").unwrap_or_default();
             let align = parse_text_align(get("ui_text_align").as_deref());
             let anchor_x = match align {
-                TextAlign::Left => x,
-                TextAlign::Center => x + w * 0.5,
-                TextAlign::Right => x + w,
+                TextAlign::Left => tx,
+                TextAlign::Center => tx + tw * 0.5,
+                TextAlign::Right => tx + tw,
             };
-            // Canvas text takes the line box's TOP. `y` is the rect's bottom
-            // (y-up), so a line centred in `h` starts half the slack below
-            // the rect's top — which for the common `h == line_height` case
-            // is exactly the rect's top, and the whole run lands inside it.
+            // Canvas text takes the line box's TOP. `ty` is the padded box's
+            // bottom (y-up), so a line centred in `th` starts half the slack
+            // below its top — which for the common `th == line_height` case
+            // is exactly that top, and the whole run lands inside it.
             let line_h = canvas.line_height_in(font, size);
-            let line_top = y + h - (h - line_h) * 0.5;
+            let line_top = ty + th - (th - line_h) * 0.5;
             canvas.text_aligned_in(font, anchor_x, line_top, &text, size, color, align);
         }
         "text_block" => {
@@ -719,16 +733,16 @@ fn draw_ui_kind_dyn(
             let size = prop_f32("ui_text_size").unwrap_or(12.0);
             let text = get("ui_text").unwrap_or_default();
             let align = parse_text_align(get("ui_text_align").as_deref());
-            let wrap_w = prop_f32("ui_wrap_w").unwrap_or(w);
+            let wrap_w = prop_f32("ui_wrap_w").unwrap_or(tw);
             let anchor_x = match align {
-                TextAlign::Left => x,
-                TextAlign::Center => x + w * 0.5,
-                TextAlign::Right => x + w,
+                TextAlign::Left => tx,
+                TextAlign::Center => tx + tw * 0.5,
+                TextAlign::Right => tx + tw,
             };
             canvas.text_block_leaded_in(
                 font,
                 anchor_x,
-                y + h,
+                ty + th,
                 &text,
                 size,
                 color,
@@ -761,8 +775,8 @@ fn draw_ui_kind_dyn(
                 .zip(span_colors.iter().copied())
                 .collect();
             let line_h = canvas.line_height_in(font, size);
-            let line_top = y + h - (h - line_h) * 0.5;
-            canvas.text_spans_aligned_in(font, x, line_top, &spans, size, align);
+            let line_top = ty + th - (th - line_h) * 0.5;
+            canvas.text_spans_aligned_in(font, tx, line_top, &spans, size, align);
         }
         "polyline" => {
             // "x0,y0;x1,y1;..." offsets from the rect's origin — the same
