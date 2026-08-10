@@ -1522,9 +1522,31 @@ impl SceneWorld2D {
                 ("ui_w", "ui_h")
             };
             let literal = |name: &str| child_get(name).and_then(|v| v.trim().parse::<f32>().ok());
+            // Per axis: a child that sizes to content only vertically still
+            // takes its *width* from its authored `ui_w`, so a 640px-wide
+            // panel in a column keeps its stated width and only its height
+            // follows its rows.
+            let (wants_w, wants_h) = match child_node.property("ui_size") {
+                Some("content") => (true, true),
+                Some("content_w") => (true, false),
+                Some("content_h") => (false, true),
+                _ => (false, false),
+            };
             let content = child_node.content_size.get();
-            let content_main = content.map(|(w, h)| if vertical { h } else { w });
-            let content_cross = content.map(|(w, h)| if vertical { w } else { h });
+            let axis = |want: bool, pick: fn((f32, f32)) -> f32| {
+                content.filter(|_| want).map(pick)
+            };
+            let (content_main, content_cross) = if vertical {
+                (
+                    axis(wants_h, |(_, h)| h),
+                    axis(wants_w, |(w, _)| w),
+                )
+            } else {
+                (
+                    axis(wants_w, |(w, _)| w),
+                    axis(wants_h, |(_, h)| h),
+                )
+            };
 
             // Space *before* this child on the main axis, on top of the
             // parent's uniform `ui_gap` — the mockups' `margin-top:34px`
@@ -1890,7 +1912,7 @@ impl SceneWorld2D {
             self.measure_content_size(child, canvas, &effective_bindings);
         }
 
-        if node.property("ui_size") != Some("content") {
+        if !sizes_to_content(node.property("ui_size")) {
             return;
         }
 
@@ -2051,7 +2073,7 @@ impl SceneWorld2D {
         let Some(node) = self.get(handle) else {
             return false;
         };
-        if node.property("ui_size") == Some("content") {
+        if sizes_to_content(node.property("ui_size")) {
             return true;
         }
         node.children
@@ -2312,6 +2334,17 @@ fn node_own_extent(node: &SceneNode2D, canvas: &Canvas, bindings: &Bindings) -> 
         prop_f32("ui_w").unwrap_or(measured.0),
         prop_f32("ui_h").unwrap_or(measured.1),
     )
+}
+
+/// Whether a node measures itself against its children on *either* axis.
+///
+/// `ui_size` is per axis: `"content"` is both, `"content_w"`/`"content_h"` one
+/// each. The measure pass runs whenever any axis wants it and computes the
+/// full `(w, h)`; which of the two is actually applied is decided later, in
+/// `resolve_ui_rect`. Measuring the unused axis costs nothing and keeps the
+/// two passes from needing to agree about anything but this.
+fn sizes_to_content(value: Option<&str>) -> bool {
+    matches!(value, Some("content" | "content_w" | "content_h"))
 }
 
 /// How a flow container spreads leftover main-axis space when no child grows
@@ -4072,6 +4105,59 @@ mod tests {
             (r(1).width - 100.0).abs() < 1e-3,
             "gap is not folded into w"
         );
+    }
+
+    #[test]
+    fn ui_size_content_h_keeps_the_authored_width() {
+        // The common mockup panel: "640px wide, as tall as my rows need".
+        // `ui_size: "content"` is per node, so before the axis variants the
+        // only way to express it was to compute the height in the host and
+        // pass it back as a binding.
+        let mut world = SceneWorld2D::new();
+        let root = world.spawn(SceneNode2D::new("root"));
+        {
+            let n = world.get_mut(root).unwrap();
+            n.set_property("ui", "rect");
+            n.set_property("ui_layout", "column");
+            n.set_property("ui_align", "center");
+            n.set_property("ui_stretch_x", "true");
+            n.set_property("ui_stretch_y", "true");
+        }
+        let panel = world.spawn_child(root, SceneNode2D::new("panel"));
+        {
+            let n = world.get_mut(panel).unwrap();
+            n.set_property("ui", "rect");
+            n.set_property("ui_layout", "column");
+            n.set_property("ui_w", "640");
+            n.set_property("ui_size", "content_h");
+            n.set_property("ui_pad_top", "8");
+            n.set_property("ui_pad_bottom", "8");
+        }
+        // Two 30px rows: the panel should end up 30+30+8+8 = 76 tall.
+        for name in ["row_a", "row_b"] {
+            let row = world.spawn_child(panel, SceneNode2D::new(name));
+            let n = world.get_mut(row).unwrap();
+            n.set_property("ui", "rect");
+            n.set_property("ui_h", "30");
+        }
+
+        let mut canvas = Canvas::new((1000, 600), std::ptr::null());
+        world.draw_to_canvas(&mut canvas, 0.0);
+
+        let rect = world.resolved_rect(panel).expect("panel drawn");
+        assert!(
+            (rect.width - 640.0).abs() < 1e-3,
+            "width stays authored, not measured: {}",
+            rect.width
+        );
+        assert!(
+            (rect.height - 76.0).abs() < 1e-3,
+            "height follows its rows: {}",
+            rect.height
+        );
+        // And it is centred on the width it kept, which is what a measured
+        // width would have got wrong.
+        assert!((rect.x - -320.0).abs() < 1e-3, "centred: {}", rect.x);
     }
 
     #[test]

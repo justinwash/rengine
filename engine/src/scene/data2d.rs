@@ -256,7 +256,20 @@ fn resolve_ui_rect(
     // `SceneWorld2D::measure_content_size` before this runs) overrides
     // literal/bound `ui_w`/`ui_h` — a node can be *either* sized by its
     // author or sized by its children, not both.
-    let sizes_to_content = get("ui_size").as_deref() == Some("content");
+    //
+    // Per axis, because "as wide as I say, as tall as my children need" is the
+    // common panel: the mockups state a panel's width (640px) and let its rows
+    // decide its height. `"content"` is both axes; `"content_h"` sizes only the
+    // height, leaving `ui_w` to say the width (and `"content_w"` the reverse).
+    // Without this a fixed-width panel had to have its height computed in the
+    // host and passed back in as a binding — the hand-tuned constant this
+    // overhaul exists to delete.
+    let (content_w_axis, content_h_axis) = match get("ui_size").as_deref() {
+        Some("content") => (true, true),
+        Some("content_w") => (true, false),
+        Some("content_h") => (false, true),
+        _ => (false, false),
+    };
     // `ui_grow` (E-A) wins on its own axis: the parent's flow already decided
     // this node's main-axis extent, and it is the whole meaning of the
     // property. `ui_size: "content"` still wins on the *other* axis, so a
@@ -264,7 +277,7 @@ fn resolve_ui_rect(
     let (grow_w, grow_h) = flow_size;
     let w_fixed = match grow_w.or_else(|| {
         content_size
-            .filter(|_| sizes_to_content)
+            .filter(|_| content_w_axis)
             .map(|(w, _)| w * scale.x)
     }) {
         Some(w) => w,
@@ -275,7 +288,7 @@ fn resolve_ui_rect(
     };
     let h_fixed = match grow_h.or_else(|| {
         content_size
-            .filter(|_| sizes_to_content)
+            .filter(|_| content_h_axis)
             .map(|(_, h)| h * scale.y)
     }) {
         Some(h) => h,
