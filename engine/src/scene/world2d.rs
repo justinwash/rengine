@@ -1850,6 +1850,18 @@ impl SceneWorld2D {
             node.ui_rect.set(None);
         }
 
+        // `ui_visible: false` is `display:none`, and that hides the whole
+        // subtree — the node's children are its *content*, so painting them
+        // under a hidden parent draws exactly the thing the author switched
+        // off. It already leaves the flow (E-Z) and now it leaves the draw
+        // too; before this, a hidden container's children rendered at whatever
+        // rect the hidden parent resolved to, which is how a switched-off
+        // screen variant left its labels floating over the live one.
+        if !ui_visible {
+            self.clear_subtree_hit_rects(handle);
+            return;
+        }
+
         let children = node.children.clone();
         let child_refs =
             self.resolve_child_references(node, ui_rect, &children, effective_bindings);
@@ -2229,6 +2241,12 @@ impl SceneWorld2D {
             node.ui_rect.set(None);
         }
 
+        // `display:none` hides the subtree — see `draw_node`'s copy of this.
+        if !ui_visible {
+            self.clear_subtree_hit_rects(handle);
+            return;
+        }
+
         // ui_clip: true (E5) confines this node's children to its resolved
         // rect — a scrolling standings/log region can overflow its panel
         // without painting over whatever sits below it. Substituted through
@@ -2253,6 +2271,22 @@ impl SceneWorld2D {
     }
 
     // --- internal helpers -------------------------------------------------
+
+    /// Drop the cached hit rect of every node under `handle` (inclusive).
+    ///
+    /// A subtree that `ui_visible: false` skipped never reached its own
+    /// bookkeeping, so without this its descendants keep whatever rect they
+    /// resolved to on the last frame they *were* shown — and a click would
+    /// still land on a button nobody can see.
+    fn clear_subtree_hit_rects(&self, handle: NodeHandle2D) {
+        let Some(node) = self.get(handle) else {
+            return;
+        };
+        node.ui_rect.set(None);
+        for child in node.children.clone() {
+            self.clear_subtree_hit_rects(child);
+        }
+    }
 
     fn insert_detached(&mut self, node: SceneNode2D) -> NodeHandle2D {
         if let Some(index) = self.free.pop() {
@@ -3751,6 +3785,45 @@ mod tests {
             "ui_visible: true shows it"
         );
         assert!(world.node_bounds(toast).is_some());
+    }
+
+    #[test]
+    fn a_hidden_node_hides_its_children_too() {
+        // `ui_visible: false` is `display:none`, so it takes the whole subtree
+        // with it. It used to hide only the node itself and then recurse into
+        // the children regardless, which meant a switched-off screen variant
+        // painted its labels on top of the live one — the driver market's
+        // founding seat chips drew over the between-race board that way.
+        let mut world = SceneWorld2D::new();
+        let panel = world.spawn(SceneNode2D::new("panel").with_name("panel"));
+        {
+            let node = world.get_mut(panel).unwrap();
+            node.set_property("ui", "rect");
+            node.set_property("ui_visible", "{shown}");
+            node.set_property("ui_w", "80");
+            node.set_property("ui_h", "40");
+        }
+        let label = world.spawn_child(panel, SceneNode2D::new("label").with_name("label"));
+        {
+            let node = world.get_mut(label).unwrap();
+            node.set_property("ui", "rect");
+            node.set_property("ui_w", "20");
+            node.set_property("ui_h", "20");
+        }
+
+        let mut canvas = Canvas::new((200, 100), std::ptr::null());
+        let mut bindings = Bindings::new();
+        bindings.insert("shown".to_string(), "true".to_string());
+        world.draw_to_canvas_with_bindings(&mut canvas, 0.0, &bindings);
+        assert!(world.resolved_rect(label).is_some(), "shown: child draws");
+
+        bindings.insert("shown".to_string(), "false".to_string());
+        world.draw_to_canvas_with_bindings(&mut canvas, 0.0, &bindings);
+        assert_eq!(
+            world.resolved_rect(label),
+            None,
+            "hidden parent hides the child, and clears its stale hit rect"
+        );
     }
 
     #[test]
