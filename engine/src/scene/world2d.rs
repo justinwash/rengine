@@ -5479,4 +5479,60 @@ mod tests {
             assert!((r(i).height - 100.0).abs() < 1e-3, "spans cross axis");
         }
     }
+
+    /// The editor's white-box bug, as a guard.
+    ///
+    /// A node authored `"ui_color": "{chalk},255"` and drawn with no ambient
+    /// bindings keeps the `{chalk}` literal, which parses as no colour and
+    /// falls back to white — every panel in the scene turns into a pale
+    /// rectangle and the preview is unreadable. Layout is unaffected, so no
+    /// rect assertion can catch this; the drawn colour is the only evidence.
+    ///
+    /// Both halves matter. Unbound must be white (the bug reproduces) and
+    /// bound must be the palette's actual value (the fix resolves), or a
+    /// binding table that silently resolved to *some other* wrong colour
+    /// would pass.
+    #[test]
+    fn ambient_bindings_resolve_authored_palette_tokens() {
+        let draw = |bindings: &Bindings| {
+            let mut world = SceneWorld2D::new();
+            let node = world.spawn(SceneNode2D::new("panel"));
+            let n = world.get_mut(node).unwrap();
+            n.set_property("ui", "rect");
+            n.set_property("ui_w", "50");
+            n.set_property("ui_h", "50");
+            n.set_property("ui_color", "{chalk},255");
+
+            let mut canvas = Canvas::new((200, 200), std::ptr::null());
+            world.draw_to_canvas_in_with_bindings(
+                &mut canvas,
+                (-100.0, -100.0, 200.0, 200.0),
+                0.0,
+                bindings,
+            );
+            canvas
+                .vertices()
+                .first()
+                .map(|v| v.color)
+                .expect("the rect drew at least one vertex")
+        };
+
+        let unbound = draw(&Bindings::new());
+        assert!(
+            unbound.iter().take(3).all(|c| *c >= 0.99),
+            "an unresolved token should fall back to white — that IS the              white-box bug this guards, so if this ever stops being true the              test below is no longer proving anything: {unbound:?}"
+        );
+
+        let chalk = crate::Color::from_srgb8(0xe8, 0xe4, 0xd9, 255);
+        let bound = draw(&[("chalk".to_string(), "232,228,217".to_string())]
+            .into_iter()
+            .collect());
+        let expected = [chalk.r, chalk.g, chalk.b, chalk.a];
+        for (got, want) in bound.iter().zip(expected) {
+            assert!(
+                (got - want).abs() < 1e-3,
+                "bound token drew {bound:?}, palette chalk is {expected:?}"
+            );
+        }
+    }
 }

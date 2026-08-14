@@ -1,5 +1,6 @@
 use super::*;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use serde_json::Value;
 
 const PROJECT_TREE_SCAN_MAX_NODES: usize = 4000;
@@ -20,6 +21,18 @@ struct EditorProjectManifest {
     cached_files: Vec<String>,
     #[serde(default)]
     preferences: Option<Value>,
+    /// Palette tokens the project's scenes author as `{name}`, as `"r,g,b"`.
+    ///
+    /// The editor cannot link the game, so without these every `{chalk}` in a
+    /// scene resolves to nothing, `ui_color` falls back to white, and the
+    /// preview turns into the wall of pale rectangles this field exists to
+    /// fix. The game reads the same block out of the same file.
+    #[serde(default)]
+    theme: BTreeMap<String, String>,
+    /// Typeface files by alias, so a scene's `{font_hud}` resolves to a font
+    /// the editor actually loaded rather than to id 0.
+    #[serde(default)]
+    fonts: BTreeMap<String, String>,
 }
 
 pub(crate) struct StartupProjectSelection {
@@ -28,6 +41,12 @@ pub(crate) struct StartupProjectSelection {
     pub(crate) project_file: Option<PathBuf>,
     pub(crate) project_issue: Option<String>,
     pub(crate) startup_logs: Vec<String>,
+    /// Palette tokens and font aliases from the manifest, ready to be handed
+    /// to the preview as ambient bindings. Empty for a workspace opened
+    /// without a manifest, which just means the preview degrades to the
+    /// literal-`{key}` behaviour it had before.
+    pub(crate) theme: BTreeMap<String, String>,
+    pub(crate) fonts: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Debug)]
@@ -122,6 +141,8 @@ pub(crate) fn resolve_startup_project_selection() -> StartupProjectSelection {
                 "Failed to open project file from CLI: {}",
                 path.display()
             )],
+            theme: BTreeMap::new(),
+            fonts: BTreeMap::new(),
         };
         fallback
             .startup_logs
@@ -146,6 +167,8 @@ pub(crate) fn resolve_startup_project_selection() -> StartupProjectSelection {
                 "Project manifest exists but could not be loaded: {}",
                 project_path.display()
             )],
+            theme: BTreeMap::new(),
+            fonts: BTreeMap::new(),
         };
     }
 
@@ -168,6 +191,8 @@ pub(crate) fn resolve_startup_project_selection() -> StartupProjectSelection {
                 "Selected project file was invalid: {}",
                 project_path.display()
             )],
+            theme: BTreeMap::new(),
+            fonts: BTreeMap::new(),
         };
     }
 
@@ -177,6 +202,8 @@ pub(crate) fn resolve_startup_project_selection() -> StartupProjectSelection {
         project_file: None,
         project_issue: Some("No project manifest found in the working directory".to_string()),
         startup_logs: vec!["No project file selected; using working directory".to_string()],
+        theme: BTreeMap::new(),
+        fonts: BTreeMap::new(),
     }
 }
 
@@ -609,6 +636,8 @@ impl RengineNativeEditor {
             project_root: ".".to_string(),
             cached_files: Vec::new(),
             preferences: None,
+            theme: BTreeMap::new(),
+            fonts: BTreeMap::new(),
         };
 
         let serialized = match serde_json::to_string_pretty(&manifest) {
@@ -1355,6 +1384,9 @@ fn load_project_manifest_selection(path: &Path) -> Result<StartupProjectSelectio
     if manifest.preferences.is_some() {
         startup_logs.push("Loaded project preferences".to_string());
     }
+    if !manifest.theme.is_empty() {
+        startup_logs.push(format!("Loaded {} palette tokens", manifest.theme.len()));
+    }
 
     Ok(StartupProjectSelection {
         workspace_root: resolved_root,
@@ -1362,6 +1394,8 @@ fn load_project_manifest_selection(path: &Path) -> Result<StartupProjectSelectio
         project_file: Some(path.to_path_buf()),
         project_issue: None,
         startup_logs,
+        theme: manifest.theme,
+        fonts: manifest.fonts,
     })
 }
 
@@ -1371,4 +1405,173 @@ fn absolute_path_from(base: &Path, path: &Path) -> PathBuf {
     }
 
     base.join(path)
+}
+
+/// The ambient bindings the `ui_preview` resolves against, from the project
+/// manifest's `theme` and `fonts` blocks.
+///
+/// This is the whole of rule 3's editor half: the palette a scene authors as
+/// `{chalk}` lives in one file, and the game and the editor both read it, so
+/// the preview shows the game's real colours instead of white boxes.
+///
+/// Every step degrades rather than fails. A project with no manifest, no theme
+/// block, or an unloadable font still opens — it just previews the way it did
+/// before this existed, and says so in the activity log.
+pub(crate) fn build_preview_bindings(
+    engine: &mut Engine,
+    workspace_root: &Path,
+    theme: BTreeMap<String, String>,
+    fonts: BTreeMap<String, String>,
+    startup_logs: &mut Vec<String>,
+) -> (Bindings, BTreeMap<String, FontId>) {
+    let mut bindings: Bindings = theme.into_iter().collect();
+    let mut loaded = BTreeMap::new();
+
+    // `{font_hud}` resolves to a numeric id, so the face has to actually be
+    // loaded here — an alias pointing at a font the editor never loaded would
+    // silently draw everything in face 0 at the wrong metrics, which looks
+    // like a layout bug rather than a missing asset.
+    for (alias, relative) in fonts {
+        let path = workspace_root.join(&relative);
+        match engine.load_font(&path) {
+            Ok(id) => {
+                bindings.insert(format!("font_{alias}"), id.index().to_string());
+                loaded.insert(format!("font_{alias}"), id);
+            }
+            Err(err) => startup_logs.push(format!(
+                "Preview font `{alias}` ({}) failed to load: {err}",
+                path.display()
+            )),
+        }
+    }
+
+    (bindings, loaded)
+}
+
+/// Bind the `{lh_*}` / `{row_h}` line-height tokens the scenes author as their
+/// `ui_h`, by measuring the node's own font and size.
+///
+/// The game computes these the same way (see the game's `title_bindings`: a
+/// text node is one line box tall, and a line box is a font metric that cannot
+/// be authored as a literal because neither face is 1:1 with its size). The
+/// editor has the fonts loaded now, so it can do the identical measurement
+/// instead of leaving the token unresolved — which reads as `ui_h: 0` and
+/// collapses the node to nothing.
+///
+/// Nodes that don't author their own `ui_text_size` are skipped: their height
+/// comes from somewhere the editor genuinely cannot know, and a guessed value
+/// would be a wrong preview rather than an honest empty one.
+pub(crate) fn bind_authored_line_heights(
+    world: &SceneWorld2D,
+    canvas: &Canvas,
+    fonts: &BTreeMap<String, FontId>,
+    bindings: &mut Bindings,
+) {
+    for handle in world.handles() {
+        let Some(node) = world.get(handle) else {
+            continue;
+        };
+        // Only a bare `"{token}"` — anything with surrounding text or arithmetic
+        // is not a plain line height and guessing at it would be wrong.
+        let Some(key) = node
+            .property("ui_h")
+            .map(str::trim)
+            .and_then(|h| h.strip_prefix('{')?.strip_suffix('}'))
+            .filter(|key| !key.is_empty())
+        else {
+            continue;
+        };
+        if bindings.contains_key(key) {
+            continue;
+        }
+        let Some(size) = node.property("ui_text_size").and_then(|s| s.trim().parse().ok()) else {
+            continue;
+        };
+        // The node's own `ui_font` is a `{font_hud}` token, and the ids the
+        // editor loaded are kept as real `FontId`s rather than reconstructed
+        // from the numeric binding — `FontId` construction is crate-private on
+        // purpose, since an id only means anything if the renderer loaded that
+        // font.
+        let font = node
+            .property("ui_font")
+            .map(str::trim)
+            .and_then(|f| f.strip_prefix('{')?.strip_suffix('}'))
+            .and_then(|alias| fonts.get(alias))
+            .copied()
+            .unwrap_or(FontId::DEFAULT);
+        let height = canvas.line_height_in(font, size);
+        bindings.insert(key.to_string(), height.to_string());
+    }
+}
+
+#[cfg(test)]
+mod preview_binding_tests {
+    use super::*;
+
+    /// A node whose `ui_h` is a bare `{token}` gets that token bound to its own
+    /// measured line height. Without this the token stays literal, `ui_h`
+    /// resolves to 0, and the node collapses — 50 authored nodes across the
+    /// game's scenes are shaped exactly this way.
+    #[test]
+    fn a_bare_height_token_is_bound_from_the_nodes_own_text_size() {
+        let mut world = SceneWorld2D::new();
+        let handle = world.spawn(SceneNode2D::new("label"));
+        let node = world.get_mut(handle).unwrap();
+        node.set_property("ui", "text");
+        node.set_property("ui_h", "{lh_name}");
+        node.set_property("ui_text_size", "12");
+
+        let canvas = Canvas::for_test((200, 200));
+        let mut bindings = Bindings::new();
+        bind_authored_line_heights(&world, &canvas, &BTreeMap::new(), &mut bindings);
+
+        let bound: f32 = bindings
+            .get("lh_name")
+            .expect("`{lh_name}` should have been bound")
+            .parse()
+            .expect("a line height is a number");
+        assert!(
+            (bound - canvas.line_height_in(FontId::DEFAULT, 12.0)).abs() < 1e-3,
+            "bound height must be the canvas's own measurement, not a guess"
+        );
+    }
+
+    /// The honest-empty case: no `ui_text_size` means the height comes from
+    /// somewhere the editor cannot see, so it must leave the token alone rather
+    /// than invent a number and preview a layout the game will never draw.
+    #[test]
+    fn a_height_token_without_a_text_size_is_left_unbound() {
+        let mut world = SceneWorld2D::new();
+        let handle = world.spawn(SceneNode2D::new("panel"));
+        let node = world.get_mut(handle).unwrap();
+        node.set_property("ui", "rect");
+        node.set_property("ui_h", "{menu_h}");
+
+        let canvas = Canvas::for_test((200, 200));
+        let mut bindings = Bindings::new();
+        bind_authored_line_heights(&world, &canvas, &BTreeMap::new(), &mut bindings);
+
+        assert!(!bindings.contains_key("menu_h"));
+    }
+
+    /// An existing binding wins. The manifest (and, later, any real per-screen
+    /// value) is authoritative — this pass only fills gaps, so it must never
+    /// overwrite a height someone actually supplied.
+    #[test]
+    fn an_already_bound_height_is_not_overwritten() {
+        let mut world = SceneWorld2D::new();
+        let handle = world.spawn(SceneNode2D::new("label"));
+        let node = world.get_mut(handle).unwrap();
+        node.set_property("ui", "text");
+        node.set_property("ui_h", "{row_h}");
+        node.set_property("ui_text_size", "12");
+
+        let canvas = Canvas::for_test((200, 200));
+        let mut bindings: Bindings = [("row_h".to_string(), "40".to_string())]
+            .into_iter()
+            .collect();
+        bind_authored_line_heights(&world, &canvas, &BTreeMap::new(), &mut bindings);
+
+        assert_eq!(bindings.get("row_h").map(String::as_str), Some("40"));
+    }
 }

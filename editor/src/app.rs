@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use crate::scene::{
     SceneDocument, SceneNode, SceneNodeCameraExt, SceneNodeKind, SceneNodeKindExt,
     SceneNodeReorderDirection,
@@ -186,22 +187,37 @@ pub struct RengineNativeEditor {
     ui_preview_key: Option<(u64, u64, usize)>,
     /// Which interaction state, if any, to preview on the selected node.
     preview_interaction_state: Option<PreviewInteraction>,
+    /// Ambient bindings every `ui_preview` draw resolves against: the
+    /// project's palette tokens and the font ids for its typefaces.
+    ///
+    /// Without these the preview draws the authored `{chalk}` literally, which
+    /// `ui_color` reads as an unparseable colour and falls back to white — the
+    /// "screen full of white boxes" the manifest exists to fix.
+    preview_bindings: Bindings,
+    /// The same fonts as real ids, for measuring authored line heights.
+    preview_fonts: BTreeMap<String, FontId>,
 }
 
 impl Game for RengineNativeEditor {
-    fn new(_engine: &mut Engine) -> Self {
+    fn new(engine: &mut Engine) -> Self {
         let startup_selection = resolve_startup_project_selection();
         let StartupProjectSelection {
             workspace_root,
             project_name,
             project_file,
             project_issue,
-            startup_logs,
+            mut startup_logs,
+            theme,
+            fonts,
         } = startup_selection;
+        let (preview_bindings, preview_fonts) =
+            build_preview_bindings(engine, &workspace_root, theme, fonts, &mut startup_logs);
         let project_tree = ProjectTreeEntry::scan(&workspace_root);
         let branch_name = read_git_branch(&workspace_root);
 
         let mut editor = Self {
+            preview_bindings,
+            preview_fonts,
             workspace_root,
             project_browser_root: project_tree.path.clone(),
             project_manifest_path: project_file.clone(),

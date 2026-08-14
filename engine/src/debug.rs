@@ -1775,7 +1775,14 @@ mod tests {
     fn scroll_only_consumes_when_pointer_is_over_debug_ui_or_text_input_is_active() {
         let mut state = DebugUiState::new(true);
         let layout = state.overlay_layout((800, 600), state.filtered_log_count());
-        let inside_overlay = (layout.panel.x + 12.0, layout.panel.y + 12.0);
+        // Measured down from the panel's TOP, which is pinned to the screen
+        // edge. `panel.y` is the bottom (`panel_top - panel_height`), so a
+        // point just above it moves whenever the panel's height changes — and
+        // the height comes from the process-wide `LOG_BUFFER`, which sibling
+        // tests write to and clear in parallel. Anchoring to the fixed edge
+        // makes this independent of test scheduling.
+        let panel_top = layout.panel.y + layout.panel.h;
+        let inside_overlay = (layout.panel.x + 12.0, panel_top - 12.0);
         let outside_overlay = (380.0, -280.0);
 
         assert!(!state.handle_scroll((800, 600), outside_overlay, 1.0));

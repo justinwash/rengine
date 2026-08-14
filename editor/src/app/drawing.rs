@@ -824,9 +824,11 @@ impl RengineNativeEditor {
             // ponytail: time = 0.0 — a live clock would make ui_bob_*/
             // ui_sway_* authored nodes judder while just sitting in the
             // editor. A play/pause preview clock is separate work.
-            // `{key}` placeholders still stay literal (no ambient bindings),
-            // which degrades safely — see resolve_ui_rect's unwrap_or(0.0)
-            // and the ui_visible literal check in data2d.rs.
+            // `{key}` placeholders resolve against the project manifest's
+            // palette and fonts (`preview_bindings`). A project without a
+            // manifest binds nothing and they stay literal, which still
+            // degrades safely — see resolve_ui_rect's unwrap_or(0.0) and the
+            // ui_visible literal check in data2d.rs.
             //
             // Interaction state: a node's hover/focus colours (ui_color_hover,
             // ui_color_focus) are otherwise invisible while authoring, since
@@ -847,7 +849,11 @@ impl RengineNativeEditor {
                     .filter(|_| self.preview_interaction_state == Some(PreviewInteraction::Focus)),
             );
 
-            world.draw_to_canvas_in(canvas, root, 0.0);
+            // Line heights are font metrics, so they can only be measured once
+            // there is a canvas — hence per-draw rather than at load.
+            let mut bindings = self.preview_bindings.clone();
+            bind_authored_line_heights(world, canvas, &self.preview_fonts, &mut bindings);
+            world.draw_to_canvas_in_with_bindings(canvas, root, 0.0, &bindings);
 
             // Leave no interaction state behind: hit-testing reads the same
             // world, and a node stuck "hovered" would misreport next frame.

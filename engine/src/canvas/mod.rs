@@ -226,6 +226,27 @@ impl Canvas {
         }
     }
 
+    /// A canvas with no font table, for host-crate tests that need to measure
+    /// or draw without a renderer.
+    ///
+    /// `new` stays crate-private because a real canvas is the renderer's to
+    /// hand out; this is the deliberate test-only door, and it says so in the
+    /// name. Text measured through it uses the engine's default metrics, which
+    /// is all a layout assertion needs.
+    pub fn for_test(screen_size: (u32, u32)) -> Self {
+        Self::new(screen_size, std::ptr::null())
+    }
+
+    /// Every vertex drawn so far, for tests that need to assert on what
+    /// actually came out rather than on the inputs that went in.
+    ///
+    /// A colour is the one thing a layout assertion cannot reach: an
+    /// unresolved `{chalk}` still produces a correctly-positioned rect, just a
+    /// white one, so "did the bindings resolve" is only answerable here.
+    pub fn vertices(&self) -> &[CanvasVertex] {
+        &self.verts
+    }
+
     pub fn screen_size(&self) -> (u32, u32) {
         self.screen_size
     }
