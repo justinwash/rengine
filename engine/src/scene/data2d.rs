@@ -809,7 +809,7 @@ fn draw_ui_kind_dyn(
                 }
             }
 
-            let text = get("ui_text").unwrap_or_default();
+            let text = ui_text_or_placeholder(&get);
             if !text.is_empty() {
                 let color = parse_srgb_color(get("ui_color").as_deref(), Color::WHITE);
                 let align = parse_text_align(get("ui_text_align").as_deref());
@@ -825,7 +825,7 @@ fn draw_ui_kind_dyn(
         "text" => {
             let color = parse_srgb_color(get("ui_color").as_deref(), Color::WHITE);
             let size = prop_f32("ui_text_size").unwrap_or(12.0);
-            let text = get("ui_text").unwrap_or_default();
+            let text = ui_text_or_placeholder(&get);
             let align = parse_text_align(get("ui_text_align").as_deref());
             let anchor_x = match align {
                 TextAlign::Left => tx,
@@ -843,7 +843,7 @@ fn draw_ui_kind_dyn(
         "text_block" => {
             let color = parse_srgb_color(get("ui_color").as_deref(), Color::WHITE);
             let size = prop_f32("ui_text_size").unwrap_or(12.0);
-            let text = get("ui_text").unwrap_or_default();
+            let text = ui_text_or_placeholder(&get);
             let align = parse_text_align(get("ui_text_align").as_deref());
             let wrap_w = prop_f32("ui_wrap_w").unwrap_or(tw);
             let anchor_x = match align {
@@ -914,6 +914,45 @@ fn draw_ui_kind_dyn(
     }
     draw(canvas);
     canvas.set_tracking(prev_tracking);
+}
+
+/// The text a node should draw: its `ui_text`, or its `ui_text_placeholder`
+/// when `ui_text` still holds an unresolved `{key}`.
+///
+/// A binding-less host — the editor previewing a scene — has no
+/// `{circuit_name}` to supply, and drawing the literal `{circuit_name}` is
+/// both ugly and the wrong *width*, so a placeholder authored alongside it
+/// previews the real thing at a realistic length.
+///
+/// A running game never sees this: it binds the key, nothing is left in
+/// braces, and the placeholder is ignored. That is what makes it safe to
+/// author — it cannot mask a missing binding at runtime, only stand in for one
+/// that was never going to exist.
+///
+/// Partially-resolved text ("LAP {lap_current}") counts as unresolved: a
+/// half-substituted string is not something any host wants on screen.
+fn ui_text_or_placeholder(get: &impl Fn(&str) -> Option<String>) -> String {
+    let text = get("ui_text").unwrap_or_default();
+    if !contains_unresolved_binding(&text) {
+        return text;
+    }
+    match get("ui_text_placeholder") {
+        Some(placeholder) if !placeholder.is_empty() => placeholder,
+        // No placeholder authored: draw nothing rather than a raw `{key}`.
+        // Empty is honest — it shows the author that this node is dynamic and
+        // has nothing to preview — while the literal reads as a real label.
+        _ => String::new(),
+    }
+}
+
+/// Whether a resolved string still carries a `{key}` the host never bound.
+fn contains_unresolved_binding(text: &str) -> bool {
+    let Some(open) = text.find('{') else {
+        return false;
+    };
+    text[open + 1..]
+        .find('}')
+        .is_some_and(|close| close > 0 && !text[open + 1..open + 1 + close].contains(' '))
 }
 
 /// Parse `ui_text_align`: `left` (default) | `center` | `right`.
@@ -1960,6 +1999,75 @@ fn default_editor_size() -> [f32; 2] {
 
 fn default_editor_visible() -> bool {
     true
+}
+
+#[cfg(test)]
+mod placeholder_tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn getter(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
+        let map: HashMap<String, String> = pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        move |key: &str| map.get(key).cloned()
+    }
+
+    /// The editor's case: nothing bound `{circuit_name}`, so the authored
+    /// placeholder stands in at a realistic width.
+    #[test]
+    fn an_unresolved_binding_draws_its_placeholder() {
+        let get = getter(&[
+            ("ui_text", "{circuit_name}"),
+            ("ui_text_placeholder", "AUTODROMO NAZIONALE"),
+        ]);
+        assert_eq!(ui_text_or_placeholder(&get), "AUTODROMO NAZIONALE");
+    }
+
+    /// The running game's case, and the one that makes the property safe to
+    /// author: once the host binds the key there is nothing in braces, so the
+    /// real value wins and the placeholder can never mask live data.
+    #[test]
+    fn resolved_text_ignores_the_placeholder() {
+        let get = getter(&[
+            ("ui_text", "MONZA"),
+            ("ui_text_placeholder", "AUTODROMO NAZIONALE"),
+        ]);
+        assert_eq!(ui_text_or_placeholder(&get), "MONZA");
+    }
+
+    /// Half-substituted text is not something any host wants on screen.
+    #[test]
+    fn partially_resolved_text_still_counts_as_unresolved() {
+        let get = getter(&[
+            ("ui_text", "LAP {lap_current}"),
+            ("ui_text_placeholder", "LAP 12"),
+        ]);
+        assert_eq!(ui_text_or_placeholder(&get), "LAP 12");
+    }
+
+    /// No placeholder authored: draw nothing rather than a raw `{key}`, which
+    /// reads as a real label and is the wrong width besides.
+    #[test]
+    fn an_unresolved_binding_with_no_placeholder_draws_nothing() {
+        let get = getter(&[("ui_text", "{lap_total}")]);
+        assert_eq!(ui_text_or_placeholder(&get), "");
+    }
+
+    /// Braces are not always a binding. Prose that happens to contain one must
+    /// survive, or authored copy silently becomes an empty string.
+    #[test]
+    fn text_with_braces_that_are_not_a_binding_is_left_alone() {
+        for literal in ["{}", "{ not a key }", "100% {", "a } b"] {
+            let get = getter(&[("ui_text", literal)]);
+            assert_eq!(
+                ui_text_or_placeholder(&get),
+                literal,
+                "{literal:?} is not a binding and must draw as authored"
+            );
+        }
+    }
 }
 
 #[cfg(test)]
