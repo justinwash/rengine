@@ -798,8 +798,15 @@ impl RengineNativeEditor {
         draw_scrollbar(canvas, content_rect, line_count, self.bottom_scroll);
     }
 
+    /// The active tab's zoom: its explicit one, or the fit for this panel.
+    pub(crate) fn viewport_zoom(&self, viewport: PanelRect) -> f32 {
+        let tab = self.active_scene_tab();
+        viewport_zoom_for(tab.viewport_zoom, tab.scene.view.window_size, viewport)
+    }
+
     fn draw_viewport(&self, engine: &Engine, canvas: &mut Canvas, viewport: PanelRect) {
         let pan = self.active_scene_tab().viewport_pan;
+        let zoom = self.viewport_zoom(viewport);
         let selection_bounds = scene_nodes_bounds(
             self.active_scene_tab()
                 .scene
@@ -808,7 +815,7 @@ impl RengineNativeEditor {
                 .filter(|node| self.active_scene_tab().is_node_selected(node.id)),
         );
         let selection_gizmo =
-            selection_bounds.map(|bounds| selection_translate_gizmo(bounds, viewport, pan));
+            selection_bounds.map(|bounds| selection_translate_gizmo(bounds, viewport, pan, zoom));
         canvas.push_clip(viewport.x, viewport.y, viewport.w, viewport.h);
         draw_grid(canvas, viewport, pan);
 
@@ -820,12 +827,15 @@ impl RengineNativeEditor {
         // boxes to, via `scene_to_screen`.
         if let Some(world) = &self.ui_preview {
             let size = self.active_scene_tab().scene.view.window_size;
-            let center = scene_to_screen([0.0, 0.0], viewport, pan);
+            let center = scene_to_screen_zoomed([0.0, 0.0], viewport, pan, zoom);
+            // The whole document is scaled, so the reference rect the layout
+            // resolves against is scaled too — every authored size is relative
+            // to it, so the screen composes identically at any zoom.
             let root = (
-                center.x - size[0] * 0.5,
-                center.y - size[1] * 0.5,
-                size[0],
-                size[1],
+                center.x - size[0] * 0.5 * zoom,
+                center.y - size[1] * 0.5 * zoom,
+                size[0] * zoom,
+                size[1] * zoom,
             );
             // ponytail: time = 0.0 — a live clock would make ui_bob_*/
             // ui_sway_* authored nodes judder while just sitting in the
@@ -873,7 +883,7 @@ impl RengineNativeEditor {
         }
 
         if let Some(bounds) = selection_bounds {
-            let selection_rect = scene_bounds_rect(bounds, viewport, pan);
+            let selection_rect = scene_bounds_rect(bounds, viewport, pan, zoom);
             let selection_center = selection_rect.center();
             let guide_color = if self.active_scene_tab().viewport_drag.is_some() {
                 Color::from_rgba8(132, 212, 224, 180)
@@ -921,12 +931,16 @@ impl RengineNativeEditor {
                 } else {
                     node.camera_view_size()
                 };
-                let zoom = node.camera_zoom().max(0.1);
+                let camera_zoom = node.camera_zoom().max(0.1);
                 let rect = viewport_node_rect(
                     viewport,
                     node.position,
-                    [preview_size[0] / zoom, preview_size[1] / zoom],
+                    [
+                        preview_size[0] / camera_zoom,
+                        preview_size[1] / camera_zoom,
+                    ],
                     pan,
+                    zoom,
                 );
                 canvas.rect(
                     rect.x,
@@ -1392,7 +1406,7 @@ impl RengineNativeEditor {
             let handle = world.find_by_editor_id(node.id)?;
             world.resolved_rect(handle)
         });
-        node_viewport_rect_from(resolved, node, viewport, pan)
+        node_viewport_rect_from(resolved, node, viewport, pan, self.viewport_zoom(viewport))
     }
 }
 
@@ -1714,8 +1728,12 @@ pub(crate) fn selection_translate_gizmo(
     bounds: [f32; 4],
     viewport: PanelRect,
     pan: Vec2,
+    zoom: f32,
 ) -> ViewportTranslateGizmo {
-    let center = scene_to_screen(scene_bounds_center(bounds), viewport, pan);
+    // The gizmo's own handles stay a fixed screen size: a drag handle that
+    // shrinks with the scene becomes unclickable at fit zoom, which is the
+    // zoom the editor now opens at.
+    let center = scene_to_screen_zoomed(scene_bounds_center(bounds), viewport, pan, zoom);
     ViewportTranslateGizmo {
         center,
         plane_rect: PanelRect::new(
@@ -1739,9 +1757,9 @@ pub(crate) fn selection_translate_gizmo(
     }
 }
 
-fn scene_bounds_rect(bounds: [f32; 4], viewport: PanelRect, pan: Vec2) -> PanelRect {
-    let bottom_left = scene_to_screen([bounds[0], bounds[1]], viewport, pan);
-    let top_right = scene_to_screen([bounds[2], bounds[3]], viewport, pan);
+fn scene_bounds_rect(bounds: [f32; 4], viewport: PanelRect, pan: Vec2, zoom: f32) -> PanelRect {
+    let bottom_left = scene_to_screen_zoomed([bounds[0], bounds[1]], viewport, pan, zoom);
+    let top_right = scene_to_screen_zoomed([bounds[2], bounds[3]], viewport, pan, zoom);
     PanelRect::new(
         bottom_left.x,
         bottom_left.y,
@@ -1765,13 +1783,16 @@ fn viewport_node_rect(
     position: [f32; 2],
     size: [f32; 2],
     pan: Vec2,
+    zoom: f32,
 ) -> PanelRect {
-    let center = scene_to_screen(position, viewport, pan);
+    // The box outlines what the node *covers*, so it scales with the scene —
+    // unlike a gizmo handle, which is a control and stays screen-sized.
+    let center = scene_to_screen_zoomed(position, viewport, pan, zoom);
     PanelRect::new(
-        center.x - size[0] * 0.5,
-        center.y - size[1] * 0.5,
-        size[0],
-        size[1],
+        center.x - size[0] * 0.5 * zoom,
+        center.y - size[1] * 0.5 * zoom,
+        size[0] * zoom,
+        size[1] * zoom,
     )
 }
 
@@ -1791,24 +1812,72 @@ fn node_viewport_rect_from(
     node: &SceneNode,
     viewport: PanelRect,
     pan: Vec2,
+    zoom: f32,
 ) -> PanelRect {
     match resolved {
+        // Already screen space: the preview drew this node into the zoomed
+        // reference rect, so scaling it again would double-apply the zoom.
         Some(rect) => PanelRect::new(rect.x, rect.y, rect.width, rect.height),
-        None => viewport_node_rect(viewport, node.position, node.size, pan),
+        None => viewport_node_rect(viewport, node.position, node.size, pan, zoom),
     }
 }
 
-pub(crate) fn scene_to_screen(position: [f32; 2], viewport: PanelRect, pan: Vec2) -> Vec2 {
+/// Screen pixels per scene unit for a scene of `size` in `viewport`.
+///
+/// An explicit zoom wins; otherwise the scene is fitted with a small margin so
+/// its edges are visible rather than flush against the panel. Never scales
+/// *up*: a small scene shown at 3x would be a lie about how it renders, and
+/// the pixel art would resample.
+pub(crate) fn viewport_zoom_for(
+    explicit: Option<f32>,
+    size: [f32; 2],
+    viewport: PanelRect,
+) -> f32 {
+    if let Some(zoom) = explicit {
+        return zoom.clamp(VIEWPORT_ZOOM_MIN, VIEWPORT_ZOOM_MAX);
+    }
+    if size[0] <= 0.0 || size[1] <= 0.0 {
+        return 1.0;
+    }
+    let fit = (viewport.w / size[0]).min(viewport.h / size[1]) * VIEWPORT_FIT_MARGIN;
+    fit.min(1.0).clamp(VIEWPORT_ZOOM_MIN, VIEWPORT_ZOOM_MAX)
+}
+
+/// Leave a little air around a fitted scene so its own border reads as an edge
+/// rather than as the panel's.
+const VIEWPORT_FIT_MARGIN: f32 = 0.94;
+const VIEWPORT_ZOOM_MIN: f32 = 0.05;
+const VIEWPORT_ZOOM_MAX: f32 = 8.0;
+
+/// Scene space -> screen space, through the viewport's pan and zoom.
+///
+/// Pan is in *screen* pixels (it is how far the user dragged), so it is not
+/// scaled; the scene position is. Getting that backwards makes the view drift
+/// away from the cursor as you zoom.
+pub(crate) fn scene_to_screen_zoomed(
+    position: [f32; 2],
+    viewport: PanelRect,
+    pan: Vec2,
+    zoom: f32,
+) -> Vec2 {
     Vec2::new(
-        viewport.x + viewport.w * 0.5 + pan.x + position[0],
-        viewport.y + viewport.h * 0.5 + pan.y + position[1],
+        viewport.x + viewport.w * 0.5 + pan.x + position[0] * zoom,
+        viewport.y + viewport.h * 0.5 + pan.y + position[1] * zoom,
     )
 }
 
-pub(crate) fn screen_to_scene(position: Vec2, viewport: PanelRect, pan: Vec2) -> [f32; 2] {
+/// The exact inverse of [`scene_to_screen_zoomed`] — a click has to land on the
+/// node the user sees under the cursor, at any zoom.
+pub(crate) fn screen_to_scene_zoomed(
+    position: Vec2,
+    viewport: PanelRect,
+    pan: Vec2,
+    zoom: f32,
+) -> [f32; 2] {
+    let zoom = if zoom.abs() < f32::EPSILON { 1.0 } else { zoom };
     [
-        position.x - (viewport.x + viewport.w * 0.5 + pan.x),
-        position.y - (viewport.y + viewport.h * 0.5 + pan.y),
+        (position.x - (viewport.x + viewport.w * 0.5 + pan.x)) / zoom,
+        (position.y - (viewport.y + viewport.h * 0.5 + pan.y)) / zoom,
     ]
 }
 
@@ -2112,13 +2181,128 @@ mod tests {
         // exists for — an outline or click target on the `size` box lands
         // nowhere near where the preview drew the node.
         let resolved = Rect::new(12.0, -34.0, 40.0, 20.0);
-        let rect = node_viewport_rect_from(Some(resolved), &node, viewport, Vec2::ZERO);
+        let rect = node_viewport_rect_from(Some(resolved), &node, viewport, Vec2::ZERO, 1.0);
         assert_eq!((rect.x, rect.y, rect.w, rect.h), (12.0, -34.0, 40.0, 20.0));
 
         // Nothing resolved (first frame after a load, or the scene failed to
         // compile): fall back to the authored box rather than a zero rect.
-        let fallback = node_viewport_rect_from(None, &node, viewport, Vec2::ZERO);
+        let fallback = node_viewport_rect_from(None, &node, viewport, Vec2::ZERO, 1.0);
         assert_eq!((fallback.w, fallback.h), (999.0, 999.0));
+    }
+
+    /// The invariant every click depends on: screen->scene->screen is identity
+    /// at any zoom. If these two drift apart, the node under the cursor and the
+    /// node that gets selected are different nodes, and the error grows with
+    /// distance from the viewport centre — which reads as "selection is fine in
+    /// the middle, wrong at the edges".
+    #[test]
+    fn scene_and_screen_transforms_invert_each_other_at_any_zoom() {
+        let viewport = PanelRect::new(40.0, 15.0, 509.0, 540.0);
+        let pan = Vec2::new(-23.0, 71.0);
+        for zoom in [0.25, 0.398, 1.0, 2.5] {
+            for point in [[0.0, 0.0], [-640.0, -400.0], [640.0, 400.0], [113.0, -47.0]] {
+                let screen = scene_to_screen_zoomed(point, viewport, pan, zoom);
+                let back = screen_to_scene_zoomed(screen, viewport, pan, zoom);
+                assert!(
+                    (back[0] - point[0]).abs() < 1e-2 && (back[1] - point[1]).abs() < 1e-2,
+                    "zoom {zoom}: {point:?} -> {screen:?} -> {back:?}"
+                );
+            }
+        }
+    }
+
+    /// Zoom 1.0 must be the identity the editor always had: viewport centre
+    /// plus pan plus the scene position, unscaled. Every pre-zoom hit-test
+    /// assumed exactly this.
+    #[test]
+    fn zoom_of_one_is_the_original_transform() {
+        let viewport = PanelRect::new(0.0, 0.0, 200.0, 200.0);
+        let pan = Vec2::new(7.0, -3.0);
+        let got = scene_to_screen_zoomed([64.0, -32.0], viewport, pan, 1.0);
+        assert_eq!(got, Vec2::new(100.0 + 7.0 + 64.0, 100.0 - 3.0 - 32.0));
+    }
+
+    /// A degenerate zoom must not divide by zero and send every click to
+    /// infinity — it falls back to 1.0.
+    #[test]
+    fn a_zero_zoom_does_not_produce_infinities() {
+        let viewport = PanelRect::new(0.0, 0.0, 200.0, 200.0);
+        let back = screen_to_scene_zoomed(Vec2::new(150.0, 120.0), viewport, Vec2::ZERO, 0.0);
+        assert!(back[0].is_finite() && back[1].is_finite(), "{back:?}");
+    }
+
+    /// The bug this whole feature exists for: a 1280x800 scene in the editor's
+    /// real viewport showed its middle 40% at 1:1, so Formula R's timing tower
+    /// and pit wall were drawn correctly and entirely off-panel.
+    #[test]
+    fn a_large_scene_is_fitted_to_the_viewport() {
+        let viewport = PanelRect::new(583.0, 155.0, 509.0, 540.0);
+        let zoom = viewport_zoom_for(None, [1280.0, 800.0], viewport);
+        assert!(zoom < 1.0, "a scene wider than the panel must shrink: {zoom}");
+        assert!(
+            1280.0 * zoom <= viewport.w && 800.0 * zoom <= viewport.h,
+            "the whole scene must fit: {}x{} in {}x{}",
+            1280.0 * zoom, 800.0 * zoom, viewport.w, viewport.h
+        );
+    }
+
+    /// Never scales *up*. A small scene blown up to fill the panel would
+    /// misrepresent how it renders, and the pixel art would resample.
+    #[test]
+    fn a_small_scene_is_not_magnified() {
+        let viewport = PanelRect::new(0.0, 0.0, 1600.0, 1200.0);
+        assert_eq!(viewport_zoom_for(None, [320.0, 200.0], viewport), 1.0);
+    }
+
+    /// An explicit zoom wins: once the user has zoomed, the fit must not
+    /// silently reclaim the view on the next redraw.
+    #[test]
+    fn an_explicit_zoom_overrides_the_fit() {
+        let viewport = PanelRect::new(0.0, 0.0, 509.0, 540.0);
+        assert_eq!(viewport_zoom_for(Some(2.0), [1280.0, 800.0], viewport), 2.0);
+    }
+
+    /// A degenerate scene size must not produce a zero or NaN zoom, which
+    /// would collapse every node to a point or blank the viewport.
+    #[test]
+    fn a_degenerate_scene_size_falls_back_to_one() {
+        let viewport = PanelRect::new(0.0, 0.0, 509.0, 540.0);
+        assert_eq!(viewport_zoom_for(None, [0.0, 0.0], viewport), 1.0);
+        let clamped = viewport_zoom_for(Some(9999.0), [1280.0, 800.0], viewport);
+        assert!(clamped.is_finite() && clamped <= 8.0, "{clamped}");
+    }
+
+    /// A fitted scene must sit centred in the panel, not drift toward one
+    /// corner. The reference rect the preview resolves against is what the
+    /// user sees as "the screen", so if it is off-centre the whole document is.
+    #[test]
+    fn a_fitted_scene_is_centred_in_the_viewport() {
+        let viewport = PanelRect::new(583.0, 155.0, 509.0, 540.0);
+        let size = [1280.0, 800.0];
+        let zoom = viewport_zoom_for(None, size, viewport);
+        let center = scene_to_screen_zoomed([0.0, 0.0], viewport, Vec2::ZERO, zoom);
+        let root = (
+            center.x - size[0] * 0.5 * zoom,
+            center.y - size[1] * 0.5 * zoom,
+            size[0] * zoom,
+            size[1] * zoom,
+        );
+        let margin_x = (viewport.w - root.2) * 0.5;
+        let margin_y = (viewport.h - root.3) * 0.5;
+        assert!(
+            (root.0 - (viewport.x + margin_x)).abs() < 0.5,
+            "left margin {} vs {}", root.0 - viewport.x, margin_x
+        );
+        assert!(
+            (root.1 - (viewport.y + margin_y)).abs() < 0.5,
+            "bottom margin {} vs {}", root.1 - viewport.y, margin_y
+        );
+        assert!(
+            root.0 >= viewport.x && root.0 + root.2 <= viewport.right(),
+            "scene overflows horizontally: {root:?} in panel x {}..{}",
+            viewport.x,
+            viewport.right()
+        );
     }
 
     #[test]
@@ -2145,6 +2329,7 @@ mod tests {
             [0.0, 0.0, 48.0, 48.0],
             PanelRect::new(-100.0, -100.0, 200.0, 200.0),
             Vec2::ZERO,
+            1.0,
         );
 
         assert_eq!(

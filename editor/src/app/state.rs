@@ -174,6 +174,14 @@ pub(crate) struct SceneTab {
     pub(crate) viewport_drag: Option<ViewportDrag>,
     pub(crate) viewport_box_selection: Option<ViewportBoxSelection>,
     pub(crate) viewport_pan: Vec2,
+    /// Screen pixels per scene unit. `None` until the first draw, which fits
+    /// the scene to the panel — a 1280x800 document in a 509px-wide viewport
+    /// showed only its middle 40% at 1:1, so the timing tower and pit wall
+    /// were drawn correctly and entirely off-panel.
+    ///
+    /// `None` rather than a 1.0 default so an explicit zoom survives: once the
+    /// user has zoomed, the fit must not silently reclaim the view.
+    pub(crate) viewport_zoom: Option<f32>,
     pub(crate) viewport_pan_drag: Option<ViewportPanDrag>,
     pub(crate) collapsed_nodes: HashSet<u64>,
     pub(crate) scene_json_cache: String,
@@ -206,6 +214,7 @@ impl SceneTab {
             viewport_drag: None,
             viewport_box_selection: None,
             viewport_pan: Vec2::ZERO,
+            viewport_zoom: None,
             viewport_pan_drag: None,
             collapsed_nodes: HashSet::new(),
             saved_scene_json: scene_json_cache.clone(),

@@ -758,10 +758,11 @@ impl RengineNativeEditor {
             .rev()
             .find(|(_, rect)| rect.contains(mouse))
             .map(|(node_id, _)| *node_id);
-        let position = Some(screen_to_scene(
+        let position = Some(screen_to_scene_zoomed(
             mouse,
             layout.viewport,
             self.active_scene_tab().viewport_pan,
+            self.viewport_zoom(layout.viewport),
         ));
 
         self.select_only_scene_node(target);
@@ -1073,6 +1074,7 @@ impl RengineNativeEditor {
 
         if !additive {
             let gizmo_drag = {
+                let zoom = self.viewport_zoom(layout.viewport);
                 let tab = self.active_scene_tab();
                 scene_nodes_bounds(
                     tab.scene
@@ -1081,15 +1083,21 @@ impl RengineNativeEditor {
                         .filter(|node| tab.is_node_selected(node.id)),
                 )
                 .and_then(|bounds| {
-                    selection_translate_gizmo(bounds, layout.viewport, tab.viewport_pan)
+                    selection_translate_gizmo(
+                        bounds,
+                        layout.viewport,
+                        tab.viewport_pan,
+                        zoom,
+                    )
                         .hit_test(mouse)
                         .map(|handle| ViewportDrag {
                             node_ids: tab.selected_root_ids(),
                             transform_origin: scene_bounds_center(bounds),
-                            pointer_scene_origin: screen_to_scene(
+                            pointer_scene_origin: screen_to_scene_zoomed(
                                 mouse,
                                 layout.viewport,
                                 tab.viewport_pan,
+                                zoom,
                             ),
                             applied_delta: [0.0, 0.0],
                             constraint: match handle {
@@ -1128,6 +1136,7 @@ impl RengineNativeEditor {
                 self.select_only_scene_node(Some(*node_id));
             }
 
+            let drag_zoom = self.viewport_zoom(layout.viewport);
             let drag_node_ids = self.active_scene_tab().selected_root_ids();
             let drag_origin = self
                 .active_scene_tab()
@@ -1138,10 +1147,11 @@ impl RengineNativeEditor {
             self.active_scene_tab_mut().viewport_drag = Some(ViewportDrag {
                 node_ids: drag_node_ids,
                 transform_origin: drag_origin,
-                pointer_scene_origin: screen_to_scene(
+                pointer_scene_origin: screen_to_scene_zoomed(
                     mouse,
                     layout.viewport,
                     self.active_scene_tab().viewport_pan,
+                    drag_zoom,
                 ),
                 applied_delta: [0.0, 0.0],
                 constraint: ViewportDragConstraint::Free,
@@ -1212,10 +1222,11 @@ impl RengineNativeEditor {
             return;
         };
 
-        let pointer_scene = screen_to_scene(
+        let pointer_scene = screen_to_scene_zoomed(
             pointer,
             layout.viewport,
             self.active_scene_tab().viewport_pan,
+            self.viewport_zoom(layout.viewport),
         );
         let target_position = viewport_drag_target(
             pointer_scene,
