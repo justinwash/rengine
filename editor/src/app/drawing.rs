@@ -132,6 +132,12 @@ impl RengineNativeEditor {
             .scene_path
             .clone()
             .unwrap_or_else(|| PathBuf::from("<untitled>"));
+        // A scene carries its own project's palette: it is opened by path, and
+        // that path is routinely outside the directory the editor was launched
+        // from. Without this, opening Formula R's race scene from the rengine
+        // checkout resolved every `{chalk}` against rengine's own themeless
+        // manifest and previewed as white boxes.
+        self.adopt_project_for_scene(&path);
         let json = self.active_scene_tab_mut().cached_scene_json().to_string();
         self.ui_preview = build_ui_preview_world(&path, &json, &assets);
         self.ui_preview_key = Some(key);

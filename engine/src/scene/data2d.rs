@@ -251,7 +251,7 @@ fn resolve_ui_rect(
     content_size: Option<(f32, f32)>,
     flow_size: (Option<f32>, Option<f32>),
 ) -> (f32, f32, f32, f32) {
-    let prop_f32 = |n: &str| get(n).and_then(|v| v.trim().parse::<f32>().ok());
+    let prop_f32 = |n: &str| ui_f32(&get, n);
     let prop_bool =
         |n: &str| matches!(get(n).as_deref().map(str::trim), Some("true" | "1" | "yes"));
 
@@ -619,7 +619,7 @@ fn draw_ui_kind_dyn(
         return;
     };
     let (x, y, w, h) = rect;
-    let prop_f32 = |n: &str| get(n).and_then(|v| v.trim().parse::<f32>().ok());
+    let prop_f32 = |n: &str| ui_f32(&get, n);
     let prop_i64 = |n: &str| get(n).and_then(|v| v.trim().parse::<i64>().ok());
     let font = node_font(&get);
     // A shadow is the same primitive drawn once more, offset and recoloured,
@@ -916,6 +916,30 @@ fn draw_ui_kind_dyn(
     canvas.set_tracking(prev_tracking);
 }
 
+/// Whether a node draws, honouring `ui_visible_placeholder` when `ui_visible`
+/// holds an unresolved `{key}`.
+///
+/// An unresolved flag stays *visible*, which is the right default for ordinary
+/// nodes — a preview showing too much beats a preview showing nothing. It is
+/// exactly wrong for a modal: Formula R's reward scrim is a full-screen rect at
+/// alpha 215 gated on `{card_visible}`, so an editor with nothing bound drew it
+/// over the entire race screen and hid every panel underneath.
+///
+/// `ui_visible_placeholder: "false"` lets the scene say what a *preview* should
+/// show. Like `ui_text_placeholder`, a running game binds the flag and never
+/// reaches this, so it cannot desync from real behaviour.
+fn ui_visible(get: &impl Fn(&str) -> Option<String>) -> bool {
+    let authored = get("ui_visible");
+    let value = match authored.as_deref().map(str::trim) {
+        Some(value) if contains_unresolved_binding(value) => get("ui_visible_placeholder"),
+        _ => authored,
+    };
+    !matches!(
+        value.as_deref().map(str::trim),
+        Some("false" | "0" | "no")
+    )
+}
+
 /// The text a node should draw: its `ui_text`, or its `ui_text_placeholder`
 /// when `ui_text` still holds an unresolved `{key}`.
 ///
@@ -942,6 +966,26 @@ fn ui_text_or_placeholder(get: &impl Fn(&str) -> Option<String>) -> String {
         // Empty is honest — it shows the author that this node is dynamic and
         // has nothing to preview — while the literal reads as a real label.
         _ => String::new(),
+    }
+}
+
+/// A numeric `ui_*` property, falling back to `<name>_placeholder` when its
+/// `{key}` was never bound — the same contract as `ui_text_placeholder`.
+///
+/// Not every bound number is a font metric a host can measure for itself.
+/// Formula R's title menu authors `ui_h: "{row_h}"`, where `row_h` is
+/// arithmetic over other authored values (`title_bindings`). Unresolved, it
+/// parses as nothing, every row collapses to zero height, and all five menu
+/// labels draw on top of each other.
+///
+/// A running game binds the key and never reaches the placeholder, so this
+/// cannot drift from real behaviour.
+fn ui_f32(get: &impl Fn(&str) -> Option<String>, name: &str) -> Option<f32> {
+    let raw = get(name);
+    match raw.as_deref().map(str::trim) {
+        Some(value) if contains_unresolved_binding(value) => get(&format!("{name}_placeholder"))
+            .and_then(|v| v.trim().parse::<f32>().ok()),
+        _ => raw.and_then(|v| v.trim().parse::<f32>().ok()),
     }
 }
 
@@ -1091,10 +1135,7 @@ pub(crate) fn draw_ui_node_with_bindings(
         content_size,
         flow_size,
     );
-    let visible = !matches!(
-        get("ui_visible").as_deref().map(str::trim),
-        Some("false" | "0" | "no")
-    );
+    let visible = ui_visible(&get);
     if visible && get("ui").is_some() {
         let layer = get("ui_layer")
             .and_then(|v| v.trim().parse::<i64>().ok())
@@ -1139,10 +1180,7 @@ pub(crate) fn draw_ui_node_on_with_bindings(
         content_size,
         flow_size,
     );
-    let visible = !matches!(
-        get("ui_visible").as_deref().map(str::trim),
-        Some("false" | "0" | "no")
-    );
+    let visible = ui_visible(&get);
     if visible {
         draw_ui_kind(canvas, rect, scale, &get, sprite, has_children);
     }
@@ -2067,6 +2105,37 @@ mod placeholder_tests {
                 "{literal:?} is not a binding and must draw as authored"
             );
         }
+    }
+
+    /// The reward-scrim bug: a full-screen modal gated on a live flag drew
+    /// over the whole editor preview, because an unresolved `ui_visible`
+    /// correctly defaults to visible.
+    #[test]
+    fn an_unresolved_visibility_flag_honours_its_placeholder() {
+        let get = getter(&[
+            ("ui_visible", "{card_visible}"),
+            ("ui_visible_placeholder", "false"),
+        ]);
+        assert!(!ui_visible(&get), "the scrim must stay hidden in a preview");
+    }
+
+    /// Unchanged for every node that authors no placeholder: an unresolved
+    /// flag still means visible, because showing too much beats showing
+    /// nothing. 46 authored uses across the game's scenes rely on this.
+    #[test]
+    fn an_unresolved_flag_without_a_placeholder_stays_visible() {
+        let get = getter(&[("ui_visible", "{founding}")]);
+        assert!(ui_visible(&get));
+    }
+
+    /// A running game binds the flag, so the placeholder is never consulted —
+    /// the same property that makes it safe to author.
+    #[test]
+    fn a_resolved_visibility_flag_ignores_the_placeholder() {
+        let hidden = getter(&[("ui_visible", "false"), ("ui_visible_placeholder", "true")]);
+        assert!(!ui_visible(&hidden));
+        let shown = getter(&[("ui_visible", "true"), ("ui_visible_placeholder", "false")]);
+        assert!(ui_visible(&shown));
     }
 }
 

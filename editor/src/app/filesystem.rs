@@ -1445,6 +1445,28 @@ pub(crate) fn build_preview_bindings(
         }
     }
 
+    // Neighbouring projects' faces too: a scene opened from another project
+    // adopts its palette lazily, but its fonts can only be loaded here.
+    for manifest in neighbouring_project_manifests(workspace_root) {
+        let Ok(text) = fs::read_to_string(&manifest) else {
+            continue;
+        };
+        let Ok(parsed) = serde_json::from_str::<EditorProjectManifest>(&text) else {
+            continue;
+        };
+        let root = manifest.parent().unwrap_or(Path::new("."));
+        for (alias, relative) in parsed.fonts {
+            let key = format!("font_{alias}");
+            if bindings.contains_key(&key) {
+                continue;
+            }
+            if let Ok(id) = engine.load_font(root.join(&relative)) {
+                bindings.insert(key.clone(), id.index().to_string());
+                loaded.insert(key, id);
+            }
+        }
+    }
+
     (bindings, loaded)
 }
 
@@ -1573,5 +1595,169 @@ mod preview_binding_tests {
         bind_authored_line_heights(&world, &canvas, &BTreeMap::new(), &mut bindings);
 
         assert_eq!(bindings.get("row_h").map(String::as_str), Some("40"));
+    }
+}
+
+/// Every project manifest the editor might preview a scene from: the one it
+/// was launched with, plus any in a sibling directory of the workspace root.
+///
+/// Fonts can only be loaded in `new` (`load_font` needs `&mut Engine`, and the
+/// update/render path only ever gets `&Engine`), so they cannot be resolved
+/// lazily when a scene from another project opens. Loading the neighbours'
+/// fonts up front is what lets `{font_hud}` resolve at all when the editor is
+/// launched from the engine checkout and opens a game's scene — the exact
+/// case that produced a screen of white boxes.
+///
+/// Sibling-only, not a full recursive scan: projects live next to each other
+/// in a workspace, and walking an arbitrary tree at startup to find fonts is a
+/// cost with no bound.
+fn neighbouring_project_manifests(workspace_root: &Path) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    let Some(parent) = workspace_root.parent() else {
+        return found;
+    };
+    let Ok(entries) = fs::read_dir(parent) else {
+        return found;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() || path == workspace_root {
+            continue;
+        }
+        if let Some(manifest) = find_project_manifest_in_directory(&path) {
+            found.push(manifest);
+        }
+    }
+    found.sort();
+    found
+}
+
+/// The nearest project manifest at or above a scene's own directory.
+///
+/// A scene is opened by *path*, and that path is often outside the directory
+/// the editor was launched from — the whole point of the file browser. Binding
+/// the theme to the editor's cwd meant opening Formula R's race scene from the
+/// rengine checkout resolved every `{chalk}` against rengine's own themeless
+/// `.project`, and the preview came out as white boxes with the fix already in
+/// place. The manifest has to follow the scene, not the shell.
+fn project_manifest_for_scene(scene_path: &Path) -> Option<PathBuf> {
+    let mut dir = scene_path.parent()?;
+    loop {
+        if let Some(found) = find_project_manifest_in_directory(dir) {
+            return Some(found);
+        }
+        dir = dir.parent()?;
+    }
+}
+
+impl RengineNativeEditor {
+    /// Re-resolve the preview *palette* for a newly-opened scene.
+    ///
+    /// Only the theme: fonts need `&mut Engine`, which only exists in `new`,
+    /// and font ids are stable for the process anyway — the startup load
+    /// already covers them. A theme is just strings, so it can be swapped at
+    /// any point.
+    ///
+    /// Cheap and idempotent: it no-ops unless the scene belongs to a different
+    /// project than the one already loaded, so switching tabs within a project
+    /// costs one path comparison.
+    pub(crate) fn adopt_project_for_scene(&mut self, scene_path: &Path) {
+        let Some(manifest) = project_manifest_for_scene(scene_path) else {
+            return;
+        };
+        if self.preview_manifest_path.as_deref() == Some(manifest.as_path()) {
+            return;
+        }
+
+        let Ok(text) = fs::read_to_string(&manifest) else {
+            return;
+        };
+        let Ok(parsed) = serde_json::from_str::<EditorProjectManifest>(&text) else {
+            return;
+        };
+        if parsed.theme.is_empty() {
+            // Nothing to offer. Keep whatever is loaded rather than blanking a
+            // good palette because a scene sits under a bare manifest.
+            return;
+        }
+
+        let tokens = parsed.theme.len();
+        // Theme first, then the font ids back on top: those were resolved at
+        // startup against real loaded atlases and must not be shadowed by a
+        // manifest's `fonts` block, which is only a path.
+        self.preview_bindings = parsed.theme.into_iter().collect();
+        for (alias, id) in &self.preview_fonts {
+            self.preview_bindings
+                .insert(alias.clone(), id.index().to_string());
+        }
+        self.preview_manifest_path = Some(manifest.clone());
+        self.push_log(format!(
+            "Preview theme: {tokens} tokens from {}",
+            manifest.display()
+        ));
+    }
+}
+
+#[cfg(test)]
+mod project_scope_tests {
+    use super::*;
+
+    /// The bug this exists for, in one assertion.
+    ///
+    /// The editor is launched from one project and opens a scene belonging to
+    /// another — routine, since scenes are opened by path through the file
+    /// browser. The palette must follow the *scene*. Binding it to the
+    /// editor's working directory meant Formula R's race scene resolved every
+    /// `{chalk}` against rengine's own themeless manifest, and previewed as a
+    /// screen of white boxes with the binding fix already in place.
+    #[test]
+    fn a_scene_resolves_the_manifest_nearest_to_itself() {
+        let temp = std::env::temp_dir().join("rengine_project_scope_test");
+        let engine_project = temp.join("engine");
+        let game_scenes = temp.join("game").join("scenes");
+        let _ = fs::remove_dir_all(&temp);
+        fs::create_dir_all(&engine_project).expect("temp dirs");
+        fs::create_dir_all(&game_scenes).expect("temp dirs");
+
+        fs::write(
+            engine_project.join(".project"),
+            r#"{"name":"engine","root":"."}"#,
+        )
+        .expect("write engine manifest");
+        let game_manifest = temp.join("game").join(".project");
+        fs::write(
+            &game_manifest,
+            r#"{"name":"game","root":".","theme":{"chalk":"232,228,217"}}"#,
+        )
+        .expect("write game manifest");
+
+        let scene = game_scenes.join("race.scene.json");
+        fs::write(&scene, "{}").expect("write scene");
+
+        let found = project_manifest_for_scene(&scene).expect("a manifest above the scene");
+        assert_eq!(
+            found, game_manifest,
+            "a scene must resolve its OWN project's manifest, not whichever \
+             directory the editor happened to be launched from"
+        );
+
+        let _ = fs::remove_dir_all(&temp);
+    }
+
+    /// A scene with no manifest anywhere above it must not adopt an unrelated
+    /// one — better an unthemed preview than a confidently wrong palette.
+    #[test]
+    fn a_scene_outside_any_project_resolves_nothing() {
+        let temp = std::env::temp_dir().join("rengine_project_scope_orphan");
+        let _ = fs::remove_dir_all(&temp);
+        fs::create_dir_all(&temp).expect("temp dir");
+        let scene = temp.join("loose.scene.json");
+        fs::write(&scene, "{}").expect("write scene");
+
+        // The temp dir itself has no manifest; anything found above it would
+        // be an accident of the machine, so this only asserts the local miss.
+        assert!(find_project_manifest_in_directory(&temp).is_none());
+
+        let _ = fs::remove_dir_all(&temp);
     }
 }

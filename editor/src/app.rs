@@ -196,6 +196,9 @@ pub struct RengineNativeEditor {
     preview_bindings: Bindings,
     /// The same fonts as real ids, for measuring authored line heights.
     preview_fonts: BTreeMap<String, FontId>,
+    /// Which manifest `preview_bindings` came from, so a scene opened from a
+    /// different project re-resolves its palette exactly once.
+    preview_manifest_path: Option<PathBuf>,
 }
 
 impl Game for RengineNativeEditor {
@@ -218,6 +221,7 @@ impl Game for RengineNativeEditor {
         let mut editor = Self {
             preview_bindings,
             preview_fonts,
+            preview_manifest_path: project_file.clone(),
             workspace_root,
             project_browser_root: project_tree.path.clone(),
             project_manifest_path: project_file.clone(),
