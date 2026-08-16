@@ -786,6 +786,73 @@ impl Canvas {
         self.image_region(texture, x, y, w, h, [0.0, 0.0, 1.0, 1.0], color);
     }
 
+    /// An image rotated about its own centre.
+    ///
+    /// The canvas could only ever blit axis-aligned quads, which is fine for a
+    /// HUD and wrong for anything that follows world geometry — a trackside
+    /// building beside a curving road, a sign facing its corner. Without this
+    /// the only way to draw such a thing was to hand-code its shape in Rust,
+    /// which puts art outside the editor where nobody can author it.
+    ///
+    /// `radians` turns counter-clockwise, matching the sprite renderer's
+    /// convention so a scene reads the same through either path.
+    pub fn image_region_rotated(
+        &mut self,
+        texture: TextureId,
+        cx: f32,
+        cy: f32,
+        w: f32,
+        h: f32,
+        uv_rect: [f32; 4],
+        color: Color,
+        radians: f32,
+    ) {
+        self.set_texture(DrawTexture::Texture(texture.0));
+
+        let (sin, cos) = radians.sin_cos();
+        let (hw, hh) = (w * 0.5, h * 0.5);
+        // The four corners in the quad's own space, then rotated into place.
+        // Screen space is converted last so the rotation happens in pixels and
+        // stays square whatever the viewport's aspect.
+        let corner = |dx: f32, dy: f32| {
+            let (rx, ry) = (dx * cos - dy * sin, dx * sin + dy * cos);
+            screen_to_ndc(cx + rx, cy + ry, self.screen_size)
+        };
+
+        let c = color.to_array();
+        let [u0, v0, uw, vh] = uv_rect;
+        let (u1, v_bottom) = (u0 + uw, v0 + vh);
+
+        let bottom_left = CanvasVertex {
+            position: corner(-hw, -hh),
+            color: c,
+            uv: [u0, v_bottom],
+        };
+        let bottom_right = CanvasVertex {
+            position: corner(hw, -hh),
+            color: c,
+            uv: [u1, v_bottom],
+        };
+        let top_right = CanvasVertex {
+            position: corner(hw, hh),
+            color: c,
+            uv: [u1, v0],
+        };
+        let top_left = CanvasVertex {
+            position: corner(-hw, hh),
+            color: c,
+            uv: [u0, v0],
+        };
+        self.verts.extend_from_slice(&[
+            bottom_left,
+            bottom_right,
+            top_right,
+            bottom_left,
+            top_right,
+            top_left,
+        ]);
+    }
+
     pub fn image_region(
         &mut self,
         texture: TextureId,
@@ -1347,5 +1414,102 @@ mod tests {
         // Non-ASCII is skipped by the draw loop, so it must not be counted
         // here either — otherwise the measure is wider than the paint.
         assert_eq!(w("A\u{2022}B", 4.0), w("AB", 4.0));
+    }
+}
+
+#[cfg(test)]
+mod rotated_image_tests {
+    use super::*;
+
+    fn quad(canvas: &Canvas) -> Vec<[f32; 2]> {
+        canvas.vertices().iter().map(|v| v.position).collect()
+    }
+
+    /// A zero rotation must land exactly where the axis-aligned blit does, or
+    /// every existing authored image shifts the moment rotation is available.
+    #[test]
+    fn no_rotation_matches_the_plain_blit() {
+        let uv = [0.0, 0.0, 1.0, 1.0];
+        let mut plain = Canvas::for_test((200, 200));
+        plain.image_region(TextureId(0), 40.0, 20.0, 60.0, 30.0, uv, Color::WHITE);
+
+        let mut spun = Canvas::for_test((200, 200));
+        spun.image_region_rotated(
+            TextureId(0),
+            40.0 + 30.0,
+            20.0 + 15.0,
+            60.0,
+            30.0,
+            uv,
+            Color::WHITE,
+            0.0,
+        );
+
+        // The four *corners*, not the vertex order: both paths emit two
+        // triangles covering the same quad but wind them differently, and
+        // asserting the emit order would pin an implementation detail rather
+        // than the thing that shows on screen.
+        let corners = |c: &Canvas| {
+            let mut pts: Vec<[i32; 2]> = quad(c)
+                .into_iter()
+                .map(|p| [(p[0] * 10_000.0) as i32, (p[1] * 10_000.0) as i32])
+                .collect();
+            pts.sort();
+            pts.dedup();
+            pts
+        };
+        assert_eq!(
+            corners(&plain),
+            corners(&spun),
+            "an unrotated blit must cover exactly the same quad"
+        );
+    }
+
+    /// A quarter turn swaps the quad's width and height on screen. This is the
+    /// property trackside art depends on: a building drawn along a road running
+    /// north must be as tall as the road is long.
+    #[test]
+    fn a_quarter_turn_swaps_the_extents() {
+        let uv = [0.0, 0.0, 1.0, 1.0];
+        let mut canvas = Canvas::for_test((200, 200));
+        canvas.image_region_rotated(
+            TextureId(0),
+            0.0,
+            0.0,
+            80.0,
+            20.0,
+            uv,
+            Color::WHITE,
+            std::f32::consts::FRAC_PI_2,
+        );
+        let pts = quad(&canvas);
+        let xs: Vec<f32> = pts.iter().map(|p| p[0]).collect();
+        let ys: Vec<f32> = pts.iter().map(|p| p[1]).collect();
+        let span = |v: &[f32]| {
+            v.iter().cloned().fold(f32::MIN, f32::max) - v.iter().cloned().fold(f32::MAX, f32::min)
+        };
+        // NDC is scaled by the viewport, so compare the ratio rather than
+        // absolute pixels: an 80x20 quad turned 90 degrees is 20 wide, 80 tall.
+        assert!(
+            span(&ys) > span(&xs) * 3.0,
+            "a quarter turn did not stand the quad up: {} wide, {} tall",
+            span(&xs),
+            span(&ys)
+        );
+    }
+
+    /// Rotation happens about the centre, so the quad stays put.
+    #[test]
+    fn rotation_pivots_on_the_centre() {
+        let uv = [0.0, 0.0, 1.0, 1.0];
+        let mut canvas = Canvas::for_test((200, 200));
+        canvas.image_region_rotated(TextureId(0), 0.0, 0.0, 40.0, 40.0, uv, Color::WHITE, 0.7);
+        let pts = quad(&canvas);
+        let cx: f32 = pts.iter().map(|p| p[0]).sum::<f32>() / pts.len() as f32;
+        let cy: f32 = pts.iter().map(|p| p[1]).sum::<f32>() / pts.len() as f32;
+        assert!(
+            cx.abs() < 1e-4 && cy.abs() < 1e-4,
+            "the quad drifted off its pivot: ({cx}, {cy})"
+        );
     }
 }

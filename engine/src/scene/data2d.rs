@@ -721,7 +721,30 @@ fn draw_ui_kind_dyn(
             // kind, which paints with no texture at all).
             if let Some(sprite) = sprite {
                 let color = parse_srgb_color(get("ui_color").as_deref(), sprite.color);
-                canvas.image_region(sprite.texture, x, y, w, h, sprite.uv_rect, color);
+                // `ui_rotation`, in degrees, turning counter-clockwise about
+                // the node's own centre. Authored art that has to follow world
+                // geometry — a building beside a curving road, a sign facing
+                // its corner — could not be expressed at all before this, so
+                // the only way to draw it was to hand-code the shape in Rust,
+                // which puts the art outside the editor.
+                //
+                // Degrees rather than radians because a scene is authored by a
+                // person: "30" is a thing somebody can type and reason about.
+                let spin = ui_f32(&get, "ui_rotation").unwrap_or(0.0);
+                if spin.abs() < f32::EPSILON {
+                    canvas.image_region(sprite.texture, x, y, w, h, sprite.uv_rect, color);
+                } else {
+                    canvas.image_region_rotated(
+                        sprite.texture,
+                        x + w * 0.5,
+                        y + h * 0.5,
+                        w,
+                        h,
+                        sprite.uv_rect,
+                        color,
+                        spin.to_radians(),
+                    );
+                }
             }
         }
         // A Button with authored children draws no marker or label of its
