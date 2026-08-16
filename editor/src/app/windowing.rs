@@ -1041,6 +1041,21 @@ impl RengineNativeEditor {
             return;
         }
 
+        // The polygon tool owns the viewport while it is armed: a click places
+        // a point rather than selecting whatever is under it. Checked before
+        // the toolbar so a stray click on the toolbar cannot silently drop a
+        // point somewhere the user did not look.
+        if self.polygon_tool_active() {
+            let scene_point = screen_to_scene_zoomed(
+                mouse,
+                layout.viewport,
+                self.active_scene_tab().viewport_pan,
+                self.viewport_zoom(layout.viewport),
+            );
+            self.push_polygon_point(scene_point);
+            return;
+        }
+
         let toolbar_rect = viewport_toolbar_rect(layout.viewport);
         if toolbar_rect.contains(mouse) {
             // By index, not by label: the interaction-state button's label

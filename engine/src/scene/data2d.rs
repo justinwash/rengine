@@ -3537,20 +3537,39 @@ mod polygon_kind_tests {
 
     /// Authored points are fractions of the node's own box, so a shape drawn
     /// once fits whatever size it resolves to.
+    ///
+    /// Compared against the same triangle drawn in absolute pixels: counting
+    /// vertices would pass even if the fractions were used as pixels.
     #[test]
     fn points_are_read_as_fractions_of_the_node() {
         let get = getter(&[("ui", "polygon"), ("ui_points", "0,0 1,0 0.5,1")]);
-        let mut canvas = Canvas::for_test((400, 400));
+        let mut authored = Canvas::for_test((400, 400));
         draw_ui_kind(
-            &mut canvas,
+            &mut authored,
             (20.0, 10.0, 100.0, 50.0),
             Vec2::ONE,
             &get,
             None,
             false,
         );
-        // A triangle: one triangle, three vertices.
-        assert_eq!(canvas.vertices().len(), 3);
+
+        // The same triangle, in the pixels the fractions must resolve to.
+        let mut expected = Canvas::for_test((400, 400));
+        expected.polygon(
+            &[(20.0, 10.0), (120.0, 10.0), (70.0, 60.0)],
+            Color::from_srgb8(255, 255, 255, 255),
+        );
+
+        let positions = |c: &Canvas| {
+            let mut p: Vec<[i32; 2]> = c
+                .vertices()
+                .iter()
+                .map(|v| [(v.position[0] * 1e4) as i32, (v.position[1] * 1e4) as i32])
+                .collect();
+            p.sort_unstable();
+            p
+        };
+        assert_eq!(positions(&authored), positions(&expected));
     }
 
     /// A malformed list draws nothing rather than panicking — a half-typed

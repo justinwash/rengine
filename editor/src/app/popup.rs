@@ -42,6 +42,11 @@ pub(crate) enum PopupMenuAction {
     ThemeSet {
         theme: EditorTheme,
     },
+    /// Start the polygon tool: collect clicks in the viewport, then write one
+    /// `ui: "polygon"` node. Lives on the Add menu because that is where you go
+    /// to put something into a scene, and because a letter shortcut is dead
+    /// whenever the inspector holds focus — which is most of the time.
+    BeginPolygon,
     AddNode {
         kind: SceneNodeKind,
         parent: Option<u64>,
@@ -127,6 +132,7 @@ impl RengineNativeEditor {
                     parent: *parent,
                     position: *position,
                 })
+                .chain(std::iter::once(PopupMenuAction::BeginPolygon))
                 .collect(),
             PopupMenuKind::ChangeNodeKind { node_id } => NODE_KIND_OPTIONS
                 .into_iter()
@@ -174,6 +180,7 @@ impl RengineNativeEditor {
                 }
             }
             PopupMenuAction::ThemeSet { theme } => format!("{} Theme", theme.label()),
+            PopupMenuAction::BeginPolygon => "Draw Polygon".to_string(),
             PopupMenuAction::AddNode {
                 kind,
                 parent,
@@ -197,6 +204,9 @@ impl RengineNativeEditor {
     pub(crate) fn popup_action_active(&self, action: &PopupMenuAction) -> bool {
         match action {
             PopupMenuAction::ThemeSet { theme } => self.editor_theme == *theme,
+            // Ticked while the tool is collecting points, so the menu shows
+            // that the viewport is in a mode.
+            PopupMenuAction::BeginPolygon => self.polygon_tool_active(),
             PopupMenuAction::ViewTogglePanel { panel } => self.panel_state(*panel).open,
             PopupMenuAction::ChangeNodeKind { node_id, kind } => self
                 .active_scene_tab()
@@ -248,6 +258,7 @@ impl RengineNativeEditor {
                     self.push_log(format!("Switched editor theme to {}", theme.label()));
                 }
             }
+            PopupMenuAction::BeginPolygon => self.begin_polygon(),
             PopupMenuAction::AddNode {
                 kind,
                 parent,

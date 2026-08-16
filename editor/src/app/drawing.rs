@@ -882,6 +882,32 @@ impl RengineNativeEditor {
             );
         }
 
+        // The polygon being drawn: the outline so far, and a dot per point.
+        // Without it the tool is invisible — you would be clicking into a
+        // viewport that gives no sign it is collecting anything.
+        if let Some(draft) = self.polygon_draft.as_ref() {
+            let screen: Vec<(f32, f32)> = draft
+                .iter()
+                .map(|p| {
+                    let v = scene_to_screen_zoomed(*p, viewport, pan, zoom);
+                    (v.x, v.y)
+                })
+                .collect();
+            let ink = Color::from_rgba8(232, 168, 72, 235);
+            if screen.len() >= 2 {
+                canvas.polyline(&screen, 2.0, ink);
+                // Close the loop faintly, so the shape reads as the area it
+                // will become rather than as an open path.
+                if screen.len() >= 3 {
+                    let (a, b) = (screen[screen.len() - 1], screen[0]);
+                    canvas.line(a.0, a.1, b.0, b.1, 1.0, Color::from_rgba8(232, 168, 72, 110));
+                }
+            }
+            for (x, y) in &screen {
+                canvas.rect(x - 3.0, y - 3.0, 6.0, 6.0, ink);
+            }
+        }
+
         if let Some(bounds) = selection_bounds {
             let selection_rect = scene_bounds_rect(bounds, viewport, pan, zoom);
             let selection_center = selection_rect.center();
@@ -2346,3 +2372,4 @@ mod tests {
         );
     }
 }
+

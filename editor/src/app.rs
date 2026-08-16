@@ -126,6 +126,7 @@ const NODE_KIND_OPTIONS: [SceneNodeKind; 11] = [
 mod drawing;
 mod filesystem;
 mod forms;
+mod polygon;
 mod popup;
 mod state;
 mod windowing;
@@ -194,6 +195,13 @@ pub struct RengineNativeEditor {
     /// `ui_color` reads as an unparseable colour and falls back to white — the
     /// "screen full of white boxes" the manifest exists to fix.
     preview_bindings: Bindings,
+    /// Points placed so far by the polygon tool, in scene space.
+    ///
+    /// `Some` means the tool is armed and the viewport is collecting clicks;
+    /// `None` means normal selection. Held on the editor rather than the tab
+    /// because a half-drawn shape belongs to the gesture, not to the document —
+    /// switching tabs mid-draw should abandon it, not carry it over.
+    polygon_draft: Option<Vec<[f32; 2]>>,
     /// The same fonts as real ids, for measuring authored line heights.
     preview_fonts: BTreeMap<String, FontId>,
     /// Which manifest `preview_bindings` came from, so a scene opened from a
@@ -220,6 +228,7 @@ impl Game for RengineNativeEditor {
 
         let mut editor = Self {
             preview_bindings,
+            polygon_draft: None,
             preview_fonts,
             preview_manifest_path: project_file.clone(),
             workspace_root,
@@ -315,6 +324,22 @@ impl Game for RengineNativeEditor {
         self.update_scene_autosave(engine.dt());
         self.handle_scene_history_shortcuts(engine);
         self.handle_scene_selection_shortcuts(engine);
+        // The polygon tool's own keys, before anything else claims them: Enter
+        // commits the shape, Esc abandons it. `P` arms it, which is the one
+        // shortcut worth having on a tool you reach for repeatedly.
+        // The polygon tool owns Enter and Esc while it is armed, focus or no
+        // focus. It is armed from the Add menu, and the inspector holds focus
+        // permanently once a scene is open — so gating these on `ui_has_focus`
+        // (as every other editor shortcut is) would arm a tool that could never
+        // be finished or cancelled.
+        if self.polygon_tool_active() {
+            let input = engine.input();
+            if input.is_key_pressed(KeyCode::Enter) {
+                self.finish_polygon();
+            } else if input.is_key_pressed(KeyCode::Escape) {
+                self.cancel_polygon();
+            }
+        }
         if !self.ui_has_focus() && engine.input().is_key_pressed(KeyCode::KeyF) {
             self.frame_active_scene_view();
         }
