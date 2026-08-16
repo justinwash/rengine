@@ -924,6 +924,16 @@ impl log::Log for CombinedLogger {
 static LOGGER_INIT: Once = Once::new();
 static LOGGER_CAPTURE_ACTIVE: AtomicBool = AtomicBool::new(false);
 static LOG_BUFFER: OnceLock<Mutex<DebugLogBuffer>> = OnceLock::new();
+
+/// Serialises tests that assert on the *whole* log buffer.
+///
+/// The buffer is process-wide, so a test that clears it and then asserts it is
+/// empty is really asserting that no other test logged in between — which, run
+/// in parallel, is a coin flip. Held for the duration of such a test rather
+/// than making the buffer thread-local, because the sharing is the behaviour
+/// under test.
+#[cfg(test)]
+pub(crate) static LOG_TEST_LOCK: Mutex<()> = Mutex::new(());
 static LOG_START: OnceLock<Instant> = OnceLock::new();
 
 fn log_buffer() -> &'static Mutex<DebugLogBuffer> {

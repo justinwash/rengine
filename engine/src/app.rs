@@ -443,6 +443,9 @@ mod tests {
 
     #[test]
     fn clear_command_empties_log_buffer() {
+        // The log buffer is process-wide; without this, a sibling test logging
+        // between the clear and the assert fails this one at random.
+        let _serialised = debug::LOG_TEST_LOCK.lock();
         debug::clear_logs();
         debug::log_message(DebugLogLevel::Info, "app-test", "before clear");
 

@@ -715,6 +715,29 @@ fn draw_ui_kind_dyn(
             let line_w = prop_f32("ui_line_w").unwrap_or(1.0);
             canvas.line(x, y, x + w, y + h, line_w, color);
         }
+        "polygon" => {
+            // `ui_points`: "x,y x,y ..." in the node's own 0..1 box, so a shape
+            // authored once scales to whatever size the node resolves to and a
+            // person can type it without knowing the layout.
+            //
+            // The point of this kind is that set dressing can be *drawn* rather
+            // than coded: a grandstand, a gravel trap, a treeline are all
+            // concave outlines, and before this the only way to get one was to
+            // hand-write its geometry in the host's Rust.
+            let color = parse_srgb_color(get("ui_color").as_deref(), Color::WHITE);
+            let pts: Vec<(f32, f32)> = get("ui_points")
+                .unwrap_or_default()
+                .split_whitespace()
+                .filter_map(|pair| {
+                    let (px, py) = pair.split_once(',')?;
+                    Some((
+                        x + w * px.trim().parse::<f32>().ok()?,
+                        y + h * py.trim().parse::<f32>().ok()?,
+                    ))
+                })
+                .collect();
+            canvas.polygon(&pts, color);
+        }
         "image" => {
             // The node's own sprites[0] — already a resolved TextureId, so an
             // authored image needs no new asset plumbing (unlike every other
@@ -3495,6 +3518,53 @@ mod tests {
         // opposing sides overdrawing past each other.
         for (rx, ry, rw, rh) in border_rects((0.0, 0.0, 4.0, 4.0), [10.0, 10.0, 10.0, 10.0]) {
             assert!(rx >= 0.0 && ry >= 0.0 && rx + rw <= 4.0 && ry + rh <= 4.0);
+        }
+    }
+}
+
+#[cfg(test)]
+mod polygon_kind_tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn getter(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
+        let map: HashMap<String, String> = pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        move |key: &str| map.get(key).cloned()
+    }
+
+    /// Authored points are fractions of the node's own box, so a shape drawn
+    /// once fits whatever size it resolves to.
+    #[test]
+    fn points_are_read_as_fractions_of_the_node() {
+        let get = getter(&[("ui", "polygon"), ("ui_points", "0,0 1,0 0.5,1")]);
+        let mut canvas = Canvas::for_test((400, 400));
+        draw_ui_kind(
+            &mut canvas,
+            (20.0, 10.0, 100.0, 50.0),
+            Vec2::ONE,
+            &get,
+            None,
+            false,
+        );
+        // A triangle: one triangle, three vertices.
+        assert_eq!(canvas.vertices().len(), 3);
+    }
+
+    /// A malformed list draws nothing rather than panicking — a half-typed
+    /// shape is a normal state while authoring one.
+    #[test]
+    fn a_malformed_point_list_is_survivable() {
+        for points in ["", "garbage", "0,0", "0,0 1,0", "0,0 1 0.5,1", "a,b c,d e,f"] {
+            let get = getter(&[("ui", "polygon"), ("ui_points", points)]);
+            let mut canvas = Canvas::for_test((400, 400));
+            draw_ui_kind(&mut canvas, (0.0, 0.0, 10.0, 10.0), Vec2::ONE, &get, None, false);
+            assert!(
+                canvas.vertices().len() % 3 == 0,
+                "{points:?} emitted a partial triangle"
+            );
         }
     }
 }

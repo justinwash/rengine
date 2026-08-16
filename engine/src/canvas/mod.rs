@@ -318,6 +318,110 @@ impl Canvas {
         self.verts.extend_from_slice(triangles);
     }
 
+    /// Fill an arbitrary simple polygon.
+    ///
+    /// "Arbitrary" is the point: a triangle fan only fills convex shapes, and
+    /// the interesting set dressing — an L-shaped grandstand, a kidney of
+    /// gravel, a treeline — is concave. This ear-clips instead, which is
+    /// correct for any simple (non-self-intersecting) polygon.
+    ///
+    /// Points are in canvas pixels, in either winding order.
+    pub fn polygon(&mut self, points: &[(f32, f32)], color: Color) {
+        if points.len() < 3 {
+            return;
+        }
+        self.set_font(0);
+        let c = color.to_array();
+        let uv = WHITE_UV;
+        let mut push = |a: (f32, f32), b: (f32, f32), d: (f32, f32)| {
+            for (x, y) in [a, b, d] {
+                let position = screen_to_ndc(x, y, self.screen_size);
+                self.verts.push(CanvasVertex {
+                    position,
+                    color: c,
+                    uv,
+                });
+            }
+        };
+        for [a, b, c] in triangulate(points) {
+            push(a, b, c);
+        }
+    }
+}
+
+/// Twice the signed area of a polygon. Positive is counter-clockwise.
+fn signed_area2(points: &[(f32, f32)]) -> f32 {
+    let mut acc = 0.0;
+    for i in 0..points.len() {
+        let (a, b) = (points[i], points[(i + 1) % points.len()]);
+        acc += a.0 * b.1 - b.0 * a.1;
+    }
+    acc
+}
+
+fn cross(o: (f32, f32), a: (f32, f32), b: (f32, f32)) -> f32 {
+    (a.0 - o.0) * (b.1 - o.1) - (a.1 - o.1) * (b.0 - o.0)
+}
+
+/// Whether `p` lies inside triangle `abc` (edges count as inside).
+fn in_triangle(p: (f32, f32), a: (f32, f32), b: (f32, f32), c: (f32, f32)) -> bool {
+    let d1 = cross(a, b, p);
+    let d2 = cross(b, c, p);
+    let d3 = cross(c, a, p);
+    let neg = d1 < 0.0 || d2 < 0.0 || d3 < 0.0;
+    let pos = d1 > 0.0 || d2 > 0.0 || d3 > 0.0;
+    !(neg && pos)
+}
+
+/// Ear-clipping triangulation of a simple polygon.
+///
+/// Handles concave shapes, which is the whole reason this exists rather than a
+/// fan. Self-intersecting input has no correct triangulation; rather than loop
+/// forever this bails out by clipping the current vertex regardless, so a
+/// malformed shape draws *something* instead of hanging the frame.
+fn triangulate(points: &[(f32, f32)]) -> Vec<[(f32, f32); 3]> {
+    let mut idx: Vec<usize> = (0..points.len()).collect();
+    // Work counter-clockwise so "convex" has one meaning throughout.
+    if signed_area2(points) < 0.0 {
+        idx.reverse();
+    }
+    let mut out = Vec::with_capacity(points.len().saturating_sub(2));
+    let mut guard = 0;
+    while idx.len() > 3 {
+        let n = idx.len();
+        let mut clipped = false;
+        for i in 0..n {
+            let (ia, ib, ic) = (idx[(i + n - 1) % n], idx[i], idx[(i + 1) % n]);
+            let (a, b, c) = (points[ia], points[ib], points[ic]);
+            if cross(a, b, c) <= 0.0 {
+                continue; // reflex vertex: never an ear
+            }
+            let blocked = idx
+                .iter()
+                .filter(|&&j| j != ia && j != ib && j != ic)
+                .any(|&j| in_triangle(points[j], a, b, c));
+            if blocked {
+                continue;
+            }
+            out.push([a, b, c]);
+            idx.remove(i);
+            clipped = true;
+            break;
+        }
+        guard += 1;
+        if !clipped || guard > points.len() * 2 {
+            // Degenerate or self-intersecting: take the fan that remains
+            // rather than spinning. Better a wrong picture than a hung frame.
+            break;
+        }
+    }
+    for i in 1..idx.len().saturating_sub(1) {
+        out.push([points[idx[0]], points[idx[i]], points[idx[i + 1]]]);
+    }
+    out
+}
+
+impl Canvas {
     pub fn rect(&mut self, x: f32, y: f32, w: f32, h: f32, color: Color) {
         self.set_font(0);
         let [x0, y0] = screen_to_ndc(x, y, self.screen_size);
@@ -1511,5 +1615,89 @@ mod rotated_image_tests {
             cx.abs() < 1e-4 && cy.abs() < 1e-4,
             "the quad drifted off its pivot: ({cx}, {cy})"
         );
+    }
+}
+
+#[cfg(test)]
+mod polygon_tests {
+    use super::*;
+
+    /// A convex polygon triangulates into exactly n-2 triangles, which is the
+    /// count any correct triangulation of a simple polygon produces.
+    #[test]
+    fn a_convex_polygon_yields_the_expected_triangle_count() {
+        for n in 3..=8 {
+            let pts: Vec<(f32, f32)> = (0..n)
+                .map(|i| {
+                    let a = i as f32 / n as f32 * std::f32::consts::TAU;
+                    (a.cos() * 50.0, a.sin() * 50.0)
+                })
+                .collect();
+            assert_eq!(triangulate(&pts).len(), n - 2, "{n}-gon");
+        }
+    }
+
+    /// The case a triangle fan gets wrong.
+    ///
+    /// A **U**, deliberately — my first attempt used an L, and an L happens to
+    /// be visible in its entirety from every one of its corners, so a fan from
+    /// vertex 0 fills it correctly and the test could not fail. Two mutations
+    /// passed before that showed up. A U's opening is not visible from its
+    /// bottom-left corner, so a fan from there covers the gap and ear clipping
+    /// must not.
+    #[test]
+    fn a_concave_polygon_stays_inside_itself() {
+        // A U, counter-clockwise: uprights at x 0..15 and 45..60, joined
+        // across the bottom, open between (15,20) and (45,60).
+        let u = [
+            (0.0, 0.0),
+            (60.0, 0.0),
+            (60.0, 60.0),
+            (45.0, 60.0),
+            (45.0, 20.0),
+            (15.0, 20.0),
+            (15.0, 60.0),
+            (0.0, 60.0),
+        ];
+        let tris = triangulate(&u);
+        assert_eq!(tris.len(), 6, "an 8-gon is six triangles");
+
+        for [a, b, c] in tris {
+            let cx = (a.0 + b.0 + c.0) / 3.0;
+            let cy = (a.1 + b.1 + c.1) / 3.0;
+            let in_opening = (15.0..45.0).contains(&cx) && cy > 20.0;
+            assert!(
+                !in_opening,
+                "a triangle spilled into the U's opening at ({cx}, {cy})"
+            );
+        }
+    }
+
+    /// Winding must not matter: the same shape given clockwise fills the same.
+    #[test]
+    fn winding_order_does_not_change_the_result() {
+        let ccw = [(0.0, 0.0), (40.0, 0.0), (40.0, 30.0), (0.0, 30.0)];
+        let mut cw = ccw;
+        cw.reverse();
+        assert_eq!(triangulate(&ccw).len(), triangulate(&cw).len());
+    }
+
+    /// Degenerate input draws nothing rather than panicking, and a
+    /// self-intersecting shape must not hang the frame.
+    #[test]
+    fn bad_input_is_survivable() {
+        assert!(triangulate(&[]).is_empty());
+        assert!(triangulate(&[(0.0, 0.0), (1.0, 1.0)]).is_empty());
+        // A bowtie has no valid simple triangulation; it must still terminate.
+        let bowtie = [(0.0, 0.0), (40.0, 40.0), (40.0, 0.0), (0.0, 40.0)];
+        let _ = triangulate(&bowtie);
+    }
+
+    /// The canvas emits three vertices per triangle.
+    #[test]
+    fn the_canvas_emits_a_triangle_list() {
+        let mut canvas = Canvas::for_test((200, 200));
+        canvas.polygon(&[(0.0, 0.0), (40.0, 0.0), (40.0, 30.0), (0.0, 30.0)], Color::WHITE);
+        assert_eq!(canvas.vertices().len(), 6, "a quad is two triangles");
     }
 }
