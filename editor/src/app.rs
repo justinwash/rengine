@@ -162,11 +162,9 @@ pub struct RengineNativeEditor {
     bottom_scroll: f32,
     file_browser_ui: Ui,
     file_browser_form: FileBrowserFormState,
-    file_browser_ui_focused: bool,
     inspector_ui: Ui,
     inspector_form: InspectorFormState,
     generic_json_form: GenericJsonFormState,
-    inspector_ui_focused: bool,
     panel_layout: PanelLayoutState,
     panel_resize_drag: Option<PanelResizeDrag>,
     inspector_scroll: f32,
@@ -252,11 +250,9 @@ impl Game for RengineNativeEditor {
             bottom_scroll: 0.0,
             file_browser_ui: make_file_browser_ui(),
             file_browser_form: FileBrowserFormState::default(),
-            file_browser_ui_focused: false,
             inspector_ui: make_inspector_ui(),
             inspector_form: InspectorFormState::default(),
             generic_json_form: GenericJsonFormState::default(),
-            inspector_ui_focused: false,
             panel_layout: PanelLayoutState::default(),
             panel_resize_drag: None,
             inspector_scroll: 0.0,
@@ -327,11 +323,9 @@ impl Game for RengineNativeEditor {
         // The polygon tool's own keys, before anything else claims them: Enter
         // commits the shape, Esc abandons it. `P` arms it, which is the one
         // shortcut worth having on a tool you reach for repeatedly.
-        // The polygon tool owns Enter and Esc while it is armed, focus or no
-        // focus. It is armed from the Add menu, and the inspector holds focus
-        // permanently once a scene is open — so gating these on `ui_has_focus`
-        // (as every other editor shortcut is) would arm a tool that could never
-        // be finished or cancelled.
+        // Enter and Esc belong to the armed tool even while a field has entry:
+        // the gesture is the thing on screen, and abandoning it must always be
+        // one key away.
         if self.polygon_tool_active() {
             let input = engine.input();
             if input.is_key_pressed(KeyCode::Enter) {

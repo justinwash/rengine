@@ -597,8 +597,15 @@ impl RengineNativeEditor {
         }
     }
 
+    /// True while a text field is taking keystrokes, so a shortcut would steal
+    /// them from what the user is typing.
+    ///
+    /// `Ui` focus is *not* the test: the engine reports a focused widget as
+    /// soon as a panel has one focusable, and hover moves it around, so the
+    /// inspector reads as "focused" permanently once a scene is open. Only the
+    /// narrower fact — a text input owns entry — should silence a shortcut.
     pub(crate) fn ui_has_focus(&self) -> bool {
-        self.file_browser_ui_focused || self.inspector_ui_focused
+        self.active_text_input_owner.is_some()
     }
 
     pub(crate) fn text_input_enabled_for(&self, owner: TextInputOwner) -> bool {
@@ -693,7 +700,7 @@ impl RengineNativeEditor {
     }
 
     pub(crate) fn handle_scene_history_shortcuts(&mut self, engine: &Engine) {
-        if self.active_text_input_owner.is_some() {
+        if self.ui_has_focus() {
             return;
         }
 
@@ -714,7 +721,7 @@ impl RengineNativeEditor {
     }
 
     pub(crate) fn handle_scene_selection_shortcuts(&mut self, engine: &Engine) {
-        if self.active_text_input_owner.is_some() {
+        if self.ui_has_focus() {
             return;
         }
 

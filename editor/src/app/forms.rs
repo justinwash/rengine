@@ -260,7 +260,6 @@ impl GenericJsonFormState {
 impl RengineNativeEditor {
     pub(crate) fn update_file_browser_ui(&mut self, engine: &Engine, layout: &ShellLayout) {
         if !layout.files_open {
-            self.file_browser_ui_focused = false;
             if self.active_text_input_owner == Some(TextInputOwner::FileBrowser) {
                 self.active_text_input_owner = None;
             }
@@ -285,7 +284,6 @@ impl RengineNativeEditor {
             &mut file_browser_form,
             Self::build_file_browser_ui,
             |response, state| {
-                self.file_browser_ui_focused = response.focused_id.is_some();
                 self.capture_text_input_owner(
                     TextInputOwner::FileBrowser,
                     response.focused_id,
@@ -307,7 +305,6 @@ impl RengineNativeEditor {
 
     pub(crate) fn update_inspector_ui(&mut self, engine: &Engine, layout: &ShellLayout) {
         if !layout.inspector_open {
-            self.inspector_ui_focused = false;
             if self.active_text_input_owner == Some(TextInputOwner::Inspector) {
                 self.active_text_input_owner = None;
             }
@@ -359,7 +356,6 @@ impl RengineNativeEditor {
             |response, state| {
                 let request_kind_menu = response.was_activated(INSPECTOR_NODE_KIND_BUTTON_ID);
                 let request_child_menu = response.was_activated(INSPECTOR_CREATE_CHILD_BUTTON_ID);
-                self.inspector_ui_focused = response.focused_id.is_some();
                 self.capture_text_input_owner(
                     TextInputOwner::Inspector,
                     response.focused_id,
@@ -481,7 +477,6 @@ impl RengineNativeEditor {
             &mut generic_json_form,
             |ui, state| Self::build_generic_json_form_ui(ui, state, scroll_height),
             |response, state| {
-                self.inspector_ui_focused = response.focused_id.is_some();
                 self.capture_text_input_owner(
                     TextInputOwner::Inspector,
                     response.focused_id,

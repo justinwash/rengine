@@ -324,13 +324,11 @@ impl RengineNativeEditor {
         if !is_open {
             match kind {
                 DockPanelKind::Files => {
-                    self.file_browser_ui_focused = false;
                     if self.active_text_input_owner == Some(TextInputOwner::FileBrowser) {
                         self.active_text_input_owner = None;
                     }
                 }
                 DockPanelKind::Inspector => {
-                    self.inspector_ui_focused = false;
                     if self.active_text_input_owner == Some(TextInputOwner::Inspector) {
                         self.active_text_input_owner = None;
                     }
@@ -511,27 +509,18 @@ impl RengineNativeEditor {
         hovered: Option<usize>,
         mouse_pressed: bool,
     ) {
-        let hovered_text_input = match (owner, hovered) {
-            (TextInputOwner::FileBrowser, Some(id)) if is_file_browser_text_input(id) => Some(id),
-            (TextInputOwner::Inspector, Some(id)) if is_inspector_text_input(id) => Some(id),
-            _ => None,
-        };
-        let focused_text_input = match (owner, focused) {
-            (TextInputOwner::FileBrowser, Some(id)) if is_file_browser_text_input(id) => Some(id),
-            (TextInputOwner::Inspector, Some(id)) if is_inspector_text_input(id) => Some(id),
-            _ => None,
+        let is_text_input = |id: usize| match owner {
+            TextInputOwner::FileBrowser => is_file_browser_text_input(id),
+            TextInputOwner::Inspector => is_inspector_text_input(id),
         };
 
-        if mouse_pressed {
-            if hovered_text_input.is_some() {
-                self.active_text_input_owner = Some(owner);
-            }
-            return;
-        }
-
-        if self.active_text_input_owner == Some(owner) && focused_text_input.is_some() {
-            self.active_text_input_owner = Some(owner);
-        }
+        self.active_text_input_owner = next_text_input_owner(
+            self.active_text_input_owner,
+            owner,
+            focused.is_some_and(is_text_input),
+            hovered.is_some_and(is_text_input),
+            mouse_pressed,
+        );
     }
 
     pub(crate) fn update_scrolls(&mut self, engine: &Engine, layout: &ShellLayout) {
@@ -1603,6 +1592,36 @@ fn viewport_drag_target(
     }
 }
 
+/// Which panel owns text entry after this frame, given what one panel's `Ui`
+/// reported.
+///
+/// Entry is *taken* by clicking a text field and *released* as soon as it stops
+/// being focused — clicking anything else, or hovering another widget, since
+/// hover moves `Ui` focus. Holding it past that would silence every editor
+/// shortcut for the rest of the session (see `ui_has_focus`).
+pub(crate) fn next_text_input_owner(
+    current: Option<TextInputOwner>,
+    owner: TextInputOwner,
+    focused_text_input: bool,
+    hovered_text_input: bool,
+    mouse_pressed: bool,
+) -> Option<TextInputOwner> {
+    if mouse_pressed {
+        if hovered_text_input {
+            return Some(owner);
+        }
+        // The click landed elsewhere; only this panel's own claim is dropped,
+        // so the other panel's call this frame can still hand entry over.
+        return current.filter(|held| *held != owner);
+    }
+
+    if current == Some(owner) && !focused_text_input {
+        return None;
+    }
+
+    current
+}
+
 pub(crate) fn button_preferred_width(label: &str) -> f32 {
     label.chars().count() as f32 * 8.6 + 30.0
 }
@@ -1625,6 +1644,38 @@ mod tests {
             asset_alias: String::new(),
             properties: std::collections::HashMap::new(),
         }
+    }
+
+    #[test]
+    fn text_entry_is_claimed_by_a_click_and_released_when_focus_leaves() {
+        use TextInputOwner::{FileBrowser, Inspector};
+
+        // Click a field: this panel takes entry.
+        assert_eq!(
+            next_text_input_owner(None, Inspector, false, true, true),
+            Some(Inspector)
+        );
+        // Still focused next frame: keep it.
+        assert_eq!(
+            next_text_input_owner(Some(Inspector), Inspector, true, false, false),
+            Some(Inspector)
+        );
+        // Focus moved off the field: release, or every shortcut stays dead.
+        assert_eq!(
+            next_text_input_owner(Some(Inspector), Inspector, false, false, false),
+            None
+        );
+        // A click elsewhere drops this panel's claim...
+        assert_eq!(
+            next_text_input_owner(Some(Inspector), Inspector, false, false, true),
+            None
+        );
+        // ...but leaves the other panel's alone, so a hand-over survives the
+        // frame's second call.
+        assert_eq!(
+            next_text_input_owner(Some(FileBrowser), Inspector, false, false, true),
+            Some(FileBrowser)
+        );
     }
 
     #[test]
