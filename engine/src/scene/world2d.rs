@@ -4904,6 +4904,97 @@ mod tests {
     }
 
     #[test]
+    fn a_content_sized_flow_child_starts_at_its_cross_edge() {
+        // The ninth outing of the centre-anchor rule, and the one that made it
+        // an engine bug rather than an authoring trap: under the default
+        // `ui_align: "stretch"` the flow decides nothing on the cross axis, so a
+        // child sized by `ui_size` fell back to the centre anchor at origin 0 —
+        // near edge on the slot's CENTRE, far half hanging outside it.
+        //
+        // The error is `slotCross/2 - childCross`, so it vanishes when the child
+        // happens to be half the slot and is worst when the child is what sized
+        // the slot in the first place. That is why 54 green baselines never saw
+        // it: one-line rows were out by 8px, and only Formula R's 3-line race-log
+        // entry was out far enough (23px) to be drawn through its neighbour.
+        //
+        // Row (cross = y, y-up) and column (cross = x) both, because getting the
+        // row backwards mirrors every aligned row and reads as a data bug.
+        let probe = |layout: &str, child: &[(&str, &str)]| {
+            let mut world = SceneWorld2D::new();
+            let root = world.spawn(SceneNode2D::new("root"));
+            {
+                let n = world.get_mut(root).unwrap();
+                n.set_property("ui", "rect");
+                n.set_property("ui_layout", layout);
+                n.set_property("ui_stretch_x", "true");
+                n.set_property("ui_stretch_y", "true");
+            }
+            // Fills the cross axis, so it marks where the slot really is.
+            let ruler = world.spawn_child(root, SceneNode2D::new("ruler"));
+            {
+                let n = world.get_mut(ruler).unwrap();
+                n.set_property("ui", "rect");
+                n.set_property("ui_w", "3");
+                n.set_property("ui_h", "3");
+                n.set_property("ui_stretch_x", "true");
+                n.set_property("ui_stretch_y", "true");
+            }
+            let sized = world.spawn_child(root, SceneNode2D::new("sized"));
+            {
+                let n = world.get_mut(sized).unwrap();
+                n.set_property("ui", "rect");
+                n.set_property("ui_w", "40");
+                n.set_property("ui_h", "40");
+                for (k, v) in child {
+                    n.set_property(*k, *v);
+                }
+            }
+            let mut canvas = Canvas::new((400, 400), std::ptr::null());
+            world.draw_to_canvas(&mut canvas, 0.0);
+            (
+                world.resolved_rect(ruler).expect("ruler"),
+                world.resolved_rect(sized).expect("sized"),
+            )
+        };
+
+        // Row: cross is y, and its start is the TOP edge.
+        let (ruler, sized) = probe("row", &[]);
+        assert!(
+            (sized.top() - ruler.top()).abs() < 1e-3,
+            "row child's top sits on the slot's top: {} vs {}",
+            sized.top(),
+            ruler.top()
+        );
+
+        // Column: cross is x, and its start is the LEFT edge.
+        let (ruler, sized) = probe("column", &[]);
+        assert!(
+            (sized.x - ruler.x).abs() < 1e-3,
+            "column child's left sits on the slot's left: {} vs {}",
+            sized.x,
+            ruler.x
+        );
+
+        // A child that fills the cross axis is unaffected — it always landed on
+        // the slot's edge, and is the workaround every bitten scene reached for.
+        let (ruler, sized) = probe("row", &[("ui_stretch_y", "true")]);
+        assert!(
+            (sized.top() - ruler.top()).abs() < 1e-3 && (sized.height - ruler.height).abs() < 1e-3,
+            "an explicitly stretched child is unchanged"
+        );
+
+        // ...and an author who *stated* an anchor still gets it. This is a
+        // default for scenes that said nothing, not an override of ones that did.
+        let (ruler, sized) = probe("row", &[("ui_anchor", "center")]);
+        assert!(
+            sized.top() < ruler.top() - 1.0,
+            "an authored anchor still wins, so this one is NOT at the top: {} vs slot top {}",
+            sized.top(),
+            ruler.top()
+        );
+    }
+
+    #[test]
     fn text_block_content_sizes_to_its_wrapped_height() {
         // E-Q. A wrapped prose block used to measure zero and collapse, so
         // every one carried a hand-counted `ui_h`. Now it measures the box its
@@ -5132,9 +5223,18 @@ mod tests {
             r.x
         );
 
-        // The default (`stretch`) must be untouched: it decides nothing, so a
-        // child with no stretch of its own keeps re-anchoring in the slot
-        // exactly as every scene authored before `ui_align` assumes.
+        // The default (`stretch`) decides nothing about *size* on the cross
+        // axis — the slot still spans it and filling it is the child's own
+        // `ui_stretch_*` opt-in. It does now decide *position*: a child that
+        // does not fill the slot starts at the slot's cross edge.
+        //
+        // This assertion used to read `x == 0.0` — a 100-wide box in a 400-wide
+        // column with its LEFT edge on the container's centre and half of it
+        // outside the slot. That was the centre-anchor fallback showing through,
+        // and it was wrong in the same way for every non-stretching flow child;
+        // see `a_content_sized_flow_child_starts_at_its_cross_edge` for what it
+        // cost. CSS `align-items: stretch` falls back to `flex-start` for an
+        // item with a definite cross size, and so does this.
         let mut world = SceneWorld2D::new();
         let container = world.spawn(SceneNode2D::new("root"));
         {
@@ -5155,8 +5255,8 @@ mod tests {
         world.draw_to_canvas(&mut canvas, 0.0);
         let r = world.resolved_rect(child).unwrap();
         assert!(
-            (r.x - 0.0).abs() < 1e-3,
-            "unchanged under the default align: x={}",
+            (r.x - -200.0).abs() < 1e-3,
+            "starts at the slot's left edge under the default align: x={}",
             r.x
         );
     }

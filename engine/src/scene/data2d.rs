@@ -336,10 +336,42 @@ fn resolve_ui_rect(
     let default_origin = |flow_decided: bool| if flow_decided { 0.5 } else { 0.0 };
     let origin_x = prop_f32("ui_origin_x").unwrap_or_else(|| default_origin(grow_w.is_some()));
     let origin_y = prop_f32("ui_origin_y").unwrap_or_else(|| default_origin(grow_h.is_some()));
+
+    // ...and on a flow child's *cross* axis under the default
+    // `ui_align: "stretch"`, the slot spans the whole cross extent and the flow
+    // decides nothing. A child that does not fill it (no `ui_stretch_*`) used to
+    // fall all the way back to the centre anchor at origin 0, which puts its
+    // near edge on the slot's CENTRE and its far half outside the slot entirely.
+    // For a child that is itself what sized the row, that is half its own height
+    // of overlap onto its neighbour — invisible on a one-line node, and a
+    // wrapped 3-line log entry drawn straight through the entry above it.
+    //
+    // CSS is the model and gets this right: under `align-items: stretch` an item
+    // with a definite cross size behaves as `flex-start`. So does this now — the
+    // same cross-start edge `apply_cross_align` uses for `CrossAlign::Start`
+    // (left for a column, and **top** for a row, which is y-up).
+    //
+    // Derived from `flow_size` rather than a new field: a flow child's main axis
+    // is always decided, so exactly one of these shapes can occur —
+    // `(Some, None)` is a row child with y undecided, `(None, Some)` a column
+    // child with x undecided, and `(None, None)` is not a flow child at all.
+    //
+    // An author who stated an anchor or an origin on the axis keeps it: this is
+    // the default for scenes that said nothing, not an override of ones that did.
+    let stated = |anchor_frac: &str, origin: &str| {
+        get("ui_anchor").is_some() || prop_f32(anchor_frac).is_some() || prop_f32(origin).is_some()
+    };
+    let cross_x_start =
+        grow_w.is_none() && grow_h.is_some() && !stated("ui_anchor_frac_x", "ui_origin_x");
+    let cross_y_start =
+        grow_h.is_none() && grow_w.is_some() && !stated("ui_anchor_frac_y", "ui_origin_y");
+
     let (x, w) = if prop_bool("ui_stretch_x") {
         let ml = prop_f32("ui_margin_left").unwrap_or(0.0);
         let mr = prop_f32("ui_margin_right").unwrap_or(0.0);
         (rx + ml, (rw - ml - mr).max(0.0))
+    } else if cross_x_start {
+        (rx + position.x, w_fixed)
     } else {
         (ax + position.x - origin_x * w_fixed, w_fixed)
     };
@@ -347,6 +379,10 @@ fn resolve_ui_rect(
         let mb = prop_f32("ui_margin_bottom").unwrap_or(0.0);
         let mt = prop_f32("ui_margin_top").unwrap_or(0.0);
         (ry + mb, (rh - mb - mt).max(0.0))
+    } else if cross_y_start {
+        // y-up: the row's cross-start is its TOP, so the child's top edge lands
+        // on the slot's top and it grows downward from there.
+        (ry + rh - h_fixed + position.y, h_fixed)
     } else {
         (ay + position.y - origin_y * h_fixed, h_fixed)
     };
