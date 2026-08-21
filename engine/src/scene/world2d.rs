@@ -1989,13 +1989,27 @@ impl SceneWorld2D {
             return;
         };
 
-        let effective_bindings = match &node.instance_bindings {
-            Some(scope) => merge_bindings(bindings, scope),
-            None => bindings.clone(),
+        // Borrowed, not cloned. `Bindings` is a `HashMap<String, String>` and a
+        // real screen carries a hundred or so entries; cloning it once per node
+        // — and again per child visit below — made the measure pass the single
+        // most expensive thing in the frame. Measured on Formula R's race
+        // screen: 709 nodes x 108 bindings, 12.8ms of a 22ms frame, against
+        // 3.6ms for the actual drawing.
+        //
+        // Only a node carrying its own instance scope needs a merged map, and
+        // those are rare. This is the same `let merged; ... &merged` shape the
+        // rest of this file already uses for exactly this reason.
+        let merged;
+        let effective_bindings: &Bindings = match &node.instance_bindings {
+            Some(scope) => {
+                merged = merge_bindings(bindings, scope);
+                &merged
+            }
+            None => bindings,
         };
 
         for &child in &node.children {
-            self.measure_content_size(child, canvas, &effective_bindings);
+            self.measure_content_size(child, canvas, effective_bindings);
         }
 
         if !sizes_to_content(node.property("ui_size")) {
@@ -2004,7 +2018,7 @@ impl SceneWorld2D {
 
         let get = |name: &str| {
             node.property(name)
-                .map(|v| super::data2d::substitute_bindings(v, &effective_bindings).into_owned())
+                .map(|v| super::data2d::substitute_bindings(v, effective_bindings).into_owned())
         };
         let prop_f32 = |name: &str| get(name).and_then(|v| v.trim().parse::<f32>().ok());
 
@@ -2025,11 +2039,15 @@ impl SceneWorld2D {
             let Some(c) = self.get(child) else {
                 return (0.0, 0.0);
             };
-            let child_bindings = match &c.instance_bindings {
-                Some(scope) => merge_bindings(&effective_bindings, scope),
-                None => effective_bindings.clone(),
+            let merged;
+            let child_bindings: &Bindings = match &c.instance_bindings {
+                Some(scope) => {
+                    merged = merge_bindings(effective_bindings, scope);
+                    &merged
+                }
+                None => effective_bindings,
             };
-            let own = node_own_extent(c, canvas, &child_bindings);
+            let own = node_own_extent(c, canvas, child_bindings);
             // `ui_size` is per axis, so a child's measured size counts only on
             // the axis it actually auto-sizes. A `content_h` card measures a
             // width from its children too — that value is never applied to the
@@ -2084,12 +2102,16 @@ impl SceneWorld2D {
             let Some(c) = self.get(child) else {
                 return 0.0;
             };
-            let child_bindings = match &c.instance_bindings {
-                Some(scope) => merge_bindings(&effective_bindings, scope),
-                None => effective_bindings.clone(),
+            let merged;
+            let child_bindings: &Bindings = match &c.instance_bindings {
+                Some(scope) => {
+                    merged = merge_bindings(effective_bindings, scope);
+                    &merged
+                }
+                None => effective_bindings,
             };
             c.property("ui_lead")
-                .map(|v| super::data2d::substitute_bindings(v, &child_bindings).into_owned())
+                .map(|v| super::data2d::substitute_bindings(v, child_bindings).into_owned())
                 .and_then(|v| v.trim().parse::<f32>().ok())
                 .unwrap_or(0.0)
         };
