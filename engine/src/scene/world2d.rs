@@ -2265,7 +2265,7 @@ impl SceneWorld2D {
             node.transform.position,
             node.transform.scale,
             time,
-            |n| node.property(n).map(str::to_owned),
+            |n| node.property(n),
             effective_bindings,
             node.sprites.first(),
             self.pixel_grid.get(),

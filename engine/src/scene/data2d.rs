@@ -1235,13 +1235,17 @@ pub(crate) fn draw_ui_node_with_bindings(
 /// placeholders substituted through `bindings` first (E2); pass an empty
 /// [`Bindings`] for a scope-free draw. `sprite` backs `ui: "image"` (E5).
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn draw_ui_node_on_with_bindings(
+pub(crate) fn draw_ui_node_on_with_bindings<'a>(
     canvas: &mut Canvas,
     reference: (f32, f32, f32, f32),
     position: Vec2,
     scale: Vec2,
     time: f32,
-    get: impl Fn(&str) -> Option<String>,
+    // Borrowed, not owned. Every node reads about thirty properties a frame —
+    // 21,660 of them on Formula R's race screen — and the caller used to hand
+    // each one over as a freshly allocated `String`. The node outlives this
+    // call, so there was never anything to own.
+    get: impl Fn(&str) -> Option<&'a str>,
     bindings: &Bindings,
     sprite: Option<&PrefabSprite2D>,
     pixel_grid: f32,
@@ -1250,7 +1254,7 @@ pub(crate) fn draw_ui_node_on_with_bindings(
     flow_size: (Option<f32>, Option<f32>),
     has_children: bool,
 ) -> ((f32, f32, f32, f32), bool) {
-    let get = |n: &str| get(n).map(|v| substitute_bindings(&v, bindings).into_owned());
+    let get = |n: &str| get(n).map(|v| substitute_bindings(v, bindings).into_owned());
     let get = |n: &str| resolve_interaction_property(&get, n, state);
     let rect = resolve_ui_rect(
         reference,
