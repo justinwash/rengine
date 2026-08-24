@@ -5,6 +5,13 @@ use winit::keyboard::KeyCode;
 pub struct InputState {
     keys_down: HashSet<KeyCode>,
     keys_pressed: HashSet<KeyCode>,
+    /// How many times each key went down this frame, not merely *whether* it
+    /// did. A `HashSet` cannot count, and at speed a key really can complete
+    /// two full press-release cycles inside one frame — at 60fps a fast double
+    /// tap is ~80ms against a 16ms budget, so the two land together often
+    /// enough for a player to notice a menu cursor moving one step when they
+    /// pressed twice.
+    press_counts: Vec<(KeyCode, u32)>,
     keys_released: HashSet<KeyCode>,
     mouse_delta: (f64, f64),
     mouse_position: (f32, f32),
@@ -21,6 +28,7 @@ impl InputState {
         Self {
             keys_down: HashSet::new(),
             keys_pressed: HashSet::new(),
+            press_counts: Vec::new(),
             keys_released: HashSet::new(),
             mouse_delta: (0.0, 0.0),
             mouse_position: (0.0, 0.0),
@@ -39,6 +47,26 @@ impl InputState {
 
     pub fn is_key_pressed(&self, key: KeyCode) -> bool {
         self.keys_pressed.contains(&key)
+    }
+
+    /// How many times `key` went down this frame. `is_key_pressed` is this
+    /// `> 0`, and is still the right call for anything that acts once per
+    /// frame; use this where every tap has to land — a menu cursor, a counter,
+    /// a step control.
+    pub fn key_press_count(&self, key: KeyCode) -> u32 {
+        self.press_counts
+            .iter()
+            .find(|(k, _)| *k == key)
+            .map_or(0, |(_, n)| *n)
+    }
+
+    /// Linear scan over a `Vec`: at most a handful of distinct keys go down in
+    /// any one frame, so a map would cost more to allocate than it saves.
+    fn bump_press(&mut self, key: KeyCode) {
+        match self.press_counts.iter_mut().find(|(k, _)| *k == key) {
+            Some((_, n)) => *n += 1,
+            None => self.press_counts.push((key, 1)),
+        }
     }
 
     pub fn is_key_released(&self, key: KeyCode) -> bool {
@@ -98,6 +126,7 @@ impl InputState {
     pub fn inject_key_press(&mut self, key: KeyCode) {
         self.keys_down.insert(key);
         self.keys_pressed.insert(key);
+        self.bump_press(key);
     }
 
     /// Inject committed text for this frame, as a real keyboard would deliver it
@@ -127,8 +156,16 @@ impl InputState {
     pub(crate) fn handle_key_event(&mut self, key: KeyCode, state: ElementState) {
         match state {
             ElementState::Pressed => {
+                // `keys_down.insert` is false while the key is held, which is
+                // what stops OS key-repeat from firing a press every frame.
+                // It also swallowed the *second* tap of a genuine double tap:
+                // press-release-press inside one frame left `keys_pressed`
+                // already holding the key, so the set had nothing new to
+                // record and the input was gone. Counted separately now — the
+                // repeat guard stays, the count is what the drop cost.
                 if self.keys_down.insert(key) {
                     self.keys_pressed.insert(key);
+                    self.bump_press(key);
                 }
             }
             ElementState::Released => {
@@ -203,11 +240,54 @@ impl InputState {
 
     pub(crate) fn end_frame(&mut self) {
         self.keys_pressed.clear();
+        self.press_counts.clear();
         self.keys_released.clear();
         self.mouse_delta = (0.0, 0.0);
         self.mouse_buttons_pressed = [false; 3];
         self.mouse_buttons_released = [false; 3];
         self.scroll_delta = (0.0, 0.0);
         self.committed_text.clear();
+    }
+}
+
+#[cfg(test)]
+mod double_tap_tests {
+    use super::*;
+
+    /// The 2026-08-08 playtest's #44: "pressed Down twice, the cursor moved
+    /// once". Filed as possibly a harness artifact; it is not.
+    #[test]
+    fn a_double_tap_inside_one_frame_counts_twice() {
+        let mut input = InputState::new();
+        for _ in 0..2 {
+            input.handle_key_event(KeyCode::ArrowDown, ElementState::Pressed);
+            input.handle_key_event(KeyCode::ArrowDown, ElementState::Released);
+        }
+        assert_eq!(
+            input.key_press_count(KeyCode::ArrowDown),
+            2,
+            "the second tap was dropped"
+        );
+        assert!(input.is_key_pressed(KeyCode::ArrowDown));
+    }
+
+    /// The guard the count must not break: a *held* key is one press, however
+    /// many repeat events the OS sends.
+    #[test]
+    fn holding_a_key_is_still_one_press() {
+        let mut input = InputState::new();
+        for _ in 0..5 {
+            input.handle_key_event(KeyCode::ArrowDown, ElementState::Pressed);
+        }
+        assert_eq!(input.key_press_count(KeyCode::ArrowDown), 1);
+    }
+
+    #[test]
+    fn end_frame_forgets_the_count() {
+        let mut input = InputState::new();
+        input.inject_key_press(KeyCode::Enter);
+        input.end_frame();
+        assert_eq!(input.key_press_count(KeyCode::Enter), 0);
+        assert!(!input.is_key_pressed(KeyCode::Enter));
     }
 }
