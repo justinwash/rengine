@@ -250,8 +250,9 @@ fn resolve_ui_rect(
     pixel_grid: f32,
     content_size: Option<(f32, f32)>,
     flow_size: (Option<f32>, Option<f32>),
+    text_scale: f32,
 ) -> (f32, f32, f32, f32) {
-    let prop_f32 = |n: &str| ui_f32(&get, n);
+    let prop_f32 = |n: &str| ui_f32(&get, n, text_scale);
     let prop_bool =
         |n: &str| matches!(get(n).as_deref().map(str::trim), Some("true" | "1" | "yes"));
 
@@ -655,7 +656,8 @@ fn draw_ui_kind_dyn(
         return;
     };
     let (x, y, w, h) = rect;
-    let prop_f32 = |n: &str| ui_f32(&get, n);
+    let text_scale = canvas.text_scale();
+    let prop_f32 = |n: &str| ui_f32(&get, n, text_scale);
     let prop_i64 = |n: &str| get(n).and_then(|v| v.trim().parse::<i64>().ok());
     let font = node_font(&get);
     // A shadow is the same primitive drawn once more, offset and recoloured,
@@ -789,7 +791,7 @@ fn draw_ui_kind_dyn(
                 //
                 // Degrees rather than radians because a scene is authored by a
                 // person: "30" is a thing somebody can type and reason about.
-                let spin = ui_f32(&get, "ui_rotation").unwrap_or(0.0);
+                let spin = ui_f32(&get, "ui_rotation", text_scale).unwrap_or(0.0);
                 if spin.abs() < f32::EPSILON {
                     canvas.image_region(sprite.texture, x, y, w, h, sprite.uv_rect, color);
                 } else {
@@ -1062,12 +1064,35 @@ fn ui_text_or_placeholder(get: &impl Fn(&str) -> Option<String>) -> String {
 ///
 /// A running game binds the key and never reaches the placeholder, so this
 /// cannot drift from real behaviour.
-fn ui_f32(get: &impl Fn(&str) -> Option<String>, name: &str) -> Option<f32> {
+fn ui_f32(get: &impl Fn(&str) -> Option<String>, name: &str, text_scale: f32) -> Option<f32> {
     let raw = get(name);
     match raw.as_deref().map(str::trim) {
         Some(value) if contains_unresolved_binding(value) => get(&format!("{name}_placeholder"))
-            .and_then(|v| v.trim().parse::<f32>().ok()),
-        _ => raw.and_then(|v| v.trim().parse::<f32>().ok()),
+            .and_then(|v| parse_length(&v, text_scale)),
+        _ => raw.and_then(|v| parse_length(&v, text_scale)),
+    }
+}
+
+/// Parse an authored length, honouring the `em` suffix.
+///
+/// A plain number is device pixels and never moves — a panel width, a border,
+/// a sprite's box. A number suffixed `em` is **text units**: it is multiplied
+/// by the live text scale, so it grows and shrinks with the glyphs it was
+/// measured against.
+///
+/// This is the unit a column wants. A timing tower's position column is 16px
+/// wide because three digits at 8px are 16px wide — that is a text
+/// measurement, hand-resolved once by the author. Written `16em` it stays
+/// hand-resolved but stops being *wrong* the moment the player turns the text
+/// up, and the column still lines up across every row, which is the one thing
+/// content sizing cannot do.
+///
+/// Opt-in per value, so no existing authored number changes meaning.
+pub(crate) fn parse_length(value: &str, text_scale: f32) -> Option<f32> {
+    let value = value.trim();
+    match value.strip_suffix("em") {
+        Some(number) => number.trim().parse::<f32>().ok().map(|n| n * text_scale),
+        None => value.parse::<f32>().ok(),
     }
 }
 
@@ -1207,6 +1232,7 @@ pub(crate) fn draw_ui_node_with_bindings(
 ) -> ((f32, f32, f32, f32), bool) {
     let get = |n: &str| get(n).map(|v| substitute_bindings(&v, bindings).into_owned());
     let get = |n: &str| resolve_interaction_property(&get, n, state);
+    let text_scale = frame.canvas(0).text_scale();
     let rect = resolve_ui_rect(
         reference,
         position,
@@ -1216,6 +1242,7 @@ pub(crate) fn draw_ui_node_with_bindings(
         pixel_grid,
         content_size,
         flow_size,
+        text_scale,
     );
     let visible = ui_visible(&get);
     if visible && get("ui").is_some() {
@@ -1265,6 +1292,7 @@ pub(crate) fn draw_ui_node_on_with_bindings<'a>(
         pixel_grid,
         content_size,
         flow_size,
+        canvas.text_scale(),
     );
     let visible = ui_visible(&get);
     if visible {
@@ -2273,6 +2301,7 @@ mod tests {
                 0.0,
                 None,
                 (None, None),
+                1.0,
             )
         };
 

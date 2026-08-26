@@ -427,6 +427,19 @@ pub struct SceneWorld2D {
     /// on. `None` by default — a screen with no `ui_focusable` nodes never
     /// pays for this.
     focused: Cell<Option<NodeHandle2D>>,
+    /// The canvas's [`text_scale`](crate::Canvas::text_scale), latched at the
+    /// top of each draw so the layout can resolve `em` lengths.
+    ///
+    /// Latched rather than set by the host: the canvas is the one place the
+    /// scale is authoritative, and a second setter would be free to disagree
+    /// with it. The layout passes are `&self` and do not carry a canvas — the
+    /// flow measures a child's authored `ui_w` with no atlas anywhere in
+    /// reach — so this is how that number gets to them.
+    ///
+    /// `Option` because the struct is `#[derive(Default)]` and a bare `f32`
+    /// would default to *zero* — every `em` length would collapse before the
+    /// first draw latched anything. `None` reads as `1.0`.
+    text_scale: Cell<Option<f32>>,
 }
 
 impl SceneWorld2D {
@@ -441,6 +454,12 @@ impl SceneWorld2D {
     /// `ui_snap: false`.
     pub fn set_pixel_grid(&mut self, cell: f32) {
         self.pixel_grid.set(cell.max(0.0));
+    }
+
+    /// The text scale the layout resolves `em` lengths against — the canvas's
+    /// own, latched by the draw entry points. `1.0` until the first draw.
+    fn text_scale(&self) -> f32 {
+        self.text_scale.get().unwrap_or(1.0)
     }
 
     /// Every `ui_focusable: true` node, in `ui_focus_order` order (ties break
@@ -1203,6 +1222,7 @@ impl SceneWorld2D {
     /// (E2 data binding) — e.g. `ui_text: "P{pos}  {name}"`. Empty bindings
     /// behave exactly like `draw_at`.
     pub fn draw_at_with_bindings(&self, frame: &mut Frame, time: f32, bindings: &Bindings) {
+        self.text_scale.set(Some(frame.canvas(0).text_scale()));
         let (sw, sh) = frame.canvas(0).screen_size();
         let screen = (-(sw as f32) / 2.0, -(sh as f32) / 2.0, sw as f32, sh as f32);
         let roots = self.roots.clone();
@@ -1306,7 +1326,8 @@ impl SceneWorld2D {
                 .property(name)
                 .map(|v| super::data2d::substitute_bindings(v, bindings).into_owned())
         };
-        let prop_f32 = |name: &str| get(name).and_then(|v| v.trim().parse::<f32>().ok());
+        let scale = self.text_scale();
+        let prop_f32 = |name: &str| get(name).and_then(|v| super::data2d::parse_length(&v, scale));
         let pad_left = prop_f32("ui_pad_left").unwrap_or(0.0);
         let pad_right = prop_f32("ui_pad_right").unwrap_or(0.0);
         let pad_top = prop_f32("ui_pad_top").unwrap_or(0.0);
@@ -1367,7 +1388,7 @@ impl SceneWorld2D {
             };
             c.property("ui_h")
                 .map(|v| super::data2d::substitute_bindings(v, child_bindings).into_owned())
-                .and_then(|v| v.trim().parse::<f32>().ok())
+                .and_then(|v| super::data2d::parse_length(&v, scale))
                 .unwrap_or(0.0)
                 .max(0.0)
                 * c.transform.scale.y
@@ -1422,7 +1443,8 @@ impl SceneWorld2D {
             "grid" => return self.resolve_grid_references(parent, parent_rect, children, bindings),
             _ => return vec![parent_rect; children.len()],
         };
-        let prop_f32 = |name: &str| get(parent, name).and_then(|v| v.trim().parse::<f32>().ok());
+        let scale = self.text_scale();
+        let prop_f32 = |name: &str| get(parent, name).and_then(|v| super::data2d::parse_length(&v, scale));
         let pad_left = prop_f32("ui_pad_left").unwrap_or(0.0);
         let pad_right = prop_f32("ui_pad_right").unwrap_or(0.0);
         let pad_top = prop_f32("ui_pad_top").unwrap_or(0.0);
@@ -1548,7 +1570,7 @@ impl SceneWorld2D {
             } else {
                 ("ui_w", "ui_h")
             };
-            let literal = |name: &str| child_get(name).and_then(|v| v.trim().parse::<f32>().ok());
+            let literal = |name: &str| child_get(name).and_then(|v| super::data2d::parse_length(&v, scale));
             // Per axis: a child that sizes to content only vertically still
             // takes its *width* from its authored `ui_w`, so a 640px-wide
             // panel in a column keeps its stated width and only its height
@@ -1593,7 +1615,7 @@ impl SceneWorld2D {
             auto_lead.push(authored_lead.as_deref().map(str::trim) == Some("auto"));
             lead.push(
                 authored_lead
-                    .and_then(|v| v.trim().parse::<f32>().ok())
+                    .and_then(|v| super::data2d::parse_length(&v, scale))
                     .unwrap_or(0.0)
                     * scale_main,
             );
@@ -1963,6 +1985,7 @@ impl SceneWorld2D {
         time: f32,
         bindings: &Bindings,
     ) {
+        self.text_scale.set(Some(canvas.text_scale()));
         let roots = self.roots.clone();
         for &r in &roots {
             if self.subtree_wants_content_size(r) {
@@ -2020,7 +2043,8 @@ impl SceneWorld2D {
             node.property(name)
                 .map(|v| super::data2d::substitute_bindings(v, effective_bindings).into_owned())
         };
-        let prop_f32 = |name: &str| get(name).and_then(|v| v.trim().parse::<f32>().ok());
+        let scale = canvas.text_scale();
+        let prop_f32 = |name: &str| get(name).and_then(|v| super::data2d::parse_length(&v, scale));
 
         let layout = get("ui_layout");
         let pad_left = prop_f32("ui_pad_left").unwrap_or(0.0);
@@ -2112,7 +2136,7 @@ impl SceneWorld2D {
             };
             c.property("ui_lead")
                 .map(|v| super::data2d::substitute_bindings(v, child_bindings).into_owned())
-                .and_then(|v| v.trim().parse::<f32>().ok())
+                .and_then(|v| super::data2d::parse_length(&v, scale))
                 .unwrap_or(0.0)
         };
         let leads: f32 = flow_children.iter().map(|&c| child_lead(c)).sum();
@@ -2444,7 +2468,7 @@ fn node_own_extent(node: &SceneNode2D, canvas: &Canvas, bindings: &Bindings) -> 
         node.property(name)
             .map(|v| super::data2d::substitute_bindings(v, bindings).into_owned())
     };
-    let prop_f32 = |name: &str| get(name).and_then(|v| v.trim().parse::<f32>().ok());
+    let prop_f32 = |name: &str| get(name).and_then(|v| super::data2d::parse_length(&v, canvas.text_scale()));
 
     // A measured axis is the fallback only for whichever of w/h wasn't
     // itself authored — a text node with an explicit ui_w but no ui_h still
@@ -2795,6 +2819,46 @@ mod tests {
         assert_eq!(world.get(b).unwrap().size(), Some(Vec2::new(80.0, 50.0)));
         let bounds_b = world.node_bounds(b).unwrap();
         assert_eq!((bounds_b.width, bounds_b.height), (80.0, 50.0));
+    }
+
+    #[test]
+    fn em_lengths_ride_the_text_scale_and_plain_numbers_do_not() {
+        // T1c: a column whose rows are hand-sized against 8px text needs a
+        // unit that grows with the glyphs. `20em` is that unit; `20` is not,
+        // and a panel border or a sprite box must stay exactly where it was.
+        let mut world = SceneWorld2D::new();
+        let container = world.spawn(SceneNode2D::new("list"));
+        {
+            let node = world.get_mut(container).unwrap();
+            node.set_property("ui", "rect");
+            node.set_property("ui_w", "100");
+            node.set_property("ui_h", "100");
+            node.set_property("ui_layout", "column");
+        }
+        let [scaling, fixed] = [("scaling", "20em"), ("fixed", "20")].map(|(name, h)| {
+            let row = world.spawn_child(container, SceneNode2D::new(name));
+            let node = world.get_mut(row).unwrap();
+            node.set_property("ui", "rect");
+            node.set_property("ui_h", h);
+            node.set_property("ui_stretch_x", "true");
+            node.set_property("ui_stretch_y", "true");
+            row
+        });
+
+        let mut canvas = Canvas::new((200, 200), std::ptr::null());
+        world.draw_to_canvas(&mut canvas, 0.0);
+        assert_eq!(world.resolved_rect(scaling).unwrap().height, 20.0);
+        assert_eq!(world.resolved_rect(fixed).unwrap().height, 20.0);
+
+        // Turned up, only the `em` row grows — and it grows in the *flow*
+        // measure, not just its own rect, so the row below it moves down.
+        canvas.set_text_scale(2.0);
+        world.draw_to_canvas(&mut canvas, 0.0);
+        let grown = world.resolved_rect(scaling).unwrap();
+        let stayed = world.resolved_rect(fixed).unwrap();
+        assert_eq!(grown.height, 40.0);
+        assert_eq!(stayed.height, 20.0);
+        assert_eq!(stayed.top(), grown.bottom());
     }
 
     #[test]
