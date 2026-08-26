@@ -83,6 +83,24 @@ pub struct Canvas {
     /// through every signature to guarantee that is a much larger diff than
     /// setting it once around the call.
     tracking: f32,
+    /// Multiplier applied to every text size this canvas draws or measures —
+    /// the accessibility knob a host exposes as "text size".
+    ///
+    /// Canvas state for exactly the reason `tracking` above is, only more so:
+    /// a scale that reached drawing but not measuring would give every
+    /// content-sized node a box the wrong size for the glyphs inside it, and
+    /// every centred run an offset computed at a size it is not painted at.
+    ///
+    /// Applied at the **atlas boundary**, never at an entry point that
+    /// delegates to another one, so a size is scaled exactly once however deep
+    /// the call nests. `text_aligned_in` therefore passes its raw `size` to
+    /// both `measure_text_in` and `text_with_font`, and each scales its own
+    /// copy.
+    ///
+    /// Layout dimensions are *not* font sizes and deliberately do not ride
+    /// this: a wrap width stays where the author put it, so larger text wraps
+    /// sooner rather than the paragraph growing sideways off the panel.
+    text_scale: f32,
 }
 
 impl Canvas {
@@ -105,7 +123,23 @@ impl Canvas {
             atlas,
             fonts,
             tracking: 0.0,
+            text_scale: 1.0,
         }
+    }
+
+    /// Set the multiplier applied to every text size drawn or measured on this
+    /// canvas. Returns the previous value so a caller can restore it.
+    ///
+    /// `1.0` is "as authored" and is what every scene is written against, so a
+    /// host that never calls this behaves exactly as it did before the knob
+    /// existed.
+    pub fn set_text_scale(&mut self, scale: f32) -> f32 {
+        std::mem::replace(&mut self.text_scale, scale.max(0.01))
+    }
+
+    /// The multiplier currently applied to every text size.
+    pub fn text_scale(&self) -> f32 {
+        self.text_scale
     }
 
     /// Set the extra spacing inserted after each glyph, in pixels at the
@@ -152,6 +186,7 @@ impl Canvas {
         size: f32,
         tracking: f32,
     ) -> (f32, f32) {
+        let size = size * self.text_scale;
         let (w, h) = match self.font_atlas_opt(font) {
             Some(atlas) => atlas.measure_text(text, size),
             None => crate::text::measure_builtin_text(text, size),
@@ -213,12 +248,13 @@ impl Canvas {
     /// and text centring must go through this, not the default-font version,
     /// or a node drawn in one face is measured in another.
     pub fn measure_text_in(&self, font: FontId, text: &str, size: f32) -> (f32, f32) {
-        let (w, h) = self.font_atlas(font).measure_text(text, size);
+        let (w, h) = self.font_atlas(font).measure_text(text, size * self.text_scale);
         (w + self.tracking_width(text), h)
     }
 
     /// [`line_height`](Self::line_height) in a specific font.
     pub fn line_height_in(&self, font: FontId, size: f32) -> f32 {
+        let size = size * self.text_scale;
         match self.font_atlas_opt(font) {
             Some(atlas) => atlas.line_height(size),
             // Measuring without a bound atlas: the builtin face's own line box.
@@ -698,6 +734,7 @@ impl Canvas {
         atlas: &FontAtlas,
     ) {
         self.set_font(atlas.id().0);
+        let size = size * self.text_scale;
         let scale = size / FONT_SIZE;
         let c = color.to_array();
         let baseline = atlas.baseline_below_top(y, size);
@@ -819,6 +856,7 @@ impl Canvas {
         atlas: &FontAtlas,
     ) {
         self.set_font(atlas.id().0);
+        let size = size * self.text_scale;
         let scale = size / FONT_SIZE;
         let tracking = self.tracking;
         // `y` is the line box's top, as in `text_with_font`.
@@ -1035,9 +1073,11 @@ impl Canvas {
         let offset = if align == TextAlign::Left {
             0.0
         } else {
+            // Only the measurement scales here: `text_spans_with_font` below
+            // scales its own copy of the raw `size`.
             let total_w: f32 = spans
                 .iter()
-                .map(|(s, _)| atlas.measure_text(s, size).0)
+                .map(|(s, _)| atlas.measure_text(s, size * self.text_scale).0)
                 .sum();
             match align {
                 TextAlign::Center => -total_w / 2.0,
@@ -1104,7 +1144,11 @@ impl Canvas {
         // `max_width` by its accumulated spacing. Tracking is for all-caps
         // chrome and wrapping is for prose; nothing authored is both. Give
         // `wrap_text` the tracking if that ever stops being true.
-        let lines = wrap_text(text, size, max_width, self.font_atlas(font));
+        // The wrap runs at the *painted* size against the author's own
+        // `max_width`, so bigger text breaks sooner instead of overrunning the
+        // panel. `text_block_lines_leaded_in` gets the raw size and scales its
+        // own copy.
+        let lines = wrap_text(text, size * self.text_scale, max_width, self.font_atlas(font));
         self.text_block_lines_leaded_in(font, x, y, &lines, size, color, align, leading);
     }
 
@@ -1124,9 +1168,13 @@ impl Canvas {
     ) -> (f32, f32) {
         // Same measuring function the wrap and the widest-line scan both use,
         // so they cannot disagree about where the breaks fall.
-        let measure = |run: &str| match self.font_atlas_opt(font) {
-            Some(atlas) => atlas.measure_text(run, size).0,
-            None => crate::text::measure_builtin_text(run, size).0,
+        // Scaled in the closure only: `line_height_in` below scales its own.
+        let measure = |run: &str| {
+            let size = size * self.text_scale;
+            match self.font_atlas_opt(font) {
+                Some(atlas) => atlas.measure_text(run, size).0,
+                None => crate::text::measure_builtin_text(run, size).0,
+            }
         };
         let lines = wrap_text_measured(text, max_width, &measure);
         let widest = lines
@@ -1194,7 +1242,8 @@ impl Canvas {
         }
         // `y` is the first line box's top; each subsequent line is one leaded
         // step lower, so the block occupies exactly `block_height`.
-        let step = self.font_atlas(font).line_height(size) * leading;
+        // The step scales; `text_aligned_in` per line scales its own copy.
+        let step = self.font_atlas(font).line_height(size * self.text_scale) * leading;
         for (i, line) in lines.iter().enumerate() {
             let ly = y - (i as f32) * step;
             self.text_aligned_in(font, x, ly, line, size, color, align);
@@ -1202,12 +1251,12 @@ impl Canvas {
     }
 
     pub fn measure_text(&self, text: &str, size: f32) -> (f32, f32) {
-        let (w, h) = self.atlas().measure_text(text, size);
+        let (w, h) = self.atlas().measure_text(text, size * self.text_scale);
         (w + self.tracking_width(text), h)
     }
 
     pub fn line_height(&self, size: f32) -> f32 {
-        self.atlas().line_height(size)
+        self.atlas().line_height(size * self.text_scale)
     }
 }
 
@@ -1518,6 +1567,82 @@ mod tests {
         // Non-ASCII is skipped by the draw loop, so it must not be counted
         // here either — otherwise the measure is wider than the paint.
         assert_eq!(w("A\u{2022}B", 4.0), w("AB", 4.0));
+    }
+
+    /// `text_scale` must land on every measuring path **exactly once**.
+    ///
+    /// Double-application is the whole risk of putting the scale at the atlas
+    /// boundary: the entry points nest (`measure_text_block_in` calls
+    /// `line_height_in`, `text_block_leaded_in` calls `wrap_text` *and*
+    /// `text_block_lines_leaded_in`), so a scale added to both an outer
+    /// function and the inner one it delegates to would quietly square. The
+    /// test is the ratio: measuring at 2x must equal measuring at 1x doubled,
+    /// not quadrupled.
+    ///
+    /// Runs on the builtin metrics — no atlas, no GPU — which is exactly the
+    /// path content sizing takes.
+    #[test]
+    fn the_text_scale_applies_once_on_every_measuring_path() {
+        let text = "MANAGE TYRES";
+        let mut one = Canvas::for_test((800, 600));
+        let mut two = Canvas::for_test((800, 600));
+        assert_eq!(one.set_text_scale(1.0), 1.0, "default scale is 1.0");
+        two.set_text_scale(2.0);
+
+        let close = |a: f32, b: f32, what: &str| {
+            assert!(
+                (a - b).abs() < 0.01,
+                "{what}: 2x gave {a}, expected {b} (double-scaled would be ~{})",
+                b * 2.0
+            );
+        };
+
+        // Every entry point a scene's content sizing can reach. Not
+        // `measure_text_in`: it goes through `font_atlas`, which asserts, so it
+        // is unreachable on an atlas-less canvas — it is only ever called
+        // behind `can_draw_text`.
+        close(
+            two.measure_text_tracked(FontId::DEFAULT, text, 10.0, 0.0).0,
+            one.measure_text_tracked(FontId::DEFAULT, text, 10.0, 0.0).0 * 2.0,
+            "measure_text_tracked",
+        );
+        close(
+            two.line_height_in(FontId::DEFAULT, 10.0),
+            one.line_height_in(FontId::DEFAULT, 10.0) * 2.0,
+            "line_height_in",
+        );
+        // The nested one: its height comes from `line_height_in`, its width
+        // from a closure of its own.
+        close(
+            two.measure_text_block_in(FontId::DEFAULT, text, 10.0, 1_000.0, 1.0).1,
+            one.measure_text_block_in(FontId::DEFAULT, text, 10.0, 1_000.0, 1.0).1 * 2.0,
+            "measure_text_block_in height",
+        );
+
+        // A scale of 1.0 must be bit-identical to no scale at all, or every
+        // recorded pixel baseline moves the day the knob lands.
+        assert_eq!(
+            one.measure_text_tracked(FontId::DEFAULT, text, 10.0, 0.0),
+            Canvas::for_test((800, 600)).measure_text_tracked(FontId::DEFAULT, text, 10.0, 0.0),
+        );
+
+        // A wrap width is a layout dimension, not a font size: bigger text
+        // must break into MORE lines inside the same box, never overrun it.
+        // Wide enough that 1x fits several words per line — a box so narrow
+        // that both scales collapse to one word per line proves nothing, since
+        // `wrap_text` never breaks inside a word.
+        let box_w = 220.0;
+        let prose = "the quick brown fox jumps over the lazy dog and keeps running";
+        let lines_at = |c: &Canvas| {
+            c.measure_text_block_in(FontId::DEFAULT, prose, 10.0, box_w, 1.0).1
+                / c.line_height_in(FontId::DEFAULT, 10.0)
+        };
+        assert!(
+            lines_at(&two) > lines_at(&one),
+            "2x text wrapped into {} lines against {} at 1x — the wrap width scaled with the text",
+            lines_at(&two),
+            lines_at(&one),
+        );
     }
 }
 
