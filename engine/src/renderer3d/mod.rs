@@ -213,55 +213,13 @@ pub(crate) struct Renderer3D {
 }
 
 impl Renderer3D {
-    pub async fn new(window: Arc<Window>, present_mode: wgpu::PresentMode) -> Self {
+    pub async fn new(
+        window: Arc<Window>,
+        present_mode: wgpu::PresentMode,
+    ) -> Result<Self, String> {
         let size = window.inner_size();
-
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::all(),
-            ..Default::default()
-        });
-
-        let surface = instance.create_surface(window).unwrap();
-
-        let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
-                compatible_surface: Some(&surface),
-                force_fallback_adapter: false,
-            })
-            .await
-            .expect("Failed to find a suitable GPU adapter");
-
-        let (device, queue) = adapter
-            .request_device(&wgpu::DeviceDescriptor {
-                label: Some("rengine3d_device"),
-                required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::default(),
-                memory_hints: wgpu::MemoryHints::default(),
-                ..Default::default()
-            })
-            .await
-            .expect("Failed to create GPU device");
-
-        let caps = surface.get_capabilities(&adapter);
-        let surface_format = caps
-            .formats
-            .iter()
-            .find(|f| f.is_srgb())
-            .copied()
-            .unwrap_or(caps.formats[0]);
-
-        let surface_config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: surface_format,
-            width: size.width.max(1),
-            height: size.height.max(1),
-            present_mode,
-            alpha_mode: caps.alpha_modes[0],
-            view_formats: vec![],
-            desired_maximum_frame_latency: 2,
-        };
-        surface.configure(&device, &surface_config);
+        let (surface, device, queue, surface_config, surface_format) =
+            crate::renderer::init_device(window, present_mode, size.width, size.height).await?;
 
         let depth_view =
             Self::create_depth_texture(&device, surface_config.width, surface_config.height);
@@ -428,7 +386,7 @@ impl Renderer3D {
         };
 
         renderer.white_texture = renderer.create_texture(1, 1, &[255, 255, 255, 255]);
-        renderer
+        return Ok(renderer);
     }
 
     pub(crate) fn load_font(&mut self, font_bytes: &[u8]) -> text::FontId {

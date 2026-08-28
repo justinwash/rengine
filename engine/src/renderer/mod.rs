@@ -264,27 +264,85 @@ pub(crate) struct Renderer {
     postfx: Option<PostFxPipeline>,
 }
 
-impl Renderer {
-    pub async fn new(window: Arc<Window>, present_mode: wgpu::PresentMode) -> Self {
-        let size = window.inner_size();
+/// The wgpu backends to try, in priority order.
+///
+/// Returns Vulkan first: it is the native path on the Steam Deck and Linux, and a
+/// Windows build running under Proton/Wine takes Vulkan directly rather than
+/// through the fragile D3D12 -> vkd3d-proton translation that can fail to create
+/// an adapter or device. On a machine without Vulkan the adapter lookup simply
+/// fails and [`init_device`] falls through to the next backend, so this ordering
+/// is safe even on a stock Windows box whose only GPU API is D3D12.
+///
+/// An explicit `WGPU_BACKEND` environment variable (e.g. "vulkan" or "dx12")
+/// overrides the order. wgpu only honours this when the app asks for it, which
+/// the previous hardcoded `Backends::all()` did not - setting the variable had
+/// no effect at all. That is fixed here.
+fn pick_backends() -> Vec<wgpu::Backends> {
+    if let Some(env) = wgpu::Backends::from_env() {
+        if !env.is_empty() {
+            return vec![env];
+        }
+    }
+    vec![
+        wgpu::Backends::VULKAN,
+        wgpu::Backends::METAL,
+        wgpu::Backends::DX12,
+        wgpu::Backends::GL,
+    ]
+}
 
+/// Create the swap surface, adapter, device and surface configuration, retrying
+/// across [`pick_backends`] candidates instead of panicking on the first miss.
+///
+/// The previous code hard-`.unwrap()`ed surface creation and `.expect()`ed the
+/// adapter and device. That was modelled on a Windows machine that always has
+/// D3D12; under Proton/Wine the D3D12 backend (vkd3d-proton) can fail, so the
+/// process panicked in the frame after the window opened - the crash being
+/// reported. Retrying the next backend turns that crash into a working Vulkan
+/// (or GL) session, and returns a descriptive error only if every backend fails.
+pub(crate) async fn init_device(
+    window: Arc<Window>,
+    present_mode: wgpu::PresentMode,
+    width: u32,
+    height: u32,
+) -> Result<
+    (
+        wgpu::Surface<'static>,
+        wgpu::Device,
+        wgpu::Queue,
+        wgpu::SurfaceConfiguration,
+        wgpu::TextureFormat,
+    ),
+    String,
+> {
+    let mut last_error = "no wgpu backend was available".to_string();
+    for backend in pick_backends() {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::all(),
+            backends: backend,
             ..Default::default()
         });
-
-        let surface = instance.create_surface(window).unwrap();
-
-        let adapter = instance
+        let surface = match instance.create_surface(window.clone()) {
+            Ok(surface) => surface,
+            Err(error) => {
+                last_error = format!("{backend:?}: could not create the window surface: {error}");
+                continue;
+            }
+        };
+        let adapter = match instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::default(),
                 compatible_surface: Some(&surface),
                 force_fallback_adapter: false,
             })
             .await
-            .expect("Failed to find a suitable GPU adapter");
-
-        let (device, queue) = adapter
+        {
+            Ok(adapter) => adapter,
+            Err(error) => {
+                last_error = format!("{backend:?}: no compatible GPU adapter: {error}");
+                continue;
+            }
+        };
+        let (device, queue) = match adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("rengine_device"),
                 required_features: wgpu::Features::empty(),
@@ -293,8 +351,13 @@ impl Renderer {
                 ..Default::default()
             })
             .await
-            .expect("Failed to create GPU device");
-
+        {
+            Ok((device, queue)) => (device, queue),
+            Err(error) => {
+                last_error = format!("{backend:?}: could not create the GPU device: {error}");
+                continue;
+            }
+        };
         let caps = surface.get_capabilities(&adapter);
         let surface_format = caps
             .formats
@@ -302,18 +365,31 @@ impl Renderer {
             .find(|f| f.is_srgb())
             .copied()
             .unwrap_or(caps.formats[0]);
-
         let surface_config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
-            width: size.width.max(1),
-            height: size.height.max(1),
+            width: width.max(1),
+            height: height.max(1),
             present_mode,
             alpha_mode: caps.alpha_modes[0],
             view_formats: vec![],
             desired_maximum_frame_latency: 2,
         };
         surface.configure(&device, &surface_config);
+        log::info!("wgpu initialized on backend: {backend:?}");
+        return Ok((surface, device, queue, surface_config, surface_format));
+    }
+    Err(format!("no usable GPU backend: {last_error}"))
+}
+
+impl Renderer {
+    pub async fn new(
+        window: Arc<Window>,
+        present_mode: wgpu::PresentMode,
+    ) -> Result<Self, String> {
+        let size = window.inner_size();
+        let (surface, device, queue, surface_config, surface_format) =
+            init_device(window, present_mode, size.width, size.height).await?;
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("sprite_shader"),
@@ -482,7 +558,7 @@ impl Renderer {
         let white = renderer.create_texture(1, 1, &[255, 255, 255, 255]);
         renderer.white_texture = white;
 
-        renderer
+        return Ok(renderer);
     }
 
     pub(crate) fn load_font(&mut self, font_bytes: &[u8]) -> text::FontId {

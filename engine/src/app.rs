@@ -1469,7 +1469,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
     } else {
         wgpu::PresentMode::AutoNoVsync
     };
-    let renderer = pollster::block_on(Renderer::new(window.clone(), present_mode));
+    let renderer = pollster::block_on(Renderer::new(window.clone(), present_mode))?;
 
     let mut engine = Engine {
         renderer,
@@ -1713,7 +1713,7 @@ where
     } else {
         wgpu::PresentMode::AutoNoVsync
     };
-    let renderer = pollster::block_on(Renderer::new(window.clone(), present_mode));
+    let renderer = pollster::block_on(Renderer::new(window.clone(), present_mode))?;
 
     let mut engine = Engine {
         renderer,
@@ -2571,7 +2571,7 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
     } else {
         wgpu::PresentMode::AutoNoVsync
     };
-    let renderer = pollster::block_on(Renderer3D::new(window.clone(), present_mode));
+    let renderer = pollster::block_on(Renderer3D::new(window.clone(), present_mode))?;
 
     let mut engine = Engine3D {
         renderer,
@@ -2810,7 +2810,7 @@ where
     } else {
         wgpu::PresentMode::AutoNoVsync
     };
-    let renderer = pollster::block_on(Renderer3D::new(window.clone(), present_mode));
+    let renderer = pollster::block_on(Renderer3D::new(window.clone(), present_mode))?;
 
     let mut engine = Engine3D {
         renderer,
