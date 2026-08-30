@@ -71,6 +71,7 @@ fn build_menu() -> SceneLayer2D {
                 button_instance(1, "spawn_btn", "Spawn Box", "spawn", [-250.0, 110.0]),
                 button_instance(2, "clear_btn", "Clear All", "clear", [40.0, 110.0]),
             ],
+            animations: vec![],
         },
         &AssetPack::default(),
     )
@@ -272,6 +273,7 @@ mod tests {
                     "spawn",
                     [-250.0, 110.0],
                 )],
+                animations: vec![],
             },
             &AssetPack::default(),
         )

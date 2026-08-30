@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 pub use rengine::EditorSceneNodeKind as SceneNodeKind;
 pub use rengine::EditorSceneNode as SceneNode;
+pub use rengine::SceneAnimClip;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SceneViewSettings {
@@ -128,6 +129,11 @@ pub struct SceneDocument {
     #[serde(default)]
     pub view: SceneViewSettings,
     pub nodes: Vec<SceneNode>,
+    /// Scene-authored keyframe clips (`animations` at the document root).
+    /// Authored in the editor, played back by the engine from the scene data —
+    /// never a Rust procedure.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub animations: Vec<SceneAnimClip>,
     /// Legacy counter kept for backward-compatibility with hand-edited files.
     /// Node IDs are now assigned randomly; this field is no longer used for
     /// allocation but is preserved so older tooling can still read the format.
@@ -142,6 +148,7 @@ impl SceneDocument {
             version: rengine::CURRENT_EDITOR_SCENE_VERSION,
             view: SceneViewSettings::default(),
             nodes: Vec::new(),
+            animations: Vec::new(),
             next_id: 0,
         }
     }

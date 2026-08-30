@@ -23,6 +23,8 @@ use crate::layout::{Justify, Track};
 use crate::renderer::{DrawParams, Frame};
 use crate::{Rect, Vec2};
 
+use super::anim2d::{sample_track, AnimatedProperty, SceneAnimClip};
+use crate::assets::Color;
 use super::data2d::{parse_bool_property, Bindings, PrefabSprite2D, RepeaterSources, Scene2D};
 
 /// The node property that names a nested scene to expand from a [`SceneLibrary`].
@@ -440,6 +442,194 @@ pub struct SceneWorld2D {
     /// would default to *zero* — every `em` length would collapse before the
     /// first draw latched anything. `None` reads as `1.0`.
     text_scale: Cell<Option<f32>>,
+    /// Scene-authored keyframe clips, copied from the source document when the
+    /// world is instantiated (`instantiate_scene_tree`). This is the authored
+    /// animation data — the clips themselves live in the scene JSON.
+    animations: Vec<SceneAnimClip>,
+    /// Clips currently playing, in play order. A later play wins a shared
+    /// target; `apply_animations` samples them at the clock the host feeds.
+    active_anims: Vec<ActiveAnim>,
+}
+
+/// One playing clip: which clip, when it started on the host clock, and the
+/// per-target authored state captured at play so a finished clip can restore.
+struct ActiveAnim {
+    clip: usize,
+    started_at: f32,
+    targets: Vec<AnimTargetState>,
+    /// track.target name → index into `targets`.
+    target_index: HashMap<String, usize>,
+}
+
+/// One frame's sampled values for one target node, accumulated from every
+/// track that names it so axis pairs (offset_x + offset_y) compose before
+/// anything is written.
+#[derive(Default, Clone)]
+struct AnimSampleAccum {
+    dx: Option<f32>,
+    dy: Option<f32>,
+    rot: Option<f32>,
+    scale: Option<f32>,
+    alpha: Option<f32>,
+    visible: Option<f32>,
+}
+
+/// The state of one animated node when its clip started.
+#[derive(Clone)]
+struct AnimTargetState {
+    handle: NodeHandle2D,
+    rest: Transform2D,
+    rest_visible: bool,
+    rest_ui_visible_set: bool,
+    /// Which fill carries the node's alpha, and its base value at clip start.
+    /// `None` when the node has no animatable fill (no `ui_color`, no sprite).
+    fill: Option<AnimTargetFill>,
+}
+
+#[derive(Clone, Copy)]
+enum AnimTargetFill {
+    /// The alpha rides in the node's `ui_color` property ("r,g,b,a"). `rgb`
+    /// is captured at play so the per-frame rewrite never depends on the
+    /// property staying parseable.
+    UiColor { rgb: [f32; 3], base: f32 },
+    /// The alpha rides in the leading sprite's tint.
+    Sprite { rgb: [f32; 3], base: f32 },
+}
+
+/// Capture the authored state of a node when its clip starts: the transform,
+/// visibility, and the fill whose alpha the clip will drive. `None` when the
+/// node no longer exists.
+fn capture_anim_target(world: &SceneWorld2D, handle: NodeHandle2D) -> Option<AnimTargetState> {
+    let node = world.get(handle)?;
+    let is_ui = node.property("ui").is_some();
+    let fill = if !node.sprites().is_empty() {
+        let c = node.sprites()[0].color;
+        Some(AnimTargetFill::Sprite {
+            rgb: [c.r, c.g, c.b],
+            base: c.a,
+        })
+    } else if is_ui {
+        parse_ui_color(node.property("ui_color")).map(|(rgb, base)| AnimTargetFill::UiColor { rgb, base })
+    } else {
+        None
+    };
+    Some(AnimTargetState {
+        handle,
+        rest: node.transform(),
+        rest_visible: node.is_visible(),
+        rest_ui_visible_set: is_ui,
+        fill,
+    })
+}
+
+/// Parse a `ui_color` "r,g,b,a" string; `None` when a component is not a
+/// number (a placeholder like `"{chalk},255"` is left to the binder).
+fn parse_ui_color(value: Option<&str>) -> Option<([f32; 3], f32)> {
+    let parts: Vec<f32> = value?
+        .split(',')
+        .take(4)
+        .map(|s| s.trim().parse().ok())
+        .collect::<Option<Vec<f32>>>()?;
+    if parts.len() != 4 {
+        return None;
+    }
+    Some(([parts[0], parts[1], parts[2]], parts[3]))
+}
+
+/// Write one frame's sampled values onto a target node.
+fn write_anim_target(
+    world: &mut SceneWorld2D,
+    target: &AnimTargetState,
+    s: &AnimSampleAccum,
+) {
+    if s.dx.is_some() || s.dy.is_some() {
+        if let Some(n) = world.get_mut(target.handle) {
+            n.set_position(Vec2::new(
+                target.rest.position.x + s.dx.unwrap_or(0.0),
+                target.rest.position.y + s.dy.unwrap_or(0.0),
+            ));
+        }
+    }
+    if let Some(deg) = s.rot {
+        if let Some(n) = world.get_mut(target.handle) {
+            n.set_rotation(target.rest.rotation + deg.to_radians());
+        }
+    }
+    if let Some(scale) = s.scale {
+        if let Some(n) = world.get_mut(target.handle) {
+            n.set_scale(Vec2::new(
+                target.rest.scale.x * scale,
+                target.rest.scale.y * scale,
+            ));
+        }
+    }
+    if let Some(v) = s.visible {
+        let visible = v != 0.0;
+        if target.rest_ui_visible_set {
+            if let Some(n) = world.get_mut(target.handle) {
+                n.set_property("ui_visible", if visible { "true" } else { "false" });
+            }
+        } else if let Some(n) = world.get_mut(target.handle) {
+            n.set_visible(visible);
+        }
+    }
+    if let Some(alpha) = s.alpha {
+        if let Some(fill) = target.fill {
+            set_anim_fill(world, target.handle, fill, alpha);
+        }
+    }
+}
+
+/// Apply `multiplier` to the target's captured fill alpha.
+fn set_anim_fill(
+    world: &mut SceneWorld2D,
+    handle: NodeHandle2D,
+    fill: AnimTargetFill,
+    multiplier: f32,
+) {
+    match fill {
+        AnimTargetFill::UiColor { rgb, base } => {
+            let alpha = (base * multiplier).clamp(0.0, 255.0);
+            let color = format!("{},{},{},{}", rgb[0], rgb[1], rgb[2], alpha);
+            if let Some(n) = world.get_mut(handle) {
+                n.set_property("ui_color", color);
+            }
+        }
+        AnimTargetFill::Sprite { rgb, base } => {
+            let alpha = (base * multiplier).clamp(0.0, 1.0);
+            if let Some(n) = world.get_mut(handle) {
+                let mut sprites = n.sprites().to_vec();
+                if let Some(first) = sprites.first_mut() {
+                    first.color = Color {
+                        r: rgb[0],
+                        g: rgb[1],
+                        b: rgb[2],
+                        a: alpha,
+                    };
+                }
+                n.set_sprites(sprites);
+            }
+        }
+    }
+}
+
+/// Put every target back to the transform, visibility and fill it had when
+/// its clip started.
+fn restore_anim_targets(world: &mut SceneWorld2D, targets: &[AnimTargetState]) {
+    for target in targets {
+        if let Some(n) = world.get_mut(target.handle) {
+            n.set_position(target.rest.position);
+            n.set_rotation(target.rest.rotation);
+            n.set_scale(target.rest.scale);
+            n.set_visible(target.rest_visible);
+            if target.rest_ui_visible_set {
+                n.set_property("ui_visible", if target.rest_visible { "true" } else { "false" });
+            }
+        }
+        if let Some(fill) = target.fill {
+            set_anim_fill(world, target.handle, fill, 1.0);
+        }
+    }
 }
 
 impl SceneWorld2D {
@@ -454,6 +644,129 @@ impl SceneWorld2D {
     /// `ui_snap: false`.
     pub fn set_pixel_grid(&mut self, cell: f32) {
         self.pixel_grid.set(cell.max(0.0));
+    }
+
+    /// The scene-authored clips this world can play (`animations` from the
+    /// source document, copied in [`instantiate_scene_tree`](Self::instantiate_scene_tree)).
+    pub fn animations(&self) -> &[SceneAnimClip] {
+        &self.animations
+    }
+
+    /// Start the authored clip `id` at `started_at` on the host's clock. The
+    /// clock is the caller's: `apply_animations` is fed the same time the host
+    /// runs its gameplay on, so a vignette advances with the race, not on a
+    /// private timer. Returns whether the clip exists. Replaying a playing
+    /// clip restarts it; a later play of a *different* clip wins any property
+    /// both animate while they both run.
+    pub fn play_animation(&mut self, id: &str, started_at: f32) -> bool {
+        let Some(clip_index) = self.animations.iter().position(|c| c.id == id) else {
+            return false;
+        };
+        let clip = self.animations[clip_index].clone();
+        let mut seen = std::collections::HashSet::new();
+        let mut targets = Vec::new();
+        let mut target_index = HashMap::new();
+        for track in &clip.tracks {
+            if !seen.insert(track.target.clone()) || target_index.contains_key(&track.target) {
+                continue;
+            }
+            let Some(handle) = self.find_by_name(&track.target) else {
+                continue;
+            };
+            let Some(state) = capture_anim_target(self, handle) else {
+                continue;
+            };
+            target_index.insert(track.target.clone(), targets.len());
+            targets.push(state);
+        }
+        self.active_anims.retain(|a| a.clip != clip_index);
+        self.active_anims.push(ActiveAnim {
+            clip: clip_index,
+            started_at,
+            targets,
+            target_index,
+        });
+        true
+    }
+
+    /// Stop an active clip now, restoring its targets to the state they had
+    /// when it started.
+    pub fn stop_animation(&mut self, id: &str) {
+        let Some(index) = self
+            .active_anims
+            .iter()
+            .position(|a| &self.animations[a.clip].id == id)
+        else {
+            return;
+        };
+        let active = self.active_anims.remove(index);
+        restore_anim_targets(self, &active.targets);
+    }
+
+    /// Whether the authored clip `id` is currently playing.
+    pub fn is_animation_playing(&self, id: &str) -> bool {
+        self.active_anims
+            .iter()
+            .any(|a| &self.animations[a.clip].id == id)
+    }
+
+    /// Sample every active clip at `time` (seconds on the host's clock) and
+    /// write each track's value onto its target node. Call this each frame
+    /// before drawing the world. A finished non-looping clip restores its
+    /// targets to the state they had at play and leaves the active set;
+    /// looping clips wrap on `duration`.
+    pub fn apply_animations(&mut self, time: f32) {
+        if self.active_anims.is_empty() {
+            return;
+        }
+        let mut finished: Vec<usize> = Vec::new();
+        for i in 0..self.active_anims.len() {
+            let (clip_index, started_at) = {
+                let a = &self.active_anims[i];
+                (a.clip, a.started_at)
+            };
+            let clip = self.animations[clip_index].clone();
+            let mut clip_t = time - started_at;
+            if clip.duration > 0.0 && clip_t >= clip.duration {
+                if clip.looping {
+                    clip_t %= clip.duration;
+                } else {
+                    finished.push(i);
+                    continue;
+                }
+            }
+            let clip_t = clip_t.max(0.0);
+            let targets = self.active_anims[i].targets.clone();
+            let mut accs: Vec<AnimSampleAccum> = vec![AnimSampleAccum::default(); targets.len()];
+            for track in &clip.tracks {
+                let Some(value) = sample_track(track, clip_t) else {
+                    continue;
+                };
+                let Some(&ti) = self.active_anims[i].target_index.get(&track.target) else {
+                    continue;
+                };
+                let acc = &mut accs[ti];
+                match track.property {
+                    AnimatedProperty::OffsetX => acc.dx = Some(value),
+                    AnimatedProperty::OffsetY => acc.dy = Some(value),
+                    AnimatedProperty::RotationDeg => acc.rot = Some(value),
+                    AnimatedProperty::Scale => acc.scale = Some(value),
+                    AnimatedProperty::Alpha => acc.alpha = Some(value),
+                    AnimatedProperty::Visible => acc.visible = Some(value),
+                }
+            }
+            for (ti, target) in targets.iter().enumerate() {
+                write_anim_target(self, target, &accs[ti]);
+            }
+        }
+        // Restore after the writes: a finished clip's restoration must be the
+        // last thing to touch its nodes for this frame, so a live clip that
+        // also targets them still wins. Reverse order keeps earlier indices
+        // valid as later ones are removed.
+        for &i in finished.iter().rev() {
+            let active = self.active_anims.remove(i);
+            restore_anim_targets(self, &active.targets);
+        }
     }
 
     /// The text scale the layout resolves `em` lengths against — the canvas's
@@ -678,6 +991,15 @@ impl SceneWorld2D {
         parent: Option<NodeHandle2D>,
         offset: Transform2D,
     ) -> Vec<NodeHandle2D> {
+        // The scene's authored clips come with it; a later scene's clip of the
+        // same id wins (play_animation finds the first match).
+        for clip in &scene.animations {
+            let Some(entry) = self.animations.iter_mut().find(|c| c.id == clip.id) else {
+                self.animations.push(clip.clone());
+                continue;
+            };
+            *entry = clip.clone();
+        }
         let mut active = HashSet::new();
         self.instantiate_scene_tree_inner(scene, library, parent, offset, 0, &mut active)
     }
@@ -4066,6 +4388,7 @@ mod tests {
                     ]),
                 },
             ],
+            animations: Vec::new(),
         };
 
         let assets = AssetPack::default();
@@ -4116,6 +4439,7 @@ mod tests {
                     ]),
                 },
             ],
+            animations: Vec::new(),
         };
         Scene2D::from_definition(Path::new("t.scene.json"), definition, &AssetPack::default())
             .unwrap()
@@ -4204,6 +4528,7 @@ mod tests {
                 sprites: vec![],
             }],
             instances,
+            animations: Vec::new(),
         };
         Scene2D::from_definition(Path::new("t.scene.json"), definition, &AssetPack::default())
             .unwrap()
@@ -4225,6 +4550,7 @@ mod tests {
                 scale: [1.0, 1.0],
                 properties,
             }],
+            animations: Vec::new(),
         };
         Scene2D::from_definition(Path::new("t.scene.json"), definition, &AssetPack::default())
             .unwrap()
@@ -5720,5 +6046,54 @@ mod tests {
                 "bound token drew {bound:?}, palette chalk is {expected:?}"
             );
         }
+    }
+
+    #[test]
+    fn authored_clips_play_then_restore_their_targets() {
+        use crate::scene::{AnimKeyframe, AnimatedProperty, SceneAnimClip, SceneAnimTrack};
+        use crate::math::tween::Easing;
+
+        let mut world = SceneWorld2D::new();
+        let mut car = SceneNode2D::new("car_a").with_name("car_a");
+        car.set_position(Vec2::new(40.0, 20.0));
+        world.spawn(car);
+
+        // The clip moves the car 100px right over 1s (linear), then the world
+        // plays it on the host clock: t0 = 50, apply at 50.5 => halfway.
+        world.animations.push(SceneAnimClip {
+            id: "lunge".to_string(),
+            duration: 1.0,
+            looping: false,
+            tracks: vec![SceneAnimTrack {
+                target: "car_a".to_string(),
+                property: AnimatedProperty::OffsetX,
+                keyframes: vec![
+                    AnimKeyframe { t: 0.0, value: 0.0, ease: Easing::Linear },
+                    AnimKeyframe { t: 1.0, value: 100.0, ease: Easing::Linear },
+                ],
+            }],
+        });
+
+        assert!(world.play_animation("lunge", 50.0));
+        world.apply_animations(50.5);
+        let x = world.get(world.find_by_name("car_a").unwrap()).unwrap().position().x;
+        assert!((x - 90.0).abs() < 0.001, "halfway through the clip the car should sit at rest+50, got {x}");
+
+        // A clip that doesn't exist is a no-op.
+        assert!(!world.play_animation("missing", 0.0));
+
+        // Past the end the clip is done and the node is restored.
+        world.apply_animations(51.5);
+        assert!(!world.is_animation_playing("lunge"));
+        let x = world.get(world.find_by_name("car_a").unwrap()).unwrap().position().x;
+        assert!((x - 40.0).abs() < 0.001, "a finished clip restores the authored position, got {x}");
+
+        // A looping clip never finishes and (with a flat track) just holds.
+        world.animations[0].looping = true;
+        world.play_animation("lunge", 0.0);
+        world.apply_animations(9.0);
+        assert!(world.is_animation_playing("lunge"));
+        world.stop_animation("lunge");
+        assert!(!world.is_animation_playing("lunge"));
     }
 }

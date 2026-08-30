@@ -55,15 +55,15 @@ pub use assets::{
 
 pub use canvas::{screen_to_ndc, wrap_text, Canvas, CanvasVertex, TextAlign};
 pub use scene::{
-    validate_editor_scene, validate_scene_dir, validate_scene_file, Bindings, EditorSceneDocument,
-    EditorSceneNode, EditorSceneNodeKind, Globals, NodeHandle2D, Prefab2D, Prefab2DDef,
-    PrefabSprite2D, PrefabSprite2DDef, RepeaterSources, Scene, Scene2D, Scene2DDef,
-    SceneInstance2D, SceneInstance2DDef, SceneIssueSeverity, SceneLayer2D, SceneLibrary,
-    SceneNode2D, SceneOp, SceneScript2D, SceneScriptBinding2D, SceneScriptContext2D,
-    SceneScriptEvent2D, SceneScriptHost2D, SceneScriptInputEvent2D, SceneScriptRegistry2D,
-    SceneValidationIssue, SceneValidationReport, SceneWorld2D, ScriptDef, ScriptManifest,
-    ScriptParamDef, ScriptParamKind, Transform2D, Transition, CURRENT_EDITOR_SCENE_VERSION,
-    NESTED_SCENE_PROPERTY,
+    validate_editor_scene, validate_scene_dir, validate_scene_file, AnimKeyframe, AnimatedProperty,
+    Bindings, EditorSceneDocument, EditorSceneNode, EditorSceneNodeKind, Globals, NodeHandle2D,
+    Prefab2D, Prefab2DDef, PrefabSprite2D, PrefabSprite2DDef, RepeaterSources, Scene, Scene2D,
+    Scene2DDef, SceneAnimClip, SceneAnimTrack, SceneInstance2D, SceneInstance2DDef,
+    SceneIssueSeverity, SceneLayer2D, SceneLibrary, SceneNode2D, SceneOp, SceneScript2D,
+    SceneScriptBinding2D, SceneScriptContext2D, SceneScriptEvent2D, SceneScriptHost2D,
+    SceneScriptInputEvent2D, SceneScriptRegistry2D, SceneValidationIssue, SceneValidationReport,
+    SceneWorld2D, ScriptDef, ScriptManifest, ScriptParamDef, ScriptParamKind, Transform2D,
+    Transition, CURRENT_EDITOR_SCENE_VERSION, NESTED_SCENE_PROPERTY,
 };
 pub use text::FontAtlas;
 pub use text::FontId;

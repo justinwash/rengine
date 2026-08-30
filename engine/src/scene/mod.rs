@@ -1,3 +1,4 @@
+mod anim2d;
 mod data2d;
 mod globals;
 mod layer2d;
@@ -5,6 +6,10 @@ mod script2d;
 mod script_manifest;
 mod validation;
 mod world2d;
+
+pub use anim2d::{
+    AnimKeyframe, AnimatedProperty, SceneAnimClip, SceneAnimTrack, sample_keyframes, sample_track,
+};
 
 pub use data2d::{
     Bindings, EditorSceneDocument, EditorSceneNode, EditorSceneNodeKind, Prefab2D, Prefab2DDef,

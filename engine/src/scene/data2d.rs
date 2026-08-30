@@ -11,6 +11,8 @@ use crate::renderer::{DrawParams, Frame};
 use crate::text::FontId;
 use crate::{TextureId, Vec2};
 
+use super::anim2d::SceneAnimClip;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PrefabSprite2DDef {
     pub asset: String,
@@ -48,6 +50,9 @@ pub struct Scene2DDef {
     pub prefabs: Vec<Prefab2DDef>,
     #[serde(default)]
     pub instances: Vec<SceneInstance2DDef>,
+    /// Scene-authored keyframe clips (`animations` at the document root).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub animations: Vec<SceneAnimClip>,
 }
 
 #[derive(Debug, Clone)]
@@ -1395,6 +1400,8 @@ impl SceneScriptBinding2D {
 #[derive(Debug, Clone, Default)]
 pub struct Scene2D {
     instances: Vec<SceneInstance2D>,
+    /// Scene-authored keyframe clips, ready to play on a built world.
+    pub animations: Vec<SceneAnimClip>,
 }
 
 impl Scene2D {
@@ -1446,7 +1453,10 @@ impl Scene2D {
             });
         }
 
-        Ok(Self { instances })
+        Ok(Self {
+            instances,
+            animations: definition.animations,
+        })
     }
 
     pub fn instances(&self) -> &[SceneInstance2D] {
@@ -1579,6 +1589,9 @@ pub(crate) fn parse_bool_property(value: &str) -> Option<bool> {
 pub struct EditorSceneDocument {
     #[serde(default)]
     pub nodes: Vec<EditorSceneNode>,
+    /// Scene-authored keyframe clips (`animations` at the document root).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub animations: Vec<SceneAnimClip>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1766,7 +1779,11 @@ fn scene_definition_from_editor_document(
         });
     }
 
-    Ok(Scene2DDef { prefabs, instances })
+    Ok(Scene2DDef {
+        prefabs,
+        instances,
+        animations: document.animations,
+    })
 }
 
 fn build_editor_node_indices(
@@ -2492,6 +2509,7 @@ mod tests {
                     sprites: Vec::new(),
                 },
             ],
+            animations: Vec::new(),
         };
 
         let bindings = scene.script_bindings();
@@ -2545,6 +2563,7 @@ mod tests {
                     sprites: Vec::new(),
                 },
             ],
+            animations: Vec::new(),
         };
 
         assert_eq!(
@@ -2588,7 +2607,8 @@ mod tests {
     }
 
     fn compiled_properties(node: EditorSceneNode) -> HashMap<String, String> {
-        let document = EditorSceneDocument { nodes: vec![node] };
+        let document = EditorSceneDocument { nodes: vec![node],
+            animations: Vec::new(), };
         let def = scene_definition_from_editor_document(Path::new("<test>"), document).unwrap();
         def.instances.into_iter().next().unwrap().properties
     }
@@ -2660,7 +2680,8 @@ mod tests {
         node.asset_alias = "car_side".to_string();
         node.size = [100.0, 34.0];
 
-        let document = EditorSceneDocument { nodes: vec![node] };
+        let document = EditorSceneDocument { nodes: vec![node],
+            animations: Vec::new(), };
         let def = scene_definition_from_editor_document(Path::new("<test>"), document).unwrap();
         let prefab = def.prefabs.first().expect("one prefab");
         assert_eq!(prefab.sprites.len(), 1, "Image compiles a prefab sprite");
@@ -2828,7 +2849,8 @@ mod tests {
         let mut node = typed_node(1, EditorSceneNodeKind::Button, &[]);
         node.asset_alias = "menu_panel".to_string();
         node.size = [210.0, 38.0];
-        let document = EditorSceneDocument { nodes: vec![node] };
+        let document = EditorSceneDocument { nodes: vec![node],
+            animations: Vec::new(), };
         let def = scene_definition_from_editor_document(Path::new("<test>"), document).unwrap();
         let prefab = def.prefabs.first().expect("one prefab");
         assert_eq!(
@@ -2860,6 +2882,7 @@ mod tests {
         // A pure Sprite node stays strict: it has nothing else to be.
         let document = EditorSceneDocument {
             nodes: vec![typed_node(1, EditorSceneNodeKind::Sprite, &[])],
+            animations: Vec::new(),
         };
         assert!(
             scene_definition_from_editor_document(Path::new("<test>"), document).is_err(),
@@ -2927,6 +2950,7 @@ mod tests {
                     properties: HashMap::new(),
                 },
             ],
+            animations: Vec::new(),
         };
 
         let definition =
@@ -3030,6 +3054,7 @@ mod tests {
                     properties: HashMap::new(),
                 },
             ],
+            animations: Vec::new(),
         };
 
         let error = scene_definition_from_editor_document(Path::new("editor.scene.json"), document)
@@ -3124,6 +3149,7 @@ mod tests {
                     properties: HashMap::new(),
                 },
             ],
+            animations: Vec::new(),
         };
 
         let definition =
@@ -3169,6 +3195,7 @@ mod tests {
                     properties: HashMap::new(),
                 },
             ],
+            animations: Vec::new(),
         };
 
         let error = scene_definition_from_editor_document(Path::new("editor.scene.json"), document)
@@ -3196,6 +3223,7 @@ mod tests {
                 asset_alias: "tree".to_string(),
                 properties: HashMap::new(),
             }],
+            animations: Vec::new(),
         };
 
         let error = scene_definition_from_editor_document(Path::new("editor.scene.json"), document)
@@ -3223,6 +3251,7 @@ mod tests {
                 asset_alias: String::new(),
                 properties: HashMap::new(),
             }],
+            animations: Vec::new(),
         };
 
         let error = scene_definition_from_editor_document(Path::new("editor.scene.json"), document)
@@ -3265,6 +3294,7 @@ mod tests {
                     properties: HashMap::new(),
                 },
             ],
+            animations: Vec::new(),
         };
 
         let error = scene_definition_from_editor_document(Path::new("editor.scene.json"), document)
@@ -3320,6 +3350,7 @@ mod tests {
                     properties: HashMap::new(),
                 },
             ],
+            animations: Vec::new(),
         };
 
         let definition =
@@ -3394,6 +3425,7 @@ mod tests {
                     properties: HashMap::new(),
                 },
             ],
+            animations: Vec::new(),
         };
 
         let definition =

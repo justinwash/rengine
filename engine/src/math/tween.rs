@@ -1,6 +1,8 @@
+use serde::{Deserialize, Serialize};
 use std::f32::consts::PI;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Easing {
     Linear,
     InQuad,
