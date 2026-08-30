@@ -1,5 +1,8 @@
 use gilrs::{Axis, Button, EventType, GamepadId, Gilrs};
 use std::collections::HashMap;
+use winit::keyboard::KeyCode;
+
+use super::keyboard::InputState;
 
 pub const MAX_PLAYERS: usize = 4;
 
@@ -15,9 +18,14 @@ impl Default for GamepadAssignMode {
     }
 }
 
+/// A rengine-owned handle for \"this pad occupies this slot\", so connectedness
+/// is testable without a real gilrs `GamepadId` (which only gilrs can build).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GamepadToken(pub(crate) u32);
+
 #[derive(Debug, Clone)]
 pub struct GamepadState {
-    pub(crate) id: Option<GamepadId>,
+    pub(crate) id: Option<GamepadToken>,
 
     buttons_down: Vec<Button>,
 
@@ -133,6 +141,40 @@ impl GamepadSystem {
         self.slots.iter().filter(|s| s.is_connected()).count()
     }
 
+    /// Merge a connected player-0 pad into the keyboard state the game reads.
+    ///
+    /// The face/menu buttons map to the universal keys the whole input scheme
+    /// already keys off (A→Enter, B→Esc, Start→Space, View→Esc), so **every**
+    /// existing `is_key_pressed(Enter)` / `Escape` / `Space` call site becomes
+    /// controller-aware with no game-side edit — the same translation a
+    /// platform layer (Steam Input, XInput) performs. Direction is *not*
+    /// merged: the D-pad means "move the highlight" in menus but "walk the
+    /// focus ring" in the race, so the game reads the pad directly where the
+    /// two split.
+    pub(crate) fn translate_to_keys(&self, input: &mut InputState) {
+        let Some(gp) = self.slots.get(0) else {
+            return;
+        };
+        if !gp.is_connected() {
+            return;
+        }
+        if gp.is_button_pressed(Button::South) {
+            input.inject_key_press(KeyCode::Enter);
+        }
+        if gp.is_button_pressed(Button::East) {
+            input.inject_key_press(KeyCode::Escape);
+        }
+        if gp.is_button_pressed(Button::Start) {
+            input.inject_key_press(KeyCode::Space);
+        }
+        // View is the scheme's "deeper out": on screens without a back target
+        // it opens the pause menu, on screens with one it goes back — which is
+        // exactly what Esc already resolves to per screen.
+        if gp.is_button_pressed(Button::Select) {
+            input.inject_key_press(KeyCode::Escape);
+        }
+    }
+
     pub(crate) fn update(&mut self) {
         for slot in &mut self.slots {
             slot.buttons_pressed.clear();
@@ -175,38 +217,46 @@ impl GamepadSystem {
             }
         }
 
-        for slot in &mut self.slots {
-            if let Some(id) = slot.id {
-                if let Some(gp) = self.gilrs.connected_gamepad(id) {
-                    slot.left_stick_x = gp.value(Axis::LeftStickX);
-                    slot.left_stick_y = gp.value(Axis::LeftStickY);
-                    slot.right_stick_x = gp.value(Axis::RightStickX);
-                    slot.right_stick_y = gp.value(Axis::RightStickY);
+        // Stick state is refreshed from the live gilrs value for every
+        // assigned slot. The `id_to_slot` map is the source of the gilrs id
+        // (the slot's own token only says "occupied").
+        let assigned: Vec<(usize, GamepadId)> = self
+            .id_to_slot
+            .iter()
+            .map(|(&id, &slot_idx)| (slot_idx, id))
+            .collect();
+        for (slot_idx, gid) in assigned {
+            let Some(gp) = self.gilrs.connected_gamepad(gid) else {
+                continue;
+            };
+            let slot = &mut self.slots[slot_idx];
+            slot.left_stick_x = gp.value(Axis::LeftStickX);
+            slot.left_stick_y = gp.value(Axis::LeftStickY);
+            slot.right_stick_x = gp.value(Axis::RightStickX);
+            slot.right_stick_y = gp.value(Axis::RightStickY);
 
-                    if gp.is_pressed(Button::DPadLeft) {
-                        slot.left_stick_x = -1.0;
-                    } else if gp.is_pressed(Button::DPadRight) {
-                        slot.left_stick_x = 1.0;
-                    }
-                    if gp.is_pressed(Button::DPadUp) {
-                        slot.left_stick_y = 1.0;
-                    } else if gp.is_pressed(Button::DPadDown) {
-                        slot.left_stick_y = -1.0;
-                    }
+            if gp.is_pressed(Button::DPadLeft) {
+                slot.left_stick_x = -1.0;
+            } else if gp.is_pressed(Button::DPadRight) {
+                slot.left_stick_x = 1.0;
+            }
+            if gp.is_pressed(Button::DPadUp) {
+                slot.left_stick_y = 1.0;
+            } else if gp.is_pressed(Button::DPadDown) {
+                slot.left_stick_y = -1.0;
+            }
 
-                    if slot.left_stick_x.abs() < 0.15 {
-                        slot.left_stick_x = 0.0;
-                    }
-                    if slot.left_stick_y.abs() < 0.15 {
-                        slot.left_stick_y = 0.0;
-                    }
-                    if slot.right_stick_x.abs() < 0.15 {
-                        slot.right_stick_x = 0.0;
-                    }
-                    if slot.right_stick_y.abs() < 0.15 {
-                        slot.right_stick_y = 0.0;
-                    }
-                }
+            if slot.left_stick_x.abs() < 0.15 {
+                slot.left_stick_x = 0.0;
+            }
+            if slot.left_stick_y.abs() < 0.15 {
+                slot.left_stick_y = 0.0;
+            }
+            if slot.right_stick_x.abs() < 0.15 {
+                slot.right_stick_x = 0.0;
+            }
+            if slot.right_stick_y.abs() < 0.15 {
+                slot.right_stick_y = 0.0;
             }
         }
     }
@@ -234,12 +284,58 @@ impl GamepadSystem {
 
         for (idx, slot) in self.slots.iter_mut().enumerate() {
             if slot.id.is_none() {
-                slot.id = Some(id);
+                slot.id = Some(GamepadToken(idx as u32 + 1));
                 self.id_to_slot.insert(id, idx);
                 log::info!("Gamepad {:?} assigned to player slot {}", id, idx + 1);
                 return;
             }
         }
         log::warn!("No free player slot for gamepad {:?}", id);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use winit::keyboard::KeyCode;
+
+    /// A with a connected pad pushes the universal keys the game keys off
+    /// (Enter/Esc/Space), so every existing keyboard read works on the pad.
+    #[test]
+    fn a_pad_translates_face_buttons_to_universal_keys() {
+        let mut slot = GamepadState::DEFAULT;
+        // Connected pads carry a token; stub it without a real gilrs event.
+        slot.id = Some(GamepadToken(1));
+        slot.buttons_pressed.push(Button::South);
+        slot.buttons_pressed.push(Button::Start);
+
+        let system = GamepadSystem {
+            gilrs: Gilrs::new().expect("gilrs init"),
+            slots: vec![slot],
+            id_to_slot: std::collections::HashMap::new(),
+            unassigned: Vec::new(),
+            assign_mode: GamepadAssignMode::default(),
+        };
+        // Only the first slot matters; avoid poll (it needs real events).
+        let mut input = InputState::new();
+        system.translate_to_keys(&mut input);
+        assert!(input.is_key_pressed(KeyCode::Enter), "A is confirm");
+        assert!(input.is_key_pressed(KeyCode::Space), "Start is pause");
+        assert!(!input.is_key_pressed(KeyCode::Escape), "nothing pressed Esc");
+
+        // An idle connected pad injects nothing.
+        let idle = GamepadSystem {
+            gilrs: Gilrs::new().expect("gilrs init"),
+            slots: vec![GamepadState::DEFAULT],
+            id_to_slot: std::collections::HashMap::new(),
+            unassigned: Vec::new(),
+            assign_mode: GamepadAssignMode::default(),
+        };
+        let mut input2 = InputState::new();
+        idle.translate_to_keys(&mut input2);
+        assert!(
+            !input2.is_key_pressed(KeyCode::Enter) && !input2.is_key_pressed(KeyCode::Space),
+            "a disconnected pad must not fire keys"
+        );
     }
 }

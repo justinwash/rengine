@@ -1507,7 +1507,8 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
         let mut play_script = PlayScript::from_env();
         loop {
             engine.time.tick();
-            engine.gamepads.update();
+                        engine.gamepads.update();
+                engine.gamepads.translate_to_keys(&mut engine.input);
             engine.reload_assets_if_changed();
             engine.process_requested_textures();
             engine.audio.update(engine.time.dt());
@@ -1641,7 +1642,8 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
 
                 WindowEvent::RedrawRequested => {
                     engine.time.tick();
-                    engine.gamepads.update();
+                                        engine.gamepads.update();
+                        engine.gamepads.translate_to_keys(&mut engine.input);
                     engine.reload_assets_if_changed();
                     engine.process_requested_textures();
                     engine.audio.update(engine.time.dt());
@@ -1753,7 +1755,8 @@ where
     if headless {
         loop {
             engine.time.tick();
-            engine.gamepads.update();
+                        engine.gamepads.update();
+                engine.gamepads.translate_to_keys(&mut engine.input);
             engine.reload_assets_if_changed();
             engine.audio.update(engine.time.dt());
 
@@ -1852,7 +1855,8 @@ where
 
                 WindowEvent::RedrawRequested => {
                     engine.time.tick();
-                    engine.gamepads.update();
+                                        engine.gamepads.update();
+                        engine.gamepads.translate_to_keys(&mut engine.input);
                     engine.reload_assets_if_changed();
                     engine.process_requested_textures();
                     engine.audio.update(engine.time.dt());

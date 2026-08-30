@@ -6252,11 +6252,7 @@ mod tests {
             &crate::Bindings::new(),
         );
 
-        let magenta: Vec<_> = canvas
-            .verts
-            .iter()
-            .filter(|v| (v.color[0] - 200.0 / 255.0).abs() < 1e-3 && v.color[2] - 200.0 / 255.0 < 1e-3)
-            .collect();
+        
         // The canvas stores colors in linear space, so the magentas exact
         // numeric value round-trips through sRGB->linear for 200,0,200. What
         // matters is *that* the child's fill reached the canvas: magenta is

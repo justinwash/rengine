@@ -27,7 +27,7 @@ pub use app::{Engine, EngineConfig, Game, ScaleMode};
 pub use assets::Color;
 pub use debug::{DebugLogEntry, DebugLogLevel};
 pub use input::InputState;
-pub use input::{ActionMap, AxisMapping, Binding, GamepadAxis};
+pub use input::{ActionMap, AxisMapping, Binding, GamepadAxis, Button};
 pub use layout::{Anchor, Justify, Stack, Track};
 pub use math::Rect;
 pub use math::Rng;
