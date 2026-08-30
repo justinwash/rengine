@@ -2606,3 +2606,51 @@ mod tests {
         assert!(anim_clip_label(&rengine::SceneAnimClip { id: "bounce".into(), duration: 1.2, looping: true, tracks: vec![] }).contains("loop"));
         assert!(!anim_clip_label(&rengine::SceneAnimClip { id: "once".into(), duration: 1.2, looping: false, tracks: vec![] }).contains("loop"));
     }
+#[cfg(test)]
+mod bounce_preview_tests {
+    use super::*;
+
+    /// The Anims tab previews a sprite-bearing scene by building it through the
+    /// real pipeline (`build_ui_preview_world`). Without a texture pack in a
+    /// unit test the sprite alias cannot resolve and the build falls back to
+    /// stripping sprite aliases — but the world must still build and keep the
+    /// named nodes, because a scene that only animates a sprite must preview
+    /// the node it targets even before its texture lands.
+    #[test]
+    fn build_ui_preview_world_builds_a_sprite_scene_and_keeps_its_nodes() {
+        let json = r#"{
+            "name": "demo",
+            "version": 1,
+            "view": { "window_size": [512.0, 320.0] },
+            "animations": [{
+                "id": "bounce",
+                "duration": 1.0,
+                "loop": true,
+                "tracks": [{ "target": "ball", "property": "offset_y",
+                    "keyframes": [ { "t": 0.0, "value": 0.0, "ease": "out_cubic" },
+                                   { "t": 0.5, "value": 80.0, "ease": "linear" } ] }]
+            }],
+            "nodes": [
+                { "id": 1, "parent": null, "name": "root", "kind": "Layout",
+                  "position": [0.0, 0.0], "size": [512.0, 320.0], "visible": true,
+                  "script_path": "", "runtime_prefab": "ui_node", "asset_alias": "",
+                  "properties": { "ui": "rect", "ui_color": "0,0,0,0",
+                                  "ui_stretch_x": "true", "ui_stretch_y": "true" } },
+                { "id": 2, "parent": 1, "name": "ball", "kind": "Image",
+                  "position": [0.0, 0.0], "size": [24.0, 24.0], "visible": true,
+                  "script_path": "", "runtime_prefab": "ui_node", "asset_alias": "ball",
+                  "properties": { "ui": "image", "ui_anchor_frac_x": "0.5", "ui_origin_x": "0.5" } }
+            ]
+        }"#;
+        let world = build_ui_preview_world(Path::new("<inline>"), json, &AssetPack::default())
+            .expect("the preview world builds even without its texture");
+        assert!(
+            world.find_by_name("ball").is_some(),
+            "the preview world must contain the animated node"
+        );
+        assert!(
+            world.animations().iter().any(|c| c.id == "bounce"),
+            "the preview world must carry the scene's clips"
+        );
+    }
+}
