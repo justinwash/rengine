@@ -202,6 +202,22 @@ pub struct RengineNativeEditor {
     polygon_draft: Option<Vec<[f32; 2]>>,
     /// The same fonts as real ids, for measuring authored line heights.
     preview_fonts: BTreeMap<String, FontId>,
+    /// Which authored animation clip the Anims tab is inspecting, and the
+    /// transport state. The clip's playback time is *timeline seconds*, driven
+    /// by the scrub/play controls; the preview world gets it applied each
+    /// frame (`apply_animation_preview`), so the viewport shows the authored
+    /// motion live.
+    anim_selected_clip: Option<usize>,
+    /// Playback clock (clip time, seconds) for the selected clip.
+    anim_preview_time: f32,
+    anim_playing: bool,
+    /// Whether the pointer is currently dragging the scrub bar.
+    anim_scrub_dragging: bool,
+    /// Set when the transport wants the clip (re)started at t=0 on the preview
+    /// world — first selection, a backward scrub, or a Play after reaching the
+    /// end. Applied once, then cleared, so per-frame replays cannot drift the
+    /// captured \"rest\" state.
+    anim_needs_replay: bool,
     /// Which manifest `preview_bindings` came from, so a scene opened from a
     /// different project re-resolves its palette exactly once.
     preview_manifest_path: Option<PathBuf>,
@@ -266,6 +282,11 @@ impl Game for RengineNativeEditor {
             ui_preview: None,
             ui_preview_key: None,
             preview_interaction_state: None,
+            anim_selected_clip: None,
+            anim_preview_time: 0.0,
+            anim_playing: false,
+            anim_scrub_dragging: false,
+            anim_needs_replay: false,
         };
 
         editor.refresh_inspector_form();
@@ -317,6 +338,7 @@ impl Game for RengineNativeEditor {
         self.update_viewport_drag(engine, &layout);
         self.update_file_browser_ui(engine, &layout);
         self.update_inspector_ui(engine, &layout);
+        self.update_animation_transport(engine, &layout);
         self.update_scene_autosave(engine.dt());
         self.handle_scene_history_shortcuts(engine);
         self.handle_scene_selection_shortcuts(engine);

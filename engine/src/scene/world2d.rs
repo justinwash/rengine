@@ -867,9 +867,11 @@ impl SceneWorld2D {
     /// Build a live world from a loaded [`Scene2D`].
     ///
     /// Convenience wrapper over [`SceneWorld2D::instantiate_scene`] into a fresh
-    /// world with no parent and no offset.
+    /// world with no parent and no offset. Carries the scene's authored
+    /// animation clips with it, so a world built this way can play them.
     pub fn from_scene(scene: &Scene2D) -> Self {
         let mut world = SceneWorld2D::new();
+        world.animations = scene.animations.clone();
         world.instantiate_scene(scene, None, Transform2D::default());
         world
     }

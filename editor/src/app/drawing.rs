@@ -45,6 +45,10 @@ impl RengineNativeEditor {
         // `&mut self`, and `draw_viewport` below only gets `&self` once the
         // canvas borrow is live.
         self.rebuild_ui_preview_if_needed(engine);
+        // The scene-animation player: (re)start the selected clip on the
+        // preview world and sample it at the transport's clock. Same `&mut
+        // self`-before-canvas constraint as the rebuild above.
+        self.apply_animation_preview();
 
         let canvas = frame.canvas(0);
 
@@ -146,6 +150,42 @@ impl RengineNativeEditor {
                 "UI preview: could not build a preview for {} (falling back to node boxes)",
                 self.display_path(&path)
             ));
+        }
+    }
+
+    /// Apply the selected scene animation to the preview world at the
+    /// transport's clock, so the viewport shows the authored motion live.
+    ///
+    /// (Re)starts the clip on the world only when the transport asks for it or
+    /// when the world does not have it running — a replay every frame would
+    /// re-capture each target's *current* transform as its rest state and
+    /// offset values would drift. The one-shot replay restores the authored
+    /// rest, then `apply_animations` writes the clip at the clocked time.
+    fn apply_animation_preview(&mut self) {
+        let Some(idx) = self.anim_selected_clip else {
+            return;
+        };
+        let Some(clip) = self.active_scene_tab().scene.animations.get(idx).cloned() else {
+            return;
+        };
+        let Some(world) = self.ui_preview.as_mut() else {
+            return;
+        };
+        if self.anim_needs_replay || !world.is_animation_playing(&clip.id) {
+            world.play_animation(&clip.id, 0.0);
+            self.anim_needs_replay = false;
+        }
+        world.apply_animations(animation_apply_time(&clip, self.anim_preview_time));
+    }
+
+    /// The time the preview draw advances on: the animation transport's clock
+    /// while a clip is selected (so the bob/sway/u-vertex animation and the
+    /// scene clips share one timeline), else `0.0` — a screenshot still.
+    fn animation_draw_time(&self) -> f32 {
+        if self.anim_selected_clip.is_some() {
+            self.anim_preview_time
+        } else {
+            0.0
         }
     }
 
@@ -787,6 +827,7 @@ impl RengineNativeEditor {
                     );
                 }
             }
+            BottomTab::Anims => self.draw_anims_tab(canvas, content_rect, tooltip_targets),
         }
 
         canvas.pop_clip();
@@ -794,8 +835,123 @@ impl RengineNativeEditor {
             BottomTab::Activity => self.activity_log.len(),
             BottomTab::Validation => self.validation_issues.len().max(1),
             BottomTab::SceneJson => self.scene_json_preview_line_count(),
+            BottomTab::Anims => self.anims_tab_line_count(),
         };
         draw_scrollbar(canvas, content_rect, line_count, self.bottom_scroll);
+    }
+
+    /// The Anims tab: transport on top (Play/Pause, time readout, scrub bar),
+    /// then one row per clip (click to select), then the selected clip's
+    /// tracks as display-only lines. The viewport previews the selected clip
+    /// live via `apply_animation_preview`.
+    fn draw_anims_tab(
+        &self,
+        canvas: &mut Canvas,
+        content_rect: PanelRect,
+        tooltip_targets: &mut Vec<CanvasTooltipTarget>,
+    ) {
+        let clips = self.active_scene_tab().scene.animations.clone();
+        if clips.is_empty() {
+            draw_list_text(
+                content_rect.x + PANEL_PADDING,
+                PanelRect::new(content_rect.x, content_rect.y, content_rect.w, LINE_HEIGHT),
+                canvas,
+                "No animation clips in this scene.",
+                12.0,
+                Color::from_rgba8(120, 196, 140, 255),
+            );
+            return;
+        }
+
+        let (play, scrub, list) = anims_transport_layout(content_rect);
+        let dark = Color::from_rgba8(32, 40, 50, 255);
+        let amber = Color::from_rgba8(230, 178, 86, 255);
+        let steel = Color::from_rgba8(148, 162, 180, 255);
+        let selected_clip = self.anim_selected_clip.and_then(|i| clips.get(i));
+
+        draw_button(
+            canvas,
+            play,
+            if self.anim_playing { "Pause" } else { "Play" },
+            self.anim_playing,
+            true,
+            tooltip_targets,
+        );
+
+        if let Some(clip) = selected_clip {
+            let time_label = format!(
+                "{:.2}s / {:.2}s   {}",
+                self.anim_preview_time,
+                clip.duration,
+                if clip.looping { "LOOP" } else { "ONCE" },
+            );
+            canvas.text(play.right() + 12.0, content_rect.y + 14.0, &time_label, 12.0, steel);
+
+            // The scrub bar: a track with a filled lead.
+            canvas.rect(scrub.x, scrub.y, scrub.w, scrub.h, dark);
+            if clip.duration > 0.0 {
+                let frac = (self.anim_preview_time / clip.duration).clamp(0.0, 1.0);
+                canvas.rect(scrub.x, scrub.y, scrub.w * frac, scrub.h, amber);
+            }
+        }
+
+        for (i, clip) in clips.iter().enumerate() {
+            let line_rect = list_line_rect(list, i, self.bottom_scroll);
+            if line_rect.y > content_rect.top() || line_rect.top() < content_rect.y {
+                continue;
+            }
+            if Some(i) == self.anim_selected_clip {
+                canvas.rect(
+                    line_rect.x,
+                    line_rect.y,
+                    line_rect.w,
+                    line_rect.h,
+                    Color::from_rgba8(45, 60, 78, 255),
+                );
+            }
+            draw_list_text(
+                line_rect.x + PANEL_PADDING,
+                line_rect,
+                canvas,
+                &anim_clip_label(clip),
+                12.0,
+                if Some(i) == self.anim_selected_clip {
+                    amber
+                } else {
+                    steel
+                },
+            );
+        }
+
+        if let Some(clip) = selected_clip {
+            let track_start = clips.len();
+            for (j, track) in clip.tracks.iter().enumerate() {
+                let line_rect = list_line_rect(list, track_start + j, self.bottom_scroll);
+                if line_rect.y > content_rect.top() || line_rect.top() < content_rect.y {
+                    continue;
+                }
+                let label = format!(
+                    "   → {}  ·  {}  ·  {} kf",
+                    track.target,
+                    track.property.label(),
+                    track.keyframes.len()
+                );
+                draw_list_text(line_rect.x + PANEL_PADDING, line_rect, canvas, &label, 11.0, steel);
+            }
+        }
+    }
+
+    /// Lines the Anims tab scrolls: the clips plus the selected clip's tracks.
+    pub(crate) fn anims_tab_line_count(&self) -> usize {
+        let clips = self.active_scene_tab().scene.animations.clone();
+        if clips.is_empty() {
+            return 1;
+        }
+        let tracks = self
+            .anim_selected_clip
+            .and_then(|i| clips.get(i))
+            .map_or(0, |c| c.tracks.len());
+        clips.len() + tracks
     }
 
     /// The active tab's zoom: its explicit one, or the fit for this panel.
@@ -869,7 +1025,8 @@ impl RengineNativeEditor {
             // there is a canvas — hence per-draw rather than at load.
             let mut bindings = self.preview_bindings.clone();
             bind_authored_line_heights(world, canvas, &self.preview_fonts, &mut bindings);
-            world.draw_to_canvas_in_with_bindings(canvas, root, 0.0, &bindings);
+            let draw_time = self.animation_draw_time();
+            world.draw_to_canvas_in_with_bindings(canvas, root, draw_time, &bindings);
 
             // Leave no interaction state behind: hit-testing reads the same
             // world, and a node stuck "hovered" would misreport next frame.
@@ -1555,6 +1712,54 @@ fn draw_scrollbar(canvas: &mut Canvas, rect: PanelRect, line_count: usize, scrol
         thumb_rect.h,
         Color::from_rgba8(90, 112, 132, 230),
     );
+}
+
+/// The Anims tab's transport geometry: the Play/Pause button, the scrub bar,
+/// and the clip/track list below. Drawn and click-tested against the same
+/// rects so a hover and a press can never disagree about what they hit.
+pub(crate) fn anims_transport_layout(content: PanelRect) -> (PanelRect, PanelRect, PanelRect) {
+    let play = PanelRect::new(content.x + PANEL_PADDING, content.y + 6.0, 64.0, 22.0);
+    let scrub = PanelRect::new(
+        content.x + PANEL_PADDING,
+        content.y + 42.0,
+        (content.w - PANEL_PADDING * 2.0).max(40.0),
+        10.0,
+    );
+    let list_top = scrub.top() + 10.0;
+    let list = PanelRect::new(
+        content.x,
+        list_top,
+        content.w,
+        (content.top() - list_top).max(0.0),
+    );
+    (play, scrub, list)
+}
+
+/// Just the scrub bar, for the drag transport (which does not care about the
+/// button or the list).
+pub(crate) fn anims_scrub_bar(content: PanelRect) -> PanelRect {
+    anims_transport_layout(content).1
+}
+
+/// One line per clip in the Anims list.
+fn anim_clip_label(clip: &rengine::SceneAnimClip) -> String {
+    if clip.looping {
+        format!("{}  ·  {:.2}s  ·  loop", clip.id, clip.duration)
+    } else {
+        format!("{}  ·  {:.2}s", clip.id, clip.duration)
+    }
+}
+
+/// The time at which to sample a clip in the editor: holding a finished
+/// non-looping clip a hair before its end keeps the last keyframe pose on
+/// screen instead of triggering the engine's finish-and-restore. A replay
+/// (Play after reaching the end, or a backward scrub) restarts from t=0.
+pub(crate) fn animation_apply_time(clip: &rengine::SceneAnimClip, time: f32) -> f32 {
+    if !clip.looping && clip.duration > 0.0 && time >= clip.duration {
+        (clip.duration - 0.001).max(0.0)
+    } else {
+        time
+    }
 }
 
 fn draw_button(
@@ -2373,3 +2578,31 @@ mod tests {
     }
 }
 
+
+    #[test]
+    fn the_anims_transport_holds_a_finished_once_clip_before_its_end() {
+        let once = rengine::SceneAnimClip { id: "once".into(), duration: 2.0, looping: false, tracks: vec![] };
+        let looping = rengine::SceneAnimClip { id: "loop".into(), duration: 2.0, looping: true, tracks: vec![] };
+        assert_eq!(animation_apply_time(&once, 1.0), 1.0);
+        let held = animation_apply_time(&once, 2.0);
+        assert!(held < 2.0 && held >= 1.999, "holds before the end: {held}");
+        assert_eq!(animation_apply_time(&once, 5.0), held);
+        assert_eq!(animation_apply_time(&looping, 5.0), 5.0, "looping passes the clock through");
+    }
+
+    #[test]
+    fn the_anims_layout_stacks_controls_then_list() {
+        let content = PanelRect::new(100.0, 200.0, 400.0, 150.0);
+        let (play, scrub, list) = anims_transport_layout(content);
+        assert!(play.top() <= scrub.y, "Play/Pause sits above the scrub bar");
+        assert!(scrub.top() < list.y, "the list starts below the scrub bar");
+        assert_eq!(list.x, content.x);
+        let thin = anims_scrub_bar(PanelRect::new(0.0, 0.0, 30.0, 60.0));
+        assert!(thin.w > 0.0);
+    }
+
+    #[test]
+    fn the_clip_label_tags_looping_clips() {
+        assert!(anim_clip_label(&rengine::SceneAnimClip { id: "bounce".into(), duration: 1.2, looping: true, tracks: vec![] }).contains("loop"));
+        assert!(!anim_clip_label(&rengine::SceneAnimClip { id: "once".into(), duration: 1.2, looping: false, tracks: vec![] }).contains("loop"));
+    }

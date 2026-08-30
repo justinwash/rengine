@@ -554,6 +554,7 @@ impl RengineNativeEditor {
                 BottomTab::Activity => self.activity_log.len(),
                 BottomTab::Validation => self.validation_issues.len(),
                 BottomTab::SceneJson => self.scene_json_preview_line_count(),
+                BottomTab::Anims => self.anims_tab_line_count(),
             }
         } else {
             0
@@ -641,6 +642,9 @@ impl RengineNativeEditor {
             return;
         }
         if self.handle_bottom_content_click(mouse, layout) {
+            return;
+        }
+        if self.handle_anims_content_click(mouse, layout) {
             return;
         }
         if self.handle_project_tree_click(mouse, layout) {
@@ -853,6 +857,117 @@ impl RengineNativeEditor {
             }
         }
         true
+    }
+
+    /// The Anims tab's clicks: the Play/Pause button, the scrub bar, and the
+    /// clip rows (which select what to preview). The track/keyframe summary
+    /// below is display-only for now — authoring numbers stays in the Scene
+    /// JSON tab, which live-rebuilds the preview.
+    pub(crate) fn handle_anims_content_click(&mut self, mouse: Vec2, layout: &ShellLayout) -> bool {
+        if !layout.bottom_open || self.bottom_tab != BottomTab::Anims {
+            return false;
+        }
+        let content = layout.bottom_content;
+        if !content.contains(mouse) {
+            return false;
+        }
+        let (play, scrub, list) = crate::app::drawing::anims_transport_layout(content);
+
+        if play.contains(mouse) {
+            self.toggle_anim_play();
+            return true;
+        }
+        if scrub.contains(mouse) {
+            self.anim_scrub_dragging = true;
+            self.anim_scrub_from_mouse(mouse, layout);
+            return true;
+        }
+
+        let clips = self.active_scene_tab().scene.animations.clone();
+        for (i, _clip) in clips.iter().enumerate() {
+            if list_line_rect(list, i, self.bottom_scroll).contains(mouse) {
+                self.anim_selected_clip = Some(i);
+                self.anim_playing = false;
+                self.anim_preview_time = 0.0;
+                self.anim_needs_replay = true;
+                return true;
+            }
+        }
+        true
+    }
+
+    /// Flip the transport between playing and paused. Resuming from the very
+    /// end of a non-looping clip restarts it (there is nothing left to play).
+    fn toggle_anim_play(&mut self) {
+        if self.anim_selected_clip.is_none() {
+            return;
+        }
+        self.anim_playing = !self.anim_playing;
+        if self.anim_playing {
+            if let Some(idx) = self.anim_selected_clip {
+                if let Some(clip) = self.active_scene_tab().scene.animations.get(idx) {
+                    if !clip.looping && self.anim_preview_time >= clip.duration.max(0.0) {
+                        self.anim_preview_time = 0.0;
+                        self.anim_needs_replay = true;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Drive the scrubbed time from the pointer across the scrub bar. Also
+    /// pauses playback so the clock does not fight the drag.
+    fn anim_scrub_from_mouse(&mut self, mouse: Vec2, layout: &ShellLayout) {
+        let bar = crate::app::drawing::anims_scrub_bar(layout.bottom_content);
+        if bar.w <= 0.0 {
+            return;
+        }
+        let frac = ((mouse.x - bar.x) / bar.w).clamp(0.0, 1.0);
+        let Some(idx) = self.anim_selected_clip else {
+            return;
+        };
+        let Some(clip) = self.active_scene_tab().scene.animations.get(idx) else {
+            return;
+        };
+        self.anim_preview_time = frac * clip.duration.max(0.0);
+        self.anim_needs_replay = true;
+        self.anim_playing = false;
+    }
+
+    /// Advance the selected clip's playback clock on the shared dt, and keep
+    /// a scrub drag tracking the pointer while the button is held.
+    pub(crate) fn update_animation_transport(&mut self, engine: &Engine, layout: &ShellLayout) {
+        if !layout.bottom_open
+            || self.bottom_tab != BottomTab::Anims
+            || self.anim_selected_clip.is_none()
+        {
+            return;
+        }
+        let mouse = engine.mouse_screen_pos();
+        if engine.input().is_mouse_pressed(0) {
+            if self.anim_scrub_dragging {
+                self.anim_scrub_from_mouse(mouse, layout);
+            }
+        } else {
+            self.anim_scrub_dragging = false;
+        }
+        if self.anim_playing {
+            let Some(idx) = self.anim_selected_clip else {
+                return;
+            };
+            let Some(clip) = self.active_scene_tab().scene.animations.get(idx) else {
+                return;
+            };
+            let mut t = self.anim_preview_time + engine.dt();
+            if clip.duration > 0.0 {
+                if clip.looping {
+                    t %= clip.duration;
+                } else {
+                    t = t.min(clip.duration);
+                }
+            }
+            self.anim_preview_time = t;
+        }
     }
 
     pub(crate) fn handle_project_tree_click(&mut self, mouse: Vec2, layout: &ShellLayout) -> bool {
@@ -1396,6 +1511,7 @@ impl RengineNativeEditor {
             BottomTab::Activity,
             BottomTab::Validation,
             BottomTab::SceneJson,
+            BottomTab::Anims,
         ];
         let preferred_widths = tabs.map(|tab| button_preferred_width(tab.label()));
         let widths = distribute_button_widths(

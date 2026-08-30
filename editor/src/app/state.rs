@@ -47,6 +47,7 @@ pub(crate) enum BottomTab {
     Activity,
     Validation,
     SceneJson,
+    Anims,
 }
 
 /// One validation issue surfaced in the Validation bottom tab. `node_id` is the
@@ -109,6 +110,7 @@ impl BottomTab {
             Self::Activity => "Activity",
             Self::Validation => "Validation",
             Self::SceneJson => "Scene JSON",
+            Self::Anims => "Anims",
         }
     }
 }
