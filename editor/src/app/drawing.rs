@@ -878,17 +878,23 @@ impl RengineNativeEditor {
             tooltip_targets,
         );
 
-        if let Some(clip) = selected_clip {
-            let time_label = format!(
+        // The transport draws whether or not a clip is selected, so the Play
+        // button always has visible state to answer to: an empty track with a
+        // "nothing selected" readout is feedback, not silence.
+        let time_label = match selected_clip {
+            Some(clip) => format!(
                 "{:.2}s / {:.2}s   {}",
                 self.anim_preview_time,
                 clip.duration,
                 if clip.looping { "LOOP" } else { "ONCE" },
-            );
-            canvas.text(play.right() + 12.0, content_rect.y + 14.0, &time_label, 12.0, steel);
+            ),
+            None => "no clip selected — click a clip, or Play picks the first".to_string(),
+        };
+        canvas.text(play.right() + 12.0, content_rect.y + 14.0, &time_label, 12.0, steel);
 
-            // The scrub bar: a track with a filled lead.
-            canvas.rect(scrub.x, scrub.y, scrub.w, scrub.h, dark);
+        // The scrub bar: a track with a filled lead (empty until a clip runs).
+        canvas.rect(scrub.x, scrub.y, scrub.w, scrub.h, dark);
+        if let Some(clip) = selected_clip {
             if clip.duration > 0.0 {
                 let frac = (self.anim_preview_time / clip.duration).clamp(0.0, 1.0);
                 canvas.rect(scrub.x, scrub.y, scrub.w * frac, scrub.h, amber);

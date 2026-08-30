@@ -822,6 +822,18 @@ impl RengineNativeEditor {
             if rect.contains(mouse) {
                 self.bottom_tab = tab;
                 self.bottom_scroll = 0.0;
+                // Opening the Anims tab arms the transport on the first clip,
+                // so Play is never a dead button and the viewport previews
+                // something immediately.
+                if tab == BottomTab::Anims
+                    && self.anim_selected_clip.is_none()
+                    && !self.active_scene_tab().scene.animations.is_empty()
+                {
+                    self.anim_selected_clip = Some(0);
+                    self.anim_preview_time = 0.0;
+                    self.anim_playing = false;
+                    self.anim_needs_replay = true;
+                }
                 return true;
             }
         }
@@ -896,11 +908,19 @@ impl RengineNativeEditor {
         true
     }
 
-    /// Flip the transport between playing and paused. Resuming from the very
-    /// end of a non-looping clip restarts it (there is nothing left to play).
+    /// Flip the transport between playing and paused. With nothing selected,
+    /// Play picks the first clip so the button always does something visible —
+    /// a silent Play with no selection is what "the button isn't responding"
+    /// was really saying. Resuming from the very end of a non-looping clip
+    /// restarts it (there is nothing left to play).
     fn toggle_anim_play(&mut self) {
         if self.anim_selected_clip.is_none() {
-            return;
+            if self.active_scene_tab().scene.animations.is_empty() {
+                return;
+            }
+            self.anim_selected_clip = Some(0);
+            self.anim_preview_time = 0.0;
+            self.anim_needs_replay = true;
         }
         self.anim_playing = !self.anim_playing;
         if self.anim_playing {
