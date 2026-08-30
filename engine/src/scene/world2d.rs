@@ -2657,6 +2657,41 @@ impl SceneWorld2D {
             node.ui_rect.set(None);
         }
 
+        // The generic focus ring: when this node is the focused one AND it
+        // authorises a ring (`ui_focus_ring_color`, an explicit opt-in so
+        // buttons that already paint their own `_focus` state don't get a
+        // second outline), draw an outline around its resolved rect. This is
+        // what the controller focus walk points at on the race HUD, where a
+        // hover colour is meaningless because there is no cursor.
+        if ui_visible
+            && self.focused.get() == Some(handle)
+            && node.property("ui").is_some()
+            && node
+                .property("ui_focus_ring_color")
+                .map(|c| !c.trim().is_empty())
+                .unwrap_or(false)
+        {
+            let (x, y, w, h) = ui_rect;
+            let ring = crate::scene::data2d::parse_srgb_color(
+                node.property("ui_focus_ring_color").as_deref(),
+                Color::from_srgb8(255, 205, 90, 255),
+            );
+            let ring_w = node
+                .property("ui_focus_ring_w")
+                .and_then(|v| v.trim().parse::<f32>().ok())
+                .unwrap_or(2.0)
+                .max(1.0);
+            // Four thin bars (draw_border semantics are the node's own); the
+            // ring paints *outside*-ish: the top bar sits just above the rect
+            // and the sides straddle its edges so a 2px ring reads as a
+            // selection rather than a replacement border.
+            let o = ring_w * 0.5;
+            canvas.rect(x - o, y + h - o, w + ring_w, ring_w, ring);
+            canvas.rect(x - o, y - o, w + ring_w, ring_w, ring);
+            canvas.rect(x - o, y - o, ring_w, h + ring_w, ring);
+            canvas.rect(x + w - o, y - o, ring_w, h + ring_w, ring);
+        }
+
         // `display:none` hides the subtree — see `draw_node`'s copy of this.
         if !ui_visible {
             self.clear_subtree_hit_rects(handle);
@@ -6252,4 +6287,67 @@ mod tests {
         );
     }
 
+    /// The generic controller focus ring: a focused node that opts in with
+    /// `ui_focus_ring_color` paints four thin bars around its resolved rect.
+    /// This is the visible marker the game's controller focus walk points at
+    /// on the race HUD, where there is no cursor to hover with.
+    #[test]
+    fn a_focus_ring_paints_when_the_node_authorises_one() {
+        use crate::canvas::Canvas;
+        use crate::scene::Scene2D;
+        use crate::AssetPack;
+
+        let json = r#"{
+          "name": "ring",
+          "version": 1,
+          "view": { "window_size": [320.0, 200.0] },
+          "animations": [],
+          "nodes": [
+            { "id": 1, "parent": null, "name": "root", "kind": "Layout",
+              "position": [0.0, 0.0], "size": [320.0, 200.0], "visible": true,
+              "script_path": "", "runtime_prefab": "ui_node", "asset_alias": "",
+              "properties": { "ui": "rect", "ui_color": "20,24,30,255", "ui_stretch_x": "true", "ui_stretch_y": "true" } },
+            { "id": 2, "parent": 1, "name": "seat", "kind": "Panel",
+              "position": [0.0, 0.0], "size": [120.0, 80.0], "visible": true,
+              "script_path": "", "runtime_prefab": "ui_node", "asset_alias": "",
+              "properties": { "ui": "rect", "ui_color": "40,48,60,255",
+                              "ui_focusable": "true", "ui_focus_ring_color": "255,90,90,255" } }
+          ]
+        }"#;
+        let path = std::path::Path::new("scenes/inline_ring.json");
+        let scene = Scene2D::from_json_str(path, json, &AssetPack::default()).unwrap();
+        let world = SceneWorld2D::from_scene(&scene);
+
+        let seat = world.find_by_name("seat").unwrap();
+        let mut canvas = Canvas::for_test((640, 400));
+        world.set_focus(Some(seat));
+        world.draw_to_canvas_in_with_bindings(
+            &mut canvas,
+            (0.0, 0.0, 320.0, 200.0),
+            0.0,
+            &crate::Bindings::new(),
+        );
+
+        let ring_verts = canvas
+            .verts
+            .iter()
+            .filter(|v| v.color[0] > 0.9 && v.color[1] < 0.5 && v.color[2] < 0.5)
+            .count();
+        assert!(ring_verts >= 24, "four 2px bars describe 24 verts, got {ring_verts}");
+
+        let mut canvas2 = Canvas::for_test((640, 400));
+        world.set_focus(None);
+        world.draw_to_canvas_in_with_bindings(
+            &mut canvas2,
+            (0.0, 0.0, 320.0, 200.0),
+            0.0,
+            &crate::Bindings::new(),
+        );
+        let unfocused_ring = canvas2
+            .verts
+            .iter()
+            .filter(|v| v.color[0] > 0.9 && v.color[1] < 0.5 && v.color[2] < 0.5)
+            .count();
+        assert_eq!(unfocused_ring, 0, "no ring when nothing is focused");
+    }
 }

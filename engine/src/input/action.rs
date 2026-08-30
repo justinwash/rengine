@@ -17,6 +17,8 @@ pub enum Binding {
 pub enum GamepadAxis {
     LeftStickX,
     LeftStickY,
+    RightStickX,
+    RightStickY,
 }
 
 #[derive(Clone, Debug)]
@@ -119,6 +121,8 @@ impl ActionMap {
             let analog = match axis {
                 GamepadAxis::LeftStickX => gamepad.left_stick_x,
                 GamepadAxis::LeftStickY => gamepad.left_stick_y,
+                GamepadAxis::RightStickX => gamepad.right_stick_x,
+                GamepadAxis::RightStickY => gamepad.right_stick_y,
             };
             if analog.abs() > value.abs() {
                 value = analog;
@@ -134,5 +138,45 @@ fn binding_down(b: &Binding, input: &InputState, gamepad: &GamepadState) -> bool
         Binding::Key(k) => input.is_key_down(*k),
         Binding::MouseButton(i) => input.is_mouse_down(*i),
         Binding::GamepadButton(btn) => gamepad.is_button_down(*btn),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The scheme drives camera pan/zoom and scroll from the right stick, so
+    /// the axis resolver must read the right-stick analog values (not just the
+    /// left stick the original engine shipped).
+    #[test]
+    fn right_stick_axes_resolve_analog() {
+        let mut gp = GamepadState::DEFAULT;
+        gp.right_stick_x = 0.7;
+        gp.right_stick_y = -0.4;
+
+        let map = {
+            let mut m = ActionMap::new();
+            m.bind_axis(
+                "pan_x",
+                AxisMapping {
+                    positive: vec![],
+                    negative: vec![],
+                    gamepad_axis: Some(GamepadAxis::RightStickX),
+                },
+            );
+            m.bind_axis(
+                "pan_y",
+                AxisMapping {
+                    positive: vec![],
+                    negative: vec![],
+                    gamepad_axis: Some(GamepadAxis::RightStickY),
+                },
+            );
+            m
+        };
+
+        let input = crate::input::keyboard::InputState::new();
+        assert!((map.axis("pan_x", &input, &gp) - 0.7).abs() < 1e-5);
+        assert!((map.axis("pan_y", &input, &gp) + 0.4).abs() < 1e-5);
     }
 }

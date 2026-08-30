@@ -28,6 +28,10 @@ pub struct GamepadState {
     pub left_stick_x: f32,
 
     pub left_stick_y: f32,
+
+    pub right_stick_x: f32,
+
+    pub right_stick_y: f32,
 }
 
 impl GamepadState {
@@ -38,6 +42,8 @@ impl GamepadState {
         buttons_released: Vec::new(),
         left_stick_x: 0.0,
         left_stick_y: 0.0,
+        right_stick_x: 0.0,
+        right_stick_y: 0.0,
     };
 
     pub fn new() -> Self {
@@ -174,6 +180,8 @@ impl GamepadSystem {
                 if let Some(gp) = self.gilrs.connected_gamepad(id) {
                     slot.left_stick_x = gp.value(Axis::LeftStickX);
                     slot.left_stick_y = gp.value(Axis::LeftStickY);
+                    slot.right_stick_x = gp.value(Axis::RightStickX);
+                    slot.right_stick_y = gp.value(Axis::RightStickY);
 
                     if gp.is_pressed(Button::DPadLeft) {
                         slot.left_stick_x = -1.0;
@@ -191,6 +199,12 @@ impl GamepadSystem {
                     }
                     if slot.left_stick_y.abs() < 0.15 {
                         slot.left_stick_y = 0.0;
+                    }
+                    if slot.right_stick_x.abs() < 0.15 {
+                        slot.right_stick_x = 0.0;
+                    }
+                    if slot.right_stick_y.abs() < 0.15 {
+                        slot.right_stick_y = 0.0;
                     }
                 }
             }

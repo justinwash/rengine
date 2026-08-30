@@ -1346,7 +1346,7 @@ fn resolve_interaction_property(
 
 /// Parse a `"r,g,b[,a]"` sRGB triplet/quad (0–255 per channel) into a [`Color`],
 /// falling back to `default` if absent or malformed.
-fn parse_srgb_color(value: Option<&str>, default: Color) -> Color {
+pub(crate) fn parse_srgb_color(value: Option<&str>, default: Color) -> Color {
     let Some(value) = value else {
         return default;
     };
