@@ -6175,4 +6175,81 @@ mod tests {
         );
     }
 
+    /// A `ui: rect` child of a stretched root must emit painted quads with
+    /// the authored colour at full alpha - the PiP vignette's panel vanished
+    /// from the composed capture despite resolving a full-size rect, and this
+    /// pins that the draw itself emits the right verts (so the disappearance
+    /// was a compositing/capture issue, not the engine scene paint). Built
+    /// through the same loader the host game uses (`from_json_str` + undo the
+    /// no-texture fallback difference), so the hierarchy/parenting path is
+    /// the shipped one.
+    #[test]
+    fn a_stretched_root_with_a_rect_child_emits_painted_quads() {
+        use crate::canvas::Canvas;
+        use crate::scene::Scene2D;
+        use crate::AssetPack;
+
+        let json = r#"{
+          "name": "probe",
+          "version": 1,
+          "view": { "window_size": [320.0, 200.0] },
+          "animations": [],
+          "nodes": [
+            { "id": 1, "parent": null, "name": "root", "kind": "Layout",
+              "position": [0.0, 0.0], "size": [320.0, 200.0], "visible": true,
+              "script_path": "", "runtime_prefab": "ui_node", "asset_alias": "",
+              "properties": { "ui": "rect", "ui_color": "0,0,0,0", "ui_stretch_x": "true", "ui_stretch_y": "true" } },
+            { "id": 2, "parent": 1, "name": "panel", "kind": "Panel",
+              "position": [0.0, 0.0], "size": [160.0, 80.0], "visible": true,
+              "script_path": "", "runtime_prefab": "ui_node", "asset_alias": "",
+              "properties": { "ui": "rect", "ui_color": "200,0,200,255", "ui_w": "160.0", "ui_h": "80.0" } }
+          ]
+        }"#;
+        let path = std::path::Path::new("scenes/inline_probe.json");
+        let scene = Scene2D::from_json_str(path, json, &AssetPack::default()).unwrap();
+        let world = SceneWorld2D::from_scene(&scene);
+
+        let mut canvas = Canvas::for_test((640, 400));
+        world.draw_to_canvas_in_with_bindings(
+            &mut canvas,
+            (0.0, 0.0, 320.0, 200.0),
+            0.0,
+            &crate::Bindings::new(),
+        );
+
+        let magenta: Vec<_> = canvas
+            .verts
+            .iter()
+            .filter(|v| (v.color[0] - 200.0 / 255.0).abs() < 1e-3 && v.color[2] - 200.0 / 255.0 < 1e-3)
+            .collect();
+        // The canvas stores colors in linear space, so the magentas exact
+        // numeric value round-trips through sRGB->linear for 200,0,200. What
+        // matters is *that* the child's fill reached the canvas: magenta is
+        // the one hue nothing else in the probe draws, and it must arrive at
+        // full alpha. Compare by hue, not by an absolute linear value, so the
+        // guard stays honest to the paint path rather than to one encoding.
+        let magenta: Vec<_> = canvas
+            .verts
+            .iter()
+            .filter(|v| {
+                v.color[0] > 0.4
+                    && v.color[1] < 0.05
+                    && (v.color[0] - v.color[2]).abs() < 0.05
+            })
+            .collect();
+        assert!(
+            magenta.len() >= 6,
+            "the child rect must emit a filled quad (the vignette panel vanishing means this broke): got {} magenta verts",
+            magenta.len()
+        );
+        assert!(
+            magenta.iter().all(|v| (v.color[3] - 1.0).abs() < 1e-3),
+            "the child rect's verts must be full-alpha; a dimmed composite means the scrim is elsewhere"
+        );
+        assert!(
+            magenta.iter().all(|v| (v.color[3] - 1.0).abs() < 1e-3),
+            "the child rect's verts must be full-alpha; a dimmed composite means the scrim is elsewhere"
+        );
+    }
+
 }
