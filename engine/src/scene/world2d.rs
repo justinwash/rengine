@@ -481,6 +481,13 @@ struct AnimTargetState {
     rest: Transform2D,
     rest_visible: bool,
     rest_ui_visible_set: bool,
+    /// The node's authored `ui_rotation` (degrees), when it is a UI node. The
+    /// canvas draw path reads `ui_rotation`, not the node's transform rotation,
+    /// so a rotation track has to write both — this is the rest value it
+    /// returns to on clip end. `None` when the node has no `ui` property (a
+    /// pure sprite, whose rotation lives on the transform) or no authored
+    /// `ui_rotation`.
+    rest_ui_rotation: Option<f32>,
     /// Which fill carries the node's alpha, and its base value at clip start.
     /// `None` when the node has no animatable fill (no `ui_color`, no sprite).
     fill: Option<AnimTargetFill>,
@@ -518,6 +525,12 @@ fn capture_anim_target(world: &SceneWorld2D, handle: NodeHandle2D) -> Option<Ani
         rest: node.transform(),
         rest_visible: node.is_visible(),
         rest_ui_visible_set: is_ui,
+        rest_ui_rotation: if is_ui {
+            node.property("ui_rotation")
+                .and_then(|v| v.trim().parse::<f32>().ok())
+        } else {
+            None
+        },
         fill,
     })
 }
@@ -553,6 +566,16 @@ fn write_anim_target(
     if let Some(deg) = s.rot {
         if let Some(n) = world.get_mut(target.handle) {
             n.set_rotation(target.rest.rotation + deg.to_radians());
+        }
+        // The canvas draw path renders a UI node's rotation from its
+        // `ui_rotation` property, not the node transform — so a rotation
+        // track has to drive both, or a UI-authored scene's rotation animates
+        // the transform and nothing moves on screen.
+        if target.rest_ui_visible_set {
+            let base = target.rest_ui_rotation.unwrap_or(0.0);
+            if let Some(n) = world.get_mut(target.handle) {
+                n.set_property("ui_rotation", (base + deg).to_string());
+            }
         }
     }
     if let Some(scale) = s.scale {
@@ -624,6 +647,10 @@ fn restore_anim_targets(world: &mut SceneWorld2D, targets: &[AnimTargetState]) {
             n.set_visible(target.rest_visible);
             if target.rest_ui_visible_set {
                 n.set_property("ui_visible", if target.rest_visible { "true" } else { "false" });
+                // Restore the authored rotation; a node that had none returns
+                // to upright so a later run of the same clip starts clean.
+                let rest = target.rest_ui_rotation.unwrap_or(0.0);
+                n.set_property("ui_rotation", rest.to_string());
             }
         }
         if let Some(fill) = target.fill {
@@ -6098,4 +6125,54 @@ mod tests {
         world.stop_animation("lunge");
         assert!(!world.is_animation_playing("lunge"));
     }
+
+    /// A UI node's rotation is drawn from its `ui_rotation` property, not the
+    /// node transform - so a rotation track must drive both, or a UI-authored
+    /// scene's cars never visibly turn. Pin that a played rotation clip writes
+    /// the property and a finished clip restores the authored value.
+    #[test]
+    fn a_rotation_track_drives_ui_rotation_for_ui_nodes_and_restores_it() {
+        use crate::math::tween::Easing;
+        use crate::scene::{AnimKeyframe, AnimatedProperty, SceneAnimClip, SceneAnimTrack};
+
+        let mut world = SceneWorld2D::new();
+        let mut badge = SceneNode2D::new("badge").with_name("badge");
+        badge.set_property("ui", "image");
+        badge.set_property("ui_color", "224,161,60,255");
+        world.spawn(badge);
+
+        world.animations.push(SceneAnimClip {
+            id: "spin".to_string(),
+            duration: 1.0,
+            looping: false,
+            tracks: vec![SceneAnimTrack {
+                target: "badge".to_string(),
+                property: AnimatedProperty::RotationDeg,
+                keyframes: vec![
+                    AnimKeyframe { t: 0.0, value: 0.0, ease: Easing::Linear },
+                    AnimKeyframe { t: 1.0, value: 30.0, ease: Easing::Linear },
+                ],
+            }],
+        });
+
+        let badge = world.find_by_name("badge").unwrap();
+        assert_eq!(world.get(badge).unwrap().property("ui_rotation"), None);
+
+        world.play_animation("spin", 20.0);
+        world.apply_animations(20.5);
+        // Midway through a 0->30 degrees linear track.
+        assert_eq!(
+            world.get(badge).unwrap().property("ui_rotation").map(str::to_string),
+            Some("15".to_string()),
+            "a UI node's rotation track must write ui_rotation so the draw path sees it"
+        );
+
+        world.apply_animations(21.5); // past the end -> clip finishes and restores
+        assert_eq!(
+            world.get(badge).unwrap().property("ui_rotation"),
+            Some("0"),
+            "a finished clip returns the UI node to upright"
+        );
+    }
+
 }
