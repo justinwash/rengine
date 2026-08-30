@@ -706,6 +706,7 @@ mod tests {
                 .map(|(k, v)| (k.to_string(), v.to_string()))
                 .collect(),
             }],
+            animations: Vec::new(),
         };
         Scene2D::from_definition(
             std::path::Path::new("t.scene.json"),
@@ -849,6 +850,7 @@ mod tests {
                 sprites: vec![],
             }],
             instances: vec![button("start_btn", 1, 0.0), button("quit_btn", 2, 200.0)],
+            animations: Vec::new(),
         };
         let scene = Scene2D::from_definition(
             std::path::Path::new("t.scene.json"),
@@ -943,6 +945,7 @@ mod tests {
                 .map(|(k, v)| (k.to_string(), v.clone()))
                 .collect(),
             }],
+            animations: Vec::new(),
         };
         let scene = Scene2D::from_definition(
             std::path::Path::new("t.scene.json"),
@@ -1047,6 +1050,7 @@ mod tests {
                     .collect(),
                 },
             ],
+            animations: Vec::new(),
         };
         let scene = Scene2D::from_definition(
             std::path::Path::new("t.scene.json"),
