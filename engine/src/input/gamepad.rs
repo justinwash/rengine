@@ -227,7 +227,13 @@ impl GamepadSystem {
                     }
                 }
                 EventType::ButtonPressed(button, _) => {
-                    if self.unassigned.contains(&event.id) {
+                    // Any press from a pad we do not yet own claims it: the
+                    // "wait for a press to assign" mode, a pad freed by a slot
+                    // reclaim (it went silent long enough, then the player came
+                    // back), or simply a fresh controller. Dropping a press
+                    // because the id fell out of `unassigned` is how a swap
+                    // could look dead.
+                    if !self.id_to_slot.contains_key(&event.id) {
                         self.unassigned.retain(|&id| id != event.id);
                         self.assign_slot(event.id);
                     }
@@ -250,7 +256,14 @@ impl GamepadSystem {
                 }
                 // Analog pads talk in axis/button-changed events only; stamping
                 // here is what keeps them alive for the silent-slot reclaim.
-                EventType::AxisChanged(..) | EventType::ButtonChanged(..) => {
+                // A pad used *without a button press* (just the stick) would
+                // otherwise never leave `unassigned` in OnButtonPress mode —
+                // meaningful deflection counts as the handshake too.
+                EventType::AxisChanged(_, value, _) | EventType::ButtonChanged(_, value, _) => {
+                    if !self.id_to_slot.contains_key(&event.id) && value.abs() > 0.5 {
+                        self.unassigned.retain(|&id| id != event.id);
+                        self.assign_slot(event.id);
+                    }
                     if let Some(&slot_idx) = self.id_to_slot.get(&event.id) {
                         self.slots[slot_idx].last_event_epoch = self.epoch;
                     }
@@ -259,9 +272,12 @@ impl GamepadSystem {
             }
         }
 
-        // A pad whose slot was freed by a Disconnected event may have left a
-        // pad sitting on a later slot; pack everything up so the first-player
-        // slot is always the live pad the game reads.
+        // Free slots whose pad has gone silent, then pack everything up so the
+        // first-player slot is always the live pad the game reads. Running
+        // every update (not just when a new pad assigns) means a dead pad's
+        // slot opens up even when no new assignment is pending, and the
+        // promotion below hands primary to whichever pad is used.
+        self.reclaim_stale_slots();
         self.renormalize_slots();
 
         // Stick state is refreshed from the live gilrs value for every
@@ -338,7 +354,9 @@ impl GamepadSystem {
         for (idx, slot) in self.slots.iter_mut().enumerate() {
             if slot.id.is_none() {
                 slot.id = Some(GamepadToken(idx as u32 + 1));
-                slot.last_event_epoch = self.epoch;
+                // No activity stamp here: `last_event_epoch` means "this pad
+                // produced real input", so a newly-plugged-but-untouched pad
+                // never hijacks slot 0 from the pad being played.
                 self.id_to_slot.insert(id, idx);
                 log::info!("Gamepad {:?} assigned to player slot {}", id, idx + 1);
                 return;
@@ -406,6 +424,58 @@ impl GamepadSystem {
             self.slots[i] = moved;
             log::info!("Repacked gamepad into player slot {}", i + 1);
         }
+
+        self.promote_most_active_to_primary();
+    }
+
+    /// Slot 0 belongs to the pad that produced input most recently. This is
+    /// what makes a mid-session swap seamless: the instant the replacement
+    /// controller's first press lands, it becomes the most recent pad and
+    /// takes over the primary slot — even when the dead pad still occupies it
+    /// (no `Disconnected` event, silence shorter than the reclaim threshold).
+    ///
+    /// A pad that has produced no input yet (`last_event_epoch == 0`) is never
+    /// promoted, so plugging a spare controller in cannot yank the controls
+    /// from the pad being played.
+    fn promote_most_active_to_primary(&mut self) {
+        if self.slots.len() < 2 || self.slots[0].id.is_none() {
+            return;
+        }
+        let Some(candidate) = (1..self.slots.len())
+            .filter(|&i| self.slots[i].id.is_some())
+            .max_by_key(|&i| self.slots[i].last_event_epoch)
+        else {
+            return;
+        };
+        if self.slots[candidate].last_event_epoch <= self.slots[0].last_event_epoch {
+            return; // primary is already the most recent (ties stay put)
+        }
+        // Re-point the gilrs mappings, then swap the whole states (including
+        // the frame's recorded button presses) so the game sees the press on
+        // the very frame it happened.
+        let slot0_gid = self
+            .id_to_slot
+            .iter()
+            .find(|(_, &s)| s == 0)
+            .map(|(&g, _)| g);
+        let cand_gid = self
+            .id_to_slot
+            .iter()
+            .find(|(_, &s)| s == candidate)
+            .map(|(&g, _)| g);
+        if let Some(gid) = slot0_gid {
+            self.id_to_slot.insert(gid, candidate);
+        }
+        if let Some(gid) = cand_gid {
+            self.id_to_slot.insert(gid, 0);
+        }
+        self.slots.swap(0, candidate);
+        self.slots[0].id = Some(GamepadToken(1));
+        self.slots[candidate].id = Some(GamepadToken(candidate as u32 + 1));
+        log::info!(
+            "Promoted gamepad {} to player slot 1 (most recently active)",
+            candidate + 1
+        );
     }
 }
 
@@ -484,6 +554,86 @@ mod tests {
         assert!(
             sys.slots[1].id.is_none(),
             "the source slot must be empty after the repack"
+        );
+    }
+
+    /// The precise failure of a mid-session swap: the dead pad still occupies
+    /// slot 0 (no Disconnected event, silence shorter than the reclaim
+    /// threshold), the replacement is on slot 1 and just produced input. The
+    /// most-recently-active promotion must put the replacement in slot 0 —
+    /// taking its recorded button press with it — on the very next update.
+    #[test]
+    fn the_most_recently_active_pad_takes_primary_even_when_slot0_is_occupied() {
+        let mut sys = GamepadSystem {
+            gilrs: Gilrs::new().expect("gilrs init"),
+            slots: vec![
+                // The ghost: last input a moment before it died.
+                GamepadState {
+                    id: Some(GamepadToken(1)),
+                    last_event_epoch: 10,
+                    ..GamepadState::DEFAULT
+                },
+                // The replacement: its first press landed a frame ago.
+                GamepadState {
+                    id: Some(GamepadToken(2)),
+                    last_event_epoch: 42,
+                    buttons_pressed: vec![Button::South],
+                    ..GamepadState::DEFAULT
+                },
+            ],
+            id_to_slot: std::collections::HashMap::new(),
+            unassigned: Vec::new(),
+            assign_mode: GamepadAssignMode::default(),
+            epoch: 60,
+        };
+        sys.renormalize_slots();
+        assert_eq!(
+            sys.slots[0].last_event_epoch, 42,
+            "the pad that just produced input must take the primary slot"
+        );
+        assert_eq!(
+            sys.slots[0].id,
+            Some(GamepadToken(1)),
+            "primary keeps the player-1 token"
+        );
+        assert!(
+            sys.slots[0].buttons_pressed.contains(&Button::South),
+            "the press that triggered the swap must still be live for the game"
+        );
+        assert_eq!(
+            sys.slots[1].last_event_epoch, 10,
+            "the ghost moves to the back slot"
+        );
+    }
+
+    /// An untouched spare controller must not steal primary from the pad the
+    /// player is actively using.
+    #[test]
+    fn an_untouched_pad_does_not_take_primary() {
+        let mut sys = GamepadSystem {
+            gilrs: Gilrs::new().expect("gilrs init"),
+            slots: vec![
+                GamepadState {
+                    id: Some(GamepadToken(1)),
+                    last_event_epoch: 50,
+                    ..GamepadState::DEFAULT
+                },
+                // Plugged in but never pressed: no activity to promote on.
+                GamepadState {
+                    id: Some(GamepadToken(2)),
+                    last_event_epoch: 0,
+                    ..GamepadState::DEFAULT
+                },
+            ],
+            id_to_slot: std::collections::HashMap::new(),
+            unassigned: Vec::new(),
+            assign_mode: GamepadAssignMode::default(),
+            epoch: 60,
+        };
+        sys.renormalize_slots();
+        assert_eq!(
+            sys.slots[0].last_event_epoch, 50,
+            "an idle spare must leave the active pad in primary"
         );
     }
 
