@@ -40,6 +40,11 @@ pub struct GamepadState {
     pub right_stick_x: f32,
 
     pub right_stick_y: f32,
+
+    /// The [`GamepadSystem`] update tick this pad last produced input on.
+    /// A pad silent for long enough counts as gone, so a replacement
+    /// controller can take its slot (see `assign_slot`).
+    last_event_epoch: u64,
 }
 
 impl GamepadState {
@@ -52,6 +57,7 @@ impl GamepadState {
         left_stick_y: 0.0,
         right_stick_x: 0.0,
         right_stick_y: 0.0,
+        last_event_epoch: 0,
     };
 
     pub fn new() -> Self {
@@ -91,7 +97,19 @@ pub struct GamepadSystem {
     unassigned: Vec<GamepadId>,
 
     assign_mode: GamepadAssignMode,
+
+    /// Monotonic update ticks, used to spot pads that stopped producing input.
+    epoch: u64,
 }
+
+/// A pad this silent (ticks at 60fps ≈ 10s) counts as abandoned for the
+/// purpose of slot assignment. A controller whose battery died while the link
+/// stayed up would otherwise hold the primary player slot hostage while a
+/// replacement pad waits on a later slot.
+/// ponytail: activity-based, so a genuine two-pad session with one player
+/// idle for >10s can see the idle pad re-homed to a later slot — fine for the
+/// single-player game; revisit with per-slot pairing if real 2P ever ships.
+const STALE_SLOT_EPOCHS: u64 = 600;
 
 impl GamepadSystem {
     pub fn new(mode: GamepadAssignMode) -> Self {
@@ -102,6 +120,7 @@ impl GamepadSystem {
             id_to_slot: HashMap::new(),
             unassigned: Vec::new(),
             assign_mode: mode,
+            epoch: 0,
         };
 
         let connected: Vec<GamepadId> = sys
@@ -182,6 +201,7 @@ impl GamepadSystem {
     }
 
     pub(crate) fn update(&mut self) {
+        self.epoch = self.epoch.wrapping_add(1);
         for slot in &mut self.slots {
             slot.buttons_pressed.clear();
             slot.buttons_released.clear();
@@ -190,12 +210,19 @@ impl GamepadSystem {
         while let Some(event) = self.gilrs.next_event() {
             match event.event {
                 EventType::Connected => {
+                    // A controller plugged in (or re-paired) mid-session joins
+                    // the pool — without this a replacement pad would never be
+                    // tracked until restart.
                     self.track_gamepad(event.id);
                 }
                 EventType::Disconnected => {
                     self.unassigned.retain(|&id| id != event.id);
                     if let Some(&slot_idx) = self.id_to_slot.get(&event.id) {
-                        self.slots[slot_idx].id = None;
+                        let slot = &mut self.slots[slot_idx];
+                        slot.id = None;
+                        slot.buttons_down.clear();
+                        slot.buttons_pressed.clear();
+                        slot.buttons_released.clear();
                         self.id_to_slot.remove(&event.id);
                     }
                 }
@@ -206,6 +233,7 @@ impl GamepadSystem {
                     }
                     if let Some(&slot_idx) = self.id_to_slot.get(&event.id) {
                         let slot = &mut self.slots[slot_idx];
+                        slot.last_event_epoch = self.epoch;
                         if !slot.buttons_down.contains(&button) {
                             slot.buttons_down.push(button);
                             slot.buttons_pressed.push(button);
@@ -215,13 +243,26 @@ impl GamepadSystem {
                 EventType::ButtonReleased(button, _) => {
                     if let Some(&slot_idx) = self.id_to_slot.get(&event.id) {
                         let slot = &mut self.slots[slot_idx];
+                        slot.last_event_epoch = self.epoch;
                         slot.buttons_down.retain(|&b| b != button);
                         slot.buttons_released.push(button);
+                    }
+                }
+                // Analog pads talk in axis/button-changed events only; stamping
+                // here is what keeps them alive for the silent-slot reclaim.
+                EventType::AxisChanged(..) | EventType::ButtonChanged(..) => {
+                    if let Some(&slot_idx) = self.id_to_slot.get(&event.id) {
+                        self.slots[slot_idx].last_event_epoch = self.epoch;
                     }
                 }
                 _ => {}
             }
         }
+
+        // A pad whose slot was freed by a Disconnected event may have left a
+        // pad sitting on a later slot; pack everything up so the first-player
+        // slot is always the live pad the game reads.
+        self.renormalize_slots();
 
         // Stick state is refreshed from the live gilrs value for every
         // assigned slot. The `id_to_slot` map is the source of the gilrs id
@@ -288,15 +329,83 @@ impl GamepadSystem {
             return;
         }
 
+        // A slot whose pad has gone silent is reclaimable: the battery may
+        // have died with the link still up, and the replacement must become
+        // the primary (slot 0) rather than wait on a later slot the
+        // single-player game never reads.
+        self.reclaim_stale_slots();
+
         for (idx, slot) in self.slots.iter_mut().enumerate() {
             if slot.id.is_none() {
                 slot.id = Some(GamepadToken(idx as u32 + 1));
+                slot.last_event_epoch = self.epoch;
                 self.id_to_slot.insert(id, idx);
                 log::info!("Gamepad {:?} assigned to player slot {}", id, idx + 1);
                 return;
             }
         }
         log::warn!("No free player slot for gamepad {:?}", id);
+    }
+
+    /// Free every assigned slot whose pad has produced no input for
+    /// [`STALE_SLOT_EPOCHS`] ticks. A controller that died without a clean
+    /// `Disconnected` event would otherwise hold its player slot forever.
+    fn reclaim_stale_slots(&mut self) {
+        let stale: Vec<(GamepadId, usize)> = self
+            .id_to_slot
+            .iter()
+            .filter(|(_, &slot_idx)| {
+                self.epoch.saturating_sub(self.slots[slot_idx].last_event_epoch)
+                    >= STALE_SLOT_EPOCHS
+            })
+            .map(|(&gid, &slot_idx)| (gid, slot_idx))
+            .collect();
+        for (gid, slot_idx) in stale {
+            log::info!(
+                "Gamepad {:?} silent for {} ticks; freeing player slot {}",
+                gid,
+                STALE_SLOT_EPOCHS,
+                slot_idx + 1
+            );
+            self.id_to_slot.remove(&gid);
+            if let Some(slot) = self.slots.get_mut(slot_idx) {
+                slot.id = None;
+                slot.buttons_down.clear();
+                slot.buttons_pressed.clear();
+                slot.buttons_released.clear();
+                slot.left_stick_x = 0.0;
+                slot.left_stick_y = 0.0;
+                slot.right_stick_x = 0.0;
+                slot.right_stick_y = 0.0;
+            }
+        }
+    }
+
+    /// Move pads on higher slots down into lower free slots, so the first
+    /// player slot always holds a live pad. Called every update, so a slot
+    /// freed by a `Disconnected` event is re-filled by the next pad on the
+    /// very next frame — the game reads slot 0 and must never see an empty
+    /// primary while a controller is physically connected.
+    fn renormalize_slots(&mut self) {
+        for i in 0..self.slots.len() {
+            if self.slots[i].id.is_some() {
+                continue;
+            }
+            let Some(j) = (i + 1..self.slots.len()).find(|&j| self.slots[j].id.is_some()) else {
+                break;
+            };
+            // Re-point the gilrs mapping at the lower slot.
+            if let Some((&gid, _)) = self.id_to_slot.iter().find(|(_, &s)| s == j) {
+                self.id_to_slot.insert(gid, i);
+            } else {
+                self.id_to_slot
+                    .retain(|_, slot_idx| *slot_idx != j);
+            }
+            let mut moved = std::mem::replace(&mut self.slots[j], GamepadState::new());
+            moved.id = Some(GamepadToken(i as u32 + 1));
+            self.slots[i] = moved;
+            log::info!("Repacked gamepad into player slot {}", i + 1);
+        }
     }
 }
 
@@ -321,6 +430,7 @@ mod tests {
             id_to_slot: std::collections::HashMap::new(),
             unassigned: Vec::new(),
             assign_mode: GamepadAssignMode::default(),
+            epoch: 0,
         };
         // Only the first slot matters; avoid poll (it needs real events).
         let mut input = InputState::new();
@@ -336,12 +446,81 @@ mod tests {
             id_to_slot: std::collections::HashMap::new(),
             unassigned: Vec::new(),
             assign_mode: GamepadAssignMode::default(),
+            epoch: 0,
         };
         let mut input2 = InputState::new();
         idle.translate_to_keys(&mut input2);
         assert!(
             !input2.is_key_pressed(KeyCode::Enter) && !input2.is_key_pressed(KeyCode::Space),
             "a disconnected pad must not fire keys"
+        );
+    }
+
+    /// When a pad on a higher slot outlives the one on slot 0 (its controller
+    /// died), the next update packs it into the now-free primary slot — the
+    /// game reads slot 0 and would otherwise stay blind to the replacement.
+    #[test]
+    fn a_later_pad_repacks_into_the_freed_first_slot() {
+        let mut sys = GamepadSystem {
+            gilrs: Gilrs::new().expect("gilrs init"),
+            slots: vec![
+                GamepadState::DEFAULT, // slot 0 freed (its pad dropped)
+                GamepadState {
+                    id: Some(GamepadToken(2)),
+                    last_event_epoch: 5,
+                    ..GamepadState::DEFAULT
+                },
+            ],
+            id_to_slot: std::collections::HashMap::new(),
+            unassigned: Vec::new(),
+            assign_mode: GamepadAssignMode::default(),
+            epoch: 10,
+        };
+        sys.renormalize_slots();
+        assert!(
+            sys.slots[0].id.is_some(),
+            "the surviving pad must move into the first player slot"
+        );
+        assert!(
+            sys.slots[1].id.is_none(),
+            "the source slot must be empty after the repack"
+        );
+    }
+
+    /// A pad that stopped producing input is reclaimed, so a replacement
+    /// controller can take its slot even though no Disconnected event ever
+    /// came (a dead battery with the link still up). Needs a real controller
+    /// to supply a gilrs id; skipped (as a pass) without one.
+    #[test]
+    fn a_silent_controller_slot_is_reclaimed() {
+        let gilrs = Gilrs::new().expect("gilrs init");
+        let connected: Vec<GamepadId> = gilrs.gamepads().map(|(id, _)| id).collect();
+        let Some(gid) = connected.first().copied() else {
+            eprintln!("no controller connected; skipping reclaim test");
+            return;
+        };
+        let mut sys = GamepadSystem {
+            gilrs,
+            slots: vec![GamepadState {
+                id: Some(GamepadToken(1)),
+                // The ghost pad last spoke half an epoch ago, long before
+                // the silence threshold.
+                last_event_epoch: 0,
+                ..GamepadState::DEFAULT
+            }],
+            id_to_slot: [(gid, 0)].into_iter().collect(),
+            unassigned: Vec::new(),
+            assign_mode: GamepadAssignMode::default(),
+            epoch: STALE_SLOT_EPOCHS + 10,
+        };
+        sys.reclaim_stale_slots();
+        assert!(
+            sys.slots[0].id.is_none(),
+            "a silent pad's slot must free up for a replacement"
+        );
+        assert!(
+            sys.id_to_slot.is_empty(),
+            "the dead pad's gilrs mapping must be dropped"
         );
     }
 }
