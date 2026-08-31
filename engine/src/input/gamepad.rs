@@ -132,7 +132,57 @@ impl GamepadSystem {
         for id in connected {
             sys.track_gamepad(id);
         }
+
+        sys.log_device_snapshot("startup");
         sys
+    }
+
+    /// Log every gamepad gilrs knows: name, vendor/product ids, uuid and
+    /// connected state — the external ground truth for "the game doesn't
+    /// recognise my controller". Called on startup and whenever a device
+    /// connects or disconnects, so a missing or mis-mapped controller shows
+    /// up by its PIDs in the log.
+    fn log_device_snapshot(&self, label: &str) {
+        log::info!("Gamepad inventory ({label}):");
+        for (id, gp) in self.gilrs.gamepads() {
+            let slot = self
+                .id_to_slot
+                .get(&id)
+                .map(|&s| (s + 1).to_string())
+                .unwrap_or_else(|| {
+                    if self.unassigned.contains(&id) {
+                        "unassigned".to_string()
+                    } else {
+                        "unknown".to_string()
+                    }
+                });
+            log::info!(
+                "  id={:?} name={:?} vid={:04x} pid={:04x} uuid={:02x}{:02x}{:02x}{:02x}\
+{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x} connected={} slot={}",
+                id,
+                gp.name(),
+                gp.vendor_id().unwrap_or(0),
+                gp.product_id().unwrap_or(0),
+                gp.uuid()[0],
+                gp.uuid()[1],
+                gp.uuid()[2],
+                gp.uuid()[3],
+                gp.uuid()[4],
+                gp.uuid()[5],
+                gp.uuid()[6],
+                gp.uuid()[7],
+                gp.uuid()[8],
+                gp.uuid()[9],
+                gp.uuid()[10],
+                gp.uuid()[11],
+                gp.uuid()[12],
+                gp.uuid()[13],
+                gp.uuid()[14],
+                gp.uuid()[15],
+                gp.is_connected(),
+                slot,
+            );
+        }
     }
 
     pub fn assign_mode(&self) -> GamepadAssignMode {
@@ -160,6 +210,26 @@ impl GamepadSystem {
     pub fn player_or_default(&self, index: usize) -> &GamepadState {
         static DEFAULT: GamepadState = GamepadState::DEFAULT;
         self.slots.get(index).unwrap_or(&DEFAULT)
+    }
+
+    /// The slot the game should read as "player 1": the connected pad with the
+    /// most recent input — i.e. whichever controller the player is actually
+    /// holding, regardless of which slot it was assigned. Falls back to the
+    /// first connected slot (lowest index on a tie / no activity yet), then 0.
+    ///
+    /// This is the robust read path: even if the slot bookkeeping ever leaves
+    /// a replacement pad on a higher slot, the game follows the pad producing
+    /// input instead of trusting a fixed slot 0.
+    pub fn primary_index(&self) -> usize {
+        self.slots
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.is_connected())
+            // Highest activity wins; a tie (or no activity yet) favours the
+            // first connected pad.
+            .max_by_key(|(i, s)| (s.last_event_epoch, std::cmp::Reverse(*i)))
+            .map(|(i, _)| i)
+            .unwrap_or(0)
     }
 
     pub fn connected_count(&self) -> usize {
@@ -213,9 +283,12 @@ impl GamepadSystem {
                     // A controller plugged in (or re-paired) mid-session joins
                     // the pool — without this a replacement pad would never be
                     // tracked until restart.
+                    log::info!("Gamepad {:?} connected", event.id);
+                    self.log_device_snapshot("connect");
                     self.track_gamepad(event.id);
                 }
                 EventType::Disconnected => {
+                    log::info!("Gamepad {:?} disconnected", event.id);
                     self.unassigned.retain(|&id| id != event.id);
                     if let Some(&slot_idx) = self.id_to_slot.get(&event.id) {
                         let slot = &mut self.slots[slot_idx];
@@ -225,8 +298,22 @@ impl GamepadSystem {
                         slot.buttons_released.clear();
                         self.id_to_slot.remove(&event.id);
                     }
+                    self.log_device_snapshot("disconnect");
                 }
                 EventType::ButtonPressed(button, _) => {
+                    if button == Button::Unknown {
+                        // The controller is visibly connected but its button
+                        // layout is not in the gamecontrollerdb gilrs ships:
+                        // the pad's presses arrive as Unknown and the game's
+                        // named binds (A/B/X/Y...) can never match. This is
+                        // the log line that proves a *mapping* problem rather
+                        // than a detection one.
+                        log::warn!(
+                            "Gamepad {:?} pressed an *unmapped* button (Button::Unknown) — \
+its layout is missing from the gamecontrollerdb; named controls will not respond",
+                            event.id
+                        );
+                    }
                     // Any press from a pad we do not yet own claims it: the
                     // "wait for a press to assign" mode, a pad freed by a slot
                     // reclaim (it went silent long enough, then the player came
@@ -603,6 +690,69 @@ mod tests {
         assert_eq!(
             sys.slots[1].last_event_epoch, 10,
             "the ghost moves to the back slot"
+        );
+    }
+
+    /// The read path the game actually uses: `primary_index` must point at the
+    /// connected pad with the most recent input even when that pad sits on a
+    /// higher slot and the ghost still holds slot 0 — this is what keeps a
+    /// mid-session swap live regardless of the slot bookkeeping.
+    #[test]
+    fn primary_index_follows_the_most_recently_active_pad_on_any_slot() {
+        let sys = GamepadSystem {
+            gilrs: Gilrs::new().expect("gilrs init"),
+            slots: vec![
+                GamepadState {
+                    id: Some(GamepadToken(1)),
+                    last_event_epoch: 5,
+                    ..GamepadState::DEFAULT
+                },
+                GamepadState {
+                    id: Some(GamepadToken(2)),
+                    last_event_epoch: 88,
+                    ..GamepadState::DEFAULT
+                },
+                // A disconnected slot must never be considered primary even if
+                // it is slot 0.
+                GamepadState::DEFAULT,
+            ],
+            id_to_slot: std::collections::HashMap::new(),
+            unassigned: Vec::new(),
+            assign_mode: GamepadAssignMode::default(),
+            epoch: 100,
+        };
+        assert_eq!(
+            sys.primary_index(),
+            1,
+            "primary must follow the pad that just produced input, on slot 1"
+        );
+    }
+
+    #[test]
+    fn primary_index_favours_the_first_connected_slot_before_any_input() {
+        let sys = GamepadSystem {
+            gilrs: Gilrs::new().expect("gilrs init"),
+            slots: vec![
+                GamepadState {
+                    id: Some(GamepadToken(1)),
+                    last_event_epoch: 0,
+                    ..GamepadState::DEFAULT
+                },
+                GamepadState {
+                    id: Some(GamepadToken(2)),
+                    last_event_epoch: 0,
+                    ..GamepadState::DEFAULT
+                },
+            ],
+            id_to_slot: std::collections::HashMap::new(),
+            unassigned: Vec::new(),
+            assign_mode: GamepadAssignMode::default(),
+            epoch: 0,
+        };
+        assert_eq!(
+            sys.primary_index(),
+            0,
+            "with no activity, the first connected pad is primary"
         );
     }
 

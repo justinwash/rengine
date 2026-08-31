@@ -634,6 +634,16 @@ impl Engine {
         self.gamepads.player(player)
     }
 
+    /// The controller the game should read as "player 1": the connected pad
+    /// with the most recent input, whatever its slot (see
+    /// [`GamepadSystem::primary_index`]). All the game's input helpers read
+    /// through this, so a replacement controller that produces input becomes
+    /// the live pad instantly — the fixed `gamepad(0)` path is the historical
+    /// reason a mid-session swap looked dead.
+    pub fn primary_gamepad(&self) -> &crate::input::GamepadState {
+        self.gamepads.player(self.gamepads.primary_index())
+    }
+
     pub fn gamepads_connected(&self) -> usize {
         self.gamepads.connected_count()
     }
