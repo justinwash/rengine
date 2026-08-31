@@ -60,6 +60,17 @@ impl InputState {
             .map_or(0, |(_, n)| *n)
     }
 
+    /// Whether *any* key went down this frame — the cheap test the input
+    /// device-vote uses to tell "the keyboard is being used" from a pad.
+    pub fn any_key_pressed(&self) -> bool {
+        !self.keys_pressed.is_empty()
+    }
+
+    /// Whether any mouse button was pressed this frame.
+    pub fn any_mouse_pressed(&self) -> bool {
+        self.mouse_buttons_pressed.iter().any(|&b| b)
+    }
+
     /// Linear scan over a `Vec`: at most a handful of distinct keys go down in
     /// any one frame, so a map would cost more to allocate than it saves.
     fn bump_press(&mut self, key: KeyCode) {

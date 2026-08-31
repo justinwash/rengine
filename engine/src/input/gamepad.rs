@@ -73,6 +73,12 @@ impl GamepadState {
     pub fn is_connected(&self) -> bool {
         self.id.is_some()
     }
+
+    /// Whether any button went down this frame — the cheap test the input
+    /// device-vote uses to tell "the pad is being used" from a resting pad.
+    pub fn any_button_pressed(&self) -> bool {
+        !self.buttons_pressed.is_empty()
+    }
 }
 
 pub struct GamepadSystem {
