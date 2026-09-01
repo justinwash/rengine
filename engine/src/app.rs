@@ -147,6 +147,33 @@ fn route_debug_mouse_button_event(
     }
 }
 
+/// Convert winit's physical window dimensions into the logical coordinate space
+/// used by game layout and input. `WindowEvent::Resized` reports physical pixels,
+/// while `with_inner_size(LogicalSize)` and authored UI coordinates are logical
+/// pixels. Keeping this boundary explicit prevents a HiDPI display from making a
+/// 1280x800 layout behave like a 2560x1600 layout.
+fn logical_size_from_physical(width: u32, height: u32, scale_factor: f64) -> (u32, u32) {
+    let scale_factor = scale_factor.max(f64::EPSILON);
+    (
+        ((width as f64 / scale_factor).round().max(1.0)) as u32,
+        ((height as f64 / scale_factor).round().max(1.0)) as u32,
+    )
+}
+
+fn logical_point_from_physical(
+    x: f64,
+    y: f64,
+    logical_width: u32,
+    logical_height: u32,
+    scale_factor: f64,
+) -> (f32, f32) {
+    let scale_factor = scale_factor.max(f64::EPSILON);
+    (
+        (x / scale_factor - logical_width as f64 / 2.0) as f32,
+        -(y / scale_factor - logical_height as f64 / 2.0) as f32,
+    )
+}
+
 fn normalize_asset_bundle_dependencies(mut deps: Vec<PathBuf>) -> Vec<PathBuf> {
     deps.sort();
     deps.dedup();
@@ -416,7 +443,10 @@ fn drain_debug_commands_3d(engine: &mut Engine3D) {
 
 #[cfg(test)]
 mod tests {
-    use super::{execute_debug_command, normalize_asset_bundle_dependencies};
+    use super::{
+        execute_debug_command, logical_point_from_physical, logical_size_from_physical,
+        normalize_asset_bundle_dependencies,
+    };
     use crate::debug::{self, DebugLogLevel, DebugUiState};
     use std::path::PathBuf;
 
@@ -454,6 +484,20 @@ mod tests {
         execute_debug_command(&mut debug_ui, &mut hot_reload_enabled, "clear");
 
         assert_eq!(debug::log_count(), 0);
+    }
+
+    #[test]
+    fn hidpi_dimensions_and_points_are_converted_to_logical_pixels() {
+        assert_eq!(logical_size_from_physical(2560, 1600, 2.0), (1280, 800));
+        assert_eq!(logical_size_from_physical(1920, 1080, 1.25), (1536, 864));
+        assert_eq!(
+            logical_point_from_physical(1280.0, 800.0, 1280, 800, 2.0),
+            (0.0, -0.0)
+        );
+        assert_eq!(
+            logical_point_from_physical(0.0, 0.0, 1280, 800, 2.0),
+            (-640.0, 400.0)
+        );
     }
 }
 
@@ -562,14 +606,16 @@ impl Engine {
     pub fn dt(&self) -> f32 {
         self.time.dt()
     }
+    /// The window's logical size, in the coordinate space used by game layout
+    /// and input. Physical framebuffer sizes stay inside the renderer.
     pub fn window_size(&self) -> (u32, u32) {
         (self.window_width, self.window_height)
     }
 
     /// Half the drawable canvas, in canvas units. With a fixed render resolution
     /// this is `game_size / 2` (e.g. 320×180 for a 640×360 canvas), so UI laid
-    /// out from `half_size` stays in canvas space; without one it is the window
-    /// half, unchanged. Use [`Engine::window_size`] for actual window pixels.
+    /// out from `half_size` stays in canvas space; without one it is half the
+    /// logical window size, unchanged.
     pub fn half_size(&self) -> (f32, f32) {
         let (w, h) = self.game_size();
         (w as f32 / 2.0, h as f32 / 2.0)
@@ -606,7 +652,7 @@ impl Engine {
         self.mouse_screen_pos()
     }
 
-    /// Map an arbitrary window-space point into fixed-canvas pixels. See
+    /// Map a point in logical window space into the fixed game canvas. See
     /// [`Engine::mouse_canvas_pos`].
     pub fn window_to_canvas(&self, point: glam::Vec2) -> glam::Vec2 {
         match self.renderer.offscreen_info() {
@@ -1473,6 +1519,12 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
             .build(&event_loop)?,
     );
     window.set_ime_allowed(true);
+    let initial_size = window.inner_size();
+    let (window_width, window_height) = logical_size_from_physical(
+        initial_size.width,
+        initial_size.height,
+        window.scale_factor(),
+    );
 
     let present_mode = if config.vsync {
         wgpu::PresentMode::AutoVsync
@@ -1487,8 +1539,8 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
         audio: AudioSystem::new(config.headless),
         input: InputState::new(),
         time: TimeState::new(),
-        window_width: config.width,
-        window_height: config.height,
+        window_width,
+        window_height,
         render_resolution: render_res,
         gamepads: GamepadSystem::new(gamepad_assign),
         hot_reload_enabled: config.hot_reload,
@@ -1589,8 +1641,12 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
                 WindowEvent::CloseRequested => target.exit(),
 
                 WindowEvent::Resized(new_size) => {
-                    engine.window_width = new_size.width;
-                    engine.window_height = new_size.height;
+                    (engine.window_width, engine.window_height) =
+                        logical_size_from_physical(
+                            new_size.width,
+                            new_size.height,
+                            window.scale_factor(),
+                        );
                     engine.renderer.resize(new_size.width, new_size.height);
                 }
 
@@ -1608,10 +1664,16 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
                 }
 
                 WindowEvent::CursorMoved { position, .. } => {
-                    let x = position.x as f32 - engine.window_width as f32 / 2.0;
-                    let y = -(position.y as f32 - engine.window_height as f32 / 2.0);
                     // Map into canvas space so hit-testing matches canvas-positioned
-                    // UI (identity when no fixed render resolution is set).
+                    // UI. Winit reports physical pixels; the game uses logical
+                    // center-origin coordinates.
+                    let (x, y) = logical_point_from_physical(
+                        position.x,
+                        position.y,
+                        engine.window_width,
+                        engine.window_height,
+                        window.scale_factor(),
+                    );
                     let c = engine.window_to_canvas(glam::Vec2::new(x, y));
                     engine.input.handle_cursor_moved(c.x, c.y);
                 }
@@ -1637,7 +1699,8 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
                     let (dx, dy) = match delta {
                         MouseScrollDelta::LineDelta(x, y) => (x, y),
                         MouseScrollDelta::PixelDelta(pos) => {
-                            (pos.x as f32 / 40.0, pos.y as f32 / 40.0)
+                            let scale = window.scale_factor().max(f64::EPSILON) as f32;
+                            (pos.x as f32 / scale / 40.0, pos.y as f32 / scale / 40.0)
                         }
                     };
                     let window_size = engine.window_size();
@@ -1719,6 +1782,12 @@ where
             .build(&event_loop)?,
     );
     window.set_ime_allowed(true);
+    let initial_size = window.inner_size();
+    let (window_width, window_height) = logical_size_from_physical(
+        initial_size.width,
+        initial_size.height,
+        window.scale_factor(),
+    );
 
     let present_mode = if config.vsync {
         wgpu::PresentMode::AutoVsync
@@ -1733,8 +1802,8 @@ where
         audio: AudioSystem::new(config.headless),
         input: InputState::new(),
         time: TimeState::new(),
-        window_width: config.width,
-        window_height: config.height,
+        window_width,
+        window_height,
         render_resolution: render_res,
         gamepads: GamepadSystem::new(gamepad_assign),
         hot_reload_enabled: config.hot_reload,
@@ -1802,8 +1871,12 @@ where
                 WindowEvent::CloseRequested => target.exit(),
 
                 WindowEvent::Resized(new_size) => {
-                    engine.window_width = new_size.width;
-                    engine.window_height = new_size.height;
+                    (engine.window_width, engine.window_height) =
+                        logical_size_from_physical(
+                            new_size.width,
+                            new_size.height,
+                            window.scale_factor(),
+                        );
                     engine.renderer.resize(new_size.width, new_size.height);
                 }
 
@@ -1821,10 +1894,16 @@ where
                 }
 
                 WindowEvent::CursorMoved { position, .. } => {
-                    let x = position.x as f32 - engine.window_width as f32 / 2.0;
-                    let y = -(position.y as f32 - engine.window_height as f32 / 2.0);
                     // Map into canvas space so hit-testing matches canvas-positioned
-                    // UI (identity when no fixed render resolution is set).
+                    // UI. Winit reports physical pixels; the game uses logical
+                    // center-origin coordinates.
+                    let (x, y) = logical_point_from_physical(
+                        position.x,
+                        position.y,
+                        engine.window_width,
+                        engine.window_height,
+                        window.scale_factor(),
+                    );
                     let c = engine.window_to_canvas(glam::Vec2::new(x, y));
                     engine.input.handle_cursor_moved(c.x, c.y);
                 }
@@ -1850,7 +1929,8 @@ where
                     let (dx, dy) = match delta {
                         MouseScrollDelta::LineDelta(x, y) => (x, y),
                         MouseScrollDelta::PixelDelta(pos) => {
-                            (pos.x as f32 / 40.0, pos.y as f32 / 40.0)
+                            let scale = window.scale_factor().max(f64::EPSILON) as f32;
+                            (pos.x as f32 / scale / 40.0, pos.y as f32 / scale / 40.0)
                         }
                     };
                     let window_size = engine.window_size();
@@ -2051,10 +2131,8 @@ impl Engine3D {
     }
 
     pub fn half_size(&self) -> (f32, f32) {
-        (
-            self.window_width as f32 / 2.0,
-            self.window_height as f32 / 2.0,
-        )
+        let (w, h) = self.game_size();
+        (w as f32 / 2.0, h as f32 / 2.0)
     }
 
     pub fn game_size(&self) -> (u32, u32) {
@@ -2579,6 +2657,12 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
             .build(&event_loop)?,
     );
     window.set_ime_allowed(true);
+    let initial_size = window.inner_size();
+    let (window_width, window_height) = logical_size_from_physical(
+        initial_size.width,
+        initial_size.height,
+        window.scale_factor(),
+    );
 
     let present_mode = if config.vsync {
         wgpu::PresentMode::AutoVsync
@@ -2593,8 +2677,8 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
         audio: AudioSystem::new(config.headless),
         input: InputState::new(),
         time: TimeState::new(),
-        window_width: config.width,
-        window_height: config.height,
+        window_width,
+        window_height,
         render_resolution: render_res,
         mouse_captured: false,
         hot_reload_enabled: config.hot_reload,
@@ -2621,7 +2705,7 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
             while engine.time.consume_fixed_step() {
                 game.fixed_update(&engine);
             }
-            let mut headless_frame = Frame3D::new(engine.window_size(), &engine.renderer.fonts[0]);
+            let mut headless_frame = Frame3D::new(engine.game_size(), &engine.renderer.fonts[0]);
             game.update(&engine, &mut headless_frame);
             if game.should_exit() {
                 return Ok(());
@@ -2666,8 +2750,12 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
                 }
 
                 WindowEvent::Resized(new_size) => {
-                    engine.window_width = new_size.width;
-                    engine.window_height = new_size.height;
+                    (engine.window_width, engine.window_height) =
+                        logical_size_from_physical(
+                            new_size.width,
+                            new_size.height,
+                            window.scale_factor(),
+                        );
                     engine.renderer.resize(new_size.width, new_size.height);
                 }
 
@@ -2726,7 +2814,8 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
                     let (dx, dy) = match delta {
                         MouseScrollDelta::LineDelta(x, y) => (x, y),
                         MouseScrollDelta::PixelDelta(pos) => {
-                            (pos.x as f32 / 40.0, pos.y as f32 / 40.0)
+                            let scale = window.scale_factor().max(f64::EPSILON) as f32;
+                            (pos.x as f32 / scale / 40.0, pos.y as f32 / scale / 40.0)
                         }
                     };
                     let window_size = engine.window_size();
@@ -2740,8 +2829,13 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
                 }
 
                 WindowEvent::CursorMoved { position, .. } => {
-                    let x = position.x as f32 - engine.window_width as f32 / 2.0;
-                    let y = -(position.y as f32 - engine.window_height as f32 / 2.0);
+                    let (x, y) = logical_point_from_physical(
+                        position.x,
+                        position.y,
+                        engine.window_width,
+                        engine.window_height,
+                        window.scale_factor(),
+                    );
                     engine.input.handle_cursor_moved(x, y);
                 }
 
@@ -2754,7 +2848,7 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
                     while engine.time.consume_fixed_step() {
                         game.fixed_update(&engine);
                     }
-                    let mut frame = Frame3D::new(engine.window_size(), &engine.renderer.fonts[0]);
+                    let mut frame = Frame3D::new(engine.game_size(), &engine.renderer.fonts[0]);
                     game.update(&engine, &mut frame);
 
                     if game.should_exit() {
@@ -2818,6 +2912,12 @@ where
             .build(&event_loop)?,
     );
     window.set_ime_allowed(true);
+    let initial_size = window.inner_size();
+    let (window_width, window_height) = logical_size_from_physical(
+        initial_size.width,
+        initial_size.height,
+        window.scale_factor(),
+    );
 
     let present_mode = if config.vsync {
         wgpu::PresentMode::AutoVsync
@@ -2832,8 +2932,8 @@ where
         audio: AudioSystem::new(config.headless),
         input: InputState::new(),
         time: TimeState::new(),
-        window_width: config.width,
-        window_height: config.height,
+        window_width,
+        window_height,
         render_resolution: render_res,
         mouse_captured: false,
         hot_reload_enabled: config.hot_reload,
@@ -2869,7 +2969,7 @@ where
                 }
             }
 
-            let mut headless_frame = Frame3D::new(engine.window_size(), &engine.renderer.fonts[0]);
+            let mut headless_frame = Frame3D::new(engine.game_size(), &engine.renderer.fonts[0]);
             let op = if let Some(scene) = stack.last_mut() {
                 scene.update(&engine, &mut globals, &mut headless_frame)
             } else {
@@ -2922,8 +3022,12 @@ where
                 }
 
                 WindowEvent::Resized(new_size) => {
-                    engine.window_width = new_size.width;
-                    engine.window_height = new_size.height;
+                    (engine.window_width, engine.window_height) =
+                        logical_size_from_physical(
+                            new_size.width,
+                            new_size.height,
+                            window.scale_factor(),
+                        );
                     engine.renderer.resize(new_size.width, new_size.height);
                 }
 
@@ -2982,7 +3086,8 @@ where
                     let (dx, dy) = match delta {
                         MouseScrollDelta::LineDelta(x, y) => (x, y),
                         MouseScrollDelta::PixelDelta(pos) => {
-                            (pos.x as f32 / 40.0, pos.y as f32 / 40.0)
+                            let scale = window.scale_factor().max(f64::EPSILON) as f32;
+                            (pos.x as f32 / scale / 40.0, pos.y as f32 / scale / 40.0)
                         }
                     };
                     let window_size = engine.window_size();
@@ -2996,8 +3101,13 @@ where
                 }
 
                 WindowEvent::CursorMoved { position, .. } => {
-                    let x = position.x as f32 - engine.window_width as f32 / 2.0;
-                    let y = -(position.y as f32 - engine.window_height as f32 / 2.0);
+                    let (x, y) = logical_point_from_physical(
+                        position.x,
+                        position.y,
+                        engine.window_width,
+                        engine.window_height,
+                        window.scale_factor(),
+                    );
                     engine.input.handle_cursor_moved(x, y);
                 }
 
@@ -3013,7 +3123,7 @@ where
                         }
                     }
 
-                    let mut frame = Frame3D::new(engine.window_size(), &engine.renderer.fonts[0]);
+                    let mut frame = Frame3D::new(engine.game_size(), &engine.renderer.fonts[0]);
 
                     let op = if let Some(scene) = stack.last_mut() {
                         scene.update(&engine, &mut globals, &mut frame)

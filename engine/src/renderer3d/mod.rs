@@ -763,6 +763,24 @@ impl Renderer3D {
         let queue = &self.queue;
         let fonts = &self.fonts;
         let textures = &self.textures;
+        let canvas_viewport = self
+            .offscreen
+            .as_ref()
+            .map(|ofs| {
+                crate::renderer::blit_viewport(
+                    ofs.scale_mode.get(),
+                    ofs.width,
+                    ofs.height,
+                    self.surface_config.width,
+                    self.surface_config.height,
+                )
+            })
+            .or(Some((
+                0.0,
+                0.0,
+                self.surface_config.width as f32,
+                self.surface_config.height as f32,
+            )));
         canvas::render_pass(
             device,
             &mut encoder,
@@ -773,7 +791,7 @@ impl Renderer3D {
             queue,
             &mut frame.canvases,
             fonts,
-            None,
+            canvas_viewport,
             |texture_id| textures.get(texture_id).map(|texture| &texture.bind_group),
         );
 

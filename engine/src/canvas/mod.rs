@@ -1509,6 +1509,7 @@ pub(crate) fn render_pass<'a, F>(
     if needs_per_segment {
         let surface_w = canvases.first().map(|c| c.screen_size.0).unwrap_or(1);
         let surface_h = canvases.first().map(|c| c.screen_size.1).unwrap_or(1);
+        let logical_size = (surface_w as f32, surface_h as f32);
         let mut bound_texture = DrawTexture::Font(0);
 
         for (start, count, scissor, texture) in &global_segments {
@@ -1531,12 +1532,22 @@ pub(crate) fn render_pass<'a, F>(
                 bound_texture = *texture;
             }
             if let Some([sx, sy, sw, sh]) = scissor {
-                if *sw == 0 || *sh == 0 {
+                let [sx, sy, sw, sh] = scale_scissor(
+                    [*sx, *sy, *sw, *sh],
+                    logical_size,
+                    viewport,
+                );
+                if sw == 0 || sh == 0 {
                     continue;
                 }
-                pass.set_scissor_rect(*sx, *sy, *sw, *sh);
+                pass.set_scissor_rect(sx, sy, sw, sh);
             } else {
-                pass.set_scissor_rect(0, 0, surface_w, surface_h);
+                let [x, y, w, h] = scale_scissor(
+                    [0, 0, surface_w, surface_h],
+                    logical_size,
+                    viewport,
+                );
+                pass.set_scissor_rect(x, y, w, h);
             }
             pass.draw(*start as u32..(*start + *count) as u32, 0..1);
         }
@@ -1545,9 +1556,39 @@ pub(crate) fn render_pass<'a, F>(
     }
 }
 
+fn scale_scissor(
+    rect: [u32; 4],
+    logical_size: (f32, f32),
+    viewport: Option<(f32, f32, f32, f32)>,
+) -> [u32; 4] {
+    let Some((vx, vy, vw, vh)) = viewport else {
+        return rect;
+    };
+    let sx = vw / logical_size.0.max(1.0);
+    let sy = vh / logical_size.1.max(1.0);
+    let x = (vx + rect[0] as f32 * sx).round().max(vx);
+    let y = (vy + rect[1] as f32 * sy).round().max(vy);
+    let right = (vx + (rect[0] + rect[2]) as f32 * sx).round().min(vx + vw);
+    let bottom = (vy + (rect[1] + rect[3]) as f32 * sy).round().min(vy + vh);
+    [
+        x as u32,
+        y as u32,
+        (right - x).max(0.0) as u32,
+        (bottom - y).max(0.0) as u32,
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn scale_scissor_maps_logical_clip_into_a_physical_viewport() {
+        assert_eq!(
+            scale_scissor([40, 20, 200, 100], (640.0, 360.0), Some((50.0, 25.0, 1280.0, 720.0))),
+            [130, 65, 400, 200]
+        );
+    }
 
     #[test]
     fn tracking_widens_a_run_by_one_gap_per_glyph_gap() {

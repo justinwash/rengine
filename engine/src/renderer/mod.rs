@@ -939,13 +939,11 @@ impl Renderer {
         let mut active_targets = Vec::new();
         self.render_nested_targets(encoder, frame, &mut active_targets);
 
-        let (proj_w, proj_h) = match self.offscreen {
-            Some(ref ofs) => (ofs.width as f32, ofs.height as f32),
-            None => (
-                self.surface_config.width as f32,
-                self.surface_config.height as f32,
-            ),
-        };
+        // Frame positions are authored in logical game pixels. The render view
+        // may be a larger physical framebuffer on a HiDPI display, but the GPU
+        // viewport scales these coordinates to that framebuffer; using the
+        // physical surface size here makes every sprite half-sized at 2x DPI.
+        let (proj_w, proj_h) = (frame.screen_size.0 as f32, frame.screen_size.1 as f32);
         let batches = self.upload_frame_batches(frame, proj_w, proj_h);
         let sprite_target = match self.offscreen {
             Some(ref ofs) => &ofs.view,
@@ -1031,14 +1029,15 @@ impl Renderer {
 
         // Letterbox the canvas/text into the same rect the offscreen sprite layer
         // blits to, so crisp UI text lines up with the scaled pixel canvas.
-        let canvas_viewport = self.offscreen.as_ref().map(|ofs| {
-            blit_viewport(
+        let canvas_viewport = Some(match self.offscreen.as_ref() {
+            Some(ofs) => blit_viewport(
                 ofs.scale_mode.get(),
                 ofs.width,
                 ofs.height,
                 final_size.0,
                 final_size.1,
-            )
+            ),
+            None => (0.0, 0.0, final_size.0 as f32, final_size.1 as f32),
         });
         let device = &self.device;
         let canvas_pipeline = &self.canvas_pipeline;
