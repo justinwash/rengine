@@ -31,6 +31,11 @@ pub enum ScriptParamKind {
     /// selector so authors can only pick a declared value, and `is_valid_value`
     /// rejects anything off the list.
     Enum,
+    /// A reference to a project asset, stored by its alias or workspace-relative
+    /// path. The editor renders it as a text field with a project-tree
+    /// resolution check, so a value naming no real file is flagged at authoring
+    /// time instead of failing silently at runtime.
+    Asset,
 }
 
 /// One typed parameter a script accepts.
@@ -62,8 +67,10 @@ impl ScriptParamDef {
     }
 
     /// Whether `value` is acceptable for this param. Only `Enum` constrains the
-    /// value (it must be one of `options`, unless no options are declared);
-    /// every other kind accepts any string.
+    /// value (it must be one of `options`, unless no options are declared).
+    /// `Asset` stays permissive here — the engine has no project tree at
+    /// manifest time — but the editor resolves it against the workspace and
+    /// flags a value that names no file.
     pub fn is_valid_value(&self, value: &str) -> bool {
         match self.kind {
             ScriptParamKind::Enum => {
@@ -237,5 +244,33 @@ mod tests {
         };
         assert!(free.is_valid_value("anything"));
         assert_eq!(free.next_option("anything"), None);
+    }
+
+    #[test]
+    fn parses_asset_param_kind() {
+        let json = r#"{
+            "scripts": [
+                {
+                    "path": "scripts/spawn_enemy.rs",
+                    "params": [
+                        {
+                            "name": "sprite",
+                            "kind": "asset",
+                            "default": "assets/enemy_1.png"
+                        }
+                    ]
+                }
+            ]
+        }"#;
+        let manifest: ScriptManifest = serde_json::from_str(json).unwrap();
+        let param = &manifest.script("scripts/spawn_enemy.rs").unwrap().params[0];
+        assert_eq!(param.kind, ScriptParamKind::Asset);
+        assert_eq!(param.default, "assets/enemy_1.png");
+        // Asset is a reference, not a closed list: the engine has no project
+        // tree at manifest time, so it stays permissive and never cycles. The
+        // editor's resolution check is the actual gate.
+        assert!(param.is_valid_value("assets/enemy_1.png"));
+        assert!(param.is_valid_value("assets/typo.png"));
+        assert_eq!(param.next_option("assets/enemy_1.png"), None);
     }
 }

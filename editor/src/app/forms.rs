@@ -18,6 +18,9 @@ pub(crate) struct ScriptParamEntry {
     pub(crate) value: String,
     /// Allowed values when `kind` is `Enum` (drives the cycle-selector).
     pub(crate) options: Vec<String>,
+    /// Whether the current value resolves, for `Asset` params (a project file
+    /// exists at the value's path). Always `true` for the other kinds.
+    pub(crate) valid: bool,
 }
 
 /// One row of the free-form custom-property editor (Ed1): an arbitrary
@@ -107,6 +110,12 @@ impl InspectorFormState {
                     editor.script_manifest.as_ref(),
                     &node.script_path,
                     &node.properties,
+                    // Asset params resolve against the project tree: a value
+                    // naming no existing file is flagged at authoring time.
+                    |value| {
+                        !value.is_empty()
+                            && editor.resolve_stored_path(value).is_file()
+                    },
                 );
                 self.custom_properties = build_custom_properties(&node.properties);
                 self.runtime_prefab = node.runtime_prefab.clone();
@@ -776,7 +785,16 @@ impl RengineNativeEditor {
                     Color::from_rgba8(148, 162, 180, 255),
                 );
                 for (index, param) in state.script_params.iter().enumerate() {
-                    ui.label(&param.label, 11.0, Color::from_rgba8(148, 162, 180, 255));
+                    // Asset params flag a value that names no project file by
+                    // going red; every other row stays the neutral label grey.
+                    let label_color = if param.kind == rengine::ScriptParamKind::Asset
+                        && !param.valid
+                    {
+                        Color::from_rgba8(220, 84, 84, 255)
+                    } else {
+                        Color::from_rgba8(148, 162, 180, 255)
+                    };
+                    ui.label(&param.label, 11.0, label_color);
                     match param.kind {
                         rengine::ScriptParamKind::Bool => {
                             let checked = matches!(param.value.trim(), "true" | "1" | "yes");
@@ -1745,10 +1763,16 @@ fn inspector_form_height(panel: PanelRect) -> f32 {
 /// Resolve the typed-param rows for a node's attached script from the manifest,
 /// pre-filling each with the node's authored `param_<name>` value or the
 /// schema default. Empty when the script isn't in the manifest.
+///
+/// `resolves` is the project-tree check for `Asset` params: an asset value is
+/// valid only when a file actually exists where it points. The engine cannot
+/// know the project at manifest time, so this is the editor's side of the
+/// contract (`ScriptParamKind::Asset`).
 fn build_script_params(
     manifest: Option<&rengine::ScriptManifest>,
     script_path: &str,
     properties: &HashMap<String, String>,
+    resolves: impl Fn(&str) -> bool,
 ) -> Vec<ScriptParamEntry> {
     let Some(def) = manifest.and_then(|m| m.script(script_path.trim())) else {
         return Vec::new();
@@ -1761,12 +1785,16 @@ fn build_script_params(
                 .get(&key)
                 .cloned()
                 .unwrap_or_else(|| p.default.clone());
+            let valid = p.kind != rengine::ScriptParamKind::Asset
+                || value.trim().is_empty()
+                || resolves(value.trim());
             ScriptParamEntry {
                 name: p.name.clone(),
                 label: p.display_label().to_string(),
                 kind: p.kind,
                 value,
                 options: p.options.clone(),
+                valid,
             }
         })
         .collect()
