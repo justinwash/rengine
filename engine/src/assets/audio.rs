@@ -143,6 +143,13 @@ impl AudioSystem {
         clip
     }
 
+/// Look up a registered clip by its path key. Used by the engine's
+    /// `bundled_audio` so a game (which only ever holds `&Engine`) can resolve
+    /// synthesised/in-memory clips by name without owning the handle itself.
+    pub fn get_clip(&self, path: &str) -> Option<&AudioClip> {
+        self.cache.get(Path::new(path))
+    }
+
     pub fn unload_clip<P: AsRef<Path>>(&mut self, path: P) {
         let path = path.as_ref();
         let clip = self.cache.remove(path);
@@ -643,5 +650,15 @@ mod tests {
 
         assert!(audio.cache.is_empty());
         assert!(audio.clips[clip.id.0].bytes.is_empty());
+    }
+#[test]
+    fn get_clip_resolves_a_registered_bundle_by_path() {
+        let mut audio = AudioSystem::new(true);
+        let path = PathBuf::from("sfx/confirm.wav");
+        let bytes: Vec<u8> = vec![0u8; 64];
+        let _ = audio.register_clip(path.clone(), Arc::from(bytes.as_slice()));
+
+        assert!(audio.get_clip("sfx/confirm.wav").is_some());
+        assert!(audio.get_clip("sfx/missing.wav").is_none());
     }
 }

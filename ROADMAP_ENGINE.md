@@ -95,6 +95,10 @@ What still matters most on the engine side is closing the remaining runtime gaps
 - Add frustum culling and instanced rendering.
 - Add 3D collision queries and a real 3D physics backend.
 - Add spatial audio.
+  **2026-09-06:** `EngineConfig::audio_bundles` + `Engine::bundled_audio` landed —
+  in-memory (synthesised/embedded) clips register at boot with no binary asset
+  files, and a `&Engine` game can resolve and play them by path (Formula R's G8
+  first slice).
 
 ### Debugging and Tooling Hooks
 

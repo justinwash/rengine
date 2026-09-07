@@ -532,6 +532,11 @@ pub struct EngineConfig {
     pub headless_capture_path: Option<PathBuf>,
     pub scale_mode: ScaleMode,
     pub gamepad_assign: GamepadAssignMode,
+    /// In-memory audio clips (path + encoded bytes, WAV/OGG) registered at
+    /// boot so a game can synthesize its own sounds without shipping asset
+    /// files. The game plays them by path through
+    /// [`Engine::bundled_audio`]. Empty for every existing caller.
+    pub audio_bundles: Vec<(String, Vec<u8>)>,
 }
 
 impl Default for EngineConfig {
@@ -552,6 +557,7 @@ impl Default for EngineConfig {
             headless_capture_path: None,
             scale_mode: ScaleMode::default(),
             gamepad_assign: GamepadAssignMode::default(),
+            audio_bundles: Vec::new(),
         }
     }
 }
@@ -1062,6 +1068,14 @@ impl Engine {
         Ok(self.audio.register_clip(resolved, bytes))
     }
 
+    /// Look up a boot-time bundled clip by its path key (see
+    /// [`EngineConfig::audio_bundles`]). A game that synthesised its sounds at
+    /// startup reaches them through this — it holds `&Engine` and therefore
+    /// cannot have taken the clip handle itself.
+    pub fn bundled_audio(&self, path: &str) -> Option<&AudioClip> {
+        self.audio.get_clip(path)
+    }
+
     pub fn play_sound(&self, clip: &AudioClip) -> Result<(), AssetError> {
         self.audio.play(clip)
     }
@@ -1552,6 +1566,13 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
         failed_texture_requests: RefCell::new(HashMap::new()),
         window: window.clone(),
     };
+// G8: register in-memory (synthesised/bundled) audio before the first
+    // frame, so games can play sounds that never touched disk.
+    for (path, bytes) in &config.audio_bundles {
+        engine
+            .audio
+            .register_clip(PathBuf::from(path), Arc::from(bytes.as_slice()));
+    }
     engine.time.set_fixed_dt(fixed_dt);
     // Headless runs (captures, smoke tests, CI) advance time by a fixed step so
     // output is reproducible frame-for-frame instead of depending on wall clock.
@@ -1815,6 +1836,13 @@ where
         failed_texture_requests: RefCell::new(HashMap::new()),
         window: window.clone(),
     };
+// G8: register in-memory (synthesised/bundled) audio before the first
+    // frame, so games can play sounds that never touched disk.
+    for (path, bytes) in &config.audio_bundles {
+        engine
+            .audio
+            .register_clip(PathBuf::from(path), Arc::from(bytes.as_slice()));
+    }
     engine.time.set_fixed_dt(fixed_dt);
     // Headless runs (captures, smoke tests, CI) advance time by a fixed step so
     // output is reproducible frame-for-frame instead of depending on wall clock.
