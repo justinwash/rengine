@@ -59,6 +59,11 @@ What still matters most on the engine side is closing the remaining runtime gaps
 - Build a coherent object or entity model so games stop reinventing world organization from scratch.
 - Add component-style composition or an equally strong runtime composition story.
 - Add a general event or signal system for decoupled gameplay communication.
+  **SHIPPED 2026-09-06:** `engine::signal::{Signal, Subscription}` — a
+  clone-shareable broadcast bus with drop-to-unsubscribe handles, snapshot
+  dispatch (re-entrant subscribe/emit safe), synchronous fan-out in
+  subscription order. See `engine/src/signal.rs`. Adoption in the game's
+  ad-hoc scene-action queues is the follow-up.
 - Formalize script attachment metadata so scenes, prefabs, and editor-authored objects can bind to runtime behavior safely.
 - Strengthen stable serialization for scenes, prefabs, resources, and references.
 - Expand resource dependency tracking so the engine can answer what depends on what without guesswork.

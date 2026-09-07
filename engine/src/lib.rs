@@ -11,6 +11,7 @@ pub mod renderer;
 pub mod renderer3d;
 pub mod save;
 pub mod scene;
+pub mod signal;
 pub mod text;
 pub mod ui;
 
@@ -66,6 +67,7 @@ pub use scene::{
     ScriptParamKind, Transform2D, Transition, CURRENT_EDITOR_SCENE_VERSION, NESTED_SCENE_PROPERTY,
     sample_keyframes, sample_track,
 };
+pub use signal::{Signal, Subscription};
 pub use text::FontAtlas;
 pub use text::FontId;
 pub use ui::{
