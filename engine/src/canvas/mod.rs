@@ -248,7 +248,9 @@ impl Canvas {
     /// and text centring must go through this, not the default-font version,
     /// or a node drawn in one face is measured in another.
     pub fn measure_text_in(&self, font: FontId, text: &str, size: f32) -> (f32, f32) {
-        let (w, h) = self.font_atlas(font).measure_text(text, size * self.text_scale);
+        let (w, h) = self
+            .font_atlas(font)
+            .measure_text(text, size * self.text_scale);
         (w + self.tracking_width(text), h)
     }
 
@@ -482,6 +484,40 @@ impl Canvas {
         };
         let v3 = CanvasVertex {
             position: [x0, y1],
+            color: c,
+            uv,
+        };
+        self.verts.extend_from_slice(&[v0, v2, v1, v0, v3, v2]);
+    }
+    /// Fill a rectangle rotated by `radians` (counter-clockwise) about its center `(cx, cy)`.
+    pub fn rect_rotated(&mut self, cx: f32, cy: f32, w: f32, h: f32, color: Color, radians: f32) {
+        self.set_font(0);
+        let (sin, cos) = radians.sin_cos();
+        let (hw, hh) = (w * 0.5, h * 0.5);
+        let corner = |dx: f32, dy: f32| {
+            let (rx, ry) = (dx * cos - dy * sin, dx * sin + dy * cos);
+            screen_to_ndc(cx + rx, cy + ry, self.screen_size)
+        };
+
+        let c = color.to_array();
+        let uv = WHITE_UV;
+        let v0 = CanvasVertex {
+            position: corner(-hw, -hh),
+            color: c,
+            uv,
+        };
+        let v1 = CanvasVertex {
+            position: corner(hw, -hh),
+            color: c,
+            uv,
+        };
+        let v2 = CanvasVertex {
+            position: corner(hw, hh),
+            color: c,
+            uv,
+        };
+        let v3 = CanvasVertex {
+            position: corner(-hw, hh),
             color: c,
             uv,
         };
@@ -1148,7 +1184,12 @@ impl Canvas {
         // `max_width`, so bigger text breaks sooner instead of overrunning the
         // panel. `text_block_lines_leaded_in` gets the raw size and scales its
         // own copy.
-        let lines = wrap_text(text, size * self.text_scale, max_width, self.font_atlas(font));
+        let lines = wrap_text(
+            text,
+            size * self.text_scale,
+            max_width,
+            self.font_atlas(font),
+        );
         self.text_block_lines_leaded_in(font, x, y, &lines, size, color, align, leading);
     }
 
@@ -1532,21 +1573,14 @@ pub(crate) fn render_pass<'a, F>(
                 bound_texture = *texture;
             }
             if let Some([sx, sy, sw, sh]) = scissor {
-                let [sx, sy, sw, sh] = scale_scissor(
-                    [*sx, *sy, *sw, *sh],
-                    logical_size,
-                    viewport,
-                );
+                let [sx, sy, sw, sh] = scale_scissor([*sx, *sy, *sw, *sh], logical_size, viewport);
                 if sw == 0 || sh == 0 {
                     continue;
                 }
                 pass.set_scissor_rect(sx, sy, sw, sh);
             } else {
-                let [x, y, w, h] = scale_scissor(
-                    [0, 0, surface_w, surface_h],
-                    logical_size,
-                    viewport,
-                );
+                let [x, y, w, h] =
+                    scale_scissor([0, 0, surface_w, surface_h], logical_size, viewport);
                 pass.set_scissor_rect(x, y, w, h);
             }
             pass.draw(*start as u32..(*start + *count) as u32, 0..1);
@@ -1585,7 +1619,11 @@ mod tests {
     #[test]
     fn scale_scissor_maps_logical_clip_into_a_physical_viewport() {
         assert_eq!(
-            scale_scissor([40, 20, 200, 100], (640.0, 360.0), Some((50.0, 25.0, 1280.0, 720.0))),
+            scale_scissor(
+                [40, 20, 200, 100],
+                (640.0, 360.0),
+                Some((50.0, 25.0, 1280.0, 720.0))
+            ),
             [130, 65, 400, 200]
         );
     }
@@ -1655,8 +1693,11 @@ mod tests {
         // The nested one: its height comes from `line_height_in`, its width
         // from a closure of its own.
         close(
-            two.measure_text_block_in(FontId::DEFAULT, text, 10.0, 1_000.0, 1.0).1,
-            one.measure_text_block_in(FontId::DEFAULT, text, 10.0, 1_000.0, 1.0).1 * 2.0,
+            two.measure_text_block_in(FontId::DEFAULT, text, 10.0, 1_000.0, 1.0)
+                .1,
+            one.measure_text_block_in(FontId::DEFAULT, text, 10.0, 1_000.0, 1.0)
+                .1
+                * 2.0,
             "measure_text_block_in height",
         );
 
@@ -1675,7 +1716,8 @@ mod tests {
         let box_w = 220.0;
         let prose = "the quick brown fox jumps over the lazy dog and keeps running";
         let lines_at = |c: &Canvas| {
-            c.measure_text_block_in(FontId::DEFAULT, prose, 10.0, box_w, 1.0).1
+            c.measure_text_block_in(FontId::DEFAULT, prose, 10.0, box_w, 1.0)
+                .1
                 / c.line_height_in(FontId::DEFAULT, 10.0)
         };
         assert!(
@@ -1782,6 +1824,19 @@ mod rotated_image_tests {
             "the quad drifted off its pivot: ({cx}, {cy})"
         );
     }
+
+    #[test]
+    fn rect_rotated_pivots_on_the_centre() {
+        let mut canvas = Canvas::for_test((200, 200));
+        canvas.rect_rotated(0.0, 0.0, 40.0, 40.0, Color::WHITE, 0.7);
+        let pts = quad(&canvas);
+        let cx: f32 = pts.iter().map(|p| p[0]).sum::<f32>() / pts.len() as f32;
+        let cy: f32 = pts.iter().map(|p| p[1]).sum::<f32>() / pts.len() as f32;
+        assert!(
+            cx.abs() < 1e-4 && cy.abs() < 1e-4,
+            "rect_rotated drifted off its pivot: ({cx}, {cy})"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -1863,7 +1918,10 @@ mod polygon_tests {
     #[test]
     fn the_canvas_emits_a_triangle_list() {
         let mut canvas = Canvas::for_test((200, 200));
-        canvas.polygon(&[(0.0, 0.0), (40.0, 0.0), (40.0, 30.0), (0.0, 30.0)], Color::WHITE);
+        canvas.polygon(
+            &[(0.0, 0.0), (40.0, 0.0), (40.0, 30.0), (0.0, 30.0)],
+            Color::WHITE,
+        );
         assert_eq!(canvas.vertices().len(), 6, "a quad is two triangles");
     }
 }

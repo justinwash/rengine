@@ -592,7 +592,10 @@ fn node_hatch(get: &dyn Fn(&str) -> Option<String>, scale: Vec2) -> Option<(Colo
     // One scale for both: the stripes are diagonal, so scaling them per axis
     // would shear the 45° they are defined by.
     let s = scale.x.min(scale.y);
-    let (stripe, gap) = (f32_of("ui_hatch_w", 5.0) * s, f32_of("ui_hatch_gap", 5.0) * s);
+    let (stripe, gap) = (
+        f32_of("ui_hatch_w", 5.0) * s,
+        f32_of("ui_hatch_gap", 5.0) * s,
+    );
     let pitch = stripe + gap;
     (color.a > 0.0 && stripe > 0.0 && pitch > 0.0).then_some((color, pitch, stripe))
 }
@@ -730,7 +733,10 @@ fn draw_ui_kind_dyn(
         "rect" => {
             let color = parse_srgb_color(get("ui_color").as_deref(), Color::WHITE);
             let radius = prop_f32("ui_radius").unwrap_or(0.0);
-            if radius > 0.5 {
+            let spin = ui_f32(&get, "ui_rotation", text_scale).unwrap_or(0.0);
+            if spin.abs() > f32::EPSILON {
+                canvas.rect_rotated(x + w * 0.5, y + h * 0.5, w, h, color, spin.to_radians());
+            } else if radius > 0.5 {
                 canvas.rounded_rect(x, y, w, h, radius, color);
             } else {
                 canvas.rect(x, y, w, h, color);
@@ -1023,10 +1029,7 @@ fn ui_visible(get: &impl Fn(&str) -> Option<String>) -> bool {
         Some(value) if contains_unresolved_binding(value) => get("ui_visible_placeholder"),
         _ => authored,
     };
-    !matches!(
-        value.as_deref().map(str::trim),
-        Some("false" | "0" | "no")
-    )
+    !matches!(value.as_deref().map(str::trim), Some("false" | "0" | "no"))
 }
 
 /// The text a node should draw: its `ui_text`, or its `ui_text_placeholder`
@@ -1072,8 +1075,9 @@ fn ui_text_or_placeholder(get: &impl Fn(&str) -> Option<String>) -> String {
 fn ui_f32(get: &impl Fn(&str) -> Option<String>, name: &str, text_scale: f32) -> Option<f32> {
     let raw = get(name);
     match raw.as_deref().map(str::trim) {
-        Some(value) if contains_unresolved_binding(value) => get(&format!("{name}_placeholder"))
-            .and_then(|v| parse_length(&v, text_scale)),
+        Some(value) if contains_unresolved_binding(value) => {
+            get(&format!("{name}_placeholder")).and_then(|v| parse_length(&v, text_scale))
+        }
         _ => raw.and_then(|v| parse_length(&v, text_scale)),
     }
 }
@@ -2384,6 +2388,65 @@ mod tests {
             canvas.verts.len()
         );
     }
+    #[test]
+    fn ui_rect_honours_ui_rotation() {
+        // `ui_rotation` on a rect means the same thing it means on an image: turn
+        // the node's quad counter-clockwise about its centre (degrees, authored
+        // by a person rather than typed as radians — the same contract the
+        // dressing tiles and car pips rely on).
+        let mut rot = Canvas::new((200, 100), std::ptr::null());
+        let mut plain = Canvas::new((200, 100), std::ptr::null());
+        let mut props = HashMap::new();
+        props.insert("ui".to_string(), "rect".to_string());
+        props.insert("ui_color".to_string(), "255,0,0".to_string());
+        draw_ui_kind(
+            &mut plain,
+            (0.0, 0.0, 40.0, 10.0),
+            Vec2::ONE,
+            |n| props.get(n).cloned(),
+            None,
+            false,
+        );
+        props.insert("ui_rotation".to_string(), "90".to_string());
+        draw_ui_kind(
+            &mut rot,
+            (0.0, 0.0, 40.0, 10.0),
+            Vec2::ONE,
+            |n| props.get(n).cloned(),
+            None,
+            false,
+        );
+
+        let centroid = |canvas: &Canvas| {
+            let n = canvas.verts.len() as f32;
+            let sx: f32 = canvas.verts.iter().map(|v| v.position[0]).sum();
+            let sy: f32 = canvas.verts.iter().map(|v| v.position[1]).sum();
+            (sx / n, sy / n)
+        };
+        let span_x = |canvas: &Canvas| {
+            let xs: Vec<f32> = canvas.verts.iter().map(|v| v.position[0]).collect();
+            xs.iter().cloned().fold(f32::MIN, f32::max)
+                - xs.iter().cloned().fold(f32::MAX, f32::min)
+        };
+        // `screen_to_ndc` scales screen px into NDC (`x / half_w`), so the rect
+        // at screen (0, 0, 40, 10) in a 200x100 canvas has its centre at
+        // (20, 5) -> NDC (0.2, 0.1). A quarter turn about the centre leaves the
+        // centroid put.
+        let (cx, cy) = centroid(&rot);
+        assert!(
+            (cx - 0.2).abs() < 1e-3 && (cy - 0.1).abs() < 1e-3,
+            "rect ui_rotation pivoted off centre: ({cx}, {cy})"
+        );
+        // ...and changes the silhouette: a 40x10 rect turned 90 degrees is 10
+        // wide on screen, so its NDC x-span collapses well below the unrotated
+        // span (a rect that ignored `ui_rotation` would span identically).
+        assert!(
+            span_x(&rot) < span_x(&plain),
+            "a rotated rect must be narrower than the same rect unrotated (rotated {}, plain {})",
+            span_x(&rot),
+            span_x(&plain)
+        );
+    }
 
     #[test]
     fn ui_polyline_with_fewer_than_two_points_draws_nothing() {
@@ -2607,8 +2670,10 @@ mod tests {
     }
 
     fn compiled_properties(node: EditorSceneNode) -> HashMap<String, String> {
-        let document = EditorSceneDocument { nodes: vec![node],
-            animations: Vec::new(), };
+        let document = EditorSceneDocument {
+            nodes: vec![node],
+            animations: Vec::new(),
+        };
         let def = scene_definition_from_editor_document(Path::new("<test>"), document).unwrap();
         def.instances.into_iter().next().unwrap().properties
     }
@@ -2680,8 +2745,10 @@ mod tests {
         node.asset_alias = "car_side".to_string();
         node.size = [100.0, 34.0];
 
-        let document = EditorSceneDocument { nodes: vec![node],
-            animations: Vec::new(), };
+        let document = EditorSceneDocument {
+            nodes: vec![node],
+            animations: Vec::new(),
+        };
         let def = scene_definition_from_editor_document(Path::new("<test>"), document).unwrap();
         let prefab = def.prefabs.first().expect("one prefab");
         assert_eq!(prefab.sprites.len(), 1, "Image compiles a prefab sprite");
@@ -2849,8 +2916,10 @@ mod tests {
         let mut node = typed_node(1, EditorSceneNodeKind::Button, &[]);
         node.asset_alias = "menu_panel".to_string();
         node.size = [210.0, 38.0];
-        let document = EditorSceneDocument { nodes: vec![node],
-            animations: Vec::new(), };
+        let document = EditorSceneDocument {
+            nodes: vec![node],
+            animations: Vec::new(),
+        };
         let def = scene_definition_from_editor_document(Path::new("<test>"), document).unwrap();
         let prefab = def.prefabs.first().expect("one prefab");
         assert_eq!(
@@ -3545,7 +3614,11 @@ mod tests {
         }
         // Starting a full height to the left so the bottom-left corner is
         // covered.
-        assert!((lines[0].0 - -50.0).abs() < 1e-3, "first x0: {}", lines[0].0);
+        assert!(
+            (lines[0].0 - -50.0).abs() < 1e-3,
+            "first x0: {}",
+            lines[0].0
+        );
         // The CSS period is perpendicular to the stripes, so the *horizontal*
         // spacing is pitch * sqrt(2). Measuring the true distance between two
         // parallel 45° lines from their x-intercepts gives the pitch back.
@@ -3677,10 +3750,24 @@ mod polygon_kind_tests {
     /// shape is a normal state while authoring one.
     #[test]
     fn a_malformed_point_list_is_survivable() {
-        for points in ["", "garbage", "0,0", "0,0 1,0", "0,0 1 0.5,1", "a,b c,d e,f"] {
+        for points in [
+            "",
+            "garbage",
+            "0,0",
+            "0,0 1,0",
+            "0,0 1 0.5,1",
+            "a,b c,d e,f",
+        ] {
             let get = getter(&[("ui", "polygon"), ("ui_points", points)]);
             let mut canvas = Canvas::for_test((400, 400));
-            draw_ui_kind(&mut canvas, (0.0, 0.0, 10.0, 10.0), Vec2::ONE, &get, None, false);
+            draw_ui_kind(
+                &mut canvas,
+                (0.0, 0.0, 10.0, 10.0),
+                Vec2::ONE,
+                &get,
+                None,
+                false,
+            );
             assert!(
                 canvas.vertices().len() % 3 == 0,
                 "{points:?} emitted a partial triangle"
