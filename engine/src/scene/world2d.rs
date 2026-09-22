@@ -24,8 +24,8 @@ use crate::renderer::{DrawParams, Frame};
 use crate::{Rect, Vec2};
 
 use super::anim2d::{sample_track, AnimatedProperty, SceneAnimClip};
-use crate::assets::Color;
 use super::data2d::{parse_bool_property, Bindings, PrefabSprite2D, RepeaterSources, Scene2D};
+use crate::assets::Color;
 
 /// The node property that names a nested scene to expand from a [`SceneLibrary`].
 pub const NESTED_SCENE_PROPERTY: &str = "nested_scene";
@@ -516,7 +516,8 @@ fn capture_anim_target(world: &SceneWorld2D, handle: NodeHandle2D) -> Option<Ani
             base: c.a,
         })
     } else if is_ui {
-        parse_ui_color(node.property("ui_color")).map(|(rgb, base)| AnimTargetFill::UiColor { rgb, base })
+        parse_ui_color(node.property("ui_color"))
+            .map(|(rgb, base)| AnimTargetFill::UiColor { rgb, base })
     } else {
         None
     };
@@ -550,11 +551,7 @@ fn parse_ui_color(value: Option<&str>) -> Option<([f32; 3], f32)> {
 }
 
 /// Write one frame's sampled values onto a target node.
-fn write_anim_target(
-    world: &mut SceneWorld2D,
-    target: &AnimTargetState,
-    s: &AnimSampleAccum,
-) {
+fn write_anim_target(world: &mut SceneWorld2D, target: &AnimTargetState, s: &AnimSampleAccum) {
     if s.dx.is_some() || s.dy.is_some() {
         if let Some(n) = world.get_mut(target.handle) {
             n.set_position(Vec2::new(
@@ -646,7 +643,10 @@ fn restore_anim_targets(world: &mut SceneWorld2D, targets: &[AnimTargetState]) {
             n.set_scale(target.rest.scale);
             n.set_visible(target.rest_visible);
             if target.rest_ui_visible_set {
-                n.set_property("ui_visible", if target.rest_visible { "true" } else { "false" });
+                n.set_property(
+                    "ui_visible",
+                    if target.rest_visible { "true" } else { "false" },
+                );
                 // Restore the authored rotation; a node that had none returns
                 // to upright so a later run of the same clip starts clean.
                 let rest = target.rest_ui_rotation.unwrap_or(0.0);
@@ -1795,7 +1795,8 @@ impl SceneWorld2D {
             _ => return vec![parent_rect; children.len()],
         };
         let scale = self.text_scale();
-        let prop_f32 = |name: &str| get(parent, name).and_then(|v| super::data2d::parse_length(&v, scale));
+        let prop_f32 =
+            |name: &str| get(parent, name).and_then(|v| super::data2d::parse_length(&v, scale));
         let pad_left = prop_f32("ui_pad_left").unwrap_or(0.0);
         let pad_right = prop_f32("ui_pad_right").unwrap_or(0.0);
         let pad_top = prop_f32("ui_pad_top").unwrap_or(0.0);
@@ -1921,7 +1922,8 @@ impl SceneWorld2D {
             } else {
                 ("ui_w", "ui_h")
             };
-            let literal = |name: &str| child_get(name).and_then(|v| super::data2d::parse_length(&v, scale));
+            let literal =
+                |name: &str| child_get(name).and_then(|v| super::data2d::parse_length(&v, scale));
             // Per axis: a child that sizes to content only vertically still
             // takes its *width* from its authored `ui_w`, so a 640px-wide
             // panel in a column keeps its stated width and only its height
@@ -2854,7 +2856,8 @@ fn node_own_extent(node: &SceneNode2D, canvas: &Canvas, bindings: &Bindings) -> 
         node.property(name)
             .map(|v| super::data2d::substitute_bindings(v, bindings).into_owned())
     };
-    let prop_f32 = |name: &str| get(name).and_then(|v| super::data2d::parse_length(&v, canvas.text_scale()));
+    let prop_f32 =
+        |name: &str| get(name).and_then(|v| super::data2d::parse_length(&v, canvas.text_scale()));
 
     // A measured axis is the fallback only for whichever of w/h wasn't
     // itself authored — a text node with an explicit ui_w but no ui_h still
@@ -6023,7 +6026,11 @@ mod tests {
         assert!((head.height - 30.0).abs() < 1e-3, "head keeps its height");
         // ...and the footer sits on the bottom edge, still its own 20 tall —
         // the slack became space *before* it, not extra size.
-        assert!((foot.y - -100.0).abs() < 1e-3, "foot on the bottom: {}", foot.y);
+        assert!(
+            (foot.y - -100.0).abs() < 1e-3,
+            "foot on the bottom: {}",
+            foot.y
+        );
         assert!((foot.height - 20.0).abs() < 1e-3, "foot keeps its height");
     }
 
@@ -6100,9 +6107,11 @@ mod tests {
         );
 
         let chalk = crate::Color::from_srgb8(0xe8, 0xe4, 0xd9, 255);
-        let bound = draw(&[("chalk".to_string(), "232,228,217".to_string())]
-            .into_iter()
-            .collect());
+        let bound = draw(
+            &[("chalk".to_string(), "232,228,217".to_string())]
+                .into_iter()
+                .collect(),
+        );
         let expected = [chalk.r, chalk.g, chalk.b, chalk.a];
         for (got, want) in bound.iter().zip(expected) {
             assert!(
@@ -6114,8 +6123,8 @@ mod tests {
 
     #[test]
     fn authored_clips_play_then_restore_their_targets() {
-        use crate::scene::{AnimKeyframe, AnimatedProperty, SceneAnimClip, SceneAnimTrack};
         use crate::math::tween::Easing;
+        use crate::scene::{AnimKeyframe, AnimatedProperty, SceneAnimClip, SceneAnimTrack};
 
         let mut world = SceneWorld2D::new();
         let mut car = SceneNode2D::new("car_a").with_name("car_a");
@@ -6132,16 +6141,31 @@ mod tests {
                 target: "car_a".to_string(),
                 property: AnimatedProperty::OffsetX,
                 keyframes: vec![
-                    AnimKeyframe { t: 0.0, value: 0.0, ease: Easing::Linear },
-                    AnimKeyframe { t: 1.0, value: 100.0, ease: Easing::Linear },
+                    AnimKeyframe {
+                        t: 0.0,
+                        value: 0.0,
+                        ease: Easing::Linear,
+                    },
+                    AnimKeyframe {
+                        t: 1.0,
+                        value: 100.0,
+                        ease: Easing::Linear,
+                    },
                 ],
             }],
         });
 
         assert!(world.play_animation("lunge", 50.0));
         world.apply_animations(50.5);
-        let x = world.get(world.find_by_name("car_a").unwrap()).unwrap().position().x;
-        assert!((x - 90.0).abs() < 0.001, "halfway through the clip the car should sit at rest+50, got {x}");
+        let x = world
+            .get(world.find_by_name("car_a").unwrap())
+            .unwrap()
+            .position()
+            .x;
+        assert!(
+            (x - 90.0).abs() < 0.001,
+            "halfway through the clip the car should sit at rest+50, got {x}"
+        );
 
         // A clip that doesn't exist is a no-op.
         assert!(!world.play_animation("missing", 0.0));
@@ -6149,8 +6173,15 @@ mod tests {
         // Past the end the clip is done and the node is restored.
         world.apply_animations(51.5);
         assert!(!world.is_animation_playing("lunge"));
-        let x = world.get(world.find_by_name("car_a").unwrap()).unwrap().position().x;
-        assert!((x - 40.0).abs() < 0.001, "a finished clip restores the authored position, got {x}");
+        let x = world
+            .get(world.find_by_name("car_a").unwrap())
+            .unwrap()
+            .position()
+            .x;
+        assert!(
+            (x - 40.0).abs() < 0.001,
+            "a finished clip restores the authored position, got {x}"
+        );
 
         // A looping clip never finishes and (with a flat track) just holds.
         world.animations[0].looping = true;
@@ -6184,8 +6215,16 @@ mod tests {
                 target: "badge".to_string(),
                 property: AnimatedProperty::RotationDeg,
                 keyframes: vec![
-                    AnimKeyframe { t: 0.0, value: 0.0, ease: Easing::Linear },
-                    AnimKeyframe { t: 1.0, value: 30.0, ease: Easing::Linear },
+                    AnimKeyframe {
+                        t: 0.0,
+                        value: 0.0,
+                        ease: Easing::Linear,
+                    },
+                    AnimKeyframe {
+                        t: 1.0,
+                        value: 30.0,
+                        ease: Easing::Linear,
+                    },
                 ],
             }],
         });
@@ -6197,7 +6236,11 @@ mod tests {
         world.apply_animations(20.5);
         // Midway through a 0->30 degrees linear track.
         assert_eq!(
-            world.get(badge).unwrap().property("ui_rotation").map(str::to_string),
+            world
+                .get(badge)
+                .unwrap()
+                .property("ui_rotation")
+                .map(str::to_string),
             Some("15".to_string()),
             "a UI node's rotation track must write ui_rotation so the draw path sees it"
         );
@@ -6252,7 +6295,6 @@ mod tests {
             &crate::Bindings::new(),
         );
 
-        
         // The canvas stores colors in linear space, so the magentas exact
         // numeric value round-trips through sRGB->linear for 200,0,200. What
         // matters is *that* the child's fill reached the canvas: magenta is
@@ -6263,9 +6305,7 @@ mod tests {
             .verts
             .iter()
             .filter(|v| {
-                v.color[0] > 0.4
-                    && v.color[1] < 0.05
-                    && (v.color[0] - v.color[2]).abs() < 0.05
+                v.color[0] > 0.4 && v.color[1] < 0.05 && (v.color[0] - v.color[2]).abs() < 0.05
             })
             .collect();
         assert!(
@@ -6329,7 +6369,10 @@ mod tests {
             .iter()
             .filter(|v| v.color[0] > 0.9 && v.color[1] < 0.5 && v.color[2] < 0.5)
             .count();
-        assert!(ring_verts >= 24, "four 2px bars describe 24 verts, got {ring_verts}");
+        assert!(
+            ring_verts >= 24,
+            "four 2px bars describe 24 verts, got {ring_verts}"
+        );
 
         let mut canvas2 = Canvas::for_test((640, 400));
         world.set_focus(None);

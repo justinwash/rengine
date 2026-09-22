@@ -213,10 +213,7 @@ pub(crate) struct Renderer3D {
 }
 
 impl Renderer3D {
-    pub async fn new(
-        window: Arc<Window>,
-        present_mode: wgpu::PresentMode,
-    ) -> Result<Self, String> {
+    pub async fn new(window: Arc<Window>, present_mode: wgpu::PresentMode) -> Result<Self, String> {
         let size = window.inner_size();
         let (surface, device, queue, surface_config, surface_format) =
             crate::renderer::init_device(window, present_mode, size.width, size.height).await?;

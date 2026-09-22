@@ -460,7 +460,8 @@ its layout is missing from the gamecontrollerdb; named controls will not respond
             .id_to_slot
             .iter()
             .filter(|(_, &slot_idx)| {
-                self.epoch.saturating_sub(self.slots[slot_idx].last_event_epoch)
+                self.epoch
+                    .saturating_sub(self.slots[slot_idx].last_event_epoch)
                     >= STALE_SLOT_EPOCHS
             })
             .map(|(&gid, &slot_idx)| (gid, slot_idx))
@@ -503,8 +504,7 @@ its layout is missing from the gamecontrollerdb; named controls will not respond
             if let Some((&gid, _)) = self.id_to_slot.iter().find(|(_, &s)| s == j) {
                 self.id_to_slot.insert(gid, i);
             } else {
-                self.id_to_slot
-                    .retain(|_, slot_idx| *slot_idx != j);
+                self.id_to_slot.retain(|_, slot_idx| *slot_idx != j);
             }
             let mut moved = std::mem::replace(&mut self.slots[j], GamepadState::new());
             moved.id = Some(GamepadToken(i as u32 + 1));
@@ -594,7 +594,10 @@ mod tests {
         system.translate_to_keys(&mut input);
         assert!(input.is_key_pressed(KeyCode::Enter), "A is confirm");
         assert!(input.is_key_pressed(KeyCode::Space), "Start is pause");
-        assert!(!input.is_key_pressed(KeyCode::Escape), "nothing pressed Esc");
+        assert!(
+            !input.is_key_pressed(KeyCode::Escape),
+            "nothing pressed Esc"
+        );
 
         // An idle connected pad injects nothing.
         let idle = GamepadSystem {

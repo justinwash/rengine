@@ -8,7 +8,7 @@ mod validation;
 mod world2d;
 
 pub use anim2d::{
-    AnimKeyframe, AnimatedProperty, SceneAnimClip, SceneAnimTrack, sample_keyframes, sample_track,
+    sample_keyframes, sample_track, AnimKeyframe, AnimatedProperty, SceneAnimClip, SceneAnimTrack,
 };
 
 pub use data2d::{

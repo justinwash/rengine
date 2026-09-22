@@ -1566,7 +1566,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
         failed_texture_requests: RefCell::new(HashMap::new()),
         window: window.clone(),
     };
-// G8: register in-memory (synthesised/bundled) audio before the first
+    // G8: register in-memory (synthesised/bundled) audio before the first
     // frame, so games can play sounds that never touched disk.
     for (path, bytes) in &config.audio_bundles {
         engine
@@ -1590,8 +1590,8 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
         let mut play_script = PlayScript::from_env();
         loop {
             engine.time.tick();
-                        engine.gamepads.update();
-                engine.gamepads.translate_to_keys(&mut engine.input);
+            engine.gamepads.update();
+            engine.gamepads.translate_to_keys(&mut engine.input);
             engine.reload_assets_if_changed();
             engine.process_requested_textures();
             engine.audio.update(engine.time.dt());
@@ -1662,12 +1662,11 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
                 WindowEvent::CloseRequested => target.exit(),
 
                 WindowEvent::Resized(new_size) => {
-                    (engine.window_width, engine.window_height) =
-                        logical_size_from_physical(
-                            new_size.width,
-                            new_size.height,
-                            window.scale_factor(),
-                        );
+                    (engine.window_width, engine.window_height) = logical_size_from_physical(
+                        new_size.width,
+                        new_size.height,
+                        window.scale_factor(),
+                    );
                     engine.renderer.resize(new_size.width, new_size.height);
                 }
 
@@ -1736,8 +1735,8 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
 
                 WindowEvent::RedrawRequested => {
                     engine.time.tick();
-                                        engine.gamepads.update();
-                        engine.gamepads.translate_to_keys(&mut engine.input);
+                    engine.gamepads.update();
+                    engine.gamepads.translate_to_keys(&mut engine.input);
                     engine.reload_assets_if_changed();
                     engine.process_requested_textures();
                     engine.audio.update(engine.time.dt());
@@ -1836,7 +1835,7 @@ where
         failed_texture_requests: RefCell::new(HashMap::new()),
         window: window.clone(),
     };
-// G8: register in-memory (synthesised/bundled) audio before the first
+    // G8: register in-memory (synthesised/bundled) audio before the first
     // frame, so games can play sounds that never touched disk.
     for (path, bytes) in &config.audio_bundles {
         engine
@@ -1862,8 +1861,8 @@ where
     if headless {
         loop {
             engine.time.tick();
-                        engine.gamepads.update();
-                engine.gamepads.translate_to_keys(&mut engine.input);
+            engine.gamepads.update();
+            engine.gamepads.translate_to_keys(&mut engine.input);
             engine.reload_assets_if_changed();
             engine.audio.update(engine.time.dt());
 
@@ -1899,12 +1898,11 @@ where
                 WindowEvent::CloseRequested => target.exit(),
 
                 WindowEvent::Resized(new_size) => {
-                    (engine.window_width, engine.window_height) =
-                        logical_size_from_physical(
-                            new_size.width,
-                            new_size.height,
-                            window.scale_factor(),
-                        );
+                    (engine.window_width, engine.window_height) = logical_size_from_physical(
+                        new_size.width,
+                        new_size.height,
+                        window.scale_factor(),
+                    );
                     engine.renderer.resize(new_size.width, new_size.height);
                 }
 
@@ -1973,8 +1971,8 @@ where
 
                 WindowEvent::RedrawRequested => {
                     engine.time.tick();
-                                        engine.gamepads.update();
-                        engine.gamepads.translate_to_keys(&mut engine.input);
+                    engine.gamepads.update();
+                    engine.gamepads.translate_to_keys(&mut engine.input);
                     engine.reload_assets_if_changed();
                     engine.process_requested_textures();
                     engine.audio.update(engine.time.dt());
@@ -2778,12 +2776,11 @@ pub fn run3d<G: Game3D>(config: EngineConfig) -> Result<(), Box<dyn std::error::
                 }
 
                 WindowEvent::Resized(new_size) => {
-                    (engine.window_width, engine.window_height) =
-                        logical_size_from_physical(
-                            new_size.width,
-                            new_size.height,
-                            window.scale_factor(),
-                        );
+                    (engine.window_width, engine.window_height) = logical_size_from_physical(
+                        new_size.width,
+                        new_size.height,
+                        window.scale_factor(),
+                    );
                     engine.renderer.resize(new_size.width, new_size.height);
                 }
 
@@ -3050,12 +3047,11 @@ where
                 }
 
                 WindowEvent::Resized(new_size) => {
-                    (engine.window_width, engine.window_height) =
-                        logical_size_from_physical(
-                            new_size.width,
-                            new_size.height,
-                            window.scale_factor(),
-                        );
+                    (engine.window_width, engine.window_height) = logical_size_from_physical(
+                        new_size.width,
+                        new_size.height,
+                        window.scale_factor(),
+                    );
                     engine.renderer.resize(new_size.width, new_size.height);
                 }
 

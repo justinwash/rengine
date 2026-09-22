@@ -151,7 +151,10 @@ mod tests {
 
     #[test]
     fn empty_track_samples_nothing() {
-        assert_eq!(sample_track(&track(AnimatedProperty::Alpha, vec![]), 0.5), None);
+        assert_eq!(
+            sample_track(&track(AnimatedProperty::Alpha, vec![]), 0.5),
+            None
+        );
     }
 
     #[test]

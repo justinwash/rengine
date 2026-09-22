@@ -684,6 +684,76 @@ impl Canvas {
         }
     }
 
+/// A connected run of segments whose thickness **varies from point to
+    /// point** — a ribbon: a road that narrows, a river, a tapered bar.
+    ///
+    /// The per-point counterpart of [`Self::polyline`], built the same way and
+    /// for the same reasons: one quad per segment, with each end of the quad at
+    /// *its own* point's half-width, plus a bevel triangle at every interior
+    /// vertex to close the wedge a bend opens on the outside of the turn.
+    ///
+    /// With every width equal this emits `polyline`'s vertices, so a caller can
+    /// route a mostly-constant ribbon through here without the picture changing.
+    /// Quads overlap rather than meeting edge to edge on the inside of a bend,
+    /// which is why this is triangles and not one closed outline: a folded
+    /// outline has no valid triangulation at all (see [`Self::polygon`]).
+    ///
+    /// `half_widths` is per point and must be at least as long as `points`.
+    pub fn polyline_widths(&mut self, points: &[(f32, f32)], half_widths: &[f32], color: Color) {
+        if points.len() < 2 || half_widths.len() < points.len() {
+            return;
+        }
+        self.set_font(0);
+        let mut tris: Vec<[(f32, f32); 3]> = Vec::with_capacity(points.len() * 3);
+        for i in 0..points.len() - 1 {
+            let (p, q) = (points[i], points[i + 1]);
+            let d = (q.0 - p.0, q.1 - p.1);
+            let len = (d.0 * d.0 + d.1 * d.1).sqrt();
+            if len < 0.0001 {
+                continue;
+            }
+            let n = (-d.1 / len, d.0 / len);
+            let (h0, h1) = (half_widths[i], half_widths[i + 1]);
+            let a = (p.0 + n.0 * h0, p.1 + n.1 * h0);
+            let b = (p.0 - n.0 * h0, p.1 - n.1 * h0);
+            let c = (q.0 - n.0 * h1, q.1 - n.1 * h1);
+            let e = (q.0 + n.0 * h1, q.1 + n.1 * h1);
+            tris.push([a, c, e]);
+            tris.push([a, b, c]);
+        }
+        for (i, w) in points.windows(3).enumerate() {
+            let (p, q, r) = (w[0], w[1], w[2]);
+            let d0 = (q.0 - p.0, q.1 - p.1);
+            let d1 = (r.0 - q.0, r.1 - q.1);
+            let l0 = (d0.0 * d0.0 + d0.1 * d0.1).sqrt();
+            let l1 = (d1.0 * d1.0 + d1.1 * d1.1).sqrt();
+            if l0 < 0.0001 || l1 < 0.0001 {
+                continue;
+            }
+            // Turn direction decides which side the gap is on: the outside of the
+            // bend. Cross product sign gives it.
+            let cross = d0.0 * d1.1 - d0.1 * d1.0;
+            if cross.abs() < 1e-6 {
+                continue; // collinear: nothing to fill
+            }
+            let s = if cross > 0.0 { -1.0 } else { 1.0 };
+            let half = half_widths[i + 1];
+            let n0 = (-d0.1 / l0 * half * s, d0.0 / l0 * half * s);
+            let n1 = (-d1.1 / l1 * half * s, d1.0 / l1 * half * s);
+            tris.push([q, (q.0 + n0.0, q.1 + n0.1), (q.0 + n1.0, q.1 + n1.1)]);
+        }
+        let c = color.to_array();
+        let uv = WHITE_UV;
+        for [a, b, d] in tris {
+            for (x, y) in [a, b, d] {
+                self.verts.push(CanvasVertex {
+                    position: screen_to_ndc(x, y, self.screen_size),
+                    color: c,
+                    uv,
+                });
+            }
+        }
+    }
     pub fn circle(
         &mut self,
         cx: f32,
@@ -1615,6 +1685,65 @@ fn scale_scissor(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A ribbon whose widths are all equal must emit **exactly** `polyline`'s
+    /// vertices.
+    ///
+    /// That equality is the whole reason `polyline_widths` can be the only road
+    /// painter a game needs: routing a mostly-constant ribbon through it cannot
+    /// change the picture, so the varying case comes for free instead of as a
+    /// second code path that drifts away from the first.
+    #[test]
+    fn a_constant_width_ribbon_is_a_polyline() {
+        let pts = [(20.0, 40.0), (90.0, 55.0), (150.0, 130.0), (60.0, 170.0)];
+        let mut flat = Canvas::for_test((320, 240));
+        flat.polyline(&pts, 18.0, Color::WHITE);
+        let mut ribbon = Canvas::for_test((320, 240));
+        ribbon.polyline_widths(&pts, &[9.0; 4], Color::WHITE);
+
+        let positions = |c: &Canvas| -> Vec<[f32; 2]> {
+            c.vertices().iter().map(|v| v.position).collect()
+        };
+        let (a, b) = (positions(&flat), positions(&ribbon));
+        assert_eq!(a.len(), b.len(), "same vertex count");
+        for (i, (p, q)) in a.iter().zip(&b).enumerate() {
+            assert!(
+                (p[0] - q[0]).abs() < 1e-6 && (p[1] - q[1]).abs() < 1e-6,
+                "vertex {i} differs: {p:?} vs {q:?}"
+            );
+        }
+    }
+
+    /// Each end of a segment is drawn at **its own** point's half-width.
+    ///
+    /// The failure this catches is the tempting shortcut of using one width for
+    /// the whole run — which draws a taper as a step, and is invisible in any
+    /// test that only looks at a constant-width ribbon.
+    #[test]
+    fn a_ribbon_ends_at_its_own_widths() {
+        let (near, far) = (9.0, 3.0);
+        let mut c = Canvas::for_test((320, 240));
+        c.polyline_widths(&[(0.0, 0.0), (100.0, 0.0)], &[near, far], Color::WHITE);
+        let v = c.vertices();
+        // The segment's two triangles are pushed `[a, c, e]` then `[a, b, c]`,
+        // where `a`/`b` are the near end's corners and `c`/`e` the far end's.
+        let ndc_y = |y: f32| screen_to_ndc(0.0, y, (320, 240))[1];
+        assert!((v[0].position[1] - ndc_y(near)).abs() < 1e-6, "near end at its own width");
+        assert!((v[4].position[1] - ndc_y(-near)).abs() < 1e-6, "near end's other corner");
+        assert!((v[2].position[1] - ndc_y(far)).abs() < 1e-6, "far end at its own width");
+        assert!((v[1].position[1] - ndc_y(-far)).abs() < 1e-6, "far end's other corner");
+    }
+
+    /// A short or absent width list draws nothing rather than reading past the
+    /// end of it.
+    #[test]
+    fn a_ribbon_without_a_width_per_point_draws_nothing() {
+        let mut c = Canvas::for_test((320, 240));
+        c.polyline_widths(&[(0.0, 0.0), (50.0, 0.0)], &[4.0], Color::WHITE);
+        assert!(c.vertices().is_empty(), "one width for two points is not a ribbon");
+        c.polyline_widths(&[(0.0, 0.0)], &[4.0], Color::WHITE);
+        assert!(c.vertices().is_empty(), "a single point is not a run");
+    }
 
     #[test]
     fn scale_scissor_maps_logical_clip_into_a_physical_viewport() {

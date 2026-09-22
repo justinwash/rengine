@@ -120,11 +120,7 @@ impl<T> Signal<T> {
     /// automatically by `subscribe`; exposed for callers that subscribe and
     /// drop in tight loops and want the vector to not grow forever.
     pub fn compact(&self) {
-        let mut slots = self
-            .inner
-            .slots
-            .write()
-            .unwrap_or_else(|e| e.into_inner());
+        let mut slots = self.inner.slots.write().unwrap_or_else(|e| e.into_inner());
         slots.retain(|slot| slot.active);
     }
 }
