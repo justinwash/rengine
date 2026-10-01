@@ -1329,10 +1329,17 @@ enum PlayStep {
 /// at window centre, +y up — see [`InputState::mouse_position`]), so a click
 /// target for a UI panel is whatever `resolved_rect`/layout math the game
 /// itself would compute for that element.
+///
+/// With `RENGINE_PLAY_FOLLOW` set, running out of script does not end the run:
+/// the frame blocks until more complete lines are appended to the file, so a
+/// session can be played one decision at a time. Headless time is fixed-step,
+/// so the block changes nothing about what the game computes.
 struct PlayScript {
-    steps: std::vec::IntoIter<PlayStep>,
+    steps: std::collections::VecDeque<PlayStep>,
     waiting: u32,
     finished: bool,
+    /// Follow mode: the script's path and how many bytes of it are consumed.
+    follow: Option<(PathBuf, usize)>,
 }
 
 impl PlayScript {
@@ -1340,8 +1347,22 @@ impl PlayScript {
         let path = std::env::var("RENGINE_PLAY_SCRIPT").ok()?;
         let text = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("failed to read play script {path}: {e}"));
-        let steps: Vec<PlayStep> = text
-            .lines()
+        let follow = std::env::var_os("RENGINE_PLAY_FOLLOW").is_some();
+        // A follower only takes whole lines, so a half-appended one waits.
+        let taken = match follow {
+            true => text.rfind('\n').map_or(0, |i| i + 1),
+            false => text.len(),
+        };
+        Some(Self {
+            steps: Self::parse(&text[..taken]).into(),
+            waiting: 0,
+            finished: false,
+            follow: follow.then(|| (PathBuf::from(path), taken)),
+        })
+    }
+
+    fn parse(text: &str) -> Vec<PlayStep> {
+        text.lines()
             .map(str::trim)
             .filter(|line| !line.is_empty() && !line.starts_with('#'))
             .map(|line| {
@@ -1380,12 +1401,25 @@ impl PlayScript {
                     other => panic!("unknown play script verb: {other}"),
                 }
             })
-            .collect();
-        Some(Self {
-            steps: steps.into_iter(),
-            waiting: 0,
-            finished: false,
-        })
+            .collect()
+    }
+
+    /// Follow mode: block until the file grows by at least one whole line.
+    fn wait_for_more(&mut self) -> bool {
+        let Some((path, taken)) = self.follow.as_mut() else {
+            return false;
+        };
+        loop {
+            if let Ok(text) = std::fs::read_to_string(&*path) {
+                if let Some(end) = text.get(*taken..).and_then(|rest| rest.rfind('\n')) {
+                    let chunk = &text[*taken..*taken + end + 1];
+                    *taken += end + 1;
+                    self.steps.extend(Self::parse(chunk));
+                    return true;
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
     }
 
     fn finished(&self) -> bool {
@@ -1400,7 +1434,7 @@ impl PlayScript {
             return None;
         }
         loop {
-            match self.steps.next() {
+            match self.steps.pop_front() {
                 Some(PlayStep::Key(key)) => {
                     input.inject_key_press(key);
                     // A real keyboard delivers a text event next to the key event, so
@@ -1417,6 +1451,7 @@ impl PlayScript {
                     return None;
                 }
                 Some(PlayStep::Shot(path)) => return Some(path),
+                None if self.wait_for_more() => {}
                 None => {
                     self.finished = true;
                     return None;
