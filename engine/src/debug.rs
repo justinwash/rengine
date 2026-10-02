@@ -194,6 +194,9 @@ enum DebugTextInputMode {
 }
 
 pub struct DebugUiState {
+    /// Lines the game adds to the overlay, below the engine's own stats. Set
+    /// each frame the overlay is up (`Game::debug_overlay_lines`).
+    host_lines: Vec<String>,
     overlay_visible: bool,
     console_open: bool,
     follow_logs: bool,
@@ -213,6 +216,7 @@ pub struct DebugUiState {
 impl DebugUiState {
     pub fn new(overlay_visible: bool) -> Self {
         Self {
+            host_lines: Vec::new(),
             overlay_visible,
             console_open: false,
             follow_logs: true,
@@ -228,6 +232,15 @@ impl DebugUiState {
             input_mode: DebugTextInputMode::None,
             captured_mouse_buttons: [false; 3],
         }
+    }
+
+    /// Replace the game's overlay lines (see `Game::debug_overlay_lines`).
+    pub fn set_host_lines(&mut self, lines: Vec<String>) {
+        self.host_lines = lines;
+    }
+
+    pub fn host_lines(&self) -> &[String] {
+        &self.host_lines
     }
 
     pub fn overlay_visible(&self) -> bool {
@@ -769,7 +782,7 @@ impl DebugUiState {
             + title_line_height
             + 6.0
             + button_block_height
-            + 4.0 * body_line_height
+            + (4 + self.host_lines.len()) as f32 * body_line_height
             + 8.0
             + (visible_log_lines as f32 + 1.0) * body_line_height
             + 8.0
@@ -1099,8 +1112,20 @@ pub fn parse_command(text: &str) -> Result<DebugCommand, String> {
         "info" => parse_echo_command(rest, DebugLogLevel::Info),
         "warn" | "warning" => parse_echo_command(rest, DebugLogLevel::Warn),
         "error" => parse_echo_command(rest, DebugLogLevel::Error),
-        _ => Err(format!("unknown debug command '{command}'")),
+        _ => Err(format!("{UNKNOWN_COMMAND} '{command}'")),
     }
+}
+
+/// The start of `parse_command`'s error for a word it does not know: the one
+/// case that is offered to the game rather than reported.
+const UNKNOWN_COMMAND: &str = "unknown debug command";
+
+/// Whether `text` is one of the engine's own commands. Anything else is offered
+/// to the game (`Game::debug_command`), so a game can add commands of its own
+/// without the engine knowing their names. A malformed built-in (`level` with
+/// no value) is still the engine's, and still reports its own error.
+pub fn is_builtin_command(text: &str) -> bool {
+    !matches!(parse_command(text), Err(error) if error.starts_with(UNKNOWN_COMMAND))
 }
 
 pub fn command_help_lines() -> &'static [&'static str] {
@@ -1110,6 +1135,7 @@ pub fn command_help_lines() -> &'static [&'static str] {
         "level <all|debug|info|warn|error> | target <text> | target clear",
         "capacity <count> | hot_reload [on|off|toggle]",
         "echo <msg> | debug <msg> | info <msg> | warn <msg> | error <msg>",
+        "anything else is offered to the game",
     ]
 }
 
@@ -1536,6 +1562,7 @@ fn overlay_stats(
         lines.push("F3 toggles overlay".to_string());
     }
 
+    lines.extend(state.host_lines().iter().cloned());
     lines
 }
 
@@ -1596,6 +1623,26 @@ fn format_preedit_suffix(preedit: Option<(&str, Option<(usize, usize)>)>) -> Str
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_word_the_engine_does_not_know_is_offered_to_the_game() {
+        assert!(is_builtin_command("help"));
+        assert!(is_builtin_command("overlay off"));
+        // A malformed built-in is still the engine's, so it reports its own error.
+        assert!(is_builtin_command("level"));
+        assert!(is_builtin_command(""));
+        assert!(!is_builtin_command("car 3"));
+        assert!(!is_builtin_command("watch Reyes"));
+    }
+
+    #[test]
+    fn host_lines_grow_the_overlay_panel() {
+        let mut state = DebugUiState::new(true);
+        let bare = state.overlay_layout((800, 600), 0).panel.h;
+        state.set_host_lines(vec!["one".into(), "two".into()]);
+        let with_lines = state.overlay_layout((800, 600), 0).panel.h;
+        assert!(with_lines > bare, "the panel must make room for the game's lines");
+    }
 
     #[test]
     fn buffer_discards_oldest_entries() {

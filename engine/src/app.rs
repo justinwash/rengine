@@ -419,6 +419,34 @@ fn execute_debug_command(
     }
 }
 
+/// The console's commands for a `Game`: the engine's own run as ever, and any
+/// other word is offered to the game (`Game::debug_command`).
+fn drain_debug_commands_for_game<G: Game>(engine: &mut Engine, game: &mut G) {
+    let commands = engine.debug_ui.drain_pending_commands();
+    for command in commands {
+        if debug::is_builtin_command(&command) {
+            execute_debug_command(
+                &mut engine.debug_ui,
+                &mut engine.hot_reload_enabled,
+                &command,
+            );
+            continue;
+        }
+        log_console_line(DebugLogLevel::Debug, format!("> {command}"));
+        match game.debug_command(engine, &command) {
+            Some(lines) => {
+                for line in lines {
+                    log_console_line(DebugLogLevel::Info, line);
+                }
+            }
+            None => log_console_line(
+                DebugLogLevel::Error,
+                format!("unknown command '{}'; try 'help'", command.trim()),
+            ),
+        }
+    }
+}
+
 fn drain_debug_commands_2d(engine: &mut Engine) {
     let commands = engine.debug_ui.drain_pending_commands();
     for command in commands {
@@ -1302,6 +1330,19 @@ pub trait Game: 'static + Sized {
     fn should_exit(&self) -> bool {
         false
     }
+
+    /// A console command the engine does not know is offered to the game.
+    /// Return the lines to print for it, or `None` when the game does not know
+    /// it either (the console then says so).
+    fn debug_command(&mut self, _engine: &Engine, _command: &str) -> Option<Vec<String>> {
+        None
+    }
+
+    /// Lines the game adds to the debug overlay, below the engine's own stats.
+    /// Asked once a frame, and only while the overlay is visible.
+    fn debug_overlay_lines(&self, _engine: &Engine) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 /// One line of a headless playtest script.
@@ -1775,7 +1816,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
                     engine.reload_assets_if_changed();
                     engine.process_requested_textures();
                     engine.audio.update(engine.time.dt());
-                    drain_debug_commands_2d(&mut engine);
+                    drain_debug_commands_for_game(&mut engine, &mut game);
 
                     while engine.time.consume_fixed_step() {
                         game.fixed_update(&engine);
@@ -1790,6 +1831,10 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
 
                     game.render(&engine, &mut frame);
 
+                    if engine.debug_ui.overlay_visible() {
+                        let lines = game.debug_overlay_lines(&engine);
+                        engine.debug_ui.set_host_lines(lines);
+                    }
                     push_builtin_2d_overlays(&mut frame, &engine, show_fps);
                     engine
                         .renderer
