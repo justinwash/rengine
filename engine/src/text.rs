@@ -28,8 +28,107 @@ pub(crate) struct GlyphEntry {
     pub advance: f32,
 }
 
-pub(crate) const ATLAS_SIZE: u32 = 512;
+/// Square, in texels. 1024 holds ASCII plus [`EXTENDED`] at [`FONT_SIZE`]
+/// with room to spare; 512 held ASCII alone.
+pub(crate) const ATLAS_SIZE: u32 = 1024;
 pub(crate) const FONT_SIZE: f32 = 48.0;
+
+/// The characters past ASCII an atlas rasterizes, when its face has them:
+/// Latin-1, and the punctuation, arrows and shapes game text reaches for.
+pub(crate) const EXTENDED: &[char] = &[
+    // Latin-1 Supplement, U+00A0..=U+00FF.
+    '\u{a0}', '¡', '¢', '£', '¤', '¥', '¦', '§', '¨', '©', 'ª', '«', '¬', '\u{ad}', '®', '¯',
+    '°', '±', '²', '³', '´', 'µ', '¶', '·', '¸', '¹', 'º', '»', '¼', '½', '¾', '¿',
+    'À', 'Á', 'Â', 'Ã', 'Ä', 'Å', 'Æ', 'Ç', 'È', 'É', 'Ê', 'Ë', 'Ì', 'Í', 'Î', 'Ï',
+    'Ð', 'Ñ', 'Ò', 'Ó', 'Ô', 'Õ', 'Ö', '×', 'Ø', 'Ù', 'Ú', 'Û', 'Ü', 'Ý', 'Þ', 'ß',
+    'à', 'á', 'â', 'ã', 'ä', 'å', 'æ', 'ç', 'è', 'é', 'ê', 'ë', 'ì', 'í', 'î', 'ï',
+    'ð', 'ñ', 'ò', 'ó', 'ô', 'õ', 'ö', '÷', 'ø', 'ù', 'ú', 'û', 'ü', 'ý', 'þ', 'ÿ',
+    // Punctuation.
+    '–', '—', '‘', '’', '‚', '“', '”', '„', '•', '…', '′', '″', '‹', '›', '€', '™',
+    // Arrows, maths, shapes.
+    '←', '↑', '→', '↓', '−', '≈', '≠', '≤', '≥', '▲', '▼', '▶', '◀', '●', '○', '■', '□',
+    '★', '☆', '✓', '✗',
+];
+
+/// What to draw for a character the face lacks, so that nothing is skipped
+/// silently: a dash for a dash, three dots for an ellipsis, the bare letter
+/// for an accented one.
+pub(crate) fn ascii_stand_in(ch: char) -> Option<&'static str> {
+    Some(match ch {
+        '\u{a0}' | '\u{2007}' | '\u{2009}' | '\u{202f}' => " ",
+        '–' | '—' | '−' | '‒' | '―' | '·' | '•' | '\u{ad}' => "-",
+        '…' => "...",
+        '‘' | '’' | '‚' | '′' | '´' | '`' => "'",
+        '“' | '”' | '„' | '″' | '«' | '»' => "\"",
+        '‹' | '◀' => "<",
+        '›' | '▶' => ">",
+        '×' => "x",
+        '÷' => "/",
+        '←' => "<-",
+        '→' => "->",
+        '↑' | '▲' => "^",
+        '↓' | '▼' => "v",
+        '≤' => "<=",
+        '≥' => ">=",
+        '≈' => "~",
+        '≠' => "!=",
+        '±' => "+/-",
+        '●' | '■' | '★' => "*",
+        '○' | '□' | '☆' => "o",
+        '✓' => "+",
+        '✗' => "x",
+        '€' => "EUR",
+        '£' => "GBP",
+        '™' => "TM",
+        '©' => "(c)",
+        '®' => "(R)",
+        '°' => "o",
+        'À' | 'Á' | 'Â' | 'Ã' | 'Ä' | 'Å' => "A",
+        'à' | 'á' | 'â' | 'ã' | 'ä' | 'å' => "a",
+        'Æ' => "AE",
+        'æ' => "ae",
+        'Ç' => "C",
+        'ç' => "c",
+        'È' | 'É' | 'Ê' | 'Ë' => "E",
+        'è' | 'é' | 'ê' | 'ë' => "e",
+        'Ì' | 'Í' | 'Î' | 'Ï' => "I",
+        'ì' | 'í' | 'î' | 'ï' => "i",
+        'Ñ' => "N",
+        'ñ' => "n",
+        'Ò' | 'Ó' | 'Ô' | 'Õ' | 'Ö' | 'Ø' => "O",
+        'ò' | 'ó' | 'ô' | 'õ' | 'ö' | 'ø' => "o",
+        'Ù' | 'Ú' | 'Û' | 'Ü' => "U",
+        'ù' | 'ú' | 'û' | 'ü' => "u",
+        'Ý' => "Y",
+        'ý' | 'ÿ' => "y",
+        'ß' => "ss",
+        'Ð' => "D",
+        'ð' => "d",
+        'Þ' => "Th",
+        'þ' => "th",
+        '¡' => "!",
+        '¿' => "?",
+        '¹' => "1",
+        '²' => "2",
+        '³' => "3",
+        '¼' => "1/4",
+        '½' => "1/2",
+        '¾' => "3/4",
+        '¢' => "c",
+        '¤' => "$",
+        '¥' => "Y",
+        'µ' => "u",
+        'ª' => "a",
+        'º' => "o",
+        '¬' | '¯' => "-",
+        '¨' => "\"",
+        '¸' => ",",
+        '§' => "S",
+        '¶' => "P",
+        '¦' => "|",
+        _ => return None,
+    })
+}
 
 struct BuiltinFontMetrics {
     advances: [f32; 128],
@@ -79,7 +178,10 @@ pub(crate) fn measure_builtin_text(text: &str, size: f32) -> (f32, f32) {
 
 pub struct FontAtlas {
     pub bind_group: wgpu::BindGroup,
+    /// ASCII, indexed by code point: the hot path.
     pub(crate) glyphs: [Option<GlyphEntry>; 128],
+    /// Every [`EXTENDED`] character the face has.
+    pub(crate) extended: std::collections::HashMap<char, GlyphEntry>,
     white_uv: [f32; 2],
     /// The font's own line box at [`FONT_SIZE`]: `ascent - descent +
     /// line_gap`, the same number CSS calls `normal` line-height.
@@ -108,14 +210,42 @@ impl FontAtlas {
         let scale = size / FONT_SIZE;
         let mut width: f32 = 0.0;
         for ch in text.chars() {
-            let idx = ch as usize;
-            if idx < 128 {
-                if let Some(e) = self.glyphs[idx] {
-                    width += e.advance * scale;
-                }
-            }
+            self.each_glyph(ch, |e| width += e.advance * scale);
         }
         (width, self.line_height * scale)
+    }
+
+    /// The glyph this face draws `ch` with, if it has one.
+    fn glyph(&self, ch: char) -> Option<GlyphEntry> {
+        match ch as usize {
+            idx @ 0..=127 => self.glyphs[idx],
+            _ => self.extended.get(&ch).copied(),
+        }
+    }
+
+    /// Hand `f` the glyphs that draw `ch`: its own, or, when the face lacks
+    /// it, its [`ascii_stand_in`]'s. Returns whether anything was drawn.
+    ///
+    /// The one lookup every draw and measure goes through, so a character
+    /// cannot measure one way and paint another. And a character is never
+    /// dropped without the caller hearing about it: it used to be, and every
+    /// `·` and `—` in a game's text vanished without a trace.
+    pub(crate) fn each_glyph(&self, ch: char, mut f: impl FnMut(GlyphEntry)) -> bool {
+        if let Some(entry) = self.glyph(ch) {
+            f(entry);
+            return true;
+        }
+        let Some(stand_in) = ascii_stand_in(ch) else {
+            return false;
+        };
+        let mut drew = false;
+        for c in stand_in.chars() {
+            if let Some(entry) = self.glyph(c) {
+                f(entry);
+                drew = true;
+            }
+        }
+        drew
     }
 
     pub fn line_height(&self, size: f32) -> f32 {
@@ -196,6 +326,7 @@ pub(crate) fn build_atlas_from_bytes(
     let white_uv = [1.0 / ATLAS_SIZE as f32, 1.0 / ATLAS_SIZE as f32];
 
     let mut glyphs: [Option<GlyphEntry>; 128] = [None; 128];
+    let mut extended = std::collections::HashMap::new();
 
     let mut cursor_x: u32 = 4;
     let mut cursor_y: u32 = 0;
@@ -213,25 +344,22 @@ pub(crate) fn build_atlas_from_bytes(
         None => (FONT_SIZE * 0.8, FONT_SIZE),
     };
 
-    for c in 32u8..127 {
-        let ch = c as char;
+    // Rasterize one character into the atlas. `None` when the atlas is full.
+    let mut pack = |ch: char| -> Option<GlyphEntry> {
         let (metrics, bitmap) = font.rasterize(ch, FONT_SIZE);
         if metrics.width == 0 || metrics.height == 0 {
-            let advance = metrics.advance_width;
-            if advance > 0.0 {
-                glyphs[c as usize] = Some(GlyphEntry {
-                    u0: white_uv[0],
-                    v0: white_uv[1],
-                    u1: white_uv[0],
-                    v1: white_uv[1],
-                    width_px: 0.0,
-                    height_px: 0.0,
-                    x_offset: 0.0,
-                    y_offset: 0.0,
-                    advance,
-                });
-            }
-            continue;
+            // A space: an advance and no ink.
+            return (metrics.advance_width > 0.0).then_some(GlyphEntry {
+                u0: white_uv[0],
+                v0: white_uv[1],
+                u1: white_uv[0],
+                v1: white_uv[1],
+                width_px: 0.0,
+                height_px: 0.0,
+                x_offset: 0.0,
+                y_offset: 0.0,
+                advance: metrics.advance_width,
+            });
         }
 
         let gw = metrics.width as u32;
@@ -244,7 +372,7 @@ pub(crate) fn build_atlas_from_bytes(
         }
 
         if cursor_y + gh > ATLAS_SIZE {
-            break;
+            return None;
         }
 
         for gy in 0..gh {
@@ -258,26 +386,34 @@ pub(crate) fn build_atlas_from_bytes(
             }
         }
 
-        let u0 = cursor_x as f32 / ATLAS_SIZE as f32;
-        let v0 = cursor_y as f32 / ATLAS_SIZE as f32;
-        let u1 = (cursor_x + gw) as f32 / ATLAS_SIZE as f32;
-        let v1 = (cursor_y + gh) as f32 / ATLAS_SIZE as f32;
-
-        glyphs[c as usize] = Some(GlyphEntry {
-            u0,
-            v0,
-            u1,
-            v1,
+        let entry = GlyphEntry {
+            u0: cursor_x as f32 / ATLAS_SIZE as f32,
+            v0: cursor_y as f32 / ATLAS_SIZE as f32,
+            u1: (cursor_x + gw) as f32 / ATLAS_SIZE as f32,
+            v1: (cursor_y + gh) as f32 / ATLAS_SIZE as f32,
             width_px: gw as f32,
             height_px: gh as f32,
             x_offset: metrics.xmin as f32,
             y_offset: metrics.ymin as f32,
             advance: metrics.advance_width,
-        });
+        };
 
         cursor_x += gw + 1;
-        if gh > row_height {
-            row_height = gh;
+        row_height = row_height.max(gh);
+        Some(entry)
+    };
+
+    for c in 32u8..127 {
+        glyphs[c as usize] = pack(c as char);
+    }
+    // Past ASCII, only what the face really has: `rasterize` on a character
+    // the face lacks draws its .notdef box, which is worse than the ASCII
+    // stand-in `FontAtlas::each_glyph` falls back to.
+    for &ch in EXTENDED {
+        if font.has_glyph(ch) {
+            if let Some(entry) = pack(ch) {
+                extended.insert(ch, entry);
+            }
         }
     }
 
@@ -342,6 +478,7 @@ pub(crate) fn build_atlas_from_bytes(
     FontAtlas {
         bind_group,
         glyphs,
+        extended,
         white_uv,
         line_height,
         ascent,
@@ -394,6 +531,21 @@ mod tests {
                      (ink_bottom={ink_bottom}, box_bottom={bottom})"
                 );
             }
+        }
+    }
+
+    /// Nothing is dropped by a face that has ASCII: every character an atlas
+    /// tries past ASCII has a stand-in made of printable ASCII, for the faces
+    /// that lack it.
+    #[test]
+    fn every_extended_character_has_an_ascii_stand_in() {
+        for &ch in EXTENDED {
+            let stand_in = ascii_stand_in(ch)
+                .unwrap_or_else(|| panic!("no stand-in for {ch:?} (U+{:04X})", ch as u32));
+            assert!(
+                !stand_in.is_empty() && stand_in.chars().all(|c| (' '..='~').contains(&c)),
+                "{ch:?}'s stand-in {stand_in:?} is not printable ASCII"
+            );
         }
     }
 

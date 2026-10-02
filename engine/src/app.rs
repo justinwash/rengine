@@ -419,6 +419,32 @@ fn execute_debug_command(
     }
 }
 
+/// With `RENGINE_UI_AUDIT` set, write the captured frame's UI audit beside
+/// its PNG (`canvas/audit.rs`): what every canvas drew and, under the game's
+/// rules, what does not fit. With `RENGINE_UI_AUDIT=check` the findings also go
+/// to stderr, so a harness that requires a clean stderr fails on them.
+fn write_capture_audit(
+    capture: &std::path::Path,
+    frame: &Frame,
+    rules: &canvas::AuditRules,
+) -> std::io::Result<()> {
+    if !canvas::audit_enabled() {
+        return Ok(());
+    }
+    let findings = canvas::audit_findings(frame.screen_size(), &frame.canvases, rules);
+    if canvas::audit_check_mode() {
+        for finding in &findings {
+            eprintln!("ui-audit: {}", finding.line());
+        }
+    }
+    canvas::write_audit(
+        &canvas::audit_path_for(capture),
+        frame.screen_size(),
+        &frame.canvases,
+        &findings,
+    )
+}
+
 /// The console's commands for a `Game`: the engine's own run as ever, and any
 /// other word is offered to the game (`Game::debug_command`).
 fn drain_debug_commands_for_game<G: Game>(engine: &mut Engine, game: &mut G) {
@@ -1343,6 +1369,13 @@ pub trait Game: 'static + Sized {
     fn debug_overlay_lines(&self, _engine: &Engine) -> Vec<String> {
         Vec::new()
     }
+
+    /// What this game draws over itself on purpose, for the UI audit
+    /// (`RENGINE_UI_AUDIT`, `canvas::audit_findings`): its modals, the labels
+    /// it puts on a map, the lines it clips and shows whole elsewhere.
+    fn ui_audit_rules(&self) -> canvas::AuditRules {
+        canvas::AuditRules::default()
+    }
 }
 
 /// One line of a headless playtest script.
@@ -1701,6 +1734,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
                     captured.height,
                     image::ColorType::Rgba8,
                 )?;
+                write_capture_audit(&shot_path, &headless_frame, &game.ui_audit_rules())?;
             }
             // A finished play script ends the run, but must still honour
             // `--capture` — otherwise a script that is shorter than the frame
@@ -1724,6 +1758,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
                         captured.height,
                         image::ColorType::Rgba8,
                     )?;
+                    write_capture_audit(path, &headless_frame, &game.ui_audit_rules())?;
                 }
                 return Ok(());
             }

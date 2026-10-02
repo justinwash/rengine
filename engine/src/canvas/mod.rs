@@ -2,6 +2,14 @@ use crate::assets::Color;
 use crate::renderer::TextureId;
 use crate::text::{FontAtlas, FontId, ATLAS_SIZE, FONT_SIZE};
 
+mod audit;
+mod audit_check;
+pub use audit::{
+    audit_check_mode, audit_enabled, audit_path_for, write_audit, AuditRecord, UiAudit,
+};
+pub use audit_check::{audit_findings, AuditRules, Finding};
+use audit::{canvas_rect_to_screen, InkBox};
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TextAlign {
     Left,
@@ -101,6 +109,9 @@ pub struct Canvas {
     /// this: a wrap width stays where the author put it, so larger text wraps
     /// sooner rather than the paragraph growing sideways off the panel.
     text_scale: f32,
+    /// What this canvas drew this frame, when `RENGINE_UI_AUDIT` is set
+    /// (`audit.rs`). `None` otherwise, and every hook is one branch on it.
+    audit: Option<Box<UiAudit>>,
 }
 
 impl Canvas {
@@ -124,7 +135,89 @@ impl Canvas {
             fonts,
             tracking: 0.0,
             text_scale: 1.0,
+            audit: audit_enabled().then(Box::default),
         }
+    }
+
+    /// This frame's UI audit, when `RENGINE_UI_AUDIT` is set.
+    pub fn audit(&self) -> Option<&UiAudit> {
+        self.audit.as_deref()
+    }
+
+    /// Audit this canvas whatever the environment says, for a test.
+    #[cfg(test)]
+    pub(crate) fn force_audit(&mut self) {
+        self.audit = Some(Box::default());
+    }
+
+    /// Open a scene node in the audit: what is drawn until
+    /// [`audit_close_node`](Self::audit_close_node) belongs to it. `None`
+    /// when auditing is off.
+    pub fn audit_open_node(&mut self, name: &str, kind: &str) -> Option<u32> {
+        let audit = self.audit.as_mut()?;
+        Some(audit.open_node(name.to_string(), kind.to_string()))
+    }
+
+    /// Record an open node's resolved rect, given in canvas space like every
+    /// other canvas call.
+    pub fn audit_node_rect(
+        &mut self,
+        id: Option<u32>,
+        rect: Option<(f32, f32, f32, f32)>,
+        clips: bool,
+    ) {
+        let screen = self.screen_size;
+        if let (Some(audit), Some(id)) = (self.audit.as_mut(), id) {
+            let rect = rect.map(|(x, y, w, h)| canvas_rect_to_screen(x, y, w, h, screen));
+            audit.set_node_rect(id, rect, clips);
+        }
+    }
+
+    pub fn audit_close_node(&mut self, id: Option<u32>) {
+        if let (Some(audit), Some(_)) = (self.audit.as_mut(), id) {
+            audit.close_node();
+        }
+    }
+
+    /// The clip in force, as screen pixels.
+    fn audit_clip(&self) -> Option<[f32; 4]> {
+        self.clip_stack
+            .last()
+            .map(|c| [c[0] as f32, c[1] as f32, c[2] as f32, c[3] as f32])
+    }
+
+    fn audit_fill(&mut self, x: f32, y: f32, w: f32, h: f32, alpha: f32) {
+        if self.audit.is_none() {
+            return;
+        }
+        let rect = canvas_rect_to_screen(x, y, w, h, self.screen_size);
+        let clip = self.audit_clip();
+        let audit = self.audit.as_mut().expect("checked above");
+        let node = audit.current_node();
+        audit.records.push(AuditRecord::Fill {
+            node,
+            rect,
+            alpha,
+            clip,
+        });
+    }
+
+    fn audit_text(&mut self, text: String, size: f32, ink: InkBox, dropped: u32) {
+        if self.audit.is_none() {
+            return;
+        }
+        let ink = ink.screen_rect(self.screen_size);
+        let clip = self.audit_clip();
+        let audit = self.audit.as_mut().expect("checked above");
+        let node = audit.current_node();
+        audit.records.push(AuditRecord::Text {
+            node,
+            text,
+            size,
+            ink,
+            clip,
+            dropped,
+        });
     }
 
     /// Set the multiplier applied to every text size drawn or measured on this
@@ -461,6 +554,7 @@ fn triangulate(points: &[(f32, f32)]) -> Vec<[(f32, f32); 3]> {
 
 impl Canvas {
     pub fn rect(&mut self, x: f32, y: f32, w: f32, h: f32, color: Color) {
+        self.audit_fill(x, y, w, h, color.a);
         self.set_font(0);
         let [x0, y0] = screen_to_ndc(x, y, self.screen_size);
         let [x1, y1] = screen_to_ndc(x + w, y + h, self.screen_size);
@@ -527,6 +621,7 @@ impl Canvas {
     /// Fill a rect with a smooth vertical gradient (`bottom` at `y`, `top` at
     /// `y + h`), interpolated per-vertex by the GPU.
     pub fn rect_gradient(&mut self, x: f32, y: f32, w: f32, h: f32, bottom: Color, top: Color) {
+        self.audit_fill(x, y, w, h, bottom.a.min(top.a));
         self.set_font(0);
         let [x0, y0] = screen_to_ndc(x, y, self.screen_size);
         let [x1, y1] = screen_to_ndc(x + w, y + h, self.screen_size);
@@ -845,57 +940,40 @@ impl Canvas {
         let c = color.to_array();
         let baseline = atlas.baseline_below_top(y, size);
         let mut cursor_x = x;
+        let auditing = self.audit.is_some();
+        let mut ink = InkBox::default();
+        let mut dropped = 0;
+        let tracking = self.tracking;
+        let screen_size = self.screen_size;
+        let verts = &mut self.verts;
 
         for ch in text.chars() {
-            let idx = ch as usize;
-            if idx >= 128 {
-                continue;
+            let drew = atlas.each_glyph(ch, |entry| {
+                if entry.width_px > 0.0 {
+                    let gx = cursor_x + entry.x_offset * scale;
+                    // `entry.y_offset` is `ymin` — the glyph's bottom relative
+                    // to the **baseline** — so it only means anything measured
+                    // from a baseline. Previously this subtracted it from
+                    // `line_height` (the tallest glyph's ink height at the time)
+                    // against a `y` that callers passed as a rect edge: three
+                    // different origins in one expression, which is why text
+                    // drew outside its own node.
+                    let gy = baseline + entry.y_offset * scale;
+                    let gw = entry.width_px * scale;
+                    let gh = entry.height_px * scale;
+                    if auditing {
+                        ink.add(gx, gy, gw, gh);
+                    }
+                    push_glyph_quad(verts, screen_size, &entry, c, gx, gy, gw, gh);
+                }
+                cursor_x += entry.advance * scale + tracking;
+            });
+            if !drew && !ch.is_whitespace() {
+                dropped += 1;
             }
-            let entry = match atlas.glyphs[idx] {
-                Some(e) => e,
-                None => continue,
-            };
-
-            if entry.width_px > 0.0 {
-                let gx = cursor_x + entry.x_offset * scale;
-                // `entry.y_offset` is `ymin` — the glyph's bottom relative to
-                // the **baseline** — so it only means anything measured from
-                // a baseline. Previously this subtracted it from
-                // `line_height` (the tallest glyph's ink height at the time)
-                // against a `y` that callers passed as a rect edge: three
-                // different origins in one expression, which is why text drew
-                // outside its own node.
-                let gy = baseline + entry.y_offset * scale;
-                let gw = entry.width_px * scale;
-                let gh = entry.height_px * scale;
-
-                let [x0, y0] = screen_to_ndc(gx, gy, self.screen_size);
-                let [x1, y1] = screen_to_ndc(gx + gw, gy + gh, self.screen_size);
-
-                let v0 = CanvasVertex {
-                    position: [x0, y0],
-                    color: c,
-                    uv: [entry.u0, entry.v1],
-                };
-                let v1 = CanvasVertex {
-                    position: [x1, y0],
-                    color: c,
-                    uv: [entry.u1, entry.v1],
-                };
-                let v2 = CanvasVertex {
-                    position: [x1, y1],
-                    color: c,
-                    uv: [entry.u1, entry.v0],
-                };
-                let v3 = CanvasVertex {
-                    position: [x0, y1],
-                    color: c,
-                    uv: [entry.u0, entry.v0],
-                };
-                self.verts.extend_from_slice(&[v0, v2, v1, v0, v3, v2]);
-            }
-
-            cursor_x += entry.advance * scale + self.tracking;
+        }
+        if auditing {
+            self.audit_text(text.to_string(), size, ink, dropped);
         }
     }
 
@@ -968,53 +1046,36 @@ impl Canvas {
         // `y` is the line box's top, as in `text_with_font`.
         let baseline = atlas.baseline_below_top(y, size);
         let mut cursor_x = x;
+        let auditing = self.audit.is_some();
+        let mut ink = InkBox::default();
+        let mut dropped = 0;
+        let screen_size = self.screen_size;
+        let verts = &mut self.verts;
 
         for &(span_text, span_color) in spans {
             let c = span_color.to_array();
             for ch in span_text.chars() {
-                let idx = ch as usize;
-                if idx >= 128 {
-                    continue;
+                let drew = atlas.each_glyph(ch, |entry| {
+                    if entry.width_px > 0.0 {
+                        let gx = cursor_x + entry.x_offset * scale;
+                        let gy = baseline + entry.y_offset * scale;
+                        let gw = entry.width_px * scale;
+                        let gh = entry.height_px * scale;
+                        if auditing {
+                            ink.add(gx, gy, gw, gh);
+                        }
+                        push_glyph_quad(verts, screen_size, &entry, c, gx, gy, gw, gh);
+                    }
+                    cursor_x += entry.advance * scale + tracking;
+                });
+                if !drew && !ch.is_whitespace() {
+                    dropped += 1;
                 }
-                let entry = match atlas.glyphs[idx] {
-                    Some(e) => e,
-                    None => continue,
-                };
-
-                if entry.width_px > 0.0 {
-                    let gx = cursor_x + entry.x_offset * scale;
-                    let gy = baseline + entry.y_offset * scale;
-                    let gw = entry.width_px * scale;
-                    let gh = entry.height_px * scale;
-
-                    let [x0, y0] = screen_to_ndc(gx, gy, self.screen_size);
-                    let [x1, y1] = screen_to_ndc(gx + gw, gy + gh, self.screen_size);
-
-                    let v0 = CanvasVertex {
-                        position: [x0, y0],
-                        color: c,
-                        uv: [entry.u0, entry.v1],
-                    };
-                    let v1 = CanvasVertex {
-                        position: [x1, y0],
-                        color: c,
-                        uv: [entry.u1, entry.v1],
-                    };
-                    let v2 = CanvasVertex {
-                        position: [x1, y1],
-                        color: c,
-                        uv: [entry.u1, entry.v0],
-                    };
-                    let v3 = CanvasVertex {
-                        position: [x0, y1],
-                        color: c,
-                        uv: [entry.u0, entry.v0],
-                    };
-                    self.verts.extend_from_slice(&[v0, v2, v1, v0, v3, v2]);
-                }
-
-                cursor_x += entry.advance * scale + tracking;
             }
+        }
+        if auditing {
+            let text: String = spans.iter().map(|(s, _)| *s).collect();
+            self.audit_text(text, size, ink, dropped);
         }
     }
 
@@ -1111,6 +1172,7 @@ impl Canvas {
         uv_rect: [f32; 4],
         color: Color,
     ) {
+        self.audit_fill(x, y, w, h, color.a);
         self.set_texture(DrawTexture::Texture(texture.0));
 
         let [x0, y0] = screen_to_ndc(x, y, self.screen_size);
@@ -1369,6 +1431,44 @@ impl Canvas {
     pub fn line_height(&self, size: f32) -> f32 {
         self.atlas().line_height(size * self.text_scale)
     }
+}
+
+/// The two triangles of one glyph: `(gx, gy)` its bottom-left in canvas
+/// space, sampling `entry`'s rect of the atlas.
+#[allow(clippy::too_many_arguments)]
+fn push_glyph_quad(
+    verts: &mut Vec<CanvasVertex>,
+    screen_size: (u32, u32),
+    entry: &crate::text::GlyphEntry,
+    color: [f32; 4],
+    gx: f32,
+    gy: f32,
+    gw: f32,
+    gh: f32,
+) {
+    let [x0, y0] = screen_to_ndc(gx, gy, screen_size);
+    let [x1, y1] = screen_to_ndc(gx + gw, gy + gh, screen_size);
+    let v0 = CanvasVertex {
+        position: [x0, y0],
+        color,
+        uv: [entry.u0, entry.v1],
+    };
+    let v1 = CanvasVertex {
+        position: [x1, y0],
+        color,
+        uv: [entry.u1, entry.v1],
+    };
+    let v2 = CanvasVertex {
+        position: [x1, y1],
+        color,
+        uv: [entry.u1, entry.v0],
+    };
+    let v3 = CanvasVertex {
+        position: [x0, y1],
+        color,
+        uv: [entry.u0, entry.v0],
+    };
+    verts.extend_from_slice(&[v0, v2, v1, v0, v3, v2]);
 }
 
 pub fn screen_to_ndc(x: f32, y: f32, screen_size: (u32, u32)) -> [f32; 2] {

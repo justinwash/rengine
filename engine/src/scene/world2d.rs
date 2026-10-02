@@ -1801,12 +1801,13 @@ impl SceneWorld2D {
         let pad_right = prop_f32("ui_pad_right").unwrap_or(0.0);
         let pad_top = prop_f32("ui_pad_top").unwrap_or(0.0);
         let pad_bottom = prop_f32("ui_pad_bottom").unwrap_or(0.0);
-        let gap = prop_f32("ui_gap").unwrap_or(0.0);
+        let mut gap = prop_f32("ui_gap").unwrap_or(0.0);
         let justify = parse_justify(get(parent, "ui_justify").as_deref());
         let align = parse_align(get(parent, "ui_align").as_deref());
+        let squeeze = matches!(get(parent, "ui_squeeze").as_deref(), Some("true" | "1" | "yes"));
 
         let (px, py, pw, ph) = parent_rect;
-        let padded = Rect::new(
+        let mut padded = Rect::new(
             px + pad_left,
             py + pad_bottom,
             (pw - pad_left - pad_right).max(0.0),
@@ -1885,9 +1886,12 @@ impl SceneWorld2D {
         let mut cross: Vec<f32> = Vec::with_capacity(children.len());
         let mut lead: Vec<f32> = Vec::with_capacity(children.len());
         let mut auto_lead: Vec<bool> = Vec::with_capacity(children.len());
+        // `ui_snap` per child: the step a growing child's share is floored to.
+        let mut snap: Vec<Option<f32>> = Vec::with_capacity(children.len());
         for &child in children {
             let Some(child_node) = self.get(child) else {
                 tracks.push(Track::Fixed(0.0));
+                snap.push(None);
                 cross.push(0.0);
                 lead.push(0.0);
                 auto_lead.push(false);
@@ -1974,6 +1978,12 @@ impl SceneWorld2D {
             );
 
             let grow = child_get("ui_grow").and_then(|v| v.trim().parse::<f32>().ok());
+            snap.push(
+                child_get("ui_snap")
+                    .and_then(|v| super::data2d::parse_length(&v, scale))
+                    .filter(|step| *step > 0.0)
+                    .map(|step| step * scale_main),
+            );
             tracks.push(match grow {
                 Some(weight) if weight > 0.0 => Track::Weight(weight),
                 _ => Track::Fixed(
@@ -1991,6 +2001,89 @@ impl SceneWorld2D {
                     .max(0.0)
                     * scale_cross,
             );
+        }
+
+        // `ui_squeeze`: when the children overflow the main axis, the spacing
+        // gives way before anything spills — the leads, the gap and this
+        // container's own padding on that axis, all by one factor (down to
+        // zero), so a page laid out with room to breathe still fits a short
+        // window at a large text size. Content keeps its size: there is no
+        // flex-shrink, and squashing a row of text is not a fix. A layout that
+        // fits is untouched.
+        if squeeze {
+            let (axis, pad_a, pad_b) = if vertical {
+                (ph, pad_top, pad_bottom)
+            } else {
+                (pw, pad_left, pad_right)
+            };
+            let fixed: f32 = tracks
+                .iter()
+                .map(|t| match t {
+                    Track::Fixed(px) => px.max(0.0),
+                    _ => 0.0,
+                })
+                .sum();
+            let leads: f32 = lead.iter().map(|l| l.max(0.0)).sum();
+            let gaps = gap.max(0.0) * children.len().saturating_sub(1) as f32;
+            let spacing = leads + gaps + pad_a.max(0.0) + pad_b.max(0.0);
+            let over = fixed + spacing - axis;
+            if over > 0.0 && spacing > 0.0 {
+                let keep = (1.0 - over / spacing).max(0.0);
+                for l in lead.iter_mut() {
+                    if *l > 0.0 {
+                        *l *= keep;
+                    }
+                }
+                gap = gap.max(0.0) * keep;
+                let (a, b) = (pad_a.max(0.0) * keep, pad_b.max(0.0) * keep);
+                padded = if vertical {
+                    Rect::new(padded.x, py + b, padded.width, (ph - a - b).max(0.0))
+                } else {
+                    Rect::new(px + a, padded.y, (pw - a - b).max(0.0), padded.height)
+                };
+            }
+        }
+
+        // `ui_snap`: a growing child whose share must be a whole number of
+        // steps — a list of fixed-height rows, which would otherwise show the
+        // last one cut in half by its own clip. Its share is worked out as the
+        // flow would hand it out, floored to the step and fixed there; what it
+        // gives up is ordinary slack, which the rest of the flow places as it
+        // places any other (after it, by default).
+        if snap.iter().any(Option::is_some) {
+            let axis = if vertical {
+                padded.height
+            } else {
+                padded.width
+            };
+            let fixed: f32 = tracks
+                .iter()
+                .map(|t| match t {
+                    Track::Fixed(px) => px.max(0.0),
+                    _ => 0.0,
+                })
+                .sum::<f32>()
+                + lead.iter().sum::<f32>()
+                + gap * (children.len().saturating_sub(1)) as f32;
+            let weights: f32 = tracks
+                .iter()
+                .map(|t| match t {
+                    Track::Fixed(_) => 0.0,
+                    Track::Even => 1.0,
+                    Track::Weight(w) => *w,
+                })
+                .sum();
+            let free = (axis - fixed).max(0.0);
+            for (track, step) in tracks.iter_mut().zip(&snap) {
+                let weight = match (*track, step) {
+                    (Track::Even, Some(_)) => 1.0,
+                    (Track::Weight(w), Some(_)) => w,
+                    _ => continue,
+                };
+                let share = free * weight / weights.max(f32::EPSILON);
+                let step = step.expect("matched Some above");
+                *track = Track::Fixed((share / step).floor() * step);
+            }
         }
 
         // --- Pass 2: place --------------------------------------------------
@@ -2636,6 +2729,12 @@ impl SceneWorld2D {
         };
 
         let state = self.interaction_state(handle, inherited);
+        // The UI audit (`canvas/audit.rs`): what this node and its subtree
+        // draw is recorded as theirs. `None`, and free, when auditing is off.
+        let audit_id = canvas.audit_open_node(
+            node.name.as_deref().unwrap_or(""),
+            node.property("ui").as_deref().unwrap_or(""),
+        );
         let (ui_rect, ui_visible) = crate::scene::data2d::draw_ui_node_on_with_bindings(
             canvas,
             parent_ui_rect,
@@ -2696,6 +2795,8 @@ impl SceneWorld2D {
 
         // `display:none` hides the subtree — see `draw_node`'s copy of this.
         if !ui_visible {
+            canvas.audit_node_rect(audit_id, None, false);
+            canvas.audit_close_node(audit_id);
             self.clear_subtree_hit_rects(handle);
             return;
         }
@@ -2708,6 +2809,8 @@ impl SceneWorld2D {
             .property("ui_clip")
             .map(|v| crate::scene::data2d::substitute_bindings(v, effective_bindings));
         let clipped = matches!(clip.as_deref(), Some("true" | "1" | "yes"));
+        let has_ui = node.property("ui").is_some();
+        canvas.audit_node_rect(audit_id, has_ui.then_some(ui_rect), clipped);
         if clipped {
             let (x, y, w, h) = ui_rect;
             canvas.push_clip(x, y, w, h);
@@ -2721,6 +2824,7 @@ impl SceneWorld2D {
         if clipped {
             canvas.pop_clip();
         }
+        canvas.audit_close_node(audit_id);
     }
 
     // --- internal helpers -------------------------------------------------
@@ -4788,6 +4892,57 @@ mod tests {
         let mut canvas = Canvas::new(viewport, std::ptr::null());
         world.draw_to_canvas(&mut canvas, 0.0);
         (world, handles)
+    }
+
+    #[test]
+    fn ui_snap_floors_a_growing_share_to_whole_steps() {
+        // A 100px row: a 20px head, then a list that grows into the rest
+        // (80px) but snaps to 28px steps, so it takes 56 and leaves 24 after.
+        let (world, h) = flow_row(
+            (100, 50),
+            &[],
+            &[
+                ("head", &[("ui_w", "20")]),
+                ("list", &[("ui_grow", "1"), ("ui_snap", "28")]),
+            ],
+        );
+        let list = world.resolved_rect(h[1]).expect("list drawn");
+        assert!((list.width - 56.0).abs() < 1e-3, "list is {}px", list.width);
+        let head = world.resolved_rect(h[0]).expect("head drawn");
+        assert!((list.x - head.right()).abs() < 1e-3, "placed right after the head");
+    }
+
+    #[test]
+    fn ui_squeeze_gives_up_spacing_before_content_overflows() {
+        // A 100px row: 10px padding each side, two 30px children with a 20px
+        // gap and a 10px lead on the second. Content 60 + spacing 50 = 110,
+        // 10 over: the spacing keeps 40/50 of itself, the children their size.
+        let props: &[(&str, &str)] = &[
+            ("ui_squeeze", "true"),
+            ("ui_gap", "20"),
+            ("ui_pad_left", "10"),
+            ("ui_pad_right", "10"),
+        ];
+        let (world, h) = flow_row(
+            (100, 50),
+            props,
+            &[
+                ("a", &[("ui_w", "30")]),
+                ("b", &[("ui_w", "30"), ("ui_lead", "10")]),
+            ],
+        );
+        let (a, b) = (
+            world.resolved_rect(h[0]).expect("a drawn"),
+            world.resolved_rect(h[1]).expect("b drawn"),
+        );
+        assert!((a.width - 30.0).abs() < 1e-3 && (b.width - 30.0).abs() < 1e-3);
+        assert!((a.x - -42.0).abs() < 1e-3, "padding squeezed to 8: a at {}", a.x);
+        assert!((b.right() - 42.0).abs() < 1e-3, "and fits: b ends at {}", b.right());
+
+        // With room to spare, nothing moves.
+        let (world, h) = flow_row((200, 50), props, &[("a", &[("ui_w", "30")])]);
+        let a = world.resolved_rect(h[0]).expect("a drawn");
+        assert!((a.x - -90.0).abs() < 1e-3, "unsqueezed: a at {}", a.x);
     }
 
     #[test]
