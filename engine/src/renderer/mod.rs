@@ -12,7 +12,7 @@ pub use texture::TextureId;
 
 use crate::app::ScaleMode;
 use crate::assets::Color;
-use crate::canvas::{self, Canvas, DrawTexture};
+use crate::canvas::{self, Canvas, DrawTexture, PixelGrid};
 use crate::text;
 use crate::text::FontAtlas;
 
@@ -64,6 +64,9 @@ pub struct Frame {
     /// Every loaded atlas, handed to each `Canvas` so `ui_font` (and any
     /// caller holding a `FontId`) can draw and measure in a non-default face.
     fonts: *const [FontAtlas],
+    /// Where this frame's canvases land in physical pixels; see
+    /// [`set_pixel_grid`](Self::set_pixel_grid).
+    pixel_grid: PixelGrid,
 }
 
 impl Frame {
@@ -77,6 +80,18 @@ impl Frame {
             screen_size: (1, 1),
             atlas: std::ptr::null(),
             fonts: std::ptr::slice_from_raw_parts(std::ptr::null(), 0),
+            pixel_grid: PixelGrid::default(),
+        }
+    }
+
+    /// Where this frame's canvases land in physical pixels, so text is
+    /// rasterised at the size it appears and placed on whole pixels. The run
+    /// loop sets it after [`begin`](Self::begin); a frame that is never told
+    /// (a render target) draws one canvas pixel to one physical pixel.
+    pub(crate) fn set_pixel_grid(&mut self, grid: PixelGrid) {
+        self.pixel_grid = grid;
+        for canvas in &mut self.canvases {
+            canvas.set_pixel_grid(grid);
         }
     }
 
@@ -182,9 +197,13 @@ impl Frame {
         let ss = self.screen_size;
         let a = self.atlas;
         let fonts = self.fonts;
+        let grid = self.pixel_grid;
         if index >= self.canvases.len() {
-            self.canvases
-                .resize_with(index + 1, || Canvas::with_fonts(ss, a, fonts));
+            self.canvases.resize_with(index + 1, || {
+                let mut canvas = Canvas::with_fonts(ss, a, fonts);
+                canvas.set_pixel_grid(grid);
+                canvas
+            });
         }
         &mut self.canvases[index]
     }
@@ -294,7 +313,7 @@ pub(crate) struct Renderer {
     pub(crate) white_texture: TextureId,
     render_targets: Vec<TextureId>,
 
-    canvas_pipeline: wgpu::RenderPipeline,
+    canvas_pipeline: canvas::CanvasPipelines,
     canvas_vb: wgpu::Buffer,
     canvas_vb_capacity: usize,
     pub(crate) fonts: Vec<text::FontAtlas>,
@@ -1405,6 +1424,21 @@ impl Renderer {
     /// The fixed-canvas size and active scale mode, when a render resolution is
     /// configured. `None` means the game renders straight to the window and
     /// window space already is canvas space.
+    /// Where a canvas `logical` pixels across lands on the window: the same
+    /// rect [`encode_frame_to_view`](Self::encode_frame_to_view) gives the
+    /// canvas pass, divided by the canvas size.
+    pub(crate) fn canvas_pixel_grid(&self, logical: (u32, u32)) -> PixelGrid {
+        let (w, h) = (self.surface_config.width, self.surface_config.height);
+        let (vx, vy, vw, vh) = match self.offscreen.as_ref() {
+            Some(ofs) => blit_viewport(ofs.scale_mode.get(), ofs.width, ofs.height, w, h),
+            None => (0.0, 0.0, w as f32, h as f32),
+        };
+        PixelGrid {
+            ratio: (vw / logical.0.max(1) as f32, vh / logical.1.max(1) as f32),
+            origin: (vx, vy),
+        }
+    }
+
     pub fn offscreen_info(&self) -> Option<(u32, u32, ScaleMode)> {
         self.offscreen
             .as_ref()

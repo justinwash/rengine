@@ -1821,6 +1821,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
                 engine.font_atlas(),
                 engine.fonts(),
             );
+            headless_frame.set_pixel_grid(engine.renderer.canvas_pixel_grid(engine.game_size()));
             game.update(&engine, &mut headless_frame);
             game.render(&engine, &mut headless_frame);
             if let Some(shot_path) = shot {
@@ -1963,6 +1964,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
                         game.fixed_update(&engine);
                     }
                     frame.begin_with_fonts(engine.game_size(), engine.font_atlas(), engine.fonts());
+                    frame.set_pixel_grid(engine.renderer.canvas_pixel_grid(engine.game_size()));
                     game.update(&engine, &mut frame);
 
                     if game.should_exit() {
@@ -2094,6 +2096,7 @@ where
             }
 
             frame.begin_with_fonts(engine.game_size(), engine.font_atlas(), engine.fonts());
+            frame.set_pixel_grid(engine.renderer.canvas_pixel_grid(engine.game_size()));
             let op = if let Some(scene) = stack.last_mut() {
                 scene.update(&engine, &mut globals, &mut frame)
             } else {
@@ -2206,6 +2209,7 @@ where
                     }
 
                     frame.begin_with_fonts(engine.game_size(), engine.font_atlas(), engine.fonts());
+                    frame.set_pixel_grid(engine.renderer.canvas_pixel_grid(engine.game_size()));
 
                     if transition.is_none() {
                         let op = if let Some(scene) = stack.last_mut() {

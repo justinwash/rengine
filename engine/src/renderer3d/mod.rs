@@ -203,7 +203,7 @@ pub(crate) struct Renderer3D {
     pub(crate) white_texture: TextureId,
     meshes: Vec<GpuMesh>,
 
-    canvas_pipeline: wgpu::RenderPipeline,
+    canvas_pipeline: canvas::CanvasPipelines,
     canvas_vb: wgpu::Buffer,
     canvas_vb_capacity: usize,
     pub(crate) fonts: Vec<text::FontAtlas>,

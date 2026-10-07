@@ -110,9 +110,107 @@ pub struct Canvas {
     /// this: a wrap width stays where the author put it, so larger text wraps
     /// sooner rather than the paragraph growing sideways off the panel.
     text_scale: f32,
+    /// Where this canvas's coordinates land in physical pixels, so a smooth
+    /// face is rasterised at the size it appears and placed on whole pixels.
+    pixel_grid: PixelGrid,
     /// What this canvas drew this frame, when `RENGINE_UI_AUDIT` is set
     /// (`audit.rs`). `None` otherwise, and every hook is one branch on it.
     audit: Option<Box<UiAudit>>,
+}
+
+/// How a canvas maps onto the physical pixels it is presented on: physical
+/// `x = origin.0 + (canvas_x + width / 2) * ratio.0`, and the same for `y`
+/// measured down from the top. A HiDPI window or a fixed canvas scaled into a
+/// letterbox has a ratio other than 1, and a letterbox an offset.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct PixelGrid {
+    pub(crate) ratio: (f32, f32),
+    pub(crate) origin: (f32, f32),
+}
+
+impl Default for PixelGrid {
+    fn default() -> Self {
+        Self {
+            ratio: (1.0, 1.0),
+            origin: (0.0, 0.0),
+        }
+    }
+}
+
+impl PixelGrid {
+    /// `x` (canvas space) moved to the nearest physical pixel edge.
+    fn snap_x(&self, x: f32, screen: (u32, u32)) -> f32 {
+        let half = screen.0 as f32 / 2.0;
+        let (r, o) = (self.ratio.0, self.origin.0);
+        ((o + (x + half) * r).round() - o) / r - half
+    }
+
+    /// `y` (canvas space, y-up) moved to the nearest physical pixel edge.
+    fn snap_y(&self, y: f32, screen: (u32, u32)) -> f32 {
+        let half = screen.1 as f32 / 2.0;
+        let (r, o) = (self.ratio.1, self.origin.1);
+        half - ((o + (half - y) * r).round() - o) / r
+    }
+}
+
+/// What one glyph of a run draws.
+enum PlacedGlyph {
+    /// A quad `[x, y, w, h]` (bottom-left, canvas space) sampling the entry.
+    Quad(crate::text::GlyphEntry, [f32; 4]),
+    /// An advance and no ink: a space.
+    Blank,
+    /// Ink that could not be drawn this frame: the glyph cache is full.
+    Missing,
+}
+
+/// Where the glyph `ch` (whose metrics are `entry`) lands, with its pen at
+/// `pen_x` on `baseline`, in a run of `atlas` at `size` (`scale` is
+/// `atlas.scale(size)`).
+///
+/// A pixel face draws its own atlas entry scaled, on whole canvas pixels. A
+/// smooth face draws the glyph rasterised at the physical size it appears,
+/// pen and baseline snapped to physical pixels, so every texel lands on one
+/// pixel. Only the ink moves: the caller advances the pen by the
+/// [`FONT_SIZE`](crate::text::FONT_SIZE) metrics either way, so a run draws
+/// exactly as wide as it measures.
+#[allow(clippy::too_many_arguments)]
+fn place_glyph(
+    atlas: &FontAtlas,
+    grid: PixelGrid,
+    screen: (u32, u32),
+    ch: char,
+    entry: crate::text::GlyphEntry,
+    pen_x: f32,
+    baseline: f32,
+    size: f32,
+    scale: f32,
+) -> PlacedGlyph {
+    if entry.width_px <= 0.0 {
+        return PlacedGlyph::Blank;
+    }
+    if atlas.is_pixel() {
+        // A pixel face lands on whole pixels, so a font pixel is never split
+        // across two screen pixels.
+        let gx = (pen_x + entry.x_offset * scale).round();
+        let gy = (baseline + entry.y_offset * scale).round();
+        return PlacedGlyph::Quad(entry, [gx, gy, entry.width_px * scale, entry.height_px * scale]);
+    }
+    let Some(sized) = atlas.sized_glyph(ch, size * grid.ratio.1) else {
+        return PlacedGlyph::Missing;
+    };
+    if sized.width_px <= 0.0 {
+        return PlacedGlyph::Blank;
+    }
+    let (rx, ry) = grid.ratio;
+    PlacedGlyph::Quad(
+        sized,
+        [
+            grid.snap_x(pen_x, screen) + sized.x_offset / rx,
+            grid.snap_y(baseline, screen) + sized.y_offset / ry,
+            sized.width_px / rx,
+            sized.height_px / ry,
+        ],
+    )
 }
 
 impl Canvas {
@@ -136,8 +234,16 @@ impl Canvas {
             fonts,
             tracking: 0.0,
             text_scale: 1.0,
+            pixel_grid: PixelGrid::default(),
             audit: node_records_enabled().then(Box::default),
         }
+    }
+
+    /// Where this canvas lands in physical pixels. The frame sets it from the
+    /// window; a canvas that never hears otherwise assumes one canvas pixel
+    /// is one physical pixel.
+    pub(crate) fn set_pixel_grid(&mut self, grid: PixelGrid) {
+        self.pixel_grid = grid;
     }
 
     /// This frame's UI audit, when `RENGINE_UI_AUDIT` is set.
@@ -938,8 +1044,10 @@ impl Canvas {
         self.set_font(atlas.id().0);
         let size = size * self.text_scale;
         let scale = atlas.scale(size);
-        let snap = atlas.is_pixel();
         let c = color.to_array();
+        // `y` is the line box's top; a glyph's `y_offset` is its bottom
+        // relative to the baseline, so it only means anything measured from
+        // one. Mixing the two origins is why text once drew outside its node.
         let baseline = atlas.baseline_below_top(y, size);
         let mut cursor_x = x;
         let auditing = self.audit.is_some();
@@ -947,32 +1055,23 @@ impl Canvas {
         let mut dropped = 0;
         let tracking = self.tracking;
         let screen_size = self.screen_size;
+        let grid = self.pixel_grid;
         let verts = &mut self.verts;
 
         for ch in text.chars() {
-            let drew = atlas.each_glyph(ch, |entry| {
-                if entry.width_px > 0.0 {
-                    let gx = cursor_x + entry.x_offset * scale;
-                    // `entry.y_offset` is `ymin` — the glyph's bottom relative
-                    // to the **baseline** — so it only means anything measured
-                    // from a baseline. Previously this subtracted it from
-                    // `line_height` (the tallest glyph's ink height at the time)
-                    // against a `y` that callers passed as a rect edge: three
-                    // different origins in one expression, which is why text
-                    // drew outside its own node.
-                    let gy = baseline + entry.y_offset * scale;
-                    let gw = entry.width_px * scale;
-                    let gh = entry.height_px * scale;
-                    // A pixel face lands on whole pixels, so a font pixel is
-                    // never split across two screen pixels.
-                    let (gx, gy) = match snap {
-                        true => (gx.round(), gy.round()),
-                        false => (gx, gy),
-                    };
-                    if auditing {
-                        ink.add(gx, gy, gw, gh);
+            let drew = atlas.each_glyph(ch, |glyph, entry| {
+                let placed = place_glyph(
+                    atlas, grid, screen_size, glyph, entry, cursor_x, baseline, size, scale,
+                );
+                match placed {
+                    PlacedGlyph::Quad(entry, [gx, gy, gw, gh]) => {
+                        if auditing {
+                            ink.add(gx, gy, gw, gh);
+                        }
+                        push_glyph_quad(verts, screen_size, &entry, c, gx, gy, gw, gh);
                     }
-                    push_glyph_quad(verts, screen_size, &entry, c, gx, gy, gw, gh);
+                    PlacedGlyph::Blank => {}
+                    PlacedGlyph::Missing => dropped += 1,
                 }
                 cursor_x += entry.advance * scale + tracking;
             });
@@ -1050,7 +1149,6 @@ impl Canvas {
         self.set_font(atlas.id().0);
         let size = size * self.text_scale;
         let scale = atlas.scale(size);
-        let snap = atlas.is_pixel();
         let tracking = self.tracking;
         // `y` is the line box's top, as in `text_with_font`.
         let baseline = atlas.baseline_below_top(y, size);
@@ -1059,25 +1157,25 @@ impl Canvas {
         let mut ink = InkBox::default();
         let mut dropped = 0;
         let screen_size = self.screen_size;
+        let grid = self.pixel_grid;
         let verts = &mut self.verts;
 
         for &(span_text, span_color) in spans {
             let c = span_color.to_array();
             for ch in span_text.chars() {
-                let drew = atlas.each_glyph(ch, |entry| {
-                    if entry.width_px > 0.0 {
-                        let gx = cursor_x + entry.x_offset * scale;
-                        let gy = baseline + entry.y_offset * scale;
-                        let gw = entry.width_px * scale;
-                        let gh = entry.height_px * scale;
-                        let (gx, gy) = match snap {
-                            true => (gx.round(), gy.round()),
-                            false => (gx, gy),
-                        };
-                        if auditing {
-                            ink.add(gx, gy, gw, gh);
+                let drew = atlas.each_glyph(ch, |glyph, entry| {
+                    let placed = place_glyph(
+                        atlas, grid, screen_size, glyph, entry, cursor_x, baseline, size, scale,
+                    );
+                    match placed {
+                        PlacedGlyph::Quad(entry, [gx, gy, gw, gh]) => {
+                            if auditing {
+                                ink.add(gx, gy, gw, gh);
+                            }
+                            push_glyph_quad(verts, screen_size, &entry, c, gx, gy, gw, gh);
                         }
-                        push_glyph_quad(verts, screen_size, &entry, c, gx, gy, gw, gh);
+                        PlacedGlyph::Blank => {}
+                        PlacedGlyph::Missing => dropped += 1,
                     }
                     cursor_x += entry.advance * scale + tracking;
                 });
@@ -1575,10 +1673,31 @@ pub(crate) fn draw_fps(canvas: &mut Canvas, fps: f32) {
     );
 }
 
+/// The canvas's two pipelines, identical but for the fragment stage: one for
+/// font atlases (glyphs and solid fills), which corrects glyph coverage for
+/// linear blending (`fs_text` in `canvas.wgsl`), and one for images, whose
+/// alpha is the image's own and is left alone.
+pub(crate) struct CanvasPipelines {
+    text: wgpu::RenderPipeline,
+    image: wgpu::RenderPipeline,
+}
+
 pub(crate) fn pipeline(
     device: &wgpu::Device,
     surface_format: wgpu::TextureFormat,
     font_bgl: &wgpu::BindGroupLayout,
+) -> CanvasPipelines {
+    CanvasPipelines {
+        text: build_pipeline(device, surface_format, font_bgl, "fs_text"),
+        image: build_pipeline(device, surface_format, font_bgl, "fs_main"),
+    }
+}
+
+fn build_pipeline(
+    device: &wgpu::Device,
+    surface_format: wgpu::TextureFormat,
+    font_bgl: &wgpu::BindGroupLayout,
+    fragment: &'static str,
 ) -> wgpu::RenderPipeline {
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("canvas_shader"),
@@ -1602,7 +1721,7 @@ pub(crate) fn pipeline(
         },
         fragment: Some(wgpu::FragmentState {
             module: &shader,
-            entry_point: Some("fs_main"),
+            entry_point: Some(fragment),
             targets: &[Some(wgpu::ColorTargetState {
                 format: surface_format,
                 blend: Some(wgpu::BlendState::ALPHA_BLENDING),
@@ -1655,7 +1774,7 @@ pub(crate) fn render_pass<'a, F>(
     device: &wgpu::Device,
     encoder: &mut wgpu::CommandEncoder,
     view: &wgpu::TextureView,
-    pipeline: &wgpu::RenderPipeline,
+    pipelines: &CanvasPipelines,
     vertex_buffer: &mut wgpu::Buffer,
     vertex_capacity: &mut usize,
     queue: &wgpu::Queue,
@@ -1671,6 +1790,11 @@ pub(crate) fn render_pass<'a, F>(
 {
     for canvas in canvases.iter_mut() {
         canvas.finalize();
+    }
+    // Glyphs rasterised while this frame's text was laid out, before any quad
+    // that samples them is drawn.
+    for atlas in fonts {
+        atlas.flush(queue);
     }
 
     let verts: Vec<CanvasVertex> = canvases
@@ -1717,7 +1841,7 @@ pub(crate) fn render_pass<'a, F>(
         occlusion_query_set: None,
         multiview_mask: None,
     });
-    pass.set_pipeline(pipeline);
+    pass.set_pipeline(&pipelines.text);
     if let Some((vx, vy, vw, vh)) = viewport {
         if vw > 0.0 && vh > 0.0 {
             pass.set_viewport(vx, vy, vw, vh, 0.0, 1.0);
@@ -1743,11 +1867,13 @@ pub(crate) fn render_pass<'a, F>(
             if *texture != bound_texture {
                 match *texture {
                     DrawTexture::Font(font_id) => {
+                        pass.set_pipeline(&pipelines.text);
                         if let Some(atlas) = fonts.get(font_id) {
                             pass.set_bind_group(0, &atlas.bind_group, &[]);
                         }
                     }
                     DrawTexture::Texture(texture_id) => {
+                        pass.set_pipeline(&pipelines.image);
                         if let Some(bind_group) = texture_bind_group(texture_id) {
                             pass.set_bind_group(0, bind_group, &[]);
                         }
