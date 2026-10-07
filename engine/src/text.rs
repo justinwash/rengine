@@ -194,6 +194,13 @@ pub struct FontAtlas {
     /// Distance from the baseline up to the line box's top, at [`FONT_SIZE`].
     /// Positive. This is what turns a rect into a baseline.
     pub(crate) ascent: f32,
+    /// The size the glyphs were rasterised at: [`FONT_SIZE`] for a smooth
+    /// face, the native grid for a pixel one. Every metric above is at this
+    /// size, and `size / raster_size` is the scale any other size draws at.
+    pub(crate) raster_size: f32,
+    /// A pixel face (`FontRaster::Pixel`): nearest-sampled, drawn on whole
+    /// pixels.
+    pub(crate) pixel: bool,
     pub(crate) id: FontId,
 }
 
@@ -206,8 +213,18 @@ impl FontAtlas {
         self.white_uv
     }
 
+    /// The scale a run at `size` draws this face's glyphs at.
+    pub(crate) fn scale(&self, size: f32) -> f32 {
+        size / self.raster_size
+    }
+
+    /// Whether this is a pixel face (`FontRaster::Pixel`).
+    pub fn is_pixel(&self) -> bool {
+        self.pixel
+    }
+
     pub fn measure_text(&self, text: &str, size: f32) -> (f32, f32) {
-        let scale = size / FONT_SIZE;
+        let scale = self.scale(size);
         let mut width: f32 = 0.0;
         for ch in text.chars() {
             self.each_glyph(ch, |e| width += e.advance * scale);
@@ -249,7 +266,7 @@ impl FontAtlas {
     }
 
     pub fn line_height(&self, size: f32) -> f32 {
-        self.line_height * (size / FONT_SIZE)
+        self.line_height * self.scale(size)
     }
 
     /// Where the baseline sits inside a line box whose **top** is at `top`
@@ -259,7 +276,7 @@ impl FontAtlas {
     /// through it, so a node's ink lands inside the rect the layout gave it
     /// by construction rather than by each call site guessing.
     pub fn baseline_below_top(&self, top: f32, size: f32) -> f32 {
-        top - self.ascent * (size / FONT_SIZE)
+        top - self.ascent * self.scale(size)
     }
 }
 
@@ -299,8 +316,35 @@ pub fn font_atlas(
         bind_group_layout,
         font_bytes,
         FontId::DEFAULT,
+        FontRaster::Smooth,
     )
 }
+
+/// How a face is rasterised into its atlas.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum FontRaster {
+    /// An outline face, rasterised once at [`FONT_SIZE`] and drawn at any size
+    /// through a mipmapped, trilinear-filtered atlas. Without the mips a 48px
+    /// atlas drawn at 8-14px sampled a few texels out of every 3x3 to 6x6
+    /// block, so thin strokes dropped out and 2 read as 8 (a 2026-10-06
+    /// playtest finding).
+    Smooth,
+    /// A pixel face, drawn on its own grid: rasterised at the size where one
+    /// font pixel is one texel (`native_px`), and sampled nearest-neighbour so
+    /// every font pixel stays a solid block at any size from `native_px` up.
+    /// Silkscreen's grid is 125 units on a 1000 em, so its `native_px` is 8.
+    Pixel { native_px: f32 },
+}
+
+/// The space between glyphs in a smooth atlas, and the grid each glyph's
+/// corner is aligned to: enough that the mip levels text is drawn from (down
+/// to 1/8 scale) never average a neighbour's edge into a glyph.
+const SMOOTH_GLYPH_PAD: u32 = 8;
+/// A smooth atlas's mip chain stops at 1/16 scale.
+const SMOOTH_MIP_LEVELS: u32 = 5;
+/// The opaque block in the atlas's corner that solid fills sample. Big enough
+/// to stay white at every mip level.
+const WHITE_BLOCK: u32 = 8;
 
 pub(crate) fn build_atlas_from_bytes(
     device: &wgpu::Device,
@@ -308,45 +352,74 @@ pub(crate) fn build_atlas_from_bytes(
     bind_group_layout: &wgpu::BindGroupLayout,
     font_bytes: &[u8],
     id: FontId,
+    raster: FontRaster,
 ) -> FontAtlas {
     let font = fontdue::Font::from_bytes(font_bytes, fontdue::FontSettings::default())
         .expect("failed to parse font");
-
-    let mut pixels = vec![0u8; (ATLAS_SIZE * ATLAS_SIZE * 4) as usize];
-
-    for y in 0..2u32 {
-        for x in 0..2u32 {
-            let offset = ((y * ATLAS_SIZE + x) * 4) as usize;
-            pixels[offset] = 255;
-            pixels[offset + 1] = 255;
-            pixels[offset + 2] = 255;
-            pixels[offset + 3] = 255;
+    // A glyph set that does not fit the default atlas tries a larger one
+    // rather than dropping characters.
+    for size in [ATLAS_SIZE, ATLAS_SIZE * 2] {
+        if let Some(atlas) =
+            try_build_atlas(device, queue, bind_group_layout, &font, id, raster, size)
+        {
+            return atlas;
         }
     }
-    let white_uv = [1.0 / ATLAS_SIZE as f32, 1.0 / ATLAS_SIZE as f32];
+    panic!("font glyphs do not fit a {}px atlas", ATLAS_SIZE * 2);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn try_build_atlas(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    bind_group_layout: &wgpu::BindGroupLayout,
+    font: &fontdue::Font,
+    id: FontId,
+    raster: FontRaster,
+    atlas_size: u32,
+) -> Option<FontAtlas> {
+    let (raster_size, pixel) = match raster {
+        FontRaster::Smooth => (FONT_SIZE, false),
+        FontRaster::Pixel { native_px } => (native_px, true),
+    };
+    let (pad, align) = match pixel {
+        true => (1, 1),
+        false => (SMOOTH_GLYPH_PAD, SMOOTH_GLYPH_PAD),
+    };
+    let mut pixels = vec![0u8; (atlas_size * atlas_size * 4) as usize];
+
+    for y in 0..WHITE_BLOCK {
+        for x in 0..WHITE_BLOCK {
+            let offset = ((y * atlas_size + x) * 4) as usize;
+            pixels[offset..offset + 4].copy_from_slice(&[255, 255, 255, 255]);
+        }
+    }
+    let white_uv = [1.0 / atlas_size as f32, 1.0 / atlas_size as f32];
 
     let mut glyphs: [Option<GlyphEntry>; 128] = [None; 128];
     let mut extended = std::collections::HashMap::new();
 
-    let mut cursor_x: u32 = 4;
+    let mut cursor_x: u32 = WHITE_BLOCK + pad;
     let mut cursor_y: u32 = 0;
     let mut row_height: u32 = 0;
+    let round_up = |v: u32| v.div_ceil(align) * align;
 
     // The font's own vertical metrics, not the tallest glyph's ink box. A
     // line box is `ascent - descent + line_gap` — the same number a browser
     // uses for `line-height: normal`, which is what the mockups are laid out
     // against. Measuring ink instead made every rect shorter than a real
     // line and left the baseline undefined.
-    let (ascent, line_height) = match font.horizontal_line_metrics(FONT_SIZE) {
+    let (ascent, line_height) = match font.horizontal_line_metrics(raster_size) {
         Some(m) => (m.ascent, m.new_line_size),
         // No hhea/OS2 table: fall back to the em box, which is at least
         // self-consistent (baseline at 80% is the usual default).
-        None => (FONT_SIZE * 0.8, FONT_SIZE),
+        None => (raster_size * 0.8, raster_size),
     };
 
+    let mut full = false;
     // Rasterize one character into the atlas. `None` when the atlas is full.
     let mut pack = |ch: char| -> Option<GlyphEntry> {
-        let (metrics, bitmap) = font.rasterize(ch, FONT_SIZE);
+        let (metrics, bitmap) = font.rasterize(ch, raster_size);
         if metrics.width == 0 || metrics.height == 0 {
             // A space: an advance and no ink.
             return (metrics.advance_width > 0.0).then_some(GlyphEntry {
@@ -365,32 +438,36 @@ pub(crate) fn build_atlas_from_bytes(
         let gw = metrics.width as u32;
         let gh = metrics.height as u32;
 
-        if cursor_x + gw + 1 > ATLAS_SIZE {
+        if cursor_x + gw + pad > atlas_size {
             cursor_x = 0;
-            cursor_y += row_height + 1;
+            cursor_y = round_up(cursor_y + row_height + pad);
             row_height = 0;
         }
 
-        if cursor_y + gh > ATLAS_SIZE {
+        if cursor_y + gh > atlas_size {
+            full = true;
             return None;
         }
 
         for gy in 0..gh {
             for gx in 0..gw {
                 let src = (gy * gw + gx) as usize;
-                let dst = (((cursor_y + gy) * ATLAS_SIZE + cursor_x + gx) * 4) as usize;
-                pixels[dst] = 255;
-                pixels[dst + 1] = 255;
-                pixels[dst + 2] = 255;
-                pixels[dst + 3] = bitmap[src];
+                let dst = (((cursor_y + gy) * atlas_size + cursor_x + gx) * 4) as usize;
+                // A pixel face's coverage on its own grid is all-or-nothing;
+                // the threshold cleans up any edge the rasteriser half-lit.
+                let a = match pixel {
+                    true => if bitmap[src] >= 128 { 255 } else { 0 },
+                    false => bitmap[src],
+                };
+                pixels[dst..dst + 4].copy_from_slice(&[255, 255, 255, a]);
             }
         }
 
         let entry = GlyphEntry {
-            u0: cursor_x as f32 / ATLAS_SIZE as f32,
-            v0: cursor_y as f32 / ATLAS_SIZE as f32,
-            u1: (cursor_x + gw) as f32 / ATLAS_SIZE as f32,
-            v1: (cursor_y + gh) as f32 / ATLAS_SIZE as f32,
+            u0: cursor_x as f32 / atlas_size as f32,
+            v0: cursor_y as f32 / atlas_size as f32,
+            u1: (cursor_x + gw) as f32 / atlas_size as f32,
+            v1: (cursor_y + gh) as f32 / atlas_size as f32,
             width_px: gw as f32,
             height_px: gh as f32,
             x_offset: metrics.xmin as f32,
@@ -398,7 +475,7 @@ pub(crate) fn build_atlas_from_bytes(
             advance: metrics.advance_width,
         };
 
-        cursor_x += gw + 1;
+        cursor_x = round_up(cursor_x + gw + pad);
         row_height = row_height.max(gh);
         Some(entry)
     };
@@ -416,15 +493,22 @@ pub(crate) fn build_atlas_from_bytes(
             }
         }
     }
+    if full {
+        return None;
+    }
 
+    let mip_level_count = match pixel {
+        true => 1,
+        false => SMOOTH_MIP_LEVELS,
+    };
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("font_atlas"),
         size: wgpu::Extent3d {
-            width: ATLAS_SIZE,
-            height: ATLAS_SIZE,
+            width: atlas_size,
+            height: atlas_size,
             depth_or_array_layers: 1,
         },
-        mip_level_count: 1,
+        mip_level_count,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: wgpu::TextureFormat::Rgba8UnormSrgb,
@@ -432,31 +516,60 @@ pub(crate) fn build_atlas_from_bytes(
         view_formats: &[],
     });
 
-    queue.write_texture(
-        wgpu::TexelCopyTextureInfo {
-            texture: &texture,
-            mip_level: 0,
-            origin: wgpu::Origin3d::ZERO,
-            aspect: wgpu::TextureAspect::All,
-        },
-        &pixels,
-        wgpu::TexelCopyBufferLayout {
-            offset: 0,
-            bytes_per_row: Some(ATLAS_SIZE * 4),
-            rows_per_image: Some(ATLAS_SIZE),
-        },
-        wgpu::Extent3d {
-            width: ATLAS_SIZE,
-            height: ATLAS_SIZE,
-            depth_or_array_layers: 1,
-        },
-    );
+    // Level 0, then each level a 2x2 box average of the one above. Colour is
+    // white throughout, so only coverage is averaged.
+    let mut level = pixels;
+    let mut level_size = atlas_size;
+    for mip in 0..mip_level_count {
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: mip,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &level,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(level_size * 4),
+                rows_per_image: Some(level_size),
+            },
+            wgpu::Extent3d {
+                width: level_size,
+                height: level_size,
+                depth_or_array_layers: 1,
+            },
+        );
+        if mip + 1 < mip_level_count {
+            let next = level_size / 2;
+            let mut down = vec![0u8; (next * next * 4) as usize];
+            for y in 0..next {
+                for x in 0..next {
+                    let a = |dx: u32, dy: u32| {
+                        level[(((y * 2 + dy) * level_size + x * 2 + dx) * 4 + 3) as usize] as u32
+                    };
+                    let avg = ((a(0, 0) + a(1, 0) + a(0, 1) + a(1, 1) + 2) / 4) as u8;
+                    let o = ((y * next + x) * 4) as usize;
+                    down[o..o + 4].copy_from_slice(&[255, 255, 255, avg]);
+                }
+            }
+            level = down;
+            level_size = next;
+        }
+    }
 
     let view = texture.create_view(&Default::default());
     let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
         label: Some("font_sampler"),
-        mag_filter: wgpu::FilterMode::Linear,
-        min_filter: wgpu::FilterMode::Linear,
+        mag_filter: match pixel {
+            true => wgpu::FilterMode::Nearest,
+            false => wgpu::FilterMode::Linear,
+        },
+        min_filter: match pixel {
+            true => wgpu::FilterMode::Nearest,
+            false => wgpu::FilterMode::Linear,
+        },
+        mipmap_filter: wgpu::MipmapFilterMode::Linear,
         ..Default::default()
     });
 
@@ -475,15 +588,17 @@ pub(crate) fn build_atlas_from_bytes(
         ],
     });
 
-    FontAtlas {
+    Some(FontAtlas {
         bind_group,
         glyphs,
         extended,
         white_uv,
         line_height,
         ascent,
+        raster_size,
+        pixel,
         id,
-    }
+    })
 }
 
 #[cfg(test)]

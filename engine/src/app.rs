@@ -1339,6 +1339,22 @@ impl Engine {
             .map(|font| font.id)
     }
 
+    /// Load a pixel face (`text::FontRaster::Pixel`): rasterised on its own
+    /// `native_px` grid and drawn nearest-neighbour, so its pixels stay solid
+    /// blocks instead of being resampled from a large outline raster.
+    pub fn load_pixel_font<P: AsRef<Path>>(
+        &mut self,
+        path: P,
+        native_px: f32,
+    ) -> Result<text::FontId, AssetError> {
+        self.assets
+            .load_font(path, |font_bytes| {
+                self.renderer
+                    .load_font_with(font_bytes, text::FontRaster::Pixel { native_px })
+            })
+            .map(|font| font.id)
+    }
+
     pub fn font(&self, id: text::FontId) -> &text::FontAtlas {
         &self.renderer.fonts[id.0]
     }
@@ -2497,6 +2513,22 @@ impl Engine3D {
     pub fn load_font<P: AsRef<Path>>(&mut self, path: P) -> Result<text::FontId, AssetError> {
         self.assets
             .load_font(path, |font_bytes| self.renderer.load_font(font_bytes))
+            .map(|font| font.id)
+    }
+
+    /// Load a pixel face (`text::FontRaster::Pixel`): rasterised on its own
+    /// `native_px` grid and drawn nearest-neighbour, so its pixels stay solid
+    /// blocks instead of being resampled from a large outline raster.
+    pub fn load_pixel_font<P: AsRef<Path>>(
+        &mut self,
+        path: P,
+        native_px: f32,
+    ) -> Result<text::FontId, AssetError> {
+        self.assets
+            .load_font(path, |font_bytes| {
+                self.renderer
+                    .load_font_with(font_bytes, text::FontRaster::Pixel { native_px })
+            })
             .map(|font| font.id)
     }
 

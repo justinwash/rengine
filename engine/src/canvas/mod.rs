@@ -1,6 +1,6 @@
 use crate::assets::Color;
 use crate::renderer::TextureId;
-use crate::text::{FontAtlas, FontId, ATLAS_SIZE, FONT_SIZE};
+use crate::text::{FontAtlas, FontId, ATLAS_SIZE};
 
 mod audit;
 mod audit_check;
@@ -937,7 +937,8 @@ impl Canvas {
     ) {
         self.set_font(atlas.id().0);
         let size = size * self.text_scale;
-        let scale = size / FONT_SIZE;
+        let scale = atlas.scale(size);
+        let snap = atlas.is_pixel();
         let c = color.to_array();
         let baseline = atlas.baseline_below_top(y, size);
         let mut cursor_x = x;
@@ -962,6 +963,12 @@ impl Canvas {
                     let gy = baseline + entry.y_offset * scale;
                     let gw = entry.width_px * scale;
                     let gh = entry.height_px * scale;
+                    // A pixel face lands on whole pixels, so a font pixel is
+                    // never split across two screen pixels.
+                    let (gx, gy) = match snap {
+                        true => (gx.round(), gy.round()),
+                        false => (gx, gy),
+                    };
                     if auditing {
                         ink.add(gx, gy, gw, gh);
                     }
@@ -1042,7 +1049,8 @@ impl Canvas {
     ) {
         self.set_font(atlas.id().0);
         let size = size * self.text_scale;
-        let scale = size / FONT_SIZE;
+        let scale = atlas.scale(size);
+        let snap = atlas.is_pixel();
         let tracking = self.tracking;
         // `y` is the line box's top, as in `text_with_font`.
         let baseline = atlas.baseline_below_top(y, size);
@@ -1062,6 +1070,10 @@ impl Canvas {
                         let gy = baseline + entry.y_offset * scale;
                         let gw = entry.width_px * scale;
                         let gh = entry.height_px * scale;
+                        let (gx, gy) = match snap {
+                            true => (gx.round(), gy.round()),
+                            false => (gx, gy),
+                        };
                         if auditing {
                             ink.add(gx, gy, gw, gh);
                         }

@@ -70,6 +70,7 @@ pub use scene::{
 pub use signal::{Signal, Subscription};
 pub use text::FontAtlas;
 pub use text::FontId;
+pub use text::FontRaster;
 pub use ui::{
     TooltipAnimation, TooltipExpandTrigger, TooltipOptions, TooltipPlacement, Ui, UiAnimation,
     UiAnimationOptions, UiContainerAnimation, UiContainerAnimationOptions, UiResponse, UiStyle,
