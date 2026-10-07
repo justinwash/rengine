@@ -214,8 +214,18 @@ impl FontAtlas {
     }
 
     /// The scale a run at `size` draws this face's glyphs at.
+    ///
+    /// A pixel face never goes below 1:1. Under its own grid, nearest
+    /// sampling drops whole rows and columns of its pixels: Silkscreen at 7px
+    /// loses one in eight, and "PUSH PACE" read "FUSH FHLE". Measuring goes
+    /// through here too, so a run laid out at 7px is laid out at the 8px it
+    /// draws at.
     pub(crate) fn scale(&self, size: f32) -> f32 {
-        size / self.raster_size
+        let scale = size / self.raster_size;
+        match self.pixel {
+            true => scale.max(1.0),
+            false => scale,
+        }
     }
 
     /// Whether this is a pixel face (`FontRaster::Pixel`).
