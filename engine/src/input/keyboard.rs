@@ -164,6 +164,12 @@ impl InputState {
         self.handle_mouse_button(button, ElementState::Released);
     }
 
+    /// Inject a synthetic mouse-wheel turn for this frame, in the same units
+    /// [`InputState::scroll_delta`] reports (lines; positive `dy` is up).
+    pub fn inject_scroll(&mut self, dx: f32, dy: f32) {
+        self.handle_scroll(dx, dy);
+    }
+
     pub(crate) fn handle_key_event(&mut self, key: KeyCode, state: ElementState) {
         match state {
             ElementState::Pressed => {

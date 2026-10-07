@@ -36,6 +36,17 @@ pub fn audit_enabled() -> bool {
     })
 }
 
+/// Whether canvases keep their records at all: under the audit, and under a
+/// play script, whose `click @node` lines find their target in the previous
+/// frame's node rects. A play script alone records but writes nothing; only
+/// the audit writes `.audit.jsonl` beside a capture.
+pub fn node_records_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        audit_enabled() || std::env::var_os("RENGINE_PLAY_SCRIPT").is_some()
+    })
+}
+
 /// Whether `RENGINE_UI_AUDIT=check`: a capture then also prints what does not
 /// fit to stderr (`audit_check.rs`), which is how a test harness that wants an
 /// empty stderr turns every capture into a fit check.

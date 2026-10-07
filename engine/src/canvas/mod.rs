@@ -5,7 +5,8 @@ use crate::text::{FontAtlas, FontId, ATLAS_SIZE, FONT_SIZE};
 mod audit;
 mod audit_check;
 pub use audit::{
-    audit_check_mode, audit_enabled, audit_path_for, write_audit, AuditRecord, UiAudit,
+    audit_check_mode, audit_enabled, audit_path_for, node_records_enabled, write_audit,
+    AuditRecord, UiAudit,
 };
 pub use audit_check::{audit_findings, AuditRules, Finding};
 use audit::{canvas_rect_to_screen, InkBox};
@@ -135,7 +136,7 @@ impl Canvas {
             fonts,
             tracking: 0.0,
             text_scale: 1.0,
-            audit: audit_enabled().then(Box::default),
+            audit: node_records_enabled().then(Box::default),
         }
     }
 

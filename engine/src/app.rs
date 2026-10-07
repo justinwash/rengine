@@ -1394,15 +1394,74 @@ enum PlayStep {
     Text(String),
     /// Screenshot this frame to the given path.
     Shot(PathBuf),
+    /// Move the cursor to the centre of a named scene node, as the previous
+    /// frame laid it out (`move @name`, or `move @name#2` for the third
+    /// node drawn under that name).
+    MoveTo(NodeTarget),
+    /// `MoveTo`, then click there (`click @name [button]`).
+    ClickOn(NodeTarget, usize),
+    /// Turn the mouse wheel this frame (`wheel <dy>`, lines, positive is up),
+    /// at wherever the cursor is.
+    Wheel(f32),
+}
+
+/// A named scene node in a play script: `@name`, or `@name#n` for the `n`th
+/// (0-based, in draw order) of several drawn under one name, a repeater's
+/// rows for instance.
+struct NodeTarget {
+    name: String,
+    nth: usize,
+}
+
+impl NodeTarget {
+    fn parse(word: &str) -> Option<Self> {
+        let target = word.strip_prefix('@')?;
+        let (name, nth) = match target.rsplit_once('#') {
+            Some((name, n)) => (
+                name,
+                n.parse()
+                    .unwrap_or_else(|_| panic!("bad node index in play script: {word}")),
+            ),
+            None => (target, 0),
+        };
+        Some(Self {
+            name: name.to_string(),
+            nth,
+        })
+    }
+
+    /// Where the node's centre is in engine space (origin at the window
+    /// centre, +y up), read off what the last frame drew. A target that is
+    /// not on screen is a broken script, so this panics and says what was.
+    fn resolve(&self, frame: &Frame) -> (f32, f32) {
+        let Some([x, y, w, h]) = frame.find_node_rect(&self.name, self.nth) else {
+            let names = frame.visible_node_names();
+            panic!(
+                "play script: no node `{}`#{} on screen; {} named nodes were: {}",
+                self.name,
+                self.nth,
+                names.len(),
+                names.join(", ")
+            );
+        };
+        let (sw, sh) = frame.screen_size();
+        (x + w * 0.5 - sw as f32 * 0.5, sh as f32 * 0.5 - (y + h * 0.5))
+    }
 }
 
 /// Scripted keyboard/mouse input + screenshots for headless playtesting.
 /// Enabled by pointing `RENGINE_PLAY_SCRIPT` at a text file whose lines are
 /// `wait N`, `key <KeyCode>`, `move <x> <y>`, `click [button]`,
-/// `text <literal>`, or `shot <path>`. Coordinates are engine space (origin
+/// `wheel <dy>`, `text <literal>`, or `shot <path>`. Coordinates are engine space (origin
 /// at window centre, +y up — see [`InputState::mouse_position`]), so a click
 /// target for a UI panel is whatever `resolved_rect`/layout math the game
 /// itself would compute for that element.
+///
+/// Better than coordinates: `move @node` and `click @node [button]` aim at a
+/// named scene node's centre, as the previous frame laid it out (`@node#n`
+/// for the `n`th of several with one name). A layout change then moves the
+/// click with the thing it is aimed at, and a node that is not on screen
+/// stops the run with a list of what was.
 ///
 /// With `RENGINE_PLAY_FOLLOW` set, running out of script does not end the run:
 /// the frame blocks until more complete lines are appended to the file, so a
@@ -1449,6 +1508,20 @@ impl PlayScript {
                         parse_key_code(rest)
                             .unwrap_or_else(|| panic!("unknown key in play script: {rest}")),
                     ),
+                    "move" if rest.starts_with('@') => PlayStep::MoveTo(
+                        NodeTarget::parse(rest).expect("`@` was just checked"),
+                    ),
+                    "click" if rest.starts_with('@') => {
+                        let mut parts = rest.split_whitespace();
+                        let target = NodeTarget::parse(parts.next().unwrap_or_default())
+                            .expect("`@` was just checked");
+                        let button = parts.next().map_or(0, |b| {
+                            b.parse().unwrap_or_else(|_| {
+                                panic!("bad click button in play script: {rest}")
+                            })
+                        });
+                        PlayStep::ClickOn(target, button)
+                    }
                     "move" => {
                         let mut parts = rest.split_whitespace();
                         let x: f32 = parts
@@ -1472,6 +1545,10 @@ impl PlayScript {
                         PlayStep::Click(button)
                     }
                     "text" => PlayStep::Text(rest.to_string()),
+                    "wheel" => PlayStep::Wheel(
+                        rest.parse()
+                            .unwrap_or_else(|_| panic!("bad wheel delta in play script: {rest}")),
+                    ),
                     other => panic!("unknown play script verb: {other}"),
                 }
             })
@@ -1502,7 +1579,10 @@ impl PlayScript {
 
     /// Run this frame's steps: consumes keys until a wait/shot boundary.
     /// Returns a screenshot path when this frame should be captured.
-    fn step(&mut self, input: &mut InputState) -> Option<PathBuf> {
+    ///
+    /// `last_frame` is the frame drawn last time round, still holding its node
+    /// records, which is where `@node` targets are looked up.
+    fn step(&mut self, input: &mut InputState, last_frame: &Frame) -> Option<PathBuf> {
         if self.waiting > 0 {
             self.waiting -= 1;
             return None;
@@ -1520,6 +1600,16 @@ impl PlayScript {
                 Some(PlayStep::Move(x, y)) => input.inject_mouse_move(x, y),
                 Some(PlayStep::Click(button)) => input.inject_mouse_click(button),
                 Some(PlayStep::Text(text)) => input.inject_text(&text),
+                Some(PlayStep::MoveTo(target)) => {
+                    let (x, y) = target.resolve(last_frame);
+                    input.inject_mouse_move(x, y);
+                }
+                Some(PlayStep::ClickOn(target, button)) => {
+                    let (x, y) = target.resolve(last_frame);
+                    input.inject_mouse_move(x, y);
+                    input.inject_mouse_click(button);
+                }
+                Some(PlayStep::Wheel(dy)) => input.inject_scroll(0.0, dy),
                 Some(PlayStep::Wait(frames)) => {
                     self.waiting = frames.saturating_sub(1);
                     return None;
@@ -1709,7 +1799,7 @@ pub fn run<G: Game>(config: EngineConfig) -> Result<(), Box<dyn std::error::Erro
             }
             let shot = play_script
                 .as_mut()
-                .and_then(|script| script.step(&mut engine.input));
+                .and_then(|script| script.step(&mut engine.input, &headless_frame));
             headless_frame.begin_with_fonts(
                 engine.game_size(),
                 engine.font_atlas(),

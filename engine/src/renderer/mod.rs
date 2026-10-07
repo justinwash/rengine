@@ -84,6 +84,46 @@ impl Frame {
         self.screen_size
     }
 
+    /// The `nth` (0-based, in draw order: canvas by canvas, then node by node)
+    /// laid-out scene node called `name` that resolved a rect this frame, as
+    /// screen pixels `[x, y, w, h]` (origin top-left, y down). Needs node
+    /// records (`canvas::node_records_enabled`); `None` without them.
+    pub fn find_node_rect(&self, name: &str, nth: usize) -> Option<[f32; 4]> {
+        self.canvases
+            .iter()
+            .filter_map(|canvas| canvas.audit())
+            .flat_map(|audit| audit.records.iter())
+            .filter_map(|record| match record {
+                crate::canvas::AuditRecord::Node {
+                    name: n,
+                    rect: Some(rect),
+                    ..
+                } if n == name => Some(*rect),
+                _ => None,
+            })
+            .nth(nth)
+    }
+
+    /// Every node name that resolved a rect this frame, deduplicated, in draw
+    /// order. For error messages that need to say what *was* on screen.
+    pub fn visible_node_names(&self) -> Vec<String> {
+        let mut seen = std::collections::HashSet::new();
+        self.canvases
+            .iter()
+            .filter_map(|canvas| canvas.audit())
+            .flat_map(|audit| audit.records.iter())
+            .filter_map(|record| match record {
+                crate::canvas::AuditRecord::Node {
+                    name,
+                    rect: Some(_),
+                    ..
+                } => Some(name.clone()),
+                _ => None,
+            })
+            .filter(|name| seen.insert(name.clone()))
+            .collect()
+    }
+
     pub fn draw_sprite(&mut self, params: DrawParams) {
         self.sprites.push(params);
     }
