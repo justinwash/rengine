@@ -70,6 +70,11 @@ pub enum AuditRecord {
         kind: String,
         rect: Option<[f32; 4]>,
         clips: bool,
+        /// A click target (`ui_click` on a scene node, or
+        /// [`Canvas::audit_mark_click`](super::Canvas::audit_mark_click)): a
+        /// tool hovers it and expects the screen to answer.
+        #[serde(skip_serializing_if = "std::ops::Not::not")]
+        click: bool,
     },
     /// A run of text. `ink` is the union of its glyph quads (`None` for a run
     /// with no visible glyphs); `dropped` counts characters the face could not
@@ -118,9 +123,22 @@ impl UiAudit {
             kind,
             rect: None,
             clips: false,
+            click: false,
         });
         self.stack.push(id);
         id
+    }
+
+    /// Mark a node as a click target.
+    pub(crate) fn mark_click(&mut self, id: u32) {
+        for record in self.records.iter_mut().rev() {
+            if let AuditRecord::Node { id: rid, click, .. } = record {
+                if *rid == id {
+                    *click = true;
+                    return;
+                }
+            }
+        }
     }
 
     /// Fill in an open node's resolved rect once its layout is known.

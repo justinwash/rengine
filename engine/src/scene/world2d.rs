@@ -449,6 +449,10 @@ pub struct SceneWorld2D {
     /// Clips currently playing, in play order. A later play wins a shared
     /// target; `apply_animations` samples them at the clock the host feeds.
     active_anims: Vec<ActiveAnim>,
+    /// The click targets (`ui_click`) the last draw put on screen, in draw
+    /// order, each with the rect it was drawn at cut to the clip it was drawn
+    /// under. What [`click_target_at`](Self::click_target_at) reads.
+    drawn_clicks: std::cell::RefCell<Vec<(NodeHandle2D, Rect)>>,
 }
 
 /// One playing clip: which clip, when it started on the host clock, and the
@@ -1535,6 +1539,80 @@ impl SceneWorld2D {
         }
     }
 
+    /// Whether this node says it is a click target (`ui_click: true`). A
+    /// bound mark (`ui_click: "{key}"`, for a node that takes clicks only in
+    /// some states) counts here, where there are no bindings to read it by;
+    /// the audit reads it with the frame's bindings.
+    pub fn marked_click(&self, handle: NodeHandle2D) -> bool {
+        self.click_mark(handle, None)
+    }
+
+    fn click_mark(&self, handle: NodeHandle2D, bindings: Option<&Bindings>) -> bool {
+        let Some(value) = self.get(handle).and_then(|node| node.property("ui_click")) else {
+            return false;
+        };
+        let value = match bindings {
+            Some(b) => crate::scene::data2d::substitute_bindings(&value, b).into_owned(),
+            None => value.to_string(),
+        };
+        value.contains('{')
+            || crate::scene::data2d::parse_bool_property(&value).unwrap_or(false)
+    }
+
+    /// The rect a click target was last drawn at, as
+    /// [`resolved_rect`](Self::resolved_rect), for a node a host hit-tests
+    /// for a click.
+    ///
+    /// A click target says so with `ui_click: true`, which is what a hover
+    /// audit reads to find every target on a screen and check it answers the
+    /// pointer. Under `RENGINE_UI_AUDIT=check` a drawn node asked for here
+    /// without the mark is printed to stderr, once, so a capture that reaches
+    /// it fails.
+    pub fn click_rect(&self, handle: NodeHandle2D) -> Option<Rect> {
+        let rect = self.resolved_rect(handle)?;
+        if crate::canvas::audit_check_mode() && !self.marked_click(handle) {
+            let name = self
+                .get(handle)
+                .and_then(|n| n.name.clone())
+                .unwrap_or_default();
+            static WARNED: std::sync::Mutex<Option<std::collections::HashSet<String>>> =
+                std::sync::Mutex::new(None);
+            if let Ok(mut warned) = WARNED.lock() {
+                if warned.get_or_insert_with(Default::default).insert(name.clone()) {
+                    eprintln!("ui-audit: click target `{name}` is hit-tested but not marked ui_click");
+                }
+            }
+        }
+        Some(rect)
+    }
+
+    /// The topmost click target the last draw put under `point` (UI space,
+    /// as [`resolved_rect`](Self::resolved_rect)): the node to mark hovered,
+    /// so everything clickable lights from its own authored `_hover` style
+    /// and nothing else does. Only what was drawn as a click target counts:
+    /// a bound `ui_click` is read with that frame's bindings, and a node
+    /// clipped by its panel counts only where it showed.
+    pub fn click_target_at(&self, point: Vec2) -> Option<NodeHandle2D> {
+        self.drawn_clicks
+            .borrow()
+            .iter()
+            .rev()
+            .find(|(_, rect)| rect.contains_point(point))
+            .map(|(handle, _)| *handle)
+    }
+
+    /// Whether the last draw put any click target on screen: a modal drawn
+    /// by its own world says it is up this way.
+    pub fn drew_click_targets(&self) -> bool {
+        !self.drawn_clicks.borrow().is_empty()
+    }
+
+    /// Whether `point` (UI space, as [`resolved_rect`](Self::resolved_rect))
+    /// is on the click target `handle`; see [`click_rect`](Self::click_rect).
+    pub fn click_hit(&self, handle: NodeHandle2D, point: Vec2) -> bool {
+        self.click_rect(handle).is_some_and(|rect| rect.contains_point(point))
+    }
+
     /// Topmost visible node whose bounds contain `point` (in world space).
     ///
     /// "Topmost" means last-drawn: children sit above parents and later
@@ -2432,6 +2510,7 @@ impl SceneWorld2D {
         bindings: &Bindings,
     ) {
         self.text_scale.set(Some(canvas.text_scale()));
+        self.drawn_clicks.borrow_mut().clear();
         let roots = self.roots.clone();
         for &r in &roots {
             if self.subtree_wants_content_size(r) {
@@ -2735,6 +2814,10 @@ impl SceneWorld2D {
             node.name.as_deref().unwrap_or(""),
             node.property("ui").as_deref().unwrap_or(""),
         );
+        let click = self.click_mark(handle, Some(effective_bindings));
+        if click {
+            canvas.audit_mark_click(audit_id);
+        }
         let (ui_rect, ui_visible) = crate::scene::data2d::draw_ui_node_on_with_bindings(
             canvas,
             parent_ui_rect,
@@ -2754,6 +2837,18 @@ impl SceneWorld2D {
             let (x, y, w, h) = ui_rect;
             node.ui_rect
                 .set(Some(Rect::from_pos_size(Vec2::new(x, y), Vec2::new(w, h))));
+            if click {
+                let (mut l, mut b, mut r, mut t) = (x, y, x + w, y + h);
+                if let Some((cx, cy, cw, ch)) = canvas.clip_in_canvas() {
+                    (l, b, r, t) = (l.max(cx), b.max(cy), r.min(cx + cw), t.min(cy + ch));
+                }
+                if r > l && t > b {
+                    self.drawn_clicks.borrow_mut().push((
+                        handle,
+                        Rect::from_pos_size(Vec2::new(l, b), Vec2::new(r - l, t - b)),
+                    ));
+                }
+            }
         } else {
             node.ui_rect.set(None);
         }

@@ -280,6 +280,15 @@ impl Canvas {
         }
     }
 
+    /// Mark an open node as a click target: something the player can click,
+    /// which should answer a hover. Scene nodes say it with `ui_click`; this
+    /// is for a node drawn by hand.
+    pub fn audit_mark_click(&mut self, id: Option<u32>) {
+        if let (Some(audit), Some(id)) = (self.audit.as_mut(), id) {
+            audit.mark_click(id);
+        }
+    }
+
     pub fn audit_close_node(&mut self, id: Option<u32>) {
         if let (Some(audit), Some(_)) = (self.audit.as_mut(), id) {
             audit.close_node();
@@ -487,6 +496,14 @@ impl Canvas {
 
     pub fn screen_size(&self) -> (u32, u32) {
         self.screen_size
+    }
+
+    /// The clip in force, in canvas space (origin centre, y up) like
+    /// [`push_clip`](Self::push_clip)'s arguments; `None` when nothing clips.
+    pub fn clip_in_canvas(&self) -> Option<(f32, f32, f32, f32)> {
+        let [px, py, pw, ph] = *self.clip_stack.last()?;
+        let (hw, hh) = (self.screen_size.0 as f32 / 2.0, self.screen_size.1 as f32 / 2.0);
+        Some((px as f32 - hw, hh - py as f32 - ph as f32, pw as f32, ph as f32))
     }
 
     pub fn push_clip(&mut self, x: f32, y: f32, w: f32, h: f32) {
