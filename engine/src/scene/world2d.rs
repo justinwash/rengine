@@ -2900,10 +2900,15 @@ impl SceneWorld2D {
         // rect — a scrolling standings/log region can overflow its panel
         // without painting over whatever sits below it. Substituted through
         // bindings first, same as every other ui_* value.
+        //
+        // `ui_clip: whole` is the same clip for a list of rows: a child the
+        // edge would cut is not drawn at all. A scrolling log's last row,
+        // half inside its well, is a line of text cut through the middle.
         let clip = node
             .property("ui_clip")
             .map(|v| crate::scene::data2d::substitute_bindings(v, effective_bindings));
-        let clipped = matches!(clip.as_deref(), Some("true" | "1" | "yes"));
+        let whole = clip.as_deref() == Some("whole");
+        let clipped = whole || matches!(clip.as_deref(), Some("true" | "1" | "yes"));
         let has_ui = node.property("ui").is_some();
         canvas.audit_node_rect(audit_id, has_ui.then_some(ui_rect), clipped);
         if clipped {
@@ -2914,6 +2919,19 @@ impl SceneWorld2D {
         let child_refs =
             self.resolve_child_references(node, ui_rect, &children, effective_bindings);
         for (child, child_ref) in children.into_iter().zip(child_refs) {
+            if whole && Self::cut_by(child_ref, ui_rect) {
+                // Not drawn, but still where the flow put it: a scroll offset
+                // is summed from the rows scrolled past (`resolved_rect`),
+                // and those are among the rows this skips.
+                self.clear_subtree_hit_rects(child);
+                if let Some(skipped) = self.get(child) {
+                    let (x, y, w, h) = child_ref;
+                    skipped
+                        .ui_rect
+                        .set(Some(Rect::from_pos_size(Vec2::new(x, y), Vec2::new(w, h))));
+                }
+                continue;
+            }
             self.draw_node_on_canvas(child, child_ref, time, canvas, effective_bindings, state);
         }
         if clipped {
@@ -2923,6 +2941,18 @@ impl SceneWorld2D {
     }
 
     // --- internal helpers -------------------------------------------------
+
+    /// Whether a child's slot reaches past its clipping parent's rect, by
+    /// more than the half pixel a layout rounds to. Both are `(x, y, w, h)`.
+    fn cut_by(slot: (f32, f32, f32, f32), clip: (f32, f32, f32, f32)) -> bool {
+        const SLACK: f32 = 0.5;
+        let (sx, sy, sw, sh) = slot;
+        let (cx, cy, cw, ch) = clip;
+        sx < cx - SLACK
+            || sy < cy - SLACK
+            || sx + sw > cx + cw + SLACK
+            || sy + sh > cy + ch + SLACK
+    }
 
     /// Drop the cached hit rect of every node under `handle` (inclusive).
     ///
