@@ -286,6 +286,15 @@ impl AssetPack {
             .or_else(|| self.sprite_sheets.get(alias).map(|sheet| sheet.texture))
     }
 
+    /// Every texture in the pack, by alias: what a scene world needs to resolve
+    /// a sprite a node names at draw time (`ui_sprite`,
+    /// [`SceneWorld2D::set_sprite_aliases`](crate::scene::SceneWorld2D::set_sprite_aliases)).
+    pub fn texture_aliases(&self) -> impl Iterator<Item = (&str, TextureId)> {
+        self.textures
+            .iter()
+            .map(|(alias, asset)| (alias.as_str(), asset.id))
+    }
+
     /// Register an already-loaded texture under `alias`.
     ///
     /// For tools that compile a scene outside the normal asset-manifest flow

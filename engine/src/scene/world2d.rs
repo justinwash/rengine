@@ -453,6 +453,10 @@ pub struct SceneWorld2D {
     /// order, each with the rect it was drawn at cut to the clip it was drawn
     /// under. What [`click_target_at`](Self::click_target_at) reads.
     drawn_clicks: std::cell::RefCell<Vec<(NodeHandle2D, Rect)>>,
+    /// The textures a node may name at draw time through `ui_sprite`, by
+    /// alias ([`set_sprite_aliases`](Self::set_sprite_aliases)). Empty by
+    /// default, which leaves every node drawing its own compiled sprite.
+    sprite_aliases: HashMap<String, crate::TextureId>,
 }
 
 /// One playing clip: which clip, when it started on the host clock, and the
@@ -675,6 +679,47 @@ impl SceneWorld2D {
     /// `ui_snap: false`.
     pub fn set_pixel_grid(&mut self, cell: f32) {
         self.pixel_grid.set(cell.max(0.0));
+    }
+
+    /// The textures a node may name through `ui_sprite`, by alias.
+    ///
+    /// A node's `asset_alias` is compiled into its sprite when the scene
+    /// loads, so it cannot change. `ui_sprite` is a property like any other,
+    /// substituted through the node's bindings each draw, so a repeater can
+    /// give each row its own sprite (`"ui_sprite": "{car_sprite}"`) and a host
+    /// can change a whole screen's art without reloading it. The name is
+    /// looked up here; an empty value, or one not in the table, draws the
+    /// node's compiled sprite as before.
+    pub fn set_sprite_aliases<'a>(
+        &mut self,
+        aliases: impl IntoIterator<Item = (&'a str, crate::TextureId)>,
+    ) {
+        self.sprite_aliases = aliases
+            .into_iter()
+            .map(|(alias, id)| (alias.to_string(), id))
+            .collect();
+    }
+
+    /// The sprite a node draws this frame: the one its `ui_sprite` names, if
+    /// it names one in the table, else its own compiled sprite.
+    ///
+    /// A named sprite takes the compiled one's placement and tint, so a node
+    /// authored with a placeholder `asset_alias` keeps everything but the
+    /// texture; one authored without draws the whole texture, untinted.
+    fn bound_sprite(&self, node: &SceneNode2D, bindings: &Bindings) -> Option<PrefabSprite2D> {
+        let alias = node.property("ui_sprite")?;
+        let alias = super::data2d::substitute_bindings(alias, bindings);
+        let texture = *self.sprite_aliases.get(alias.trim())?;
+        let own = node.sprites.first();
+        Some(PrefabSprite2D {
+            texture,
+            offset: own.map_or(Vec2::ZERO, |s| s.offset),
+            size: own.map_or(Vec2::ONE, |s| s.size),
+            color: own.map_or(Color::WHITE, |s| s.color),
+            uv_rect: [0.0, 0.0, 1.0, 1.0],
+            flip_x: false,
+            flip_y: false,
+        })
     }
 
     /// The scene-authored clips this world can play (`animations` from the
@@ -2390,6 +2435,7 @@ impl SceneWorld2D {
         // UI primitive (if any) laid out relative to the parent's rect; the
         // resolved rect becomes the reference frame for this node's children.
         let state = self.interaction_state(handle, inherited);
+        let bound = self.bound_sprite(node, effective_bindings);
         let (ui_rect, ui_visible) = crate::scene::data2d::draw_ui_node_with_bindings(
             frame,
             parent_ui_rect,
@@ -2398,7 +2444,7 @@ impl SceneWorld2D {
             time,
             |n| node.property(n).map(str::to_owned),
             effective_bindings,
-            node.sprites.first(),
+            bound.as_ref().or(node.sprites.first()),
             self.pixel_grid.get(),
             state,
             node.content_size.get(),
@@ -2818,6 +2864,7 @@ impl SceneWorld2D {
         if click {
             canvas.audit_mark_click(audit_id);
         }
+        let bound = self.bound_sprite(node, effective_bindings);
         let (ui_rect, ui_visible) = crate::scene::data2d::draw_ui_node_on_with_bindings(
             canvas,
             parent_ui_rect,
@@ -2826,7 +2873,7 @@ impl SceneWorld2D {
             time,
             |n| node.property(n),
             effective_bindings,
-            node.sprites.first(),
+            bound.as_ref().or(node.sprites.first()),
             self.pixel_grid.get(),
             state,
             node.content_size.get(),
